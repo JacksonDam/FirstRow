@@ -45,7 +45,7 @@ Playback of movies and TV shows originating from the Apple TV app is not support
 
 ## Controls
 
-- `Keyboard`: Arrow keys navigate/allow scrubbing media, `Enter` selects, `Delete`/`Backspace` goes back, `Space` toggles playback in fullscreen media views.
+- `Keyboard`: Arrow keys navigate/allow scrubbing media, `Enter` selects, `Delete`/`Backspace` goes back, `Space` toggles playback in fullscreen media views. Cmd+Esc to gracefully quit.
 - `Siri Remote (tvOS)`: Directional pad or swipe gestures navigate/scrub, `Select` chooses, `Menu` goes back, `Play/Pause` toggles playback.
 - `Game controller`: D-pad or left stick navigates/scrubs, `A` selects, `B` or `Menu` goes back, `X` toggles playback.
 - `Touch (iOS/iPadOS)`: Tap screen quadrants to navigate/scrub, press and hold to repeat navigation, two-finger tap selects, three-finger tap goes back, four-finger tap toggles playback.
