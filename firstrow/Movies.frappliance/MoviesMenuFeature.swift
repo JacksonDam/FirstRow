@@ -1,0 +1,11 @@
+import Foundation
+
+struct MoviesMenuFeature: MenuFeatureConfiguration {
+    let rootItem = RootMenuItemConfig(id: "movies", title: "Movies", iconAssetName: "movies")
+    let submenuItems: [SubmenuItemConfig] = [
+        .init(id: "movies_itunes_top", title: "iTunes Top Movies", leadsToMenu: true, trailingText: "•••"),
+        .init(id: "movies_theatrical_trailers", title: "Theatrical Trailers", leadsToMenu: true, trailingText: "•••"),
+        .init(id: "movies_folder", title: "Movies Folder", leadsToMenu: true),
+    ]
+    let defaultSubmenuSelectedIndex = 0
+}
