@@ -1,6 +1,8 @@
 # First Row
 
-<video src="docs/videos/introducing-first-row.mp4" controls muted playsinline width="50%"></video>
+
+https://github.com/user-attachments/assets/2ff954c0-50fe-403b-b0b7-39557c937d62
+
 
 A SwiftUI recreation of Apple's **Front Row**, the beautiful media frontend that shipped in Mac OS X Tiger through Snow Leopard. Front Row allowed users to navigate their media with an eye-catching and slick UI, and gave Mac users a living-room worthy experience that also featured in the first-generation Apple TV.
 
