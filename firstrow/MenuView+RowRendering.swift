@@ -45,6 +45,42 @@ private struct RootMenuSelectionCenterPreferenceKey: PreferenceKey {
     }
 }
 
+struct MenuVirtualSceneLayout {
+    let virtualSize: CGSize
+    let scale: CGFloat
+    let offset: CGSize
+    let fittedSize: CGSize
+
+    init(containerSize: CGSize, virtualSize: CGSize) {
+        self.virtualSize = virtualSize
+
+        guard
+            containerSize.width > 0,
+            containerSize.height > 0,
+            virtualSize.width > 0,
+            virtualSize.height > 0
+        else {
+            scale = 1
+            offset = .zero
+            fittedSize = virtualSize
+            return
+        }
+
+        scale = min(
+            containerSize.width / virtualSize.width,
+            containerSize.height / virtualSize.height,
+        )
+        fittedSize = CGSize(
+            width: virtualSize.width * scale,
+            height: virtualSize.height * scale,
+        )
+        offset = CGSize(
+            width: (containerSize.width - fittedSize.width) * 0.5,
+            height: (containerSize.height - fittedSize.height) * 0.5,
+        )
+    }
+}
+
 extension MenuView {
     var selectionMovementAnimation: Animation {
         if useLinearSelectionSweepAnimation {
@@ -1300,6 +1336,22 @@ extension MenuView {
             GeometryReader { virtualGeometry in
                 menuScene(geometry: virtualGeometry)
             }.frame(width: virtualSize.width, height: virtualSize.height).scaleEffect(scale, anchor: .center).frame(width: geometry.size.width, height: geometry.size.height).offset(x: -horizontalCompensation)
+        #elseif os(macOS)
+            let layout = MenuVirtualSceneLayout(
+                containerSize: geometry.size,
+                virtualSize: CGSize(width: 1920, height: 1080),
+            )
+            GeometryReader { virtualGeometry in
+                menuScene(geometry: virtualGeometry)
+            }
+            .frame(width: layout.virtualSize.width, height: layout.virtualSize.height)
+            .scaleEffect(layout.scale, anchor: .topLeading)
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                alignment: .topLeading,
+            )
+            .offset(x: layout.offset.width, y: layout.offset.height)
         #else
             menuScene(geometry: geometry)
         #endif
