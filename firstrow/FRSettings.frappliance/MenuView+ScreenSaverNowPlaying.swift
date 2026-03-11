@@ -7,6 +7,12 @@ import SwiftUI
 import Darwin
 
 extension MenuView {
+    func dismissScreenSaverForUserInteraction() {
+        registerUserInteractionForScreenSaver()
+        endDirectionalHoldSession()
+        dismissFullscreenScene(preserveMusicPlayback: true)
+    }
+
     func handleScreenSaverInput(_ key: KeyCode, isRepeat: Bool) {
         _ = isRepeat
         switch key {

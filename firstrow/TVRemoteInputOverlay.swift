@@ -1,4 +1,22 @@
 import SwiftUI
+
+#if os(iOS) || os(tvOS)
+    import GameController
+
+    private let appleRemoteProductCategories: Set<String> = [
+        GCProductCategorySiriRemote1stGen,
+        GCProductCategorySiriRemote2ndGen,
+        GCProductCategoryControlCenterRemote,
+        GCProductCategoryUniversalElectronicsRemote,
+        GCProductCategoryCoalescedRemote,
+    ]
+
+    private func isAppleRemoteMicroGamepadController(_ controller: GCController) -> Bool {
+        guard controller.microGamepad != nil else { return false }
+        return appleRemoteProductCategories.contains(controller.productCategory)
+    }
+#endif
+
 #if os(tvOS)
     import UIKit
 
@@ -23,6 +41,7 @@ import SwiftUI
     final class RemotePressCapturingView: UIView {
         var onKeyDown: ((KeyCode) -> Void)?
         var onKeyUp: ((KeyCode) -> Void)?
+
         override var canBecomeFirstResponder: Bool {
             true
         }
@@ -295,6 +314,16 @@ import SwiftUI
                 }
 
                 if let gamepad = controller.microGamepad {
+                    if isAppleRemoteMicroGamepadController(controller) {
+                        if let cardinalDPad = controller.physicalInputProfile.dpads[GCInputDirectionalCardinalDpad] {
+                            configureDirectionPadHandlers(
+                                cardinalDPad,
+                                controllerID: controllerID,
+                                source: .dpad,
+                            )
+                        }
+                        return
+                    }
                     configureDirectionPadHandlers(gamepad.dpad, controllerID: controllerID, source: .dpad)
                     gamepad.buttonA.pressedChangedHandler = { [weak self] _, _, isPressed in
                         guard isPressed else { return }
@@ -327,7 +356,13 @@ import SwiftUI
                     gamepad.buttonMenu.pressedChangedHandler = nil
                 }
                 if let gamepad = controller.microGamepad {
-                    clearDirectionPadHandlers(gamepad.dpad)
+                    if isAppleRemoteMicroGamepadController(controller),
+                       let cardinalDPad = controller.physicalInputProfile.dpads[GCInputDirectionalCardinalDpad]
+                    {
+                        clearDirectionPadHandlers(cardinalDPad)
+                    } else {
+                        clearDirectionPadHandlers(gamepad.dpad)
+                    }
                     gamepad.buttonA.pressedChangedHandler = nil
                     gamepad.buttonX.pressedChangedHandler = nil
                     gamepad.buttonMenu.pressedChangedHandler = nil

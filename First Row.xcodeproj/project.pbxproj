@@ -844,7 +844,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=appletvos*]" = "";
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=appletvos*]" = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = firstrow/firstrow.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
@@ -873,14 +873,16 @@
 				"INFOPLIST_FILE[sdk=iphoneos*]" = "Info-iOS.plist";
 				"INFOPLIST_FILE[sdk=iphonesimulator*]" = "Info-iOS.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "First Row";
+				INFOPLIST_KEY_GCSupportsMultipleMicroGamepads = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "First Row uses your Music library to browse and play songs.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "First Row uses your Photos library to browse and play photo slideshows.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -889,6 +891,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.5;
 				MARKETING_VERSION = 1.0.1;
+				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-weak_framework",
@@ -900,7 +903,7 @@
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,3";
+				TARGETED_DEVICE_FAMILY = "1,2,3";
 				TVOS_DEPLOYMENT_TARGET = 15.6;
 			};
 			name = Debug;
@@ -909,7 +912,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=appletvos*]" = "";
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=appletvos*]" = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = firstrow/firstrow.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
@@ -938,14 +941,16 @@
 				"INFOPLIST_FILE[sdk=iphoneos*]" = "Info-iOS.plist";
 				"INFOPLIST_FILE[sdk=iphonesimulator*]" = "Info-iOS.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "First Row";
+				INFOPLIST_KEY_GCSupportsMultipleMicroGamepads = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "First Row uses your Music library to browse and play songs.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "First Row uses your Photos library to browse and play photo slideshows.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -965,7 +970,7 @@
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,3";
+				TARGETED_DEVICE_FAMILY = "1,2,3";
 				TVOS_DEPLOYMENT_TARGET = 15.6;
 			};
 			name = Release;

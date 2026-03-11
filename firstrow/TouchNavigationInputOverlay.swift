@@ -8,6 +8,7 @@ import SwiftUI
         let onEnter: () -> Void
         let onBackspace: () -> Void
         let onSpace: () -> Void
+        let onSingleFingerTap: () -> Bool
         func makeCoordinator() -> Coordinator {
             Coordinator(
                 onArrowKeyDown: onArrowKeyDown,
@@ -15,6 +16,7 @@ import SwiftUI
                 onEnter: onEnter,
                 onBackspace: onBackspace,
                 onSpace: onSpace,
+                onSingleFingerTap: onSingleFingerTap,
             )
         }
 
@@ -78,6 +80,7 @@ import SwiftUI
             context.coordinator.onEnter = onEnter
             context.coordinator.onBackspace = onBackspace
             context.coordinator.onSpace = onSpace
+            context.coordinator.onSingleFingerTap = onSingleFingerTap
         }
 
         final class Coordinator: NSObject {
@@ -86,6 +89,7 @@ import SwiftUI
             var onEnter: () -> Void
             var onBackspace: () -> Void
             var onSpace: () -> Void
+            var onSingleFingerTap: () -> Bool
             var activeHoldArrowKey: KeyCode?
             init(
                 onArrowKeyDown: @escaping (KeyCode) -> Void,
@@ -93,12 +97,14 @@ import SwiftUI
                 onEnter: @escaping () -> Void,
                 onBackspace: @escaping () -> Void,
                 onSpace: @escaping () -> Void,
+                onSingleFingerTap: @escaping () -> Bool,
             ) {
                 self.onArrowKeyDown = onArrowKeyDown
                 self.onArrowKeyUp = onArrowKeyUp
                 self.onEnter = onEnter
                 self.onBackspace = onBackspace
                 self.onSpace = onSpace
+                self.onSingleFingerTap = onSingleFingerTap
                 activeHoldArrowKey = nil
             }
 
@@ -117,7 +123,11 @@ import SwiftUI
 
             @objc
             func handleSingleFingerTap(_ gesture: UITapGestureRecognizer) {
-                guard gesture.state == .ended, let key = resolveArrowKey(from: gesture) else { return }
+                guard gesture.state == .ended else { return }
+                if onSingleFingerTap() {
+                    return
+                }
+                guard let key = resolveArrowKey(from: gesture) else { return }
                 onArrowKeyDown(key)
                 onArrowKeyUp(key)
             }

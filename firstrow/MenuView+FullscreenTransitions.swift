@@ -265,7 +265,11 @@ extension MenuView {
             },
             screenSaverFullscreenKey: { _ in
                 AnyView(
-                    ScreenSaverFullscreenView(),
+                    ScreenSaverFullscreenView(
+                        onDismiss: {
+                            dismissScreenSaverForUserInteraction()
+                        },
+                    ),
                 )
             },
             featureErrorFullscreenKey: { scene in

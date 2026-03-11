@@ -45,6 +45,20 @@ private struct RootMenuSelectionCenterPreferenceKey: PreferenceKey {
     }
 }
 
+enum MenuVirtualScenePreset {
+    static let widescreen = CGSize(width: 1920, height: 1080)
+    static let iPad = CGSize(width: 1440, height: 1080)
+
+    static func scaledX(_ value: CGFloat, for virtualSize: CGSize) -> CGFloat {
+        guard widescreen.width > 0 else { return value }
+        return value * (virtualSize.width / widescreen.width)
+    }
+
+    static func additionalMenuGapX(for virtualSize: CGSize) -> CGFloat {
+        virtualSize == iPad ? 56 : 0
+    }
+}
+
 struct MenuVirtualSceneLayout {
     let virtualSize: CGSize
     let scale: CGFloat
@@ -499,7 +513,10 @@ extension MenuView {
         let desiredGap: CGFloat = -50
         let baselineWidth = baselineLayoutWidth(geometry: geometry)
         let carouselLaneWidth = carouselWidth(geometry: geometry)
-        let carouselContainerOffsetX: CGFloat = 20
+        let carouselContainerOffsetX = MenuVirtualScenePreset.scaledX(
+            20,
+            for: activeMenuVirtualSceneSize,
+        )
         let carouselCenterX = (-baselineWidth * 0.5) + (carouselLaneWidth * 0.5) + carouselContainerOffsetX
         return titleLeadingX - desiredGap - iconHalfWidth - carouselCenterX
     }
@@ -1187,8 +1204,23 @@ extension MenuView {
         iconSize * selectedCarouselAdjustedSizeMultiplier
     }
 
+    var carouselSceneOffsetX: CGFloat {
+        MenuVirtualScenePreset.scaledX(40, for: activeMenuVirtualSceneSize)
+    }
+
     var rightMenuSceneOffsetX: CGFloat {
-        -214
+        MenuVirtualScenePreset.scaledX(-214, for: activeMenuVirtualSceneSize) +
+            MenuVirtualScenePreset.additionalMenuGapX(for: activeMenuVirtualSceneSize)
+    }
+
+    var activeMenuVirtualSceneSize: CGSize {
+        #if os(iOS)
+            UIDevice.current.userInterfaceIdiom == .pad
+                ? MenuVirtualScenePreset.iPad
+                : MenuVirtualScenePreset.widescreen
+        #else
+            MenuVirtualScenePreset.widescreen
+        #endif
     }
 
     #if os(iOS)
@@ -1233,6 +1265,11 @@ extension MenuView {
                     onSpace: {
                         endDirectionalHoldSession()
                         handleKeyInput(.space, isRepeat: false, modifiers: [])
+                    },
+                    onSingleFingerTap: {
+                        guard activeFullscreenScene?.key == screenSaverFullscreenKey else { return false }
+                        dismissScreenSaverForUserInteraction()
+                        return true
                     },
                 ).ignoresSafeArea()
             }
@@ -1328,33 +1365,55 @@ extension MenuView {
     @ViewBuilder
     func menuLayoutContainer(in geometry: GeometryProxy) -> some View {
         #if os(iOS)
-            let virtualSize = CGSize(width: 1920, height: 1080)
+            let virtualSize = activeMenuVirtualSceneSize
             let scale = geometry.size.height / virtualSize.height
             let screenBounds = activeWindowScreen?.bounds ?? .zero
             let deviceLandscapeWidth = max(screenBounds.width, screenBounds.height)
             let horizontalCompensation = max(0, (deviceLandscapeWidth - geometry.size.width) * 0.5)
-            GeometryReader { virtualGeometry in
-                menuScene(geometry: virtualGeometry)
-            }.frame(width: virtualSize.width, height: virtualSize.height).scaleEffect(scale, anchor: .center).frame(width: geometry.size.width, height: geometry.size.height).offset(x: -horizontalCompensation)
-        #elseif os(macOS)
+            ZStack {
+                GeometryReader { virtualGeometry in
+                    menuScene(geometry: virtualGeometry)
+                }.frame(width: virtualSize.width, height: virtualSize.height).scaleEffect(scale, anchor: .center).frame(width: geometry.size.width, height: geometry.size.height).offset(x: -horizontalCompensation)
+                menuDisplayFadeOverlays(containerSize: geometry.size)
+            }
+        #elseif os(tvOS) || os(macOS)
             let layout = MenuVirtualSceneLayout(
                 containerSize: geometry.size,
-                virtualSize: CGSize(width: 1920, height: 1080),
+                virtualSize: MenuVirtualScenePreset.widescreen,
             )
-            GeometryReader { virtualGeometry in
-                menuScene(geometry: virtualGeometry)
+            ZStack {
+                GeometryReader { virtualGeometry in
+                    menuScene(geometry: virtualGeometry)
+                }
+                .frame(width: layout.virtualSize.width, height: layout.virtualSize.height)
+                .scaleEffect(layout.scale, anchor: .topLeading)
+                .frame(
+                    width: geometry.size.width,
+                    height: geometry.size.height,
+                    alignment: .topLeading,
+                )
+                .offset(x: layout.offset.width, y: layout.offset.height)
+                menuDisplayFadeOverlays(containerSize: geometry.size)
             }
-            .frame(width: layout.virtualSize.width, height: layout.virtualSize.height)
-            .scaleEffect(layout.scale, anchor: .topLeading)
-            .frame(
-                width: geometry.size.width,
-                height: geometry.size.height,
-                alignment: .topLeading,
-            )
-            .offset(x: layout.offset.width, y: layout.offset.height)
         #else
             menuScene(geometry: geometry)
         #endif
+    }
+
+    @ViewBuilder
+    func menuDisplayFadeOverlays(containerSize: CGSize) -> some View {
+        Color.black.opacity(menuFolderSwapOverlayOpacity)
+            .frame(width: containerSize.width, height: containerSize.height)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        Color.black.opacity(movieTransitionOverlayOpacity)
+            .frame(width: containerSize.width, height: containerSize.height)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        Color.black.opacity(fullscreenTransitionOverlayOpacity)
+            .frame(width: containerSize.width, height: containerSize.height)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
     }
 
     func menuScene(geometry: GeometryProxy) -> some View {
@@ -1379,7 +1438,7 @@ extension MenuView {
                             detailContentView(sceneSize: geometry.size).opacity(detailContentVisibilityOpacity).animation(.easeInOut(duration: 0.22),
                                                                                                                           value: shouldHidePodcastsSubmenuChromeUntilLoadCompletes)
                         }
-                    }).frame(width: carouselWidth(geometry: geometry)).offset(x: 40).offset(y: carouselOffsetY()).offset(y: -menuClusterVerticalCompensation)
+                    }).frame(width: carouselWidth(geometry: geometry)).offset(x: carouselSceneOffsetX).offset(y: carouselOffsetY()).offset(y: -menuClusterVerticalCompensation)
                     Spacer()
                     rightMenuArea(geometry: geometry).frame(
                         width: menuWidthConstrained(geometry: geometry),
@@ -1390,7 +1449,6 @@ extension MenuView {
                 }.frame(width: geometry.size.width, alignment: .center).offset(y: menuClusterVerticalCompensation)
                 Spacer()
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center).opacity(menuSceneOpacity)
-            Color.black.opacity(menuFolderSwapOverlayOpacity).frame(width: geometry.size.width, height: geometry.size.height).ignoresSafeArea().allowsHitTesting(false).zIndex(4050)
             if isMovieResumePromptVisible {
                 movieResumePromptOverlay(geometry: geometry).frame(width: geometry.size.width, height: geometry.size.height).opacity(movieResumePromptOpacity).zIndex(4200)
             }
@@ -1406,7 +1464,6 @@ extension MenuView {
                     loadingProgress: moviePreviewDownloadProgress,
                 ).frame(width: geometry.size.width, height: geometry.size.height).opacity(movieControlsOpacity).zIndex(4500)
             }
-            Color.black.opacity(movieTransitionOverlayOpacity).frame(width: geometry.size.width, height: geometry.size.height).ignoresSafeArea()
             if let activeFullscreenScene {
                 FullscreenSceneHost(
                     scene: activeFullscreenScene,
@@ -1416,7 +1473,6 @@ extension MenuView {
             if activeFullscreenScene?.key == screenSaverFullscreenKey {
                 screenSaverNowPlayingToastView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.leading, 42).padding(.bottom, 36).opacity(screenSaverNowPlayingToastOpacity).allowsHitTesting(false).zIndex(5105)
             }
-            Color.black.opacity(fullscreenTransitionOverlayOpacity).frame(width: geometry.size.width, height: geometry.size.height).ignoresSafeArea().allowsHitTesting(false).zIndex(5200)
         }.onPreferenceChange(RootMenuSelectionCenterPreferenceKey.self) { centerX in
             guard centerX.isFinite else { return }
             rootMenuSelectionCenterSceneX = centerX

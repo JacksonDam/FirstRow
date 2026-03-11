@@ -3,6 +3,12 @@ import SwiftUI
 struct ScreenSaverFullscreenView: View {
     @StateObject private var model = ScreenSaverPhotoStreamModel()
     @State private var startTime = Date()
+    let onDismiss: () -> Void
+
+    init(onDismiss: @escaping () -> Void = {}) {
+        self.onDismiss = onDismiss
+    }
+
     var body: some View {
         screenSaverBody
     }
@@ -39,7 +45,10 @@ struct ScreenSaverFullscreenView: View {
                     }
                 }.scaleEffect(1 - (0.08 * spinState.zoomOutAmount), anchor: .center).ignoresSafeArea()
             }
-        }.background(Color.black.ignoresSafeArea()).onAppear {
+        }
+        .background(Color.black.ignoresSafeArea())
+        .contentShape(Rectangle())
+        .onAppear {
             startTime = Date()
             model.loadIfNeeded()
         }
