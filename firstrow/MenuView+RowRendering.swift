@@ -1231,6 +1231,14 @@ extension MenuView {
             }
             return scenes.first?.screen
         }
+
+        var activeFullscreenContainerSize: CGSize {
+            guard let screenBounds = activeWindowScreen?.bounds else { return .zero }
+            return CGSize(
+                width: max(screenBounds.width, screenBounds.height),
+                height: min(screenBounds.width, screenBounds.height),
+            )
+        }
     #endif
 
     var body: some View {
@@ -1370,11 +1378,17 @@ extension MenuView {
             let screenBounds = activeWindowScreen?.bounds ?? .zero
             let deviceLandscapeWidth = max(screenBounds.width, screenBounds.height)
             let horizontalCompensation = max(0, (deviceLandscapeWidth - geometry.size.width) * 0.5)
+            let fullscreenContainerSize = {
+                let resolved = activeFullscreenContainerSize
+                guard resolved.width > 0, resolved.height > 0 else { return geometry.size }
+                return resolved
+            }()
             ZStack {
                 GeometryReader { virtualGeometry in
                     menuScene(geometry: virtualGeometry)
                 }.frame(width: virtualSize.width, height: virtualSize.height).scaleEffect(scale, anchor: .center).frame(width: geometry.size.width, height: geometry.size.height).offset(x: -horizontalCompensation)
-                menuDisplayFadeOverlays(containerSize: geometry.size)
+                fullscreenPresentationLayers(containerSize: fullscreenContainerSize)
+                menuDisplayFadeOverlays(containerSize: fullscreenContainerSize)
             }
         #elseif os(tvOS) || os(macOS)
             let layout = MenuVirtualSceneLayout(
@@ -1393,6 +1407,7 @@ extension MenuView {
                     alignment: .topLeading,
                 )
                 .offset(x: layout.offset.width, y: layout.offset.height)
+                fullscreenPresentationLayers(containerSize: geometry.size)
                 menuDisplayFadeOverlays(containerSize: geometry.size)
             }
         #else
@@ -1406,14 +1421,59 @@ extension MenuView {
             .frame(width: containerSize.width, height: containerSize.height)
             .ignoresSafeArea()
             .allowsHitTesting(false)
+            .zIndex(6000)
         Color.black.opacity(movieTransitionOverlayOpacity)
             .frame(width: containerSize.width, height: containerSize.height)
             .ignoresSafeArea()
             .allowsHitTesting(false)
+            .zIndex(6001)
         Color.black.opacity(fullscreenTransitionOverlayOpacity)
             .frame(width: containerSize.width, height: containerSize.height)
             .ignoresSafeArea()
             .allowsHitTesting(false)
+            .zIndex(6002)
+    }
+
+    @ViewBuilder
+    func fullscreenPresentationLayers(containerSize: CGSize) -> some View {
+        if isMoviePlaybackVisible, let moviePlayer {
+            VideoPlayerView(player: moviePlayer)
+                .frame(width: containerSize.width, height: containerSize.height)
+                .ignoresSafeArea()
+                .zIndex(4300)
+        }
+        if isMoviePlaybackVisible, areMovieControlsVisible {
+            MoviePlaybackControlsOverlay(
+                glyphState: movieControlsGlyphState,
+                currentTimeSeconds: moviePlaybackCurrentSeconds,
+                durationSeconds: moviePlaybackDurationSeconds,
+                isLoading: isMoviePreviewDownloadLoading,
+                loadingProgress: moviePreviewDownloadProgress,
+            )
+            .frame(width: containerSize.width, height: containerSize.height)
+            .opacity(movieControlsOpacity)
+            .ignoresSafeArea()
+            .zIndex(4500)
+        }
+        if let activeFullscreenScene {
+            FullscreenSceneHost(
+                scene: activeFullscreenScene,
+                builders: fullscreenSceneBuilders,
+            )
+            .frame(width: containerSize.width, height: containerSize.height)
+            .opacity(fullscreenSceneOpacity)
+            .ignoresSafeArea()
+            .zIndex(5000)
+        }
+        if activeFullscreenScene?.key == screenSaverFullscreenKey {
+            screenSaverNowPlayingToastView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(.leading, 42)
+                .padding(.bottom, 36)
+                .opacity(screenSaverNowPlayingToastOpacity)
+                .allowsHitTesting(false)
+                .zIndex(5105)
+        }
     }
 
     func menuScene(geometry: GeometryProxy) -> some View {
@@ -1451,27 +1511,6 @@ extension MenuView {
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center).opacity(menuSceneOpacity)
             if isMovieResumePromptVisible {
                 movieResumePromptOverlay(geometry: geometry).frame(width: geometry.size.width, height: geometry.size.height).opacity(movieResumePromptOpacity).zIndex(4200)
-            }
-            if isMoviePlaybackVisible, let moviePlayer {
-                VideoPlayerView(player: moviePlayer).frame(width: geometry.size.width, height: geometry.size.height).ignoresSafeArea()
-            }
-            if isMoviePlaybackVisible, areMovieControlsVisible {
-                MoviePlaybackControlsOverlay(
-                    glyphState: movieControlsGlyphState,
-                    currentTimeSeconds: moviePlaybackCurrentSeconds,
-                    durationSeconds: moviePlaybackDurationSeconds,
-                    isLoading: isMoviePreviewDownloadLoading,
-                    loadingProgress: moviePreviewDownloadProgress,
-                ).frame(width: geometry.size.width, height: geometry.size.height).opacity(movieControlsOpacity).zIndex(4500)
-            }
-            if let activeFullscreenScene {
-                FullscreenSceneHost(
-                    scene: activeFullscreenScene,
-                    builders: fullscreenSceneBuilders,
-                ).frame(width: geometry.size.width, height: geometry.size.height).opacity(fullscreenSceneOpacity).ignoresSafeArea().zIndex(5000)
-            }
-            if activeFullscreenScene?.key == screenSaverFullscreenKey {
-                screenSaverNowPlayingToastView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.leading, 42).padding(.bottom, 36).opacity(screenSaverNowPlayingToastOpacity).allowsHitTesting(false).zIndex(5105)
             }
         }.onPreferenceChange(RootMenuSelectionCenterPreferenceKey.self) { centerX in
             guard centerX.isFinite else { return }

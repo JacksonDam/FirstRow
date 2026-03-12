@@ -172,7 +172,7 @@ struct PhotoSlideshowFullscreenView: View {
         let maxPanX = canvasSize.width * 0.06
         let maxPanY = canvasSize.height * 0.045
         let centeredProgress = CGFloat(clampedProgress - 0.5)
-        return Image(nsImage: image).resizable().interpolation(.high).antialiased(true).scaledToFit().scaleEffect(zoom).offset(
+        return Image(nsImage: image).resizable().interpolation(.high).antialiased(true).scaledToFill().scaleEffect(zoom).offset(
             x: directionX * maxPanX * centeredProgress,
             y: directionY * maxPanY * centeredProgress,
         ).frame(width: canvasSize.width, height: canvasSize.height).clipped()

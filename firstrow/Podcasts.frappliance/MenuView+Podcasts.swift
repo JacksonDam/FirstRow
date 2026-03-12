@@ -325,10 +325,7 @@ extension MenuView {
     }
 
     func presentNoPodcastsFeatureErrorScreen() {
-        presentFeatureErrorScreen(
-            header: "First Row cannot find any podcasts.",
-            subcaption: "Use iTunes to subscribe to podcasts from the iTunes Store.",
-        )
+        presentFeatureErrorScreen(.noPodcasts)
     }
 
     func handlePodcastsRootMenuSelection(_ chosenRootItem: RootMenuItemConfig) {

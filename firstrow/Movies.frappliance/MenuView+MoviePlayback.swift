@@ -78,10 +78,7 @@ extension MenuView {
             }
         #endif
         playSound(named: "Limit")
-        presentFeatureErrorScreen(
-            header: "This video cannot be played in First Row.",
-            subcaption: "It appears to be protected media. Open it in Apple TV or Music.",
-        )
+        presentFeatureErrorScreen(.protectedVideoUnsupported)
     }
 
     func startMovieResumePromptTransition(for url: URL) {

@@ -9,7 +9,7 @@ struct RootMenuItemConfig: Identifiable, Equatable {
 }
 
 extension RootMenuItemConfig {
-    // by default, menu items are marked as leading to a menu (with an arrow visible on the option) but do nothing
+    /// by default, menu items are marked as leading to a menu (with an arrow visible on the option) but do nothing
     init(id: String, title: String, iconAssetName: String) {
         self.init(id: id, title: title, iconAssetName: iconAssetName, leadsToMenu: true, actionID: nil)
     }

@@ -376,6 +376,9 @@ extension MenuView {
                     self.photoLibraryLoadError = nil
                     self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, self.photosDateAlbums.count - 1))
                     self.refreshPhotosForCurrentContext()
+                    if self.thirdMenuMode == .photosDateAlbums, self.photosDateAlbums.isEmpty {
+                        self.abortPhotosDateAlbumsMenuEntryForEmptyLibrary()
+                    }
                 }
             }
         }
@@ -404,6 +407,14 @@ extension MenuView {
     }
 
     func enterPhotosDateAlbumsMenu(title: String) {
+        if photoLibraryHasLoadedAtLeastOnce,
+           !isLoadingPhotoLibrary,
+           photoLibraryLoadError == nil,
+           photosDateAlbums.isEmpty
+        {
+            presentNoPhotosLibraryFeatureErrorScreen()
+            return
+        }
         transitionMenuForFolderSwap(
             useOverlayFade: true,
             revealWhen: { !isLoadingPhotoLibrary },
@@ -419,14 +430,30 @@ extension MenuView {
         }
     }
 
-    func presentFeatureErrorScreen(header: String, subcaption: String) {
-        presentFullscreenScene(
-            key: featureErrorFullscreenKey,
-            payload: [
-                "header": header,
-                "subcaption": subcaption,
-            ],
+    func presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: Bool = false) {
+        presentFeatureErrorScreen(
+            .noMoviesInFolder,
+            usingExistingBlackout: afterMenuSwap,
         )
+    }
+
+    func presentNoPhotosLibraryFeatureErrorScreen(afterMenuSwap: Bool = false) {
+        presentFeatureErrorScreen(
+            .noPhotosInLibrary,
+            usingExistingBlackout: afterMenuSwap,
+        )
+    }
+
+    func abortPhotosDateAlbumsMenuEntryForEmptyLibrary() {
+        guard thirdMenuMode == .photosDateAlbums else { return }
+        isInThirdMenu = false
+        thirdMenuMode = .none
+        thirdMenuOpacity = 0
+        submenuOpacity = 1
+        headerText = rootMenuTitle(for: activeRootItemID)
+        selectedThirdIndex = 0
+        refreshDetailPreviewForCurrentContext()
+        presentNoPhotosLibraryFeatureErrorScreen(afterMenuSwap: true)
     }
 
     func startPhotoAlbumSlideshow(for album: PhotoLibraryAlbumEntry) {

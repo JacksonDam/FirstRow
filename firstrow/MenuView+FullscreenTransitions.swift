@@ -29,10 +29,7 @@ extension MenuView {
             guard self.activeFullscreenScene?.key == self.theatricalTrailersLoadingFullscreenKey else { return }
             self.transitionActiveFullscreenSceneWithOverlay(
                 to: self.featureErrorFullscreenKey,
-                payload: [
-                    "header": "An error occurred.",
-                    "subcaption": "",
-                ],
+                payload: FeatureErrorKind.genericOperationFailed.payload,
             )
         }
     }
@@ -78,6 +75,7 @@ extension MenuView {
         key: String,
         payload: [String: String] = [:],
         revealDelay: Double = 0,
+        usingExistingBlackout: Bool = false,
     ) {
         guard activeFullscreenScene == nil else { return }
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
@@ -94,6 +92,29 @@ extension MenuView {
         let isScreenSaverTransition = key == screenSaverFullscreenKey
         let fadeOutDuration = isScreenSaverTransition ? 1 : 0.28
         let fadeInDuration = isScreenSaverTransition ? 1 : 0.24
+        if usingExistingBlackout {
+            isMenuFolderSwapTransitioning = false
+            let totalRevealDelay = max(0, revealDelay)
+            DispatchQueue.main.asyncAfter(deadline: .now() + totalRevealDelay) {
+                guard self.isFullscreenSceneTransitioning else { return }
+                var instant = Transaction()
+                instant.disablesAnimations = true
+                withTransaction(instant) {
+                    self.menuSceneOpacity = 0
+                }
+                withAnimation(.easeInOut(duration: fadeInDuration)) {
+                    self.menuFolderSwapOverlayOpacity = 0
+                    self.fullscreenSceneOpacity = 1
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + fadeInDuration) {
+                    if key == musicNowPlayingFullscreenKey {
+                        self.updateMusicNowPlayingFlipTimerState()
+                    }
+                    self.isFullscreenSceneTransitioning = false
+                }
+            }
+            return
+        }
         let useOverlayForMenuFade =
             key == screenSaverFullscreenKey ||
             (key == musicNowPlayingFullscreenKey &&
@@ -273,10 +294,11 @@ extension MenuView {
                 )
             },
             featureErrorFullscreenKey: { scene in
-                AnyView(
+                let copy = FeatureErrorCopy.resolve(from: scene.payload)
+                return AnyView(
                     FeatureErrorFullscreenView(
-                        headerText: scene.payload["header"] ?? "First Row cannot complete this request.",
-                        subcaptionText: scene.payload["subcaption"] ?? "",
+                        headerText: copy.headerText,
+                        subcaptionText: copy.subcaptionText,
                     ),
                 )
             },

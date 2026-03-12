@@ -3,5 +3,6 @@
 .DS_Store
 Products/*
 Scripts/*
+dist/
 First Row.xcodeproj/xcuserdata/
 First Row.xcodeproj/project.xcworkspace/xcuserdata/

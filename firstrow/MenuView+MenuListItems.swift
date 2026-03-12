@@ -142,12 +142,7 @@ extension MenuView {
                 return []
             }
             if thirdMenuItems.isEmpty {
-                return [
-                    menuMessageItem(
-                        id: "movies_folder_empty",
-                        title: "No Movies Found",
-                    ),
-                ]
+                return []
             }
             return thirdMenuItems.map {
                 plainMenuListItem(id: $0.id, title: $0.title, leadsToMenu: $0.isDirectory)
@@ -211,12 +206,7 @@ extension MenuView {
                 ]
             }
             if photosDateAlbums.isEmpty {
-                return [
-                    menuMessageItem(
-                        id: "photos_library_empty",
-                        title: "No Photos in Library",
-                    ),
-                ]
+                return []
             }
             return photosDateAlbumMenuItems
         case .podcastsEpisodes:

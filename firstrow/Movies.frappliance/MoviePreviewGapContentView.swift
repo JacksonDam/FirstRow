@@ -294,13 +294,21 @@ struct AnimatedMetadataGapContentView: View {
             let safeAspect = max(0.4, min(3.0, effectiveAspectRatio))
             let initialHeight = initialWidth / safeAspect
             let frameInScene = geometry.frame(in: .named("menuSceneSpace"))
+            let usesCompactMetadataLayout = sceneSize.width <= MenuVirtualScenePreset.iPad.width
             let metadataLeftInset: CGFloat = 192
             let metadataBottomInset: CGFloat = 108
-            let baseMetadataWidth = min(760, max(560, geometry.size.width * 0.56))
+            let baseMetadataWidth = min(
+                usesCompactMetadataLayout ? 680 : 760,
+                max(
+                    usesCompactMetadataLayout ? 520 : 560,
+                    geometry.size.width * (usesCompactMetadataLayout ? 0.48 : 0.56),
+                ),
+            )
             let metadataWidth = baseMetadataWidth + 380
             let metadataTrimLeft: CGFloat = 105
             let metadataTrimRight: CGFloat = 65
             let metadataDisplayWidth = max(220, metadataWidth - (metadataTrimLeft + metadataTrimRight))
+            let startCoverCenterX = geometry.size.width * 0.5
             let metadataHeight = measuredMetadataHeight(
                 width: metadataDisplayWidth,
                 descriptionText: limitedDescriptionText,
@@ -312,10 +320,12 @@ struct AnimatedMetadataGapContentView: View {
             let metadataTopY = localMetadataTop
             let metadataOriginX = localMetadataLeft
             let metadataCenterX =
-                metadataOriginX
-                    + (metadataWidth * 0.5)
-                    - ((metadataWidth - baseMetadataWidth) * 0.5)
-                    + ((metadataTrimLeft - metadataTrimRight) * 0.5)
+                usesCompactMetadataLayout
+                    ? (startCoverCenterX + ((metadataTrimLeft - metadataTrimRight) * 0.5))
+                    : (metadataOriginX
+                        + (metadataWidth * 0.5)
+                        - ((metadataWidth - baseMetadataWidth) * 0.5)
+                        + ((metadataTrimLeft - metadataTrimRight) * 0.5))
             let metadataCenterY = metadataTopY + (metadataHeight * 0.5)
             let metadataGap: CGFloat = 18
             let minimumPosterTopGap: CGFloat = 105
@@ -333,8 +343,9 @@ struct AnimatedMetadataGapContentView: View {
             )
             let unitScale = lerp(from: 1.0, to: targetScale, progress: effectiveTransitionProgress)
             let scaledCoverHeight = initialHeight * unitScale
-            let finalCoverCenterX = metadataOriginX + (baseMetadataWidth * 0.5) + 21
-            let startCoverCenterX = geometry.size.width * 0.5
+            let finalCoverCenterX = usesCompactMetadataLayout
+                ? startCoverCenterX
+                : (metadataOriginX + (baseMetadataWidth * 0.5) + 21)
             let finalCoverCenterY = metadataTopY - metadataGap - (scaledCoverHeight * 0.5)
             let startCoverCenterY = geometry.size.height * 0.5
             let coverCenterX = lerp(from: startCoverCenterX, to: finalCoverCenterX, progress: effectiveTransitionProgress)

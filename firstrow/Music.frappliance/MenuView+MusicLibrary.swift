@@ -967,52 +967,35 @@ extension MenuView {
         return "Unable to access Music library"
     }
 
-    func musicLibraryEmptyErrorCopy(for mediaType: MusicLibraryMediaType) -> (header: String, subcaption: String) {
+    func musicLibraryEmptyErrorKind(for mediaType: MusicLibraryMediaType) -> FeatureErrorKind {
         switch mediaType {
         case .audiobooks:
-            (
-                "First Row cannot find any audiobooks.",
-                "Use iTunes to purchase audiobooks from the iTunes Store.",
-            )
+            .noAudiobooks
         case .musicVideos:
-            (
-                "First Row cannot find any music videos.",
-                "Use iTunes to purchase music videos from the iTunes Store.",
-            )
+            .noMusicVideos
         case .songs:
-            (
-                "First Row cannot find any songs.",
-                "Use iTunes to import songs or purchase songs from the iTunes Store.",
-            )
+            .noSongs
         }
     }
 
-    func musicCategoryEmptyErrorCopy(for kind: MusicCategoryKind) -> (header: String, subcaption: String) {
+    func musicCategoryEmptyErrorKind(for kind: MusicCategoryKind) -> FeatureErrorKind {
         switch kind {
         case .playlists:
-            (
-                "First Row cannot find any playlists.",
-                "Use iTunes to create and manage your playlists.",
-            )
+            .noPlaylists
         case .albums, .artists, .genres, .composers:
-            (
-                "First Row cannot find any songs.",
-                "Use iTunes to import songs or purchase songs from the iTunes Store.",
-            )
+            .noSongs
         }
     }
 
     func presentMusicLibraryEmptyError(for mediaType: MusicLibraryMediaType) {
-        let copy = musicLibraryEmptyErrorCopy(for: mediaType)
-        presentMusicLibraryEmptyErrorScreen(header: copy.header, subcaption: copy.subcaption)
+        presentMusicLibraryEmptyErrorScreen(musicLibraryEmptyErrorKind(for: mediaType))
     }
 
     func presentMusicCategoryEmptyError(for kind: MusicCategoryKind) {
-        let copy = musicCategoryEmptyErrorCopy(for: kind)
-        presentMusicLibraryEmptyErrorScreen(header: copy.header, subcaption: copy.subcaption)
+        presentMusicLibraryEmptyErrorScreen(musicCategoryEmptyErrorKind(for: kind))
     }
 
-    func presentMusicLibraryEmptyErrorScreen(header: String, subcaption: String) {
+    func presentMusicLibraryEmptyErrorScreen(_ kind: FeatureErrorKind) {
         guard activeRootItemID == "music", isInSubmenu else { return }
         var instant = Transaction()
         instant.animation = nil
@@ -1044,7 +1027,7 @@ extension MenuView {
                 }
                 return
             }
-            presentFeatureErrorScreen(header: header, subcaption: subcaption)
+            presentFeatureErrorScreen(kind)
         }
         presentWhenReady()
     }

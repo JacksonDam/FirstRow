@@ -423,10 +423,7 @@ extension MenuView {
         }
         if activeRootItemID == "photos", item.id == "photos_shared" {
             playSound(named: "Selection")
-            presentFeatureErrorScreen(
-                header: "First Row cannot find any shared photos.",
-                subcaption: "Use Photos to set up Shared Albums.",
-            )
+            presentFeatureErrorScreen(.noSharedPhotos)
             return
         }
         if activeRootItemID == "photos", item.id == "photos_library" {
@@ -586,10 +583,7 @@ extension MenuView {
                         self.loadThirdMenuDirectory(selectedDirectory, resetSelection: true)
                     }
                 } else {
-                    self.presentFeatureErrorScreen(
-                        header: "No content was found.",
-                        subcaption: "",
-                    )
+                    self.presentFeatureErrorScreen(.noContentFound)
                 }
             }
         }

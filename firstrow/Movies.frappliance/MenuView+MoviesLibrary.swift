@@ -586,6 +586,19 @@ extension MenuView {
                     self.moviesFolderSelectionIndexByDirectoryPath[key] = self.selectedThirdIndex
                 }
                 self.refreshDetailPreviewForCurrentContext()
+                let isShowingRootDirectory =
+                    self.thirdMenuRootURL?.standardizedFileURL == standardizedDirectory
+                if isShowingRootDirectory, scannedEntries.isEmpty {
+                    self.isInThirdMenu = false
+                    self.thirdMenuMode = .none
+                    self.thirdMenuOpacity = 0
+                    self.submenuOpacity = 1
+                    self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
+                    self.resetThirdMenuDirectoryState()
+                    self.moviesFolderSelectionIndexByDirectoryPath = [:]
+                    self.refreshDetailPreviewForCurrentContext()
+                    self.presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: true)
+                }
             }
         }
     }
