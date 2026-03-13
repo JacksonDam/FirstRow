@@ -147,6 +147,9 @@ extension MenuView {
         resetThirdMenuDirectoryState()
         resetAllITunesTopMenusForNonITunesContext()
         _ = incrementRequestID(&musicTopLevelCarouselRequestID)
+        isLoadingMusicTopLevelCarousel = false
+        musicTopLevelCarouselLoadOverlayOpacity = 0
+        musicTopLevelCarouselPageStartsInFlight.removeAll()
         let shouldPreserveMusicPlaylistForNowPlaying = chosenRootItem.id == "music" && hasActiveMusicPlaybackSession()
         let preservedMusicSongsThirdMenuItems = shouldPreserveMusicPlaylistForNowPlaying
             ? musicSongsThirdMenuItems
@@ -273,6 +276,9 @@ extension MenuView {
             }
         }
         _ = incrementRequestID(&musicTopLevelCarouselRequestID)
+        isLoadingMusicTopLevelCarousel = false
+        musicTopLevelCarouselLoadOverlayOpacity = 0
+        musicTopLevelCarouselPageStartsInFlight.removeAll()
         _ = incrementRequestID(&musicSongsRequestID)
         _ = incrementRequestID(&moviePreviewRequestID)
         _ = incrementRequestID(&moviesFolderSubmenuPreviewRequestID)

@@ -1,16 +1,29 @@
 import SwiftUI
 
 struct MusicTopLevelCarouselGapContentView: View {
-    let artworkImages: [NSImage?]
+    private enum ArtworkSource {
+        case staticImages([NSImage?])
+        case dynamic(
+            resolvedArtworkCount: Int?,
+            initialLoadedArtworkCount: Int,
+            artworkForGlobalIndex: (Int) -> NSImage?,
+            prefetchIfNeededForSerial: (Int) -> Void,
+            phaseResetKey: String,
+        )
+    }
+
+    private let artworkSource: ArtworkSource
     let baseIconSize: CGFloat
     let horizontalOffset: CGFloat
     let verticalOffset: CGFloat
     let preserveArtworkAspectRatio: Bool
     let exitOverlayOpacity: Double
     @State private var phaseOriginReferenceTime = Date.timeIntervalSinceReferenceDate
-    // we render 4 album covers so one can spawn in off-screen while 3 stay visible.
+
+    // We render 4 album covers so one can spawn off-screen while 3 stay visible.
     private let laneCount = 4
     private let coversPerSecond: Double = 0.075
+
     init(
         artworkImages: [NSImage?],
         baseIconSize: CGFloat,
@@ -19,7 +32,33 @@ struct MusicTopLevelCarouselGapContentView: View {
         preserveArtworkAspectRatio: Bool = false,
         exitOverlayOpacity: Double = 0,
     ) {
-        self.artworkImages = artworkImages
+        artworkSource = .staticImages(artworkImages)
+        self.baseIconSize = baseIconSize
+        self.horizontalOffset = horizontalOffset
+        self.verticalOffset = verticalOffset
+        self.preserveArtworkAspectRatio = preserveArtworkAspectRatio
+        self.exitOverlayOpacity = exitOverlayOpacity
+    }
+
+    init(
+        artworkCount: Int?,
+        initialLoadedArtworkCount: Int,
+        artworkForGlobalIndex: @escaping (Int) -> NSImage?,
+        prefetchIfNeededForSerial: @escaping (Int) -> Void,
+        baseIconSize: CGFloat,
+        horizontalOffset: CGFloat,
+        verticalOffset: CGFloat,
+        preserveArtworkAspectRatio: Bool = false,
+        exitOverlayOpacity: Double = 0,
+        phaseResetKey: String,
+    ) {
+        artworkSource = .dynamic(
+            resolvedArtworkCount: artworkCount,
+            initialLoadedArtworkCount: initialLoadedArtworkCount,
+            artworkForGlobalIndex: artworkForGlobalIndex,
+            prefetchIfNeededForSerial: prefetchIfNeededForSerial,
+            phaseResetKey: phaseResetKey,
+        )
         self.baseIconSize = baseIconSize
         self.horizontalOffset = horizontalOffset
         self.verticalOffset = verticalOffset
@@ -29,9 +68,7 @@ struct MusicTopLevelCarouselGapContentView: View {
 
     var body: some View {
         Group {
-            if artworkImages.isEmpty {
-                EmptyView()
-            } else {
+            if hasRenderableArtworks {
                 ZStack {
                     FirstRowTimelineView(minimumInterval: 1.0 / 60.0) { currentDate in
                         let elapsed = max(0, currentDate.timeIntervalSinceReferenceDate - phaseOriginReferenceTime)
@@ -42,16 +79,15 @@ struct MusicTopLevelCarouselGapContentView: View {
                             let progress = lanePosition - floor(lanePosition)
                             let wrapCount = Int(floor(lanePosition))
                             let serial = (wrapCount * laneCount) + slot
-                            let imageIndex = artworkIndexForSerial(serial, artworkCount: artworkImages.count)
                             let state = coverState(progress: progress)
                             return RenderedCover(
                                 slot: slot,
-                                image: artworkImages[imageIndex],
-                                progress: progress,
+                                image: artworkImage(forSerial: serial),
                                 serial: serial,
                                 state: state,
                             )
                         }.sorted { $0.state.depth < $1.state.depth }
+                        let prefetchSerial = renderedCovers.map(\.serial).max() ?? 0
                         ZStack {
                             ForEach(renderedCovers, id: \.slot) { renderedCover in
                                 MusicPreviewGapContentView(
@@ -67,10 +103,12 @@ struct MusicTopLevelCarouselGapContentView: View {
                                     reflectionOpacity: 0.30,
                                     reflectionFadeEnd: 0.44,
                                     reflectionBlurRadius: 0.35,
-                                ).scaleEffect(renderedCover.state.scale, anchor: .center).rotation3DEffect(.degrees(renderedCover.state.rotationDegrees),
-                                                                                                           axis: (x: 0, y: 0, z: 1),
-                                                                                                           anchor: .center,
-                                                                                                           perspective: 0).offset(
+                                ).scaleEffect(renderedCover.state.scale, anchor: .center).rotation3DEffect(
+                                    .degrees(renderedCover.state.rotationDegrees),
+                                    axis: (x: 0, y: 0, z: 1),
+                                    anchor: .center,
+                                    perspective: 0,
+                                ).offset(
                                     x: horizontalOffset + renderedCover.state.x,
                                     y: verticalOffset + renderedCover.state.y,
                                 ).zIndex(renderedCover.state.depth - 0.35).opacity(renderedCover.state.opacity)
@@ -89,30 +127,76 @@ struct MusicTopLevelCarouselGapContentView: View {
                                     reflectionOpacity: 0.30,
                                     reflectionFadeEnd: 0.44,
                                     reflectionBlurRadius: 0.35,
-                                ).scaleEffect(renderedCover.state.scale, anchor: .center).rotation3DEffect(.degrees(renderedCover.state.rotationDegrees),
-                                                                                                           axis: (x: 0, y: 0, z: 1),
-                                                                                                           anchor: .center,
-                                                                                                           perspective: 0).offset(
+                                ).scaleEffect(renderedCover.state.scale, anchor: .center).rotation3DEffect(
+                                    .degrees(renderedCover.state.rotationDegrees),
+                                    axis: (x: 0, y: 0, z: 1),
+                                    anchor: .center,
+                                    perspective: 0,
+                                ).offset(
                                     x: horizontalOffset + renderedCover.state.x,
                                     y: verticalOffset + renderedCover.state.y,
                                 ).zIndex(renderedCover.state.depth + 0.35).opacity(renderedCover.state.opacity)
                             }
+                        }.onAppear {
+                            requestPrefetchIfNeeded(forSerial: prefetchSerial)
+                        }.onChange(of: prefetchSerial) { newValue in
+                            requestPrefetchIfNeeded(forSerial: newValue)
                         }
                     }
                     Rectangle().fill(Color.black).frame(
                         width: max(baseIconSize * 3.75, 1500),
                         height: max(baseIconSize * 4.0, 1200),
                     ).offset(x: horizontalOffset, y: verticalOffset).allowsHitTesting(false).opacity(exitOverlayOpacity).zIndex(10000)
-                }.onChange(of: artworkIdentityKey, perform: { _ in
+                }.onChange(of: phaseIdentityKey) { _ in
                     phaseOriginReferenceTime = Date.timeIntervalSinceReferenceDate
-                }).onAppear {
+                }.onAppear {
                     phaseOriginReferenceTime = Date.timeIntervalSinceReferenceDate
                 }
+            } else {
+                EmptyView()
             }
         }
     }
 
-    private var artworkIdentityKey: String {
+    private var hasRenderableArtworks: Bool {
+        switch artworkSource {
+        case let .staticImages(artworkImages):
+            !artworkImages.isEmpty
+        case let .dynamic(_, initialLoadedArtworkCount, _, _, _):
+            initialLoadedArtworkCount > 0
+        }
+    }
+
+    private var phaseIdentityKey: String {
+        switch artworkSource {
+        case let .staticImages(artworkImages):
+            artworkIdentityKey(for: artworkImages)
+        case let .dynamic(_, _, _, _, phaseResetKey):
+            phaseResetKey
+        }
+    }
+
+    private func requestPrefetchIfNeeded(forSerial serial: Int) {
+        guard case let .dynamic(_, _, _, prefetchIfNeededForSerial, _) = artworkSource else { return }
+        prefetchIfNeededForSerial(serial)
+    }
+
+    private func artworkImage(forSerial serial: Int) -> NSImage? {
+        switch artworkSource {
+        case let .staticImages(artworkImages):
+            let imageIndex = artworkIndexForSerial(serial, artworkCount: artworkImages.count)
+            return artworkImages[imageIndex]
+        case let .dynamic(resolvedArtworkCount, _, artworkForGlobalIndex, _, _):
+            let globalIndex: Int = if let resolvedArtworkCount, resolvedArtworkCount > 0 {
+                wrappedIndex(serial, count: resolvedArtworkCount)
+            } else {
+                max(0, serial)
+            }
+            return artworkForGlobalIndex(globalIndex)
+        }
+    }
+
+    private func artworkIdentityKey(for artworkImages: [NSImage?]) -> String {
         artworkImages.enumerated().map { index, image in
             if let image {
                 return "\(index):\(ObjectIdentifier(image).hashValue)"
@@ -148,11 +232,11 @@ struct MusicTopLevelCarouselGapContentView: View {
         let x: CGFloat
         if u < 0.30 {
             let t = u / 0.30
-            let eased = 1.0 - pow(1.0 - t, 2.0) // ease-out to the peak
+            let eased = 1.0 - pow(1.0 - t, 2.0)
             x = xHidden + ((xPeak - xHidden) * CGFloat(eased))
         } else {
             let t = (u - 0.30) / 0.70
-            let eased = t * t // accelerate toward exit (no end slow-down)
+            let eased = t * t
             x = xPeak + ((xExit - xPeak) * CGFloat(eased))
         }
         let y: CGFloat = previewSide * 0.12
@@ -179,7 +263,6 @@ struct MusicTopLevelCarouselGapContentView: View {
 private struct RenderedCover {
     let slot: Int
     let image: NSImage?
-    let progress: Double
     let serial: Int
     let state: CoverState
 }

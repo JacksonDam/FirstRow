@@ -297,7 +297,7 @@ extension MenuView {
     var shouldShowMusicTopLevelCarouselContent: Bool {
         guard let selectedTopLevelMusicCarouselSubmenuID else { return false }
         guard musicTopLevelCarouselActiveSubmenuID == selectedTopLevelMusicCarouselSubmenuID else { return false }
-        return !musicTopLevelCarouselArtworks.isEmpty
+        return musicTopLevelCarouselLoadedArtworkCount > 0
     }
 
     var shouldUseMusicTopLevelCarouselSlot: Bool {
@@ -310,7 +310,10 @@ extension MenuView {
         let forwardExitOverlay = (shouldShowMusicTopLevelCarouselContent && forwardTransitioning)
             ? (1 - menuSceneOpacity)
             : 0
-        return min(1, max(0, max(backspaceExitOverlay, forwardExitOverlay)))
+        return min(
+            1,
+            max(0, max(backspaceExitOverlay, max(forwardExitOverlay, musicTopLevelCarouselLoadOverlayOpacity))),
+        )
     }
 
     var iTunesTopCarouselExitOverlayOpacity: Double {
@@ -398,6 +401,20 @@ extension MenuView {
             verticalOffset: gapContentVerticalOffset - 34,
             preserveArtworkAspectRatio: preserveAspect,
             exitOverlayOpacity: exitOpacity,
+        )
+    }
+
+    func musicGapCarousel(exitOpacity: Double) -> some View {
+        MusicTopLevelCarouselGapContentView(
+            artworkCount: musicTopLevelCarouselResolvedArtworkCount,
+            initialLoadedArtworkCount: musicTopLevelCarouselLoadedArtworkCount,
+            artworkForGlobalIndex: musicTopLevelCarouselArtwork(forGlobalIndex:),
+            prefetchIfNeededForSerial: prefetchMusicTopLevelCarouselIfNeeded(forSerial:),
+            baseIconSize: iconSize,
+            horizontalOffset: musicTopLevelCarouselHorizontalOffset,
+            verticalOffset: gapContentVerticalOffset - 34,
+            exitOverlayOpacity: exitOpacity,
+            phaseResetKey: "music_top_level_carousel",
         )
     }
 
@@ -547,6 +564,7 @@ extension MenuView {
                         shouldShowMusicPreviewContent ||
                         shouldShowMusicNowPlayingGapPreview ||
                         shouldShowAnyMusicITunesTopPreview ||
+                        shouldShowMusicTopLevelCarousel ||
                         shouldUseMusicTopLevelCarouselSlot ||
                         shouldUseITunesTopSongsCarouselSlot ||
                         shouldUseITunesTopMusicVideosCarouselSlot
@@ -611,7 +629,7 @@ extension MenuView {
                             ).id(currentITunesTopPreviewTargetID(.musicVideos) ?? "itunes_top_music_video_preview").transition(.opacity.animation(.easeInOut(duration: 0.22))).opacity(1)
                         }
                         if shouldShowMusicTopLevelCarousel {
-                            gapCarousel(artworks: musicTopLevelCarouselArtworks, exitOpacity: musicTopLevelCarouselExitOverlayOpacity)
+                            musicGapCarousel(exitOpacity: musicTopLevelCarouselExitOverlayOpacity)
                         } else if shouldShowITunesTopSongsCarousel {
                             gapCarousel(artworks: currentITunesTopCarouselArtworks(.songs), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
                         } else if shouldShowITunesTopMusicVideosCarousel {

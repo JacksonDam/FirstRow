@@ -48,6 +48,7 @@ struct MenuView: View {
     let screenSaverNowPlayingToastFadeDuration: Double = 0.5
     let screenSaverNowPlayingToastVisibleDuration: Double = 10.0
     let screenSaverNowPlayingToastSize = CGSize(width: 500, height: 170)
+    let screenSaverMusicTrackSwitchCoalesceDelay: TimeInterval = 0.07
     let photoSlideshowPhotoDisplayDuration: Double = 3.0
     let photoSlideshowCrossfadeDuration: Double = 1.0
     let photoSlideshowMenuFadeDuration: Double = 0.28
@@ -167,6 +168,10 @@ struct MenuView: View {
     @State var isLoadingMusicSongs = false
     @State var musicSongsLoadError: String?
     @State var musicSongsRequestID = 0
+    @State var musicShuffleRequestID = 0
+    @State var musicAllSongsCache: [MusicLibrarySongEntry]?
+    @State var musicShuffleSongsCache: [MusicLibrarySongEntry]?
+    @State var musicLibraryItemIndexBySongID: [String: Int] = [:]
 
     // MARK: - Movie playback state
 
@@ -231,9 +236,13 @@ struct MenuView: View {
     @State var musicPreviewRequestID = 0
     @State var musicPreviewCache: [String: NSImage] = [:]
     @State var musicTopLevelCarouselActiveSubmenuID: String?
-    @State var musicTopLevelCarouselArtworks: [NSImage?] = []
-    @State var musicTopLevelCarouselArtworkCache: [String: [NSImage?]] = [:]
+    @State var musicTopLevelCarouselArtworksByIndex: [Int: NSImage?] = [:]
+    @State var musicTopLevelCarouselLoadedArtworkCount = 0
+    @State var musicTopLevelCarouselResolvedArtworkCount: Int?
+    @State var musicTopLevelCarouselPageStartsInFlight: Set<Int> = []
     @State var musicTopLevelCarouselRequestID = 0
+    @State var isLoadingMusicTopLevelCarousel = false
+    @State var musicTopLevelCarouselLoadOverlayOpacity: Double = 0
 
     // MARK: - Podcasts state
 
@@ -294,6 +303,7 @@ struct MenuView: View {
     @State var musicNowPlayingAlbum = ""
     @State var musicNowPlayingTrackPositionText = ""
     @State var musicNowPlayingArtwork: NSImage?
+    @State var musicNowPlayingArtworkRequestID: Int = 0
     @State var musicNowPlayingElapsedSeconds: Double = 0
     @State var musicNowPlayingDurationSeconds: Double = 0
     @State var musicNowPlayingShowsShuffleGlyph = false
@@ -342,6 +352,8 @@ struct MenuView: View {
 
     @State var screenSaverNowPlayingToastOpacity: Double = 0
     @State var screenSaverNowPlayingToastHideWorkItem: DispatchWorkItem?
+    @State var screenSaverPendingMusicTrackSwitchDelta = 0
+    @State var screenSaverPendingMusicTrackSwitchWorkItem: DispatchWorkItem?
     @State var lastUserInteractionAt = Date()
     @State var screenSaverIdleMonitorTimer: Timer?
 

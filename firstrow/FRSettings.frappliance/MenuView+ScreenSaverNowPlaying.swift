@@ -7,9 +7,34 @@ import SwiftUI
 import Darwin
 
 extension MenuView {
+    func queueScreenSaverMusicTrackSwitch(direction: Int) {
+        guard direction != 0 else { return }
+        screenSaverPendingMusicTrackSwitchDelta += direction
+        screenSaverPendingMusicTrackSwitchWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            let pendingDelta = self.screenSaverPendingMusicTrackSwitchDelta
+            self.screenSaverPendingMusicTrackSwitchDelta = 0
+            self.screenSaverPendingMusicTrackSwitchWorkItem = nil
+            guard self.activeFullscreenScene?.key == self.screenSaverFullscreenKey else { return }
+            self.switchMusicNowPlayingTrack(direction: pendingDelta)
+        }
+        screenSaverPendingMusicTrackSwitchWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + screenSaverMusicTrackSwitchCoalesceDelay,
+            execute: workItem,
+        )
+    }
+
+    func cancelScreenSaverMusicTrackSwitchQueue() {
+        screenSaverPendingMusicTrackSwitchWorkItem?.cancel()
+        screenSaverPendingMusicTrackSwitchWorkItem = nil
+        screenSaverPendingMusicTrackSwitchDelta = 0
+    }
+
     func dismissScreenSaverForUserInteraction() {
         registerUserInteractionForScreenSaver()
         endDirectionalHoldSession()
+        cancelScreenSaverMusicTrackSwitchQueue()
         dismissFullscreenScene(preserveMusicPlayback: true)
     }
 
@@ -17,9 +42,9 @@ extension MenuView {
         _ = isRepeat
         switch key {
         case .upArrow:
-            switchMusicNowPlayingTrack(direction: -1)
+            queueScreenSaverMusicTrackSwitch(direction: -1)
         case .downArrow:
-            switchMusicNowPlayingTrack(direction: 1)
+            queueScreenSaverMusicTrackSwitch(direction: 1)
         default:
             dismissFullscreenScene(preserveMusicPlayback: true)
         }
@@ -47,6 +72,7 @@ extension MenuView {
     }
 
     func clearScreenSaverNowPlayingToast() {
+        cancelScreenSaverMusicTrackSwitchQueue()
         screenSaverNowPlayingToastHideWorkItem?.cancel()
         screenSaverNowPlayingToastHideWorkItem = nil
         var instant = Transaction()

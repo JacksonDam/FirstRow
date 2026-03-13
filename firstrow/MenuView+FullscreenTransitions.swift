@@ -89,6 +89,8 @@ extension MenuView {
         activeFullscreenScene = FullscreenScenePresentation(key: key, payload: payload)
         fullscreenSceneOpacity = 0
         fullscreenTransitionOverlayOpacity = 0
+        let shouldRevealDeferredNowPlaying =
+            key == musicNowPlayingFullscreenKey && deferNowPlayingMenuItemUntilAfterFadeOut
         let isScreenSaverTransition = key == screenSaverFullscreenKey
         let fadeOutDuration = isScreenSaverTransition ? 1 : 0.28
         let fadeInDuration = isScreenSaverTransition ? 1 : 0.24
@@ -97,6 +99,9 @@ extension MenuView {
             let totalRevealDelay = max(0, revealDelay)
             DispatchQueue.main.asyncAfter(deadline: .now() + totalRevealDelay) {
                 guard self.isFullscreenSceneTransitioning else { return }
+                if shouldRevealDeferredNowPlaying {
+                    self.revealDeferredNowPlayingMenuItemIfNeeded(compensateSelection: true)
+                }
                 var instant = Transaction()
                 instant.disablesAnimations = true
                 withTransaction(instant) {
@@ -124,8 +129,6 @@ extension MenuView {
                 (shouldShowMusicTopLevelCarouselContent ||
                     shouldShowITunesTopSongsCarouselContent ||
                     shouldShowITunesTopMusicVideosCarouselContent))
-        let shouldRevealDeferredNowPlaying =
-            key == musicNowPlayingFullscreenKey && deferNowPlayingMenuItemUntilAfterFadeOut
         if useOverlayForMenuFade {
             withAnimation(.easeInOut(duration: fadeOutDuration)) {
                 fullscreenTransitionOverlayOpacity = 1
