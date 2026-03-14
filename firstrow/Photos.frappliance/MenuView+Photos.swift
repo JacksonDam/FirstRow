@@ -4,6 +4,9 @@ import SwiftUI
 #if os(iOS)
     import UIKit
 #endif
+#if canImport(iTunesLibrary)
+    import iTunesLibrary
+#endif
 
 private let photosImageRequestQueue = DispatchQueue(
     label: "firstrow.photos.image-requests",
@@ -477,7 +480,12 @@ extension MenuView {
         photoSlideshowPausedIndex = 0
         photoSlideshowDidSeekWhilePaused = false
         photoSlideshowHasFinished = false
+        photoSlideshowResolvedMusicEntry = nil
         photoSlideshowMusicURL = nil
+        photoSlideshowMusicFallbackWorkItem?.cancel()
+        photoSlideshowMusicFallbackWorkItem = nil
+        photoSlideshowMusicHasStarted = false
+        photoSlideshowUsesAppleScriptMusic = false
         activeFullscreenScene = nil
         fullscreenSceneOpacity = 0
         fullscreenTransitionOverlayOpacity = 0
@@ -496,11 +504,6 @@ extension MenuView {
             }
         }
         loadPhotoSlideshowImages(for: album, requestID: requestID)
-        resolvePhotoSlideshowMusicURL(forRequestID: requestID)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            guard self.photoSlideshowRequestID == requestID else { return }
-            self.startPhotoSlideshowBackgroundMusicFromResolvedSource()
-        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             guard self.photoSlideshowRequestID == requestID else { return }
             self.activeFullscreenScene = FullscreenScenePresentation(key: self.photoSlideshowFullscreenKey, payload: [:])
@@ -511,6 +514,7 @@ extension MenuView {
                 self.fullscreenTransitionOverlayOpacity = 0
             }
             self.isFullscreenSceneTransitioning = false
+            self.resolvePhotoSlideshowMusicURL(forRequestID: requestID)
         }
     }
 
@@ -518,27 +522,57 @@ extension MenuView {
         requestMusicLibraryAuthorization { isAuthorized in
             guard self.photoSlideshowRequestID == requestID else { return }
             guard isAuthorized else {
+                self.photoSlideshowResolvedMusicEntry = nil
                 self.photoSlideshowMusicURL = self.defaultPhotoSlideshowMusicURL()
+                self.startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded()
+                return
+            }
+            if let cachedSong = self.randomCachedMusicLibrarySong() {
+                self.photoSlideshowResolvedMusicEntry = cachedSong
+                self.photoSlideshowMusicURL = nil
+                self.startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded()
                 return
             }
             DispatchQueue.global(qos: .userInitiated).async {
-                let songs: [MusicLibrarySongEntry]
+                let resolvedSong: MusicLibrarySongEntry?
+                let snapshot: (
+                    sortedSongs: [MusicLibrarySongEntry],
+                    shuffleSongs: [MusicLibrarySongEntry],
+                    itemIndices: [String: Int],
+                    artworkDataByAlbumKey: [String: Data],
+                )?
                 do {
-                    songs = try self.fetchMusicLibrarySongs()
+                    let loadedSnapshot = try self.loadStartupMusicLibrarySnapshot()
+                    snapshot = loadedSnapshot
+                    resolvedSong = loadedSnapshot.shuffleSongs.randomElement()
                 } catch {
-                    DispatchQueue.main.async {
-                        guard self.photoSlideshowRequestID == requestID else { return }
-                        self.photoSlideshowMusicURL = self.defaultPhotoSlideshowMusicURL()
-                    }
-                    return
+                    snapshot = nil
+                    resolvedSong = nil
                 }
-                let randomSongURL = songs.compactMap(\.url).randomElement()
                 DispatchQueue.main.async {
                     guard self.photoSlideshowRequestID == requestID else { return }
-                    self.photoSlideshowMusicURL = randomSongURL ?? self.defaultPhotoSlideshowMusicURL()
+                    if let snapshot {
+                        self.musicAllSongsCache = snapshot.sortedSongs
+                        self.musicShuffleSongsCache = snapshot.shuffleSongs
+                        #if canImport(iTunesLibrary)
+                            self.musicLibraryItemIndexBySongID = snapshot.itemIndices
+                            self.musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
+                        #endif
+                    }
+                    self.photoSlideshowResolvedMusicEntry = resolvedSong
+                    self.photoSlideshowMusicURL = resolvedSong == nil ? self.defaultPhotoSlideshowMusicURL() : nil
+                    self.startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded()
                 }
             }
         }
+    }
+
+    func fetchRandomPhotoSlideshowMusicSong() throws -> MusicLibrarySongEntry? {
+        if let cachedSong = randomCachedMusicLibrarySong() {
+            return cachedSong
+        }
+        let snapshot = try loadStartupMusicLibrarySnapshot()
+        return snapshot.shuffleSongs.randomElement()
     }
 
     func loadPhotoSlideshowImages(for album: PhotoLibraryAlbumEntry, requestID: Int) {
@@ -581,14 +615,41 @@ extension MenuView {
         }
     }
 
-    func startPhotoSlideshowBackgroundMusicFromResolvedSource() {
-        let fallbackURL = defaultPhotoSlideshowMusicURL()
-        guard let urlToPlay = photoSlideshowMusicURL ?? fallbackURL else { return }
+    func startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded() {
+        guard !photoSlideshowMusicHasStarted else { return }
+        photoSlideshowMusicFallbackWorkItem?.cancel()
+        photoSlideshowMusicFallbackWorkItem = nil
+        if let resolvedSong = photoSlideshowResolvedMusicEntry {
+            photoSlideshowMusicHasStarted = true
+            startMusicPlayback(
+                from: resolvedSong,
+                trackIndex: 0,
+                trackCount: 1,
+                presentsFullscreen: false,
+                playbackQueue: [resolvedSong],
+            )
+            return
+        }
+        guard let urlToPlay = photoSlideshowMusicURL ?? defaultPhotoSlideshowMusicURL() else { return }
+        photoSlideshowMusicHasStarted = true
         startLoopingPhotoSlideshowMusic(from: urlToPlay)
     }
 
     func startLoopingPhotoSlideshowMusic(from url: URL) {
-        stopPhotoSlideshowMusic()
+        stopMusicPlaybackSession(clearDisplayState: false)
+        photoSlideshowMusicPlayer?.pause()
+        photoSlideshowMusicPlayer = nil
+        if let photoSlideshowMusicDidEndObserver {
+            NotificationCenter.default.removeObserver(photoSlideshowMusicDidEndObserver)
+        }
+        photoSlideshowMusicDidEndObserver = nil
+        observedPhotoSlideshowMusicPlayer = nil
+        #if os(macOS)
+            if photoSlideshowUsesAppleScriptMusic {
+                pauseMusicPlaybackViaAppleScript()
+            }
+        #endif
+        photoSlideshowUsesAppleScriptMusic = false
         let player = AVPlayer(url: url)
         observedPhotoSlideshowMusicPlayer = player
         photoSlideshowMusicPlayer = player
@@ -607,6 +668,16 @@ extension MenuView {
     }
 
     func stopPhotoSlideshowMusic() {
+        photoSlideshowMusicFallbackWorkItem?.cancel()
+        photoSlideshowMusicFallbackWorkItem = nil
+        stopMusicPlaybackSession(clearDisplayState: false)
+        #if os(macOS)
+            if photoSlideshowUsesAppleScriptMusic {
+                pauseMusicPlaybackViaAppleScript()
+            }
+        #endif
+        photoSlideshowUsesAppleScriptMusic = false
+        photoSlideshowMusicHasStarted = false
         photoSlideshowMusicPlayer?.pause()
         photoSlideshowMusicPlayer = nil
         if let photoSlideshowMusicDidEndObserver {
@@ -788,7 +859,12 @@ extension MenuView {
         photoSlideshowPausedIndex = 0
         photoSlideshowDidSeekWhilePaused = false
         photoSlideshowHasFinished = false
+        photoSlideshowResolvedMusicEntry = nil
         photoSlideshowMusicURL = nil
+        photoSlideshowMusicFallbackWorkItem?.cancel()
+        photoSlideshowMusicFallbackWorkItem = nil
+        photoSlideshowMusicHasStarted = false
+        photoSlideshowUsesAppleScriptMusic = false
         fullscreenSceneOpacity = 0
     }
 

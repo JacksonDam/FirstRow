@@ -31,8 +31,9 @@ struct MenuView: View {
 
     // MARK: - Duration constants
 
-    let iconFlightAnimationDuration: Double = 0.5
-    let iconFlightHandoffPadding: Double = 0.085
+    let iconFlightAnimationDuration: Double = 0.75
+    let submenuBackgroundIconTransitionDuration: Double = 0.75
+    let submenuBackgroundIconReturnDuration: Double = 0.75
     let movieEntryFadeDuration: Double = 0.48
     let movieEntryBlackHoldDuration: Double = 1.0
     let movieExitFreezeHoldDuration: Double = 0.5
@@ -169,9 +170,13 @@ struct MenuView: View {
     @State var musicSongsLoadError: String?
     @State var musicSongsRequestID = 0
     @State var musicShuffleRequestID = 0
+    @State var musicStartupPreloadRequestID = 0
     @State var musicAllSongsCache: [MusicLibrarySongEntry]?
     @State var musicShuffleSongsCache: [MusicLibrarySongEntry]?
     @State var musicLibraryItemIndexBySongID: [String: Int] = [:]
+    @State var hasStartedStartupMusicLibraryPreload = false
+    @State var isStartupMusicLibraryPreloadComplete = false
+    @State var startupMusicLibraryPreloadOverlayOpacity: Double = 1
 
     // MARK: - Movie playback state
 
@@ -235,6 +240,7 @@ struct MenuView: View {
     @State var musicPreviewImage: NSImage?
     @State var musicPreviewRequestID = 0
     @State var musicPreviewCache: [String: NSImage] = [:]
+    @State var musicLibraryArtworkDataByAlbumKey: [String: Data] = [:]
     @State var musicTopLevelCarouselActiveSubmenuID: String?
     @State var musicTopLevelCarouselArtworksByIndex: [Int: NSImage?] = [:]
     @State var musicTopLevelCarouselLoadedArtworkCount = 0
@@ -287,16 +293,21 @@ struct MenuView: View {
     @State var photoSlideshowPausedIndex = 0
     @State var photoSlideshowDidSeekWhilePaused = false
     @State var photoSlideshowHasFinished = false
+    @State var photoSlideshowResolvedMusicEntry: MusicLibrarySongEntry?
     @State var photoSlideshowMusicURL: URL?
     @State var photoSlideshowMusicPlayer: AVPlayer?
     @State var observedPhotoSlideshowMusicPlayer: AVPlayer?
     @State var photoSlideshowMusicDidEndObserver: NSObjectProtocol?
+    @State var photoSlideshowMusicFallbackWorkItem: DispatchWorkItem?
+    @State var photoSlideshowMusicHasStarted = false
+    @State var photoSlideshowUsesAppleScriptMusic = false
 
     // MARK: - Music playback state
 
     @State var deferNowPlayingMenuItemUntilAfterFadeOut = false
     @State var holdNowPlayingMenuItemDuringExitFade = false
     @State var isMusicSongsShuffleMode = false
+    @State var activeMusicPlaybackQueue: [MusicLibrarySongEntry] = []
     @State var activeMusicPlaybackSongID: String?
     @State var musicNowPlayingTitle = "Unknown Song"
     @State var musicNowPlayingArtist = "Unknown Artist"
@@ -323,6 +334,7 @@ struct MenuView: View {
     @State var musicNowPlayingFlipGeneration: Int = 0
     @State var isMusicNowPlayingFlipAnimating = false
     @State var musicAudioPlayer: AVPlayer?
+    @State var isCurrentMusicPlaybackUsingAppleScript = false
     @State var currentMusicPlaybackTemporaryFileURL: URL?
     @State var musicTimeObserverToken: Any?
     @State var musicPlaybackDidEndObserver: NSObjectProtocol?

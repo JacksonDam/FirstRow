@@ -321,6 +321,7 @@ extension MenuView {
                     genre: "",
                     composer: "",
                     durationSeconds: 0,
+                    artworkAlbumKey: nil,
                     url: temporaryAudioURL,
                     artwork: resolvedArtwork,
                     musicKitSong: nil,
@@ -334,6 +335,7 @@ extension MenuView {
                     genre: "",
                     composer: "",
                     durationSeconds: 0,
+                    artworkAlbumKey: nil,
                     url: temporaryAudioURL,
                     artwork: resolvedArtwork,
                 )

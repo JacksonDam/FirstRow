@@ -89,6 +89,7 @@ extension MenuView {
                 genre: "Podcast",
                 composer: "",
                 durationSeconds: 0,
+                artworkAlbumKey: nil,
                 url: mediaURL,
                 artwork: artwork,
                 musicKitSong: nil,
@@ -102,6 +103,7 @@ extension MenuView {
                 genre: "Podcast",
                 composer: "",
                 durationSeconds: 0,
+                artworkAlbumKey: nil,
                 url: mediaURL,
                 artwork: artwork,
             )
@@ -124,6 +126,7 @@ extension MenuView {
         trackIndex: Int,
         trackCount: Int,
         presentsFullscreen: Bool = true,
+        playbackQueue: [MusicLibrarySongEntry]? = nil,
     ) {
         if let mediaURL = song.url?.standardizedFileURL,
            activeMusicLibraryMediaType == .musicVideos,
@@ -137,6 +140,7 @@ extension MenuView {
             trackIndex: trackIndex,
             trackCount: trackCount,
             presentsFullscreen: presentsFullscreen,
+            playbackQueue: playbackQueue,
         )
     }
 
@@ -150,32 +154,11 @@ extension MenuView {
             return
         }
         let activeSongID = song.id
-        let artworkURL = song.url?.standardizedFileURL
         Task.detached(priority: .userInitiated) {
-            let resolvedArtwork: NSImage?
-            if let artworkURL,
-               let thumbnailArtwork = await self.generateMusicArtworkThumbnail(for: artworkURL)
-            {
-                resolvedArtwork = thumbnailArtwork
-            } else {
-                let shouldContinue = await MainActor.run {
-                    self.musicNowPlayingArtworkRequestID == requestID &&
-                        self.activeMusicPlaybackSongID == activeSongID
-                }
-                guard shouldContinue else { return }
-                let libraryArtworkData = await MainActor.run {
-                    self.loadMusicLibraryArtworkData(for: song)
-                }
-                if let libraryArtworkData {
-                    resolvedArtwork = cachedDecodedDisplayArtworkImage(
-                        from: libraryArtworkData,
-                        sourceKey: cacheKey,
-                        maxPixelSize: 900,
-                    )
-                } else {
-                    resolvedArtwork = nil
-                }
-            }
+            let resolvedArtwork = await self.resolveMusicArtworkImage(
+                for: song,
+                cacheKey: cacheKey,
+            )
             guard let resolvedArtwork else { return }
             let shouldContinue = await MainActor.run {
                 self.musicNowPlayingArtworkRequestID == requestID &&
@@ -193,38 +176,59 @@ extension MenuView {
         }
     }
 
-    func prefetchMusicArtworkAroundTrackIndex(
-        _ trackIndex: Int,
-        activeSongID: String,
-        requestID: Int,
-        lookaheadCount: Int = 2,
-    ) {
-        guard lookaheadCount > 0 else { return }
-        guard !musicSongsThirdMenuItems.isEmpty else { return }
-        guard musicSongsThirdMenuItems.indices.contains(trackIndex) else { return }
-        guard musicSongsThirdMenuItems[trackIndex].id == activeSongID else { return }
-        let upcomingSongs = Array(musicSongsThirdMenuItems.dropFirst(trackIndex + 1).prefix(lookaheadCount))
-        guard !upcomingSongs.isEmpty else { return }
-        for song in upcomingSongs {
-            guard song.artwork == nil else { continue }
-            guard let artworkURL = song.url?.standardizedFileURL else { continue }
-            guard let cacheKey = musicArtworkCacheKey(for: song) else { continue }
-            guard musicPreviewCache[cacheKey] == nil else { continue }
-            Task.detached(priority: .utility) { [artworkURL] in
-                guard let resolvedArtwork = await self.generateMusicArtworkThumbnail(for: artworkURL) else {
-                    return
-                }
-                await MainActor.run {
-                    guard self.musicNowPlayingArtworkRequestID == requestID else { return }
-                    if self.musicPreviewCache[cacheKey] == nil {
-                        self.musicPreviewCache[cacheKey] = resolvedArtwork
-                    }
+    func resolvedActiveMusicPlaybackQueue() -> [MusicLibrarySongEntry] {
+        if !activeMusicPlaybackQueue.isEmpty {
+            return activeMusicPlaybackQueue
+        }
+        return musicSongsThirdMenuItems
+    }
+
+    func prefetchMusicArtworkIfNeeded(for song: MusicLibrarySongEntry) {
+        guard song.artwork == nil else { return }
+        guard let cacheKey = musicArtworkCacheKey(for: song) else { return }
+        guard musicPreviewCache[cacheKey] == nil else { return }
+        Task.detached(priority: .utility) {
+            let resolvedArtwork = await self.resolveMusicArtworkImage(
+                for: song,
+                cacheKey: cacheKey,
+            )
+            guard let resolvedArtwork else { return }
+            await MainActor.run {
+                if self.musicPreviewCache[cacheKey] == nil {
+                    self.musicPreviewCache[cacheKey] = resolvedArtwork
                 }
             }
         }
     }
 
+    func prefetchMusicArtworkAroundTrackIndex(
+        _ trackIndex: Int,
+        activeSongID: String,
+        lookbehindCount: Int = 1,
+        lookaheadCount: Int = 1,
+    ) {
+        guard lookbehindCount > 0 || lookaheadCount > 0 else { return }
+        let playbackQueue = resolvedActiveMusicPlaybackQueue()
+        guard playbackQueue.indices.contains(trackIndex) else { return }
+        guard playbackQueue[trackIndex].id == activeSongID else { return }
+        var songsToPrefetch: [MusicLibrarySongEntry] = []
+        if lookbehindCount > 0 {
+            let lowerBound = max(0, trackIndex - lookbehindCount)
+            songsToPrefetch.append(contentsOf: playbackQueue[lowerBound ..< trackIndex])
+        }
+        if lookaheadCount > 0 {
+            let upperBound = min(playbackQueue.count, trackIndex + lookaheadCount + 1)
+            songsToPrefetch.append(contentsOf: playbackQueue[(trackIndex + 1) ..< upperBound])
+        }
+        for song in songsToPrefetch {
+            prefetchMusicArtworkIfNeeded(for: song)
+        }
+    }
+
     func loadMusicLibraryArtworkData(for song: MusicLibrarySongEntry) -> Data? {
+        if let cachedArtworkData = cachedMusicLibraryArtworkData(for: song) {
+            return cachedArtworkData
+        }
         #if os(iOS)
             guard MPMediaLibrary.authorizationStatus() == .authorized else { return nil }
             guard let persistentID = UInt64(song.id) else { return nil }
@@ -237,20 +241,7 @@ extension MenuView {
             query.addFilterPredicate(predicate)
             return query.items?.first?.artwork?.image(at: CGSize(width: 800, height: 800))?.pngData()
         #elseif canImport(iTunesLibrary)
-            do {
-                return try withITLibrary { library in
-                    guard let itemIndex = musicLibraryItemIndexBySongID[song.id],
-                          library.allMediaItems.indices.contains(itemIndex)
-                    else {
-                        return nil
-                    }
-                    let indexedItem = library.allMediaItems[itemIndex]
-                    guard song.id == "\(indexedItem.persistentID)" else { return nil }
-                    return indexedItem.artwork?.imageData as Data?
-                }
-            } catch {
-                return nil
-            }
+            return nil
         #else
             return nil
         #endif
@@ -260,7 +251,9 @@ extension MenuView {
         if musicAudioPlayer != nil {
             return true
         }
-        #if os(tvOS)
+        #if os(macOS)
+            return activeMusicPlaybackSongID != nil
+        #elseif os(tvOS)
             return activeMusicPlaybackSongID != nil
         #else
             return false
@@ -271,7 +264,9 @@ extension MenuView {
         if let musicAudioPlayer {
             return musicAudioPlayer.rate > 0.01
         }
-        #if os(tvOS)
+        #if os(macOS)
+            return isCurrentMusicPlaybackUsingAppleScript && activeMusicPlaybackSongID != nil
+        #elseif os(tvOS)
             guard activeMusicPlaybackSongID != nil else { return false }
             let status = ApplicationMusicPlayer.shared.state.playbackStatus
             switch status {
@@ -292,6 +287,7 @@ extension MenuView {
         presentsFullscreen: Bool = true,
         resetTransitionState: Bool = true,
         usingExistingBlackout: Bool = false,
+        playbackQueue: [MusicLibrarySongEntry]? = nil,
     ) {
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
         if resetTransitionState {
@@ -302,6 +298,10 @@ extension MenuView {
         if !hadActiveSession {
             resetMusicNowPlayingFlipState()
         }
+        if let playbackQueue {
+            activeMusicPlaybackQueue = playbackQueue
+        }
+        isCurrentMusicPlaybackUsingAppleScript = false
         #if os(tvOS)
             if let musicKitSong = song.musicKitSong {
                 startMusicPlaybackUsingMusicKit(song: musicKitSong)
@@ -323,13 +323,15 @@ extension MenuView {
                 player.playImmediately(atRate: 1.0)
             } else {
                 #if os(macOS)
+                    isCurrentMusicPlaybackUsingAppleScript = true
                     playMusicTrackViaAppleScript(persistentIDDecimal: song.id)
                 #else
                     return
                 #endif
             }
         #endif
-        musicNowPlayingTrackPositionText = trackCount > 0 ? "\(trackIndex + 1) of \(trackCount)" : ""
+        let resolvedTrackCount = playbackQueue?.count ?? trackCount
+        musicNowPlayingTrackPositionText = resolvedTrackCount > 0 ? "\(trackIndex + 1) of \(resolvedTrackCount)" : ""
         musicNowPlayingTitle = song.title
         musicNowPlayingArtist = song.artist
         musicNowPlayingAlbum = song.album
@@ -344,7 +346,6 @@ extension MenuView {
             prefetchMusicArtworkAroundTrackIndex(
                 trackIndex,
                 activeSongID: song.id,
-                requestID: artworkRequestID,
             )
         }
         resetScreenSaverIdleTimer()
@@ -378,6 +379,21 @@ extension MenuView {
                 var error: NSDictionary?
                 NSAppleScript(source: source)?.executeAndReturnError(&error)
                 if let error { print("[AppleScript] playback error: \(error)") }
+            }
+        }
+
+        func pauseMusicPlaybackViaAppleScript() {
+            let source = """
+            tell application "Music"
+                if player state is playing then
+                    pause
+                end if
+            end tell
+            """
+            DispatchQueue.global(qos: .userInitiated).async {
+                var error: NSDictionary?
+                NSAppleScript(source: source)?.executeAndReturnError(&error)
+                if let error { print("[AppleScript] pause error: \(error)") }
             }
         }
     #endif
@@ -618,6 +634,11 @@ extension MenuView {
         cancelScreenSaverMusicTrackSwitchQueue()
         _ = incrementRequestID(&musicNowPlayingArtworkRequestID)
         musicAudioPlayer?.pause()
+        #if os(macOS)
+            if isCurrentMusicPlaybackUsingAppleScript {
+                pauseMusicPlaybackViaAppleScript()
+            }
+        #endif
         #if os(tvOS)
             ApplicationMusicPlayer.shared.stop()
             stopMusicKitProgressTimer()
@@ -627,7 +648,9 @@ extension MenuView {
         #endif
         removeMusicPlaybackObservation()
         musicAudioPlayer = nil
+        isCurrentMusicPlaybackUsingAppleScript = false
         removeCurrentMusicPlaybackTemporaryFileIfNeeded()
+        activeMusicPlaybackQueue = []
         activeMusicPlaybackSongID = nil
         clearActivePodcastAudioPlaybackContext()
         invalidateMusicNowPlayingFlipTimer()
@@ -742,6 +765,11 @@ extension MenuView {
 
     func activeMusicPlaybackIndex() -> Int? {
         if let activeMusicPlaybackSongID,
+           let index = activeMusicPlaybackQueue.firstIndex(where: { $0.id == activeMusicPlaybackSongID })
+        {
+            return index
+        }
+        if let activeMusicPlaybackSongID,
            let index = musicSongsThirdMenuItems.firstIndex(where: { $0.id == activeMusicPlaybackSongID })
         {
             return index
@@ -846,20 +874,22 @@ extension MenuView {
         if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == "iTunes Top Songs" {
             return
         }
-        guard !musicSongsThirdMenuItems.isEmpty else { return }
-        let fallbackIndex = direction > 0 ? -1 : musicSongsThirdMenuItems.count
+        let playbackQueue = resolvedActiveMusicPlaybackQueue()
+        guard !playbackQueue.isEmpty else { return }
+        let fallbackIndex = direction > 0 ? -1 : playbackQueue.count
         let currentIndex = activeMusicPlaybackIndex() ?? fallbackIndex
-        let targetIndex = max(0, min(musicSongsThirdMenuItems.count - 1, currentIndex + direction))
+        let targetIndex = max(0, min(playbackQueue.count - 1, currentIndex + direction))
         guard targetIndex != currentIndex else { return }
-        let targetSong = musicSongsThirdMenuItems[targetIndex]
+        let targetSong = playbackQueue[targetIndex]
         let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
         if !isMusicNowPlayingSceneVisible {
             clearMusicSongSwitchTransitionState()
             startMusicPlayback(
                 from: targetSong,
                 trackIndex: targetIndex,
-                trackCount: musicSongsThirdMenuItems.count,
+                trackCount: playbackQueue.count,
                 presentsFullscreen: false,
+                playbackQueue: playbackQueue,
             )
             return
         }
@@ -878,8 +908,9 @@ extension MenuView {
         startMusicPlayback(
             from: targetSong,
             trackIndex: targetIndex,
-            trackCount: musicSongsThirdMenuItems.count,
+            trackCount: playbackQueue.count,
             resetTransitionState: false,
+            playbackQueue: playbackQueue,
         )
         DispatchQueue.main.async {
             guard self.musicSongTransitionRequestID == transitionGeneration else { return }

@@ -759,6 +759,10 @@ extension MenuView {
         let reflectionY = usesDetachedReflection ? 920.0 : -(adjustedIconSize * 0.215)
         let reflectionOpacity = usesDetachedReflection ? 0.22 : 0.34
         let reflectionBlur = usesDetachedReflection ? 3.0 : 0.0
+        let backgroundIconTransitionDuration =
+            isReturningToRoot
+                ? submenuBackgroundIconReturnDuration
+                : submenuBackgroundIconTransitionDuration
         return ZStack {
             if showReflection {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: adjustedIconSize, height: adjustedIconSize).mask(
@@ -773,7 +777,7 @@ extension MenuView {
                 ).blur(radius: reflectionBlur).scaleEffect(usesDetachedReflection ? 1.0 : scale)
             }
             Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: adjustedIconSize, height: adjustedIconSize).scaleEffect(scale)
-        }.opacity(opacity).offset(x: baseX, y: baseY).zIndex(isIncoming ? 1 : zInd).blur(radius: isBackground ? 10 : 0).animation(.easeInOut(duration: selectionAnimationDuration * 0.85), value: selectedIndex).animation(.easeInOut(duration: 0.32), value: isEnteringSubmenu && isBackground).animation(.easeInOut(duration: iconFlightAnimationDuration), value: isIconAnimated)
+        }.opacity(opacity).offset(x: baseX, y: baseY).zIndex(isIncoming ? 1 : zInd).blur(radius: isBackground ? 10 : 0).animation(.easeInOut(duration: selectionAnimationDuration * 0.85), value: selectedIndex).animation(.easeInOut(duration: backgroundIconTransitionDuration), value: isEnteringSubmenu && isBackground).animation(.easeInOut(duration: iconFlightAnimationDuration), value: isIconAnimated)
     }
 
     // MARK: - Menu item row view
@@ -1242,118 +1246,127 @@ extension MenuView {
     #endif
 
     var body: some View {
-        GeometryReader { geometry in
-            menuLayoutContainer(in: geometry).onKeyEvents(
-                onKeyDown: { key, isRepeat, modifiers in
-                    if key == .upArrow || key == .downArrow || key == .leftArrow || key == .rightArrow {
-                        if isRepeat { return }
-                        handleDirectionalPressBegan(key, modifiers: modifiers)
-                        return
-                    }
-                    endDirectionalHoldSession()
-                    handleKeyInput(key, isRepeat: isRepeat, modifiers: modifiers)
-                },
-                onKeyUp: { key, _ in
-                    handleDirectionalPressEnded(key)
-                },
-            )
-            #if os(iOS)
-            .overlay {
-                TouchNavigationInputOverlay(
-                    onArrowKeyDown: { key in handleDirectionalPressBegan(key) },
-                    onArrowKeyUp: { key in handleDirectionalPressEnded(key) },
-                    onEnter: {
-                        endDirectionalHoldSession()
-                        handleKeyInput(.enter, isRepeat: false, modifiers: [])
-                    },
-                    onBackspace: {
-                        endDirectionalHoldSession()
-                        handleKeyInput(.delete, isRepeat: false, modifiers: [])
-                    },
-                    onSpace: {
-                        endDirectionalHoldSession()
-                        handleKeyInput(.space, isRepeat: false, modifiers: [])
-                    },
-                    onSingleFingerTap: {
-                        guard activeFullscreenScene?.key == screenSaverFullscreenKey else { return false }
-                        dismissScreenSaverForUserInteraction()
-                        return true
-                    },
-                ).ignoresSafeArea()
-            }
-            #endif
-            #if os(tvOS)
-            .overlay {
-                TVRemoteInputOverlay(
-                    onKeyDown: { key in
+        ZStack {
+            GeometryReader { geometry in
+                menuLayoutContainer(in: geometry).onKeyEvents(
+                    onKeyDown: { key, isRepeat, modifiers in
                         if key == .upArrow || key == .downArrow || key == .leftArrow || key == .rightArrow {
-                            handleDirectionalPressBegan(key)
-                        } else {
-                            endDirectionalHoldSession()
-                            handleKeyInput(key, isRepeat: false, modifiers: [])
+                            if isRepeat { return }
+                            handleDirectionalPressBegan(key, modifiers: modifiers)
+                            return
                         }
+                        endDirectionalHoldSession()
+                        handleKeyInput(key, isRepeat: isRepeat, modifiers: modifiers)
                     },
-                    onKeyUp: { key in
+                    onKeyUp: { key, _ in
                         handleDirectionalPressEnded(key)
                     },
-                ).ignoresSafeArea()
+                )
+                #if os(iOS)
+                .overlay {
+                    TouchNavigationInputOverlay(
+                        onArrowKeyDown: { key in handleDirectionalPressBegan(key) },
+                        onArrowKeyUp: { key in handleDirectionalPressEnded(key) },
+                        onEnter: {
+                            endDirectionalHoldSession()
+                            handleKeyInput(.enter, isRepeat: false, modifiers: [])
+                        },
+                        onBackspace: {
+                            endDirectionalHoldSession()
+                            handleKeyInput(.delete, isRepeat: false, modifiers: [])
+                        },
+                        onSpace: {
+                            endDirectionalHoldSession()
+                            handleKeyInput(.space, isRepeat: false, modifiers: [])
+                        },
+                        onSingleFingerTap: {
+                            guard activeFullscreenScene?.key == screenSaverFullscreenKey else { return false }
+                            dismissScreenSaverForUserInteraction()
+                            return true
+                        },
+                    ).ignoresSafeArea()
+                }
+                #endif
+                #if os(tvOS)
+                .overlay {
+                    TVRemoteInputOverlay(
+                        onKeyDown: { key in
+                            if key == .upArrow || key == .downArrow || key == .leftArrow || key == .rightArrow {
+                                handleDirectionalPressBegan(key)
+                            } else {
+                                endDirectionalHoldSession()
+                                handleKeyInput(key, isRepeat: false, modifiers: [])
+                            }
+                        },
+                        onKeyUp: { key in
+                            handleDirectionalPressEnded(key)
+                        },
+                    ).ignoresSafeArea()
+                }
+                #endif
+                #if os(iOS) || os(tvOS)
+                .overlay {
+                    GameControllerInputOverlay(
+                        onArrowKeyDown: { key in
+                            handleDirectionalPressBegan(key)
+                        },
+                        onArrowKeyUp: { key in
+                            handleDirectionalPressEnded(key)
+                        },
+                        onEnter: {
+                            endDirectionalHoldSession()
+                            handleKeyInput(.enter, isRepeat: false, modifiers: [])
+                        },
+                        onBackspace: {
+                            endDirectionalHoldSession()
+                            handleKeyInput(.delete, isRepeat: false, modifiers: [])
+                        },
+                        onSpace: {
+                            endDirectionalHoldSession()
+                            handleKeyInput(.space, isRepeat: false, modifiers: [])
+                        },
+                    ).ignoresSafeArea().allowsHitTesting(false)
+                }
+                #endif
+                #if os(macOS)
+                .overlay(
+                    GameControllerInputOverlay(
+                        onArrowKeyDown: { key in
+                            handleDirectionalPressBegan(key)
+                        },
+                        onArrowKeyUp: { key in
+                            handleDirectionalPressEnded(key)
+                        },
+                        onEnter: {
+                            endDirectionalHoldSession()
+                            handleKeyInput(.enter, isRepeat: false, modifiers: [])
+                        },
+                        onBackspace: {
+                            endDirectionalHoldSession()
+                            handleKeyInput(.delete, isRepeat: false, modifiers: [])
+                        },
+                        onSpace: {
+                            endDirectionalHoldSession()
+                            handleKeyInput(.space, isRepeat: false, modifiers: [])
+                        },
+                    ).allowsHitTesting(false),
+                )
+                #endif
+                .onAppear {
+                    beginStartupMusicLibraryPreloadIfNeeded()
+                    registerUserInteractionForScreenSaver()
+                    startScreenSaverIdleMonitor()
+                    SoundEffectPlayer.shared.warmUp(soundNames: ["Selection", "SelectionChange", "Exit", "Limit"])
+                }.onDisappear {
+                    endDirectionalHoldSession()
+                    stopScreenSaverIdleMonitor()
+                }
             }
-            #endif
-            #if os(iOS) || os(tvOS)
-            .overlay {
-                GameControllerInputOverlay(
-                    onArrowKeyDown: { key in
-                        handleDirectionalPressBegan(key)
-                    },
-                    onArrowKeyUp: { key in
-                        handleDirectionalPressEnded(key)
-                    },
-                    onEnter: {
-                        endDirectionalHoldSession()
-                        handleKeyInput(.enter, isRepeat: false, modifiers: [])
-                    },
-                    onBackspace: {
-                        endDirectionalHoldSession()
-                        handleKeyInput(.delete, isRepeat: false, modifiers: [])
-                    },
-                    onSpace: {
-                        endDirectionalHoldSession()
-                        handleKeyInput(.space, isRepeat: false, modifiers: [])
-                    },
-                ).ignoresSafeArea().allowsHitTesting(false)
-            }
-            #endif
-            #if os(macOS)
-            .overlay(
-                GameControllerInputOverlay(
-                    onArrowKeyDown: { key in
-                        handleDirectionalPressBegan(key)
-                    },
-                    onArrowKeyUp: { key in
-                        handleDirectionalPressEnded(key)
-                    },
-                    onEnter: {
-                        endDirectionalHoldSession()
-                        handleKeyInput(.enter, isRepeat: false, modifiers: [])
-                    },
-                    onBackspace: {
-                        endDirectionalHoldSession()
-                        handleKeyInput(.delete, isRepeat: false, modifiers: [])
-                    },
-                    onSpace: {
-                        endDirectionalHoldSession()
-                        handleKeyInput(.space, isRepeat: false, modifiers: [])
-                    },
-                ).allowsHitTesting(false),
-            )
-            #endif
-            .onAppear {
-                registerUserInteractionForScreenSaver()
-                startScreenSaverIdleMonitor()
-                SoundEffectPlayer.shared.warmUp(soundNames: ["Selection", "SelectionChange", "Exit", "Limit"])
-            }.onDisappear {
-                endDirectionalHoldSession()
-                stopScreenSaverIdleMonitor()
+            if startupMusicLibraryPreloadOverlayOpacity > 0.001 {
+                Color.black
+                    .opacity(startupMusicLibraryPreloadOverlayOpacity)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(true)
             }
         }.ignoresSafeArea()
         #if os(iOS)

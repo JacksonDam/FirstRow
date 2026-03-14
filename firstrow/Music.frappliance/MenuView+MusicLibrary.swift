@@ -5,14 +5,237 @@ import SwiftUI
     import MediaPlayer
     import UIKit
 #endif
-#if os(tvOS)
+#if os(tvOS) || os(macOS)
     import MusicKit
+#endif
+#if os(macOS)
+    import StoreKit
 #endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
 
+#if os(macOS)
+    final class AppleMusicCatalogPlaybackCapabilityCache {
+        static let shared = AppleMusicCatalogPlaybackCapabilityCache()
+
+        private let lock = NSLock()
+        private var cachedValue: Bool?
+        private var hasAttemptedResolution = false
+
+        func canPlayCatalogContent(requestPermissionIfNeeded: Bool) -> Bool {
+            lock.lock()
+            if let cachedValue {
+                lock.unlock()
+                return cachedValue
+            }
+            let shouldResolve = !hasAttemptedResolution || requestPermissionIfNeeded
+            if shouldResolve {
+                hasAttemptedResolution = true
+            }
+            lock.unlock()
+
+            guard shouldResolve else { return false }
+            let resolvedValue = resolve(requestPermissionIfNeeded: requestPermissionIfNeeded)
+
+            lock.lock()
+            cachedValue = resolvedValue
+            lock.unlock()
+            return resolvedValue
+        }
+
+        private func resolve(requestPermissionIfNeeded: Bool) -> Bool {
+            if #available(macOS 12.0, *) {
+                var authorizationStatus = MusicAuthorization.currentStatus
+                if requestPermissionIfNeeded, authorizationStatus == .notDetermined {
+                    let semaphore = DispatchSemaphore(value: 0)
+                    Task.detached(priority: .userInitiated) {
+                        authorizationStatus = await MusicAuthorization.request()
+                        semaphore.signal()
+                    }
+                    semaphore.wait()
+                }
+                guard authorizationStatus == .authorized else { return false }
+                let semaphore = DispatchSemaphore(value: 0)
+                var canPlayCatalogContent = false
+                Task.detached(priority: .userInitiated) {
+                    defer { semaphore.signal() }
+                    do {
+                        canPlayCatalogContent = try await MusicSubscription.current.canPlayCatalogContent
+                    } catch {
+                        canPlayCatalogContent = false
+                    }
+                }
+                semaphore.wait()
+                return canPlayCatalogContent
+            } else {
+                let authorizationStatus = SKCloudServiceController.authorizationStatus()
+                guard authorizationStatus == .authorized else { return false }
+                let semaphore = DispatchSemaphore(value: 0)
+                var canPlayCatalogContent = false
+                SKCloudServiceController().requestCapabilities { capabilities, _ in
+                    canPlayCatalogContent = capabilities.contains(.musicCatalogPlayback)
+                    semaphore.signal()
+                }
+                semaphore.wait()
+                return canPlayCatalogContent
+            }
+        }
+    }
+
+    final class UnavailableAppleMusicTrackCache {
+        static let shared = UnavailableAppleMusicTrackCache()
+
+        private let lock = NSLock()
+        private var cachedPersistentIDHexes: Set<String>?
+
+        func persistentIDHexes() -> Set<String> {
+            lock.lock()
+            if let cachedPersistentIDHexes {
+                lock.unlock()
+                return cachedPersistentIDHexes
+            }
+            lock.unlock()
+
+            let fetchedPersistentIDHexes = fetchPersistentIDHexes()
+
+            lock.lock()
+            if cachedPersistentIDHexes == nil {
+                cachedPersistentIDHexes = fetchedPersistentIDHexes
+            }
+            let resolvedPersistentIDHexes = cachedPersistentIDHexes ?? fetchedPersistentIDHexes
+            lock.unlock()
+            return resolvedPersistentIDHexes
+        }
+
+        private func fetchPersistentIDHexes() -> Set<String> {
+            // Music.app exposes catalog availability through AppleScript cloud status.
+            let source = """
+            tell application "Music"
+                set unavailableTrackIDs to {}
+                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is error)
+                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is ineligible)
+                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is no longer available)
+                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is prerelease)
+                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is removed)
+                set AppleScript's text item delimiters to linefeed
+                set unavailableTrackIDsText to unavailableTrackIDs as text
+                set AppleScript's text item delimiters to ""
+                return unavailableTrackIDsText
+            end tell
+            """
+            var executionError: NSDictionary?
+            let resultDescriptor = NSAppleScript(source: source)?.executeAndReturnError(&executionError)
+            if let executionError {
+                print("[Music] unavailable track lookup error: \(executionError)")
+            }
+            guard let rawPersistentIDText = resultDescriptor?.stringValue else {
+                return []
+            }
+            let separators = CharacterSet.newlines.union(.whitespacesAndNewlines)
+            return Set(
+                rawPersistentIDText
+                    .components(separatedBy: separators)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+                    .filter { !$0.isEmpty },
+            )
+        }
+    }
+#endif
+
 extension MenuView {
+    var blocksMenuForStartupMusicLibraryPreload: Bool {
+        !isStartupMusicLibraryPreloadComplete || startupMusicLibraryPreloadOverlayOpacity > 0.001
+    }
+
+    func finishStartupMusicLibraryPreload() {
+        isStartupMusicLibraryPreloadComplete = true
+        withAnimation(.easeInOut(duration: 0.28)) {
+            startupMusicLibraryPreloadOverlayOpacity = 0
+        }
+    }
+
+    func musicPlaybackPool() -> [MusicLibrarySongEntry] {
+        if let cachedShuffleSongs = musicShuffleSongsCache, !cachedShuffleSongs.isEmpty {
+            return cachedShuffleSongs
+        }
+        if let cachedSongs = musicAllSongsCache, !cachedSongs.isEmpty {
+            return cachedSongs
+        }
+        return []
+    }
+
+    func randomCachedMusicLibrarySong() -> MusicLibrarySongEntry? {
+        musicPlaybackPool().randomElement()
+    }
+
+    func loadStartupMusicLibrarySnapshot() throws -> (
+        sortedSongs: [MusicLibrarySongEntry],
+        shuffleSongs: [MusicLibrarySongEntry],
+        itemIndices: [String: Int],
+        artworkDataByAlbumKey: [String: Data],
+    ) {
+        #if os(macOS)
+            _ = AppleMusicCatalogPlaybackCapabilityCache.shared.canPlayCatalogContent(
+                requestPermissionIfNeeded: true,
+            )
+        #endif
+        #if canImport(iTunesLibrary)
+            let result = try fetchMusicLibrarySongsForShuffleWithItemIndices()
+            return (
+                sortedSongs: sortedMusicLibraryEntries(result.songs),
+                shuffleSongs: result.songs,
+                itemIndices: result.itemIndices,
+                artworkDataByAlbumKey: result.artworkDataByAlbumKey,
+            )
+        #else
+            let songs = try fetchMusicLibrarySongsForShuffle()
+            return (
+                sortedSongs: sortedMusicLibraryEntries(songs),
+                shuffleSongs: songs,
+                itemIndices: [:],
+                artworkDataByAlbumKey: [:],
+            )
+        #endif
+    }
+
+    func beginStartupMusicLibraryPreloadIfNeeded() {
+        guard !hasStartedStartupMusicLibraryPreload else { return }
+        hasStartedStartupMusicLibraryPreload = true
+        if musicAllSongsCache != nil || musicShuffleSongsCache != nil {
+            finishStartupMusicLibraryPreload()
+            return
+        }
+        let requestID = incrementRequestID(&musicStartupPreloadRequestID)
+        requestMusicLibraryAuthorization { isAuthorized in
+            guard self.musicStartupPreloadRequestID == requestID else { return }
+            guard isAuthorized else {
+                self.finishStartupMusicLibraryPreload()
+                return
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let snapshot = try self.loadStartupMusicLibrarySnapshot()
+                    DispatchQueue.main.async {
+                        guard self.musicStartupPreloadRequestID == requestID else { return }
+                        self.musicAllSongsCache = snapshot.sortedSongs
+                        self.musicShuffleSongsCache = snapshot.shuffleSongs
+                        #if canImport(iTunesLibrary)
+                            self.musicLibraryItemIndexBySongID = snapshot.itemIndices
+                            self.musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
+                        #endif
+                        self.finishStartupMusicLibraryPreload()
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        guard self.musicStartupPreloadRequestID == requestID else { return }
+                        self.finishStartupMusicLibraryPreload()
+                    }
+                }
+            }
+        }
+    }
+
     func resetMusicCategoryStateForNonMusicITunesTop() {
         _ = incrementRequestID(&musicSongsRequestID)
         activeMusicCategoryKind = nil
@@ -170,7 +393,85 @@ extension MenuView {
         if let songURL = song.url {
             return musicArtworkCacheKey(for: songURL)
         }
+        if let artworkAlbumKey = song.artworkAlbumKey {
+            return artworkAlbumKey
+        }
         return "song::\(song.id)"
+    }
+
+    func cachedMusicLibraryArtworkData(for song: MusicLibrarySongEntry) -> Data? {
+        #if canImport(iTunesLibrary)
+            guard let artworkAlbumKey = song.artworkAlbumKey else { return nil }
+            return musicLibraryArtworkDataByAlbumKey[artworkAlbumKey]
+        #else
+            return nil
+        #endif
+    }
+
+    func resolveMusicArtworkImage(
+        for song: MusicLibrarySongEntry,
+        cacheKey: String,
+    ) async -> NSImage? {
+        #if canImport(iTunesLibrary)
+            if let libraryArtworkData = await MainActor.run(body: {
+                self.loadMusicLibraryArtworkData(for: song)
+            }) {
+                return cachedDecodedDisplayArtworkImage(
+                    from: libraryArtworkData,
+                    sourceKey: cacheKey,
+                    maxPixelSize: 900,
+                )
+            }
+            if let artworkURL = song.url?.standardizedFileURL {
+                return await generateMusicArtworkThumbnail(for: artworkURL)
+            }
+            return nil
+        #else
+            if let artworkURL = song.url?.standardizedFileURL,
+               let generatedArtwork = await generateMusicArtworkThumbnail(for: artworkURL)
+            {
+                return generatedArtwork
+            }
+            if let libraryArtworkData = await MainActor.run(body: {
+                self.loadMusicLibraryArtworkData(for: song)
+            }) {
+                return cachedDecodedDisplayArtworkImage(
+                    from: libraryArtworkData,
+                    sourceKey: cacheKey,
+                    maxPixelSize: 900,
+                )
+            }
+            return nil
+        #endif
+    }
+
+    func currentMusicPreviewSongIndex() -> Int? {
+        guard !musicSongsThirdMenuItems.isEmpty else { return nil }
+        if shouldShowMusicSongsShuffleActionItem(), selectedThirdIndex == 0 {
+            return 0
+        }
+        return musicSongIndex(forThirdMenuSelectionIndex: selectedThirdIndex)
+    }
+
+    func prefetchMusicPreviewArtworkAroundCurrentSelection(
+        lookbehindCount: Int = 1,
+        lookaheadCount: Int = 3,
+    ) {
+        guard activeRootItemID == "music", isInSubmenu else { return }
+        guard isInThirdMenu, thirdMenuMode == .musicSongs else { return }
+        guard let currentIndex = currentMusicPreviewSongIndex() else { return }
+        guard musicSongsThirdMenuItems.indices.contains(currentIndex) else { return }
+        let lowerBound = max(0, currentIndex - max(0, lookbehindCount))
+        let upperBound = min(
+            musicSongsThirdMenuItems.count - 1,
+            currentIndex + max(0, lookaheadCount),
+        )
+        var queuedSongIDs: Set<String> = []
+        for index in lowerBound ... upperBound {
+            let song = musicSongsThirdMenuItems[index]
+            guard queuedSongIDs.insert(song.id).inserted else { continue }
+            prefetchMusicArtworkIfNeeded(for: song)
+        }
     }
 
     func buildSeededShuffleQueue(
@@ -228,20 +529,19 @@ extension MenuView {
             }
             return
         }
+        prefetchMusicPreviewArtworkAroundCurrentSelection()
         if let embeddedArtwork = selectedSong.artwork {
             withAnimation(.easeInOut(duration: 0.18)) {
                 musicPreviewImage = embeddedArtwork
             }
             return
         }
-        guard let previewURL = selectedSong.url else {
+        guard let cacheKey = musicArtworkCacheKey(for: selectedSong) else {
             withAnimation(.easeInOut(duration: 0.18)) {
                 musicPreviewImage = nil
             }
             return
         }
-        let standardizedURL = previewURL.standardizedFileURL
-        let cacheKey = musicArtworkCacheKey(for: standardizedURL)
         if let cached = musicPreviewCache[cacheKey] {
             withAnimation(.easeInOut(duration: 0.18)) {
                 musicPreviewImage = cached
@@ -249,15 +549,18 @@ extension MenuView {
             return
         }
         let targetSongID = selectedSong.id
-        Task.detached(priority: .userInitiated) { [standardizedURL] in
-            let generatedArtwork = await self.generateMusicArtworkThumbnail(for: standardizedURL)
+        Task.detached(priority: .userInitiated) {
+            let resolvedArtwork = await self.resolveMusicArtworkImage(
+                for: selectedSong,
+                cacheKey: cacheKey,
+            )
             await MainActor.run {
                 guard self.musicPreviewRequestID == requestID else { return }
                 guard self.musicPreviewTargetSongID == targetSongID else { return }
-                if let generatedArtwork {
-                    self.musicPreviewCache[cacheKey] = generatedArtwork
+                if let resolvedArtwork {
+                    self.musicPreviewCache[cacheKey] = resolvedArtwork
                     withAnimation(.easeInOut(duration: 0.22)) {
-                        self.musicPreviewImage = generatedArtwork
+                        self.musicPreviewImage = resolvedArtwork
                     }
                 } else {
                     withAnimation(.easeInOut(duration: 0.18)) {
@@ -520,14 +823,14 @@ extension MenuView {
                 artworks.reserveCapacity(resolvedLimit)
                 for item in library.allMediaItems {
                     guard musicLibraryMediaKindMatches(item.mediaKind, requested: .songs) else { continue }
-                    guard isMusicLibraryPlayableLocally(item) else { continue }
+                    guard isMusicLibraryItemAuthorizedForPlayback(item) else { continue }
                     let albumKey = musicTopLevelCarouselAlbumKey(for: item)
                     guard seenAlbumKeys.insert(albumKey).inserted else { continue }
                     guard matchedIndex >= resolvedStartIndex else {
                         matchedIndex += 1
                         continue
                     }
-                    artworks.append(item.artwork?.image ?? musicFallbackImage)
+                    artworks.append(resolvedMusicLibraryEmbeddedArtworkImage(for: item) ?? musicFallbackImage)
                     if artworks.count >= resolvedLimit {
                         break
                     }
@@ -547,13 +850,16 @@ extension MenuView {
         fallbackItemID: String,
     ) -> String {
         let trimmedPersistentAlbumID = persistentAlbumID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmedPersistentAlbumID.isEmpty {
+        if !trimmedPersistentAlbumID.isEmpty, trimmedPersistentAlbumID != "0" {
             return "album::\(trimmedPersistentAlbumID)"
         }
         let trimmedAlbumTitle = albumTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmedAlbumTitle.isEmpty {
             let trimmedAlbumArtist = albumArtist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return "album::\(trimmedAlbumArtist.lowercased())::\(trimmedAlbumTitle.lowercased())"
+            if !trimmedAlbumArtist.isEmpty {
+                return "album::\(trimmedAlbumArtist.lowercased())::\(trimmedAlbumTitle.lowercased())"
+            }
+            return "album::\(trimmedAlbumTitle.lowercased())"
         }
         return "track::\(fallbackItemID)"
     }
@@ -563,7 +869,7 @@ extension MenuView {
             let albumPersistentID = (item.value(forProperty: MPMediaItemPropertyAlbumPersistentID) as? NSNumber)?.stringValue
             return normalizedMusicTopLevelCarouselAlbumKey(
                 albumTitle: item.albumTitle,
-                albumArtist: item.albumArtist ?? item.artist,
+                albumArtist: item.albumArtist,
                 persistentAlbumID: albumPersistentID,
                 fallbackItemID: "\(item.persistentID)",
             )
@@ -574,10 +880,34 @@ extension MenuView {
         func musicTopLevelCarouselAlbumKey(for item: ITLibMediaItem) -> String {
             normalizedMusicTopLevelCarouselAlbumKey(
                 albumTitle: item.album.title,
-                albumArtist: item.album.albumArtist ?? item.artist?.name,
+                albumArtist: item.album.albumArtist,
                 persistentAlbumID: item.album.persistentID.stringValue,
                 fallbackItemID: "\(item.persistentID)",
             )
+        }
+
+        func musicTopLevelCarouselAlbumKeyAliases(for item: ITLibMediaItem) -> [String] {
+            var aliases: [String] = []
+            let trimmedPersistentAlbumID = item.album.persistentID.stringValue
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedPersistentAlbumID.isEmpty, trimmedPersistentAlbumID != "0" {
+                aliases.append("album::\(trimmedPersistentAlbumID)")
+            }
+            let trimmedAlbumTitle = (item.album.title ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedAlbumTitle.isEmpty {
+                let trimmedAlbumArtist = (item.album.albumArtist ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedAlbumArtist.isEmpty {
+                    aliases.append(
+                        "album::\(trimmedAlbumArtist.lowercased())::\(trimmedAlbumTitle.lowercased())",
+                    )
+                }
+                aliases.append("album::\(trimmedAlbumTitle.lowercased())")
+            }
+            aliases.append("track::\(item.persistentID)")
+            var seen: Set<String> = []
+            return aliases.filter { seen.insert($0).inserted }
         }
     #endif
 
@@ -585,7 +915,7 @@ extension MenuView {
         func musicTopLevelCarouselAlbumKey(for song: Song) -> String {
             normalizedMusicTopLevelCarouselAlbumKey(
                 albumTitle: song.albumTitle,
-                albumArtist: song.artistName,
+                albumArtist: nil,
                 persistentAlbumID: nil,
                 fallbackItemID: song.id.rawValue,
             )
@@ -767,10 +1097,10 @@ extension MenuView {
     }
 
     func fetchMusicLibrarySongs() throws -> [MusicLibrarySongEntry] {
-        try fetchMusicLibraryEntries(for: .songs)
+        try fetchMusicLibraryEntries(for: .songs, includeArtwork: false)
     }
 
-    func fetchRandomMusicLibrarySongForShuffleSeed() throws -> MusicLibrarySongEntry? {
+    func fetchRandomMusicLibrarySongForShuffleSeed(includeArtwork: Bool = true) throws -> MusicLibrarySongEntry? {
         #if os(iOS)
             guard MPMediaLibrary.authorizationStatus() == .authorized else {
                 throw NSError(
@@ -785,7 +1115,7 @@ extension MenuView {
             for offset in 0 ..< mediaItems.count {
                 let resolvedIndex = (startIndex + offset) % mediaItems.count
                 let item = mediaItems[resolvedIndex]
-                if let song = makeMusicLibrarySongEntry(from: item, includeArtwork: true) {
+                if let song = makeMusicLibrarySongEntry(from: item, includeArtwork: includeArtwork) {
                     return song
                 }
             }
@@ -799,7 +1129,7 @@ extension MenuView {
                     let resolvedIndex = (startIndex + offset) % all.count
                     let item = all[resolvedIndex]
                     guard musicLibraryMediaKindMatches(item.mediaKind, requested: .songs) else { continue }
-                    if let song = makeMusicLibrarySongEntry(from: item, includeArtwork: true) {
+                    if let song = makeMusicLibrarySongEntry(from: item, includeArtwork: includeArtwork) {
                         return song
                     }
                 }
@@ -821,24 +1151,34 @@ extension MenuView {
 
     #if canImport(iTunesLibrary)
         func fetchMusicLibrarySongsWithItemIndices(
-            includeArtwork: Bool = true,
+            includeArtwork: Bool = false,
             shouldSort: Bool = true,
         ) throws -> (
             songs: [MusicLibrarySongEntry],
             itemIndices: [String: Int],
+            artworkDataByAlbumKey: [String: Data],
         ) {
             try withITLibrary { library in
                 var songs: [MusicLibrarySongEntry] = []
                 var itemIndices: [String: Int] = [:]
+                var artworkDataByAlbumKey: [String: Data] = [:]
                 for (index, item) in library.allMediaItems.enumerated() {
                     guard musicLibraryMediaKindMatches(item.mediaKind, requested: .songs) else { continue }
                     guard let entry = makeMusicLibrarySongEntry(from: item, includeArtwork: includeArtwork) else { continue }
                     songs.append(entry)
                     itemIndices[entry.id] = index
+                    if let artworkData = item.artwork?.imageData as Data? {
+                        for artworkAlbumKey in musicTopLevelCarouselAlbumKeyAliases(for: item)
+                            where artworkDataByAlbumKey[artworkAlbumKey] == nil
+                        {
+                            artworkDataByAlbumKey[artworkAlbumKey] = artworkData
+                        }
+                    }
                 }
                 return (
                     songs: shouldSort ? sortedMusicLibraryEntries(songs) : songs,
                     itemIndices: itemIndices,
+                    artworkDataByAlbumKey: artworkDataByAlbumKey,
                 )
             }
         }
@@ -846,6 +1186,7 @@ extension MenuView {
         func fetchMusicLibrarySongsForShuffleWithItemIndices() throws -> (
             songs: [MusicLibrarySongEntry],
             itemIndices: [String: Int],
+            artworkDataByAlbumKey: [String: Data],
         ) {
             try fetchMusicLibrarySongsWithItemIndices(
                 includeArtwork: false,
@@ -996,17 +1337,46 @@ extension MenuView {
                 genre: genre,
                 composer: composer,
                 durationSeconds: max(0, item.playbackDuration),
+                artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: item),
                 url: locationURL,
                 artwork: includeArtwork ? item.artwork?.image(at: CGSize(width: 800, height: 800)) : nil,
             )
         }
     #endif
     #if canImport(iTunesLibrary)
-        func isMusicLibraryPlayableLocally(_ item: ITLibMediaItem) -> Bool {
+        func musicPersistentIDHexString(for persistentID: NSNumber) -> String {
+            String(format: "%016llX", persistentID.uint64Value)
+        }
+
+        func isAppleMusicCatalogLibraryItem(_ item: ITLibMediaItem) -> Bool {
+            guard item.isCloud, !item.isPurchased else { return false }
+            let normalizedKind = item.kind?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return normalizedKind.localizedCaseInsensitiveContains("Apple Music")
+        }
+
+        func isMusicLibraryItemAuthorizedForPlayback(_ item: ITLibMediaItem) -> Bool {
             guard !item.isUserDisabled else { return false }
-            guard item.locationType == .file else { return false }
-            guard let locationURL = item.location, locationURL.isFileURL else { return false }
-            return FileManager.default.isReadableFile(atPath: locationURL.path)
+            #if os(macOS)
+                if isAppleMusicCatalogLibraryItem(item) {
+                    let canPlayCatalogContent = AppleMusicCatalogPlaybackCapabilityCache.shared
+                        .canPlayCatalogContent(requestPermissionIfNeeded: false)
+                    guard canPlayCatalogContent else { return false }
+                }
+                let unavailablePersistentIDHexes = UnavailableAppleMusicTrackCache.shared.persistentIDHexes()
+                guard !unavailablePersistentIDHexes.isEmpty else { return true }
+                return !unavailablePersistentIDHexes.contains(
+                    musicPersistentIDHexString(for: item.persistentID),
+                )
+            #else
+                return true
+            #endif
+        }
+
+        func resolvedMusicLibraryPlaybackURL(for item: ITLibMediaItem) -> URL? {
+            guard item.locationType == .file else { return nil }
+            guard let locationURL = item.location, locationURL.isFileURL else { return nil }
+            guard FileManager.default.isReadableFile(atPath: locationURL.path) else { return nil }
+            return locationURL.standardizedFileURL
         }
 
         /// ITLibrary uses XPC to talk to amplibraryd — both init and all property
@@ -1040,12 +1410,22 @@ extension MenuView {
             }
         }
 
+        func resolvedMusicLibraryEmbeddedArtworkImage(for item: ITLibMediaItem) -> NSImage? {
+            guard let artworkData = item.artwork?.imageData as Data? else { return nil }
+            let sourceKey = "itlib::\(musicTopLevelCarouselAlbumKey(for: item))"
+            return cachedDecodedDisplayArtworkImage(
+                from: artworkData,
+                sourceKey: sourceKey,
+                maxPixelSize: 900,
+            )
+        }
+
         func makeMusicLibrarySongEntry(from item: ITLibMediaItem, includeArtwork: Bool = true) -> MusicLibrarySongEntry? {
-            guard isMusicLibraryPlayableLocally(item) else { return nil }
-            guard let locationURL = item.location else { return nil }
+            guard isMusicLibraryItemAuthorizedForPlayback(item) else { return nil }
+            let locationURL = resolvedMusicLibraryPlaybackURL(for: item)
             let title = normalizedMusicLibraryText(
                 item.title,
-                fallback: locationURL.deletingPathExtension().lastPathComponent,
+                fallback: locationURL?.deletingPathExtension().lastPathComponent ?? "Unknown Song",
             )
             let artist = normalizedMusicLibraryText(item.artist?.name, fallback: "Unknown Artist")
             let album = normalizedMusicLibraryText(item.album.title, fallback: "Unknown Album")
@@ -1059,8 +1439,9 @@ extension MenuView {
                 genre: genre,
                 composer: composer,
                 durationSeconds: max(0, Double(item.totalTime) / 1000.0),
+                artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: item),
                 url: locationURL,
-                artwork: includeArtwork ? item.artwork?.image : nil,
+                artwork: includeArtwork ? resolvedMusicLibraryEmbeddedArtworkImage(for: item) : nil,
             )
         }
     #endif
@@ -1125,6 +1506,7 @@ extension MenuView {
                 genre: genre.isEmpty ? "Unknown Genre" : genre,
                 composer: composer.isEmpty ? "Unknown Composer" : composer,
                 durationSeconds: max(0, song.duration ?? 0),
+                artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: song),
                 url: playbackURL,
                 artwork: includeArtwork ? loadMusicKitArtworkImage(song.artwork) : nil,
                 musicKitSong: song,
@@ -1219,13 +1601,16 @@ extension MenuView {
                     #if canImport(iTunesLibrary)
                         let songs: [MusicLibrarySongEntry]
                         let itemIndices: [String: Int]
+                        let artworkDataByAlbumKey: [String: Data]
                         if requestedMediaType == .songs {
-                            let result = try self.fetchMusicLibrarySongsWithItemIndices()
+                            let result = try self.fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
                             songs = result.songs
                             itemIndices = result.itemIndices
+                            artworkDataByAlbumKey = result.artworkDataByAlbumKey
                         } else {
                             songs = try self.fetchMusicLibraryEntries(for: requestedMediaType)
                             itemIndices = [:]
+                            artworkDataByAlbumKey = self.musicLibraryArtworkDataByAlbumKey
                         }
                     #else
                         let songs = try self.fetchMusicLibraryEntries(for: requestedMediaType)
@@ -1239,6 +1624,7 @@ extension MenuView {
                         if requestedMediaType == .songs {
                             #if canImport(iTunesLibrary)
                                 self.musicLibraryItemIndexBySongID = itemIndices
+                                self.musicLibraryArtworkDataByAlbumKey = artworkDataByAlbumKey
                             #endif
                             self.musicAllSongsCache = songs
                         }
@@ -1295,17 +1681,20 @@ extension MenuView {
                         let songs: [MusicLibrarySongEntry]
                         #if canImport(iTunesLibrary)
                             let itemIndices: [String: Int]
+                            let artworkDataByAlbumKey: [String: Data]
                         #endif
                         if let cachedSongs {
                             songs = cachedSongs
                             #if canImport(iTunesLibrary)
                                 itemIndices = self.musicLibraryItemIndexBySongID
+                                artworkDataByAlbumKey = self.musicLibraryArtworkDataByAlbumKey
                             #endif
                         } else {
                             #if canImport(iTunesLibrary)
-                                let result = try self.fetchMusicLibrarySongsWithItemIndices()
+                                let result = try self.fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
                                 songs = result.songs
                                 itemIndices = result.itemIndices
+                                artworkDataByAlbumKey = result.artworkDataByAlbumKey
                             #else
                                 songs = try self.fetchMusicLibrarySongs()
                             #endif
@@ -1315,6 +1704,7 @@ extension MenuView {
                             self.musicAllSongsCache = songs
                             #if canImport(iTunesLibrary)
                                 self.musicLibraryItemIndexBySongID = itemIndices
+                                self.musicLibraryArtworkDataByAlbumKey = artworkDataByAlbumKey
                             #endif
                         }
                     }
@@ -1368,6 +1758,7 @@ extension MenuView {
                 shuffledSongs[0],
                 trackIndex: 0,
                 trackCount: shuffledSongs.count,
+                playbackQueue: shuffledSongs,
             )
             self.refreshMusicPreviewForCurrentContext()
         }
@@ -1405,6 +1796,7 @@ extension MenuView {
             trackIndex: 0,
             trackCount: shuffledSongs.count,
             usingExistingBlackout: usingExistingBlackout,
+            playbackQueue: shuffledSongs,
         )
     }
 
@@ -1461,6 +1853,7 @@ extension MenuView {
                         DispatchQueue.main.async {
                             guard self.musicSongsRequestID == requestID else { return }
                             self.musicLibraryItemIndexBySongID = result.itemIndices
+                            self.musicLibraryArtworkDataByAlbumKey = result.artworkDataByAlbumKey
                             self.musicShuffleSongsCache = result.songs
                             guard self.activeMusicPlaybackSongID == seedSong.id else { return }
                             let shuffleRequestID = incrementRequestID(&self.musicShuffleRequestID)
@@ -1633,6 +2026,7 @@ extension MenuView {
         let genre: String
         let composer: String
         let durationSeconds: Double
+        let artworkAlbumKey: String?
         let url: URL?
         let artwork: NSImage?
         #if os(tvOS)

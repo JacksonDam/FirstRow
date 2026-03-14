@@ -13,6 +13,7 @@ extension MenuView {
             NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
             return
         }
+        guard !blocksMenuForStartupMusicLibraryPreload else { return }
         registerUserInteractionForScreenSaver()
         if isFullscreenSceneTransitioning {
             return
@@ -220,7 +221,7 @@ extension MenuView {
         }
         submenuEntryWorkItem = entryWorkItem
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + iconFlightAnimationDuration + iconFlightHandoffPadding,
+            deadline: .now() + iconFlightAnimationDuration,
             execute: entryWorkItem,
         )
     }
@@ -229,8 +230,10 @@ extension MenuView {
         guard isInSubmenu || isEnteringSubmenu else { return }
         guard !isReturningToRoot else { return }
         let submenuExitFadeDuration = 0.18
-        let backgroundIconReturnDuration = 0.32
-        let rootRevealDelay = max(iconFlightAnimationDuration, submenuExitFadeDuration + backgroundIconReturnDuration)
+        let rootRevealDelay = max(
+            iconFlightAnimationDuration,
+            submenuBackgroundIconReturnDuration,
+        )
         let shouldPreserveMusicPlaybackStateOnRootExit =
             activeRootItemID == "music" && hasActiveMusicPlaybackSession()
         let preservedMusicSongsThirdMenuItems = shouldPreserveMusicPlaybackStateOnRootExit
@@ -293,13 +296,11 @@ extension MenuView {
             detailContentOpacity = 0
             headerOpacity = 0
         }
+        withAnimation(.easeInOut(duration: submenuBackgroundIconReturnDuration)) {
+            isEnteringSubmenu = false
+        }
         if playExitSound {
             playSound(named: "Exit")
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + submenuExitFadeDuration) {
-            withAnimation(.easeInOut(duration: backgroundIconReturnDuration)) {
-                isEnteringSubmenu = false
-            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + rootRevealDelay) {
             if shouldStopPodcastAudioAfterExitFade {
@@ -541,6 +542,7 @@ extension MenuView {
                     song,
                     trackIndex: songIndex,
                     trackCount: musicSongsThirdMenuItems.count,
+                    playbackQueue: musicSongsThirdMenuItems,
                 )
             }
         case .photosDateAlbums:
@@ -796,6 +798,7 @@ extension MenuView {
         _ key: KeyCode,
         modifiers: NSEvent.ModifierFlags = [],
     ) {
+        guard !blocksMenuForStartupMusicLibraryPreload else { return }
         guard isDirectionalNavigationKey(key) else {
             handleKeyInput(key, isRepeat: false, modifiers: modifiers)
             return
