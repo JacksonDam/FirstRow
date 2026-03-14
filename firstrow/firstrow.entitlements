@@ -14,17 +14,6 @@
 		<string>com.apple.fpsd</string>
 		<string>com.apple.tccd.system</string>
 	</array>
-	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
-	<array>
-		<string>/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/</string>
-		<string>/Library/Group Containers/243LU875E5.groups.com.apple.podcasts</string>
-		<string>/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents/</string>
-		<string>/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Library/</string>
-		<string>Library/Group Containers/243LU875E5.groups.com.apple.podcasts/</string>
-		<string>Library/Group Containers/243LU875E5.groups.com.apple.podcasts</string>
-		<string>Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents/</string>
-		<string>Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Library/</string>
-	</array>
 	<key>com.apple.security.personal-information.photos-library</key>
 	<true/>
 	<key>com.apple.security.personal-information.music-library</key>

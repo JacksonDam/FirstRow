@@ -153,14 +153,8 @@ func decompressedArtworkCGImage(from image: CGImage) -> CGImage {
 }
 
 func decodedArtworkImageCost(_ image: NSImage) -> Int {
-    #if os(iOS) || os(tvOS)
-        if let cgImage = image.cgImage {
-            return max(1, cgImage.width * cgImage.height * 4)
-        }
-    #else
-        if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            return max(1, cgImage.width * cgImage.height * 4)
-        }
-    #endif
+    if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        return max(1, cgImage.width * cgImage.height * 4)
+    }
     return 4 * 1024 * 1024
 }

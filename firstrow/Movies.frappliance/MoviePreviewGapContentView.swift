@@ -294,7 +294,7 @@ struct AnimatedMetadataGapContentView: View {
             let safeAspect = max(0.4, min(3.0, effectiveAspectRatio))
             let initialHeight = initialWidth / safeAspect
             let frameInScene = geometry.frame(in: .named("menuSceneSpace"))
-            let usesCompactMetadataLayout = sceneSize.width <= MenuVirtualScenePreset.iPad.width
+            let usesCompactMetadataLayout = sceneSize.width <= 1280
             let metadataLeftInset: CGFloat = 192
             let metadataBottomInset: CGFloat = 108
             let baseMetadataWidth = min(
@@ -435,51 +435,39 @@ struct AnimatedMetadataGapContentView: View {
     }
 
     static func makeResolvedCGImage(from source: NSImage) -> CGImage? {
-        #if os(iOS) || os(tvOS)
-            if let direct = source.cgImage {
-                return direct
-            }
-            let size = source.size
-            guard size.width > 0, size.height > 0 else { return nil }
-            UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
-            defer { UIGraphicsEndImageContext() }
-            source.draw(in: CGRect(origin: .zero, size: size))
-            return UIGraphicsGetImageFromCurrentImageContext()?.cgImage
-        #else
-            if let direct = source.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                return direct
-            }
-            let size = source.size
-            guard size.width > 0, size.height > 0 else { return nil }
-            let pixelWidth = max(1, Int(round(size.width)))
-            let pixelHeight = max(1, Int(round(size.height)))
-            guard let bitmap = NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: pixelWidth,
-                pixelsHigh: pixelHeight,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bytesPerRow: 0,
-                bitsPerPixel: 0,
-            ) else {
-                return nil
-            }
-            NSGraphicsContext.saveGraphicsState()
-            let context = NSGraphicsContext(bitmapImageRep: bitmap)
-            NSGraphicsContext.current = context
-            source.draw(
-                in: NSRect(origin: .zero, size: size),
-                from: NSRect(origin: .zero, size: size),
-                operation: .copy,
-                fraction: 1.0,
-            )
-            context?.flushGraphics()
-            NSGraphicsContext.restoreGraphicsState()
-            return bitmap.cgImage
-        #endif
+        if let direct = source.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return direct
+        }
+        let size = source.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        let pixelWidth = max(1, Int(round(size.width)))
+        let pixelHeight = max(1, Int(round(size.height)))
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelWidth,
+            pixelsHigh: pixelHeight,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0,
+        ) else {
+            return nil
+        }
+        NSGraphicsContext.saveGraphicsState()
+        let context = NSGraphicsContext(bitmapImageRep: bitmap)
+        NSGraphicsContext.current = context
+        source.draw(
+            in: NSRect(origin: .zero, size: size),
+            from: NSRect(origin: .zero, size: size),
+            operation: .copy,
+            fraction: 1.0,
+        )
+        context?.flushGraphics()
+        NSGraphicsContext.restoreGraphicsState()
+        return bitmap.cgImage
     }
 
     func measuredMetadataHeight(width: CGFloat) -> CGFloat {

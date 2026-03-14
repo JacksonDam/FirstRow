@@ -1,16 +1,8 @@
 import AVFoundation
 import Foundation
+import MusicKit
+import StoreKit
 import SwiftUI
-#if os(iOS)
-    import MediaPlayer
-    import UIKit
-#endif
-#if os(tvOS) || os(macOS)
-    import MusicKit
-#endif
-#if os(macOS)
-    import StoreKit
-#endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
@@ -730,92 +722,7 @@ extension MenuView {
     func fetchMusicTopLevelCarouselArtworks(startIndex: Int, limit: Int) throws -> [NSImage?] {
         let resolvedStartIndex = max(0, startIndex)
         let resolvedLimit = max(1, limit)
-        #if os(iOS)
-            guard MPMediaLibrary.authorizationStatus() == .authorized else {
-                throw NSError(
-                    domain: "firstRowMusicLibrary",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
-                )
-            }
-            let mediaItems = MPMediaQuery.songs().items ?? []
-            var seenAlbumKeys: Set<String> = []
-            var matchedIndex = 0
-            var artworks: [NSImage?] = []
-            artworks.reserveCapacity(resolvedLimit)
-            for item in mediaItems {
-                guard let song = makeMusicLibrarySongEntry(from: item) else { continue }
-                let albumKey = musicTopLevelCarouselAlbumKey(for: item)
-                guard seenAlbumKeys.insert(albumKey).inserted else { continue }
-                guard matchedIndex >= resolvedStartIndex else {
-                    matchedIndex += 1
-                    continue
-                }
-                artworks.append(song.artwork ?? musicFallbackImage)
-                if artworks.count >= resolvedLimit {
-                    break
-                }
-                matchedIndex += 1
-            }
-            return artworks
-        #elseif os(tvOS)
-            guard MusicAuthorization.currentStatus == .authorized else {
-                throw NSError(
-                    domain: "firstRowMusicLibrary",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
-                )
-            }
-            guard #available(tvOS 16.0, *) else {
-                throw NSError(
-                    domain: "firstRowMusicLibrary",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "MusicKit library requests require tvOS 16 or newer"],
-                )
-            }
-            var fetchResult: Result<[NSImage?], Error>?
-            let semaphore = DispatchSemaphore(value: 0)
-            Task {
-                defer { semaphore.signal() }
-                do {
-                    let rawBatchSize = max(resolvedLimit * 4, 72)
-                    var rawOffset = 0
-                    var uniqueAlbumIndex = 0
-                    var seenAlbumKeys: Set<String> = []
-                    var artworks: [NSImage?] = []
-                    artworks.reserveCapacity(resolvedLimit)
-                    while artworks.count < resolvedLimit {
-                        var request = MusicLibraryRequest<Song>()
-                        request.limit = rawBatchSize
-                        request.offset = rawOffset
-                        let response = try await request.response()
-                        guard !response.items.isEmpty else { break }
-                        for song in response.items {
-                            let albumKey = self.musicTopLevelCarouselAlbumKey(for: song)
-                            guard seenAlbumKeys.insert(albumKey).inserted else { continue }
-                            guard uniqueAlbumIndex >= resolvedStartIndex else {
-                                uniqueAlbumIndex += 1
-                                continue
-                            }
-                            artworks.append(loadMusicKitArtworkImage(song.artwork) ?? musicFallbackImage)
-                            uniqueAlbumIndex += 1
-                            if artworks.count >= resolvedLimit {
-                                break
-                            }
-                        }
-                        rawOffset += response.items.count
-                        if response.items.count < rawBatchSize {
-                            break
-                        }
-                    }
-                    fetchResult = .success(artworks)
-                } catch {
-                    fetchResult = .failure(error)
-                }
-            }
-            semaphore.wait()
-            return try fetchResult?.get() ?? []
-        #elseif canImport(iTunesLibrary)
+        #if canImport(iTunesLibrary)
             return try withITLibrary { library in
                 var seenAlbumKeys: Set<String> = []
                 var matchedIndex = 0
@@ -864,18 +771,6 @@ extension MenuView {
         return "track::\(fallbackItemID)"
     }
 
-    #if os(iOS)
-        func musicTopLevelCarouselAlbumKey(for item: MPMediaItem) -> String {
-            let albumPersistentID = (item.value(forProperty: MPMediaItemPropertyAlbumPersistentID) as? NSNumber)?.stringValue
-            return normalizedMusicTopLevelCarouselAlbumKey(
-                albumTitle: item.albumTitle,
-                albumArtist: item.albumArtist,
-                persistentAlbumID: albumPersistentID,
-                fallbackItemID: "\(item.persistentID)",
-            )
-        }
-    #endif
-
     #if canImport(iTunesLibrary)
         func musicTopLevelCarouselAlbumKey(for item: ITLibMediaItem) -> String {
             normalizedMusicTopLevelCarouselAlbumKey(
@@ -908,17 +803,6 @@ extension MenuView {
             aliases.append("track::\(item.persistentID)")
             var seen: Set<String> = []
             return aliases.filter { seen.insert($0).inserted }
-        }
-    #endif
-
-    #if os(tvOS)
-        func musicTopLevelCarouselAlbumKey(for song: Song) -> String {
-            normalizedMusicTopLevelCarouselAlbumKey(
-                albumTitle: song.albumTitle,
-                albumArtist: nil,
-                persistentAlbumID: nil,
-                fallbackItemID: song.id.rawValue,
-            )
         }
     #endif
 
@@ -1017,7 +901,6 @@ extension MenuView {
         showsShuffleAction: Bool = true,
     ) {
         transitionMenuForFolderSwap(
-            useOverlayFade: true,
             revealWhen: { !isLoadingMusicSongs },
         ) {
             prepareMusicLibraryThirdMenu(
@@ -1049,7 +932,6 @@ extension MenuView {
 
     func enterMusicCategoryMenu(title: String, kind: MusicCategoryKind) {
         transitionMenuForFolderSwap(
-            useOverlayFade: true,
             revealWhen: { !isLoadingMusicSongs },
         ) {
             prepareMusicLibraryThirdMenu(
@@ -1101,26 +983,7 @@ extension MenuView {
     }
 
     func fetchRandomMusicLibrarySongForShuffleSeed(includeArtwork: Bool = true) throws -> MusicLibrarySongEntry? {
-        #if os(iOS)
-            guard MPMediaLibrary.authorizationStatus() == .authorized else {
-                throw NSError(
-                    domain: "firstRowMusicLibrary",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
-                )
-            }
-            let mediaItems = MPMediaQuery.songs().items ?? []
-            guard !mediaItems.isEmpty else { return nil }
-            let startIndex = Int.random(in: 0 ..< mediaItems.count)
-            for offset in 0 ..< mediaItems.count {
-                let resolvedIndex = (startIndex + offset) % mediaItems.count
-                let item = mediaItems[resolvedIndex]
-                if let song = makeMusicLibrarySongEntry(from: item, includeArtwork: includeArtwork) {
-                    return song
-                }
-            }
-            return nil
-        #elseif canImport(iTunesLibrary)
+        #if canImport(iTunesLibrary)
             return try withITLibrary { library in
                 let all = library.allMediaItems
                 guard !all.isEmpty else { return nil }
@@ -1200,43 +1063,7 @@ extension MenuView {
         includeArtwork: Bool = true,
         shouldSort: Bool = true,
     ) throws -> [MusicLibrarySongEntry] {
-        #if os(iOS)
-            guard MPMediaLibrary.authorizationStatus() == .authorized else {
-                throw NSError(
-                    domain: "firstRowMusicLibrary",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
-                )
-            }
-            let mediaItems: [MPMediaItem]
-            switch mediaType {
-            case .songs:
-                mediaItems = MPMediaQuery.songs().items ?? []
-            case .musicVideos:
-                let query = MPMediaQuery.songs()
-                let predicate = MPMediaPropertyPredicate(
-                    value: MPMediaType.musicVideo.rawValue,
-                    forProperty: MPMediaItemPropertyMediaType,
-                    comparisonType: .equalTo,
-                )
-                query.addFilterPredicate(predicate)
-                mediaItems = query.items ?? []
-            case .audiobooks:
-                mediaItems = MPMediaQuery.audiobooks().items ?? []
-            }
-            let entries = mediaItems.compactMap { makeMusicLibrarySongEntry(from: $0, includeArtwork: includeArtwork) }
-            return shouldSort ? sortedMusicLibraryEntries(entries) : entries
-        #elseif os(tvOS)
-            switch mediaType {
-            case .songs:
-                return try fetchMusicLibrarySongsFromMusicKit(
-                    includeArtwork: includeArtwork,
-                    shouldSort: shouldSort,
-                )
-            case .musicVideos, .audiobooks:
-                return []
-            }
-        #elseif canImport(iTunesLibrary)
+        #if canImport(iTunesLibrary)
             return try withITLibrary { library in
                 var entries: [MusicLibrarySongEntry] = []
                 for item in library.allMediaItems {
@@ -1252,31 +1079,7 @@ extension MenuView {
     }
 
     func fetchMusicLibraryPlaylists() throws -> [MusicCategoryEntry] {
-        #if os(iOS)
-            guard MPMediaLibrary.authorizationStatus() == .authorized else {
-                throw NSError(
-                    domain: "firstRowMusicLibrary",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
-                )
-            }
-            let collections = MPMediaQuery.playlists().collections ?? []
-            let playlists: [MusicCategoryEntry] = collections.compactMap { collection in
-                let playlist = collection as? MPMediaPlaylist
-                let title = normalizedMusicLibraryText(playlist?.name, fallback: "Untitled Playlist")
-                let persistentID = playlist.map { "\($0.persistentID)" } ?? title.lowercased()
-                let songs = sortedMusicLibraryEntries(collection.items.compactMap { makeMusicLibrarySongEntry(from: $0) })
-                guard !songs.isEmpty else { return nil }
-                return MusicCategoryEntry(
-                    id: "playlist::ios::\(persistentID)",
-                    title: title,
-                    songs: songs,
-                )
-            }
-            return playlists.sorted {
-                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-            }
-        #elseif canImport(iTunesLibrary)
+        #if canImport(iTunesLibrary)
             return try withITLibrary { library in
                 library.allPlaylists.compactMap { playlist -> MusicCategoryEntry? in
                     guard playlist.isVisible else { return nil }
@@ -1318,31 +1121,6 @@ extension MenuView {
         }
     }
 
-    #if os(iOS)
-        func makeMusicLibrarySongEntry(from item: MPMediaItem, includeArtwork: Bool = true) -> MusicLibrarySongEntry? {
-            guard let locationURL = item.assetURL else { return nil }
-            let title = normalizedMusicLibraryText(
-                item.title,
-                fallback: locationURL.deletingPathExtension().lastPathComponent,
-            )
-            let artist = normalizedMusicLibraryText(item.artist, fallback: "Unknown Artist")
-            let album = normalizedMusicLibraryText(item.albumTitle, fallback: "Unknown Album")
-            let genre = normalizedMusicLibraryText(item.genre, fallback: "Unknown Genre")
-            let composer = normalizedMusicLibraryText(item.composer, fallback: "Unknown Composer")
-            return MusicLibrarySongEntry(
-                id: "\(item.persistentID)",
-                title: title,
-                artist: artist,
-                album: album,
-                genre: genre,
-                composer: composer,
-                durationSeconds: max(0, item.playbackDuration),
-                artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: item),
-                url: locationURL,
-                artwork: includeArtwork ? item.artwork?.image(at: CGSize(width: 800, height: 800)) : nil,
-            )
-        }
-    #endif
     #if canImport(iTunesLibrary)
         func musicPersistentIDHexString(for persistentID: NSNumber) -> String {
             String(format: "%016llX", persistentID.uint64Value)
@@ -1445,124 +1223,9 @@ extension MenuView {
             )
         }
     #endif
-    #if os(tvOS)
-        func fetchMusicLibrarySongsFromMusicKit(
-            includeArtwork: Bool = true,
-            shouldSort: Bool = true,
-        ) throws -> [MusicLibrarySongEntry] {
-            guard MusicAuthorization.currentStatus == .authorized else {
-                throw NSError(
-                    domain: "firstRowMusicLibrary",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
-                )
-            }
-            guard #available(tvOS 16.0, *) else {
-                throw NSError(
-                    domain: "firstRowMusicLibrary",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "MusicKit library requests require tvOS 16 or newer"],
-                )
-            }
-            var fetchResult: Result<[MusicLibrarySongEntry], Error>?
-            let semaphore = DispatchSemaphore(value: 0)
-            Task {
-                defer { semaphore.signal() }
-                do {
-                    var request = MusicLibraryRequest<Song>()
-                    request.limit = 5000
-                    let response = try await request.response()
-                    var songs: [MusicLibrarySongEntry] = []
-                    songs.reserveCapacity(response.items.count)
-                    for song in response.items {
-                        guard let entry = makeMusicLibrarySongEntry(from: song, includeArtwork: includeArtwork) else {
-                            continue
-                        }
-                        songs.append(entry)
-                    }
-                    fetchResult = .success(shouldSort ? sortedMusicLibraryEntries(songs) : songs)
-                } catch {
-                    fetchResult = .failure(error)
-                }
-            }
-            semaphore.wait()
-            return try fetchResult?.get() ?? []
-        }
-
-        func makeMusicLibrarySongEntry(from song: Song, includeArtwork: Bool = true) -> MusicLibrarySongEntry? {
-            guard song.playParameters != nil else { return nil }
-            let previewURL = song.previewAssets?.first(where: { $0.hlsURL != nil || $0.url != nil })
-            let playbackURL = previewURL?.hlsURL ?? previewURL?.url ?? song.url
-            let title = song.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            let artist = song.artistName.trimmingCharacters(in: .whitespacesAndNewlines)
-            let album = (song.albumTitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let genre = song.genreNames.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let composer = (song.composerName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return MusicLibrarySongEntry(
-                id: song.id.rawValue,
-                title: title.isEmpty ? "Unknown Song" : title,
-                artist: artist.isEmpty ? "Unknown Artist" : artist,
-                album: album.isEmpty ? "Unknown Album" : album,
-                genre: genre.isEmpty ? "Unknown Genre" : genre,
-                composer: composer.isEmpty ? "Unknown Composer" : composer,
-                durationSeconds: max(0, song.duration ?? 0),
-                artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: song),
-                url: playbackURL,
-                artwork: includeArtwork ? loadMusicKitArtworkImage(song.artwork) : nil,
-                musicKitSong: song,
-            )
-        }
-
-        func loadMusicKitArtworkImage(_ artwork: Artwork?) -> NSImage? {
-            guard let artwork else { return nil }
-            let side = max(300, min(800, min(artwork.maximumWidth, artwork.maximumHeight)))
-            guard let artworkURL = artwork.url(width: side, height: side) else { return nil }
-            guard let data = try? Data(contentsOf: artworkURL) else { return nil }
-            return cachedDecodedDisplayArtworkImage(
-                from: data,
-                sourceKey: artworkURL.absoluteString,
-                maxPixelSize: CGFloat(side),
-            )
-        }
-    #endif
 
     func requestMusicLibraryAuthorization(completion: @escaping (Bool) -> Void) {
-        #if os(iOS)
-            let status = MPMediaLibrary.authorizationStatus()
-            switch status {
-            case .authorized:
-                completion(true)
-            case .denied, .restricted:
-                completion(false)
-            case .notDetermined:
-                MPMediaLibrary.requestAuthorization { newStatus in
-                    DispatchQueue.main.async {
-                        completion(newStatus == .authorized)
-                    }
-                }
-            @unknown default:
-                completion(false)
-            }
-        #elseif os(tvOS)
-            let status = MusicAuthorization.currentStatus
-            switch status {
-            case .authorized:
-                completion(true)
-            case .denied, .restricted:
-                completion(false)
-            case .notDetermined:
-                Task {
-                    let newStatus = await MusicAuthorization.request()
-                    await MainActor.run {
-                        completion(newStatus == .authorized)
-                    }
-                }
-            @unknown default:
-                completion(false)
-            }
-        #else
-            completion(true)
-        #endif
+        completion(true)
     }
 
     func requestMusicLibraryAuthorizationAndLoadSongs() {
@@ -1942,12 +1605,7 @@ extension MenuView {
     }
 
     func musicLibraryErrorMessage(for error: Error) -> String {
-        #if os(tvOS) || os(iOS)
-            let nsError = error as NSError
-            if nsError.domain == "ICError", nsError.code == -7013 {
-                return "Music library access is unavailable for this build."
-            }
-        #endif
+        _ = error
         return "Unable to access Music library"
     }
 
@@ -2029,9 +1687,6 @@ extension MenuView {
         let artworkAlbumKey: String?
         let url: URL?
         let artwork: NSImage?
-        #if os(tvOS)
-            let musicKitSong: Song?
-        #endif
     }
 
     struct MusicCategoryEntry: Identifiable {

@@ -3,9 +3,6 @@ import SwiftUI
 extension MenuView {
     func currentSubmenuItems() -> [SubmenuItemConfig] {
         guard let activeRootItemID else { return [] }
-        if activeRootItemID == "podcasts" {
-            return podcastsSubmenuItems()
-        }
         var items = MenuConfiguration.submenuItems(forRootID: activeRootItemID)
         if activeRootItemID == "music",
            isMusicActivelyPlaying || holdNowPlayingMenuItemDuringExitFade,
@@ -25,18 +22,7 @@ extension MenuView {
     }
 
     var isMusicActivelyPlaying: Bool {
-        isMusicPlaybackRunning() && !isPodcastAudioNowPlaying
-    }
-
-    var shouldHideSubmenuListUntilLoadCompletes: Bool {
-        activeRootItemID == "podcasts" &&
-            isLoadingPodcasts &&
-            podcastSeriesItems.isEmpty &&
-            podcastsLoadError == nil
-    }
-
-    var shouldHidePodcastsSubmenuChromeUntilLoadCompletes: Bool {
-        shouldHideSubmenuListUntilLoadCompletes
+        isMusicPlaybackRunning()
     }
 
     var shouldHideThirdMenuListUntilLoadCompletes: Bool {
@@ -45,10 +31,6 @@ extension MenuView {
             isLoadingITunesTop(.movies) &&
                 iTunesTopMovies.isEmpty &&
                 currentITunesTopLoadError(.movies) == nil
-        case .tvITunesTopEpisodes:
-            isLoadingITunesTop(.tvEpisodes) &&
-                iTunesTopTVEpisodes.isEmpty &&
-                currentITunesTopLoadError(.tvEpisodes) == nil
         case .musicITunesTopSongs:
             isLoadingITunesTop(.songs) &&
                 iTunesTopSongs.isEmpty &&
@@ -69,17 +51,13 @@ extension MenuView {
             isLoadingPhotoLibrary &&
                 photosDateAlbums.isEmpty &&
                 photoLibraryLoadError == nil
-        case .podcastsEpisodes:
-            isLoadingPodcasts &&
-                podcastEpisodesThirdMenuItems.isEmpty &&
-                podcastsLoadError == nil
         default:
             false
         }
     }
 
     func rootMenuTitle(for rootID: String?) -> String {
-        guard let rootID, let rootItem = menuItems.first(where: { $0.id == rootID }) else {
+        guard let rootID, let rootItem = MenuConfiguration.rootItem(withID: rootID) else {
             return "First Row"
         }
         return rootItem.title
@@ -103,14 +81,10 @@ extension MenuView {
 
     func submenuListItems() -> [MenuListItemConfig] {
         currentSubmenuItems().map {
-            let resolvedTrailingText: String?
             var resolvedLeadingImageAssetName = $0.leadingImageAssetName
             var resolvedLeadingImage: NSImage?
-            if activeRootItemID == "settings", $0.id == "settings_soundeffects" {
-                resolvedTrailingText = isUISoundEffectsEnabled ? "On" : "Off"
-            } else if activeRootItemID == "settings", $0.id == "settings_screensaver" {
-                resolvedTrailingText = isScreenSaverEnabled ? "On" : "Off"
-            } else if activeRootItemID == "photos", let album = photoAlbumForSubmenuItemID($0.id) {
+            let resolvedTrailingText: String?
+            if activeRootItemID == "photos", let album = photoAlbumForSubmenuItemID($0.id) {
                 resolvedTrailingText = "(\(album.count))"
                 resolvedLeadingImage = photoLeadingImage(for: album)
                 if resolvedLeadingImage != nil {
@@ -149,8 +123,6 @@ extension MenuView {
             }
         case .moviesITunesTop:
             return iTunesTopThirdMenuListItems(for: .movies)
-        case .tvITunesTopEpisodes:
-            return iTunesTopThirdMenuListItems(for: .tvEpisodes)
         case .musicITunesTopSongs:
             return iTunesTopThirdMenuListItems(for: .songs)
         case .musicITunesTopMusicVideos:
@@ -209,47 +181,6 @@ extension MenuView {
                 return []
             }
             return photosDateAlbumMenuItems
-        case .podcastsEpisodes:
-            if isLoadingPodcasts, podcastEpisodesThirdMenuItems.isEmpty {
-                return []
-            }
-            if let podcastsLoadError, podcastEpisodesThirdMenuItems.isEmpty {
-                return [
-                    menuMessageItem(id: "podcasts_episodes_error", title: podcastsLoadError),
-                ]
-            }
-            if podcastEpisodesThirdMenuItems.isEmpty {
-                return [
-                    menuMessageItem(
-                        id: "podcasts_episodes_empty",
-                        title: "No Downloaded Episodes",
-                    ),
-                ]
-            }
-            return podcastEpisodesThirdMenuItems.enumerated().map { index, episode in
-                let isActiveAudioEpisode =
-                    isPodcastAudioNowPlaying &&
-                    activePodcastPlaybackEpisodeID == episode.id
-                let resolvedTrailingText = isActiveAudioEpisode
-                    ? podcastTrackPositionText(
-                        trackIndex: index,
-                        trackCount: podcastEpisodesThirdMenuItems.count,
-                    )
-                    : podcastEpisodeAiredText(for: episode.airedDate)
-                return .init(
-                    id: episode.id,
-                    title: episode.title,
-                    leadsToMenu: false,
-                    leadingImageAssetName: nil,
-                    leadingImage: nil,
-                    trailingText: resolvedTrailingText,
-                    trailingSymbolName: nil,
-                    showsTopDivider: false,
-                    showsBlueDot: podcastEpisodeIsRecent(episode.airedDate),
-                    showsLightRowBackground: false,
-                    alignsTextToDividerStart: false,
-                )
-            }
         case .none:
             return []
         }
@@ -312,8 +243,6 @@ extension MenuView {
         switch kind {
         case .movies:
             "movies"
-        case .tvEpisodes:
-            "tv_episodes"
         case .songs:
             "songs"
         case .musicVideos:
@@ -329,8 +258,6 @@ extension MenuView {
         switch kind {
         case .movies:
             iTunesTopMovies.map { ($0.id, $0.rank, $0.title) }
-        case .tvEpisodes:
-            iTunesTopTVEpisodes.map { ($0.id, $0.rank, $0.title) }
         case .songs:
             iTunesTopSongs.map { ($0.id, $0.rank, $0.title) }
         case .musicVideos:

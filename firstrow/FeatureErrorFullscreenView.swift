@@ -33,7 +33,6 @@ enum FeatureErrorKind: String {
     case protectedVideoUnsupported
     case noMoviesInFolder
     case noPhotosInLibrary
-    case noPodcasts
     case noAudiobooks
     case noMusicVideos
     case noSongs
@@ -70,11 +69,6 @@ enum FeatureErrorKind: String {
             FeatureErrorCopy(
                 headerText: "There are no photos in your iPhoto library.",
                 subcaptionText: "",
-            )
-        case .noPodcasts:
-            FeatureErrorCopy(
-                headerText: "First Row cannot find any podcasts.",
-                subcaptionText: "Use iTunes to subscribe to podcasts from the iTunes Store.",
             )
         case .noAudiobooks:
             FeatureErrorCopy(

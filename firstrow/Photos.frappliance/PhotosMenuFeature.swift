@@ -1,7 +1,12 @@
 import Foundation
 
 struct PhotosMenuFeature: MenuFeatureConfiguration {
-    let rootItem = RootMenuItemConfig(id: "photos", title: "Photos", iconAssetName: "photos")
+    let rootItem = RootMenuItemConfig(
+        id: "photos",
+        title: "Photos",
+        iconAssetName: "photos",
+        mainMenuSelectionSoundName: "MainPhotosSelection",
+    )
     let submenuItems: [SubmenuItemConfig] = [
         .init(id: "photos_shared", title: "Shared Photos", leadsToMenu: true, trailingText: "•••", alignsTextToDividerStart: true),
         .init(id: "photos_library", title: "Photos", leadsToMenu: true, leadingImageAssetName: "photos", showsTopDivider: true, showsLightRowBackground: true),

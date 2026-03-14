@@ -123,14 +123,11 @@ extension MenuView {
 
     enum ITunesTopVideoPreviewPlaybackSource {
         case movie(ITunesTopMovieEntry)
-        case tvEpisode(ITunesTopTVEpisodeEntry)
         case musicVideo(ITunesTopMusicVideoEntry)
         var kind: ITunesTopCarouselKind {
             switch self {
             case .movie:
                 .movies
-            case .tvEpisode:
-                .tvEpisodes
             case .musicVideo:
                 .musicVideos
             }
@@ -139,8 +136,6 @@ extension MenuView {
         var itemID: String {
             switch self {
             case let .movie(entry):
-                entry.id
-            case let .tvEpisode(entry):
                 entry.id
             case let .musicVideo(entry):
                 entry.id
@@ -208,8 +203,6 @@ extension MenuView {
         switch source {
         case let .movie(entry):
             await resolveITunesTopMoviePreviewVideoURL(for: entry)
-        case let .tvEpisode(entry):
-            await resolveITunesTopTVEpisodePreviewVideoURL(for: entry)
         case let .musicVideo(entry):
             await resolveITunesTopMusicVideoPreviewVideoURL(for: entry)
         }
@@ -217,7 +210,6 @@ extension MenuView {
 
     func startITunesTopVideoPreviewPlayback(from source: ITunesTopVideoPreviewPlaybackSource) {
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
-        resetScreenSaverIdleTimer()
         let requestID = nextITunesTopVideoPreviewPlaybackRequestID(for: source)
         isMovieTransitioning = true
         withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
@@ -278,10 +270,6 @@ extension MenuView {
         startITunesTopVideoPreviewPlayback(from: .movie(movie))
     }
 
-    func startITunesTopTVEpisodePreviewPlayback(for episode: ITunesTopTVEpisodeEntry) {
-        startITunesTopVideoPreviewPlayback(from: .tvEpisode(episode))
-    }
-
     func startITunesTopSongPreviewPlayback(
         for song: ITunesTopSongEntry,
         trackIndex _: Int? = nil,
@@ -312,34 +300,18 @@ extension MenuView {
                         ? self.iTunesTopState(for: .songs).previewImage
                         : nil))
             }.image
-            #if os(tvOS)
-                let playbackEntry = MusicLibrarySongEntry(
-                    id: song.id,
-                    title: song.title,
-                    artist: "iTunes Top Songs",
-                    album: "",
-                    genre: "",
-                    composer: "",
-                    durationSeconds: 0,
-                    artworkAlbumKey: nil,
-                    url: temporaryAudioURL,
-                    artwork: resolvedArtwork,
-                    musicKitSong: nil,
-                )
-            #else
-                let playbackEntry = MusicLibrarySongEntry(
-                    id: song.id,
-                    title: song.title,
-                    artist: "iTunes Top Songs",
-                    album: "",
-                    genre: "",
-                    composer: "",
-                    durationSeconds: 0,
-                    artworkAlbumKey: nil,
-                    url: temporaryAudioURL,
-                    artwork: resolvedArtwork,
-                )
-            #endif
+            let playbackEntry = MusicLibrarySongEntry(
+                id: song.id,
+                title: song.title,
+                artist: "iTunes Top Songs",
+                album: "",
+                genre: "",
+                composer: "",
+                durationSeconds: 0,
+                artworkAlbumKey: nil,
+                url: temporaryAudioURL,
+                artwork: resolvedArtwork,
+            )
             await MainActor.run {
                 guard self.currentITunesTopPlaybackRequestID(.songs) == requestID else {
                     try? FileManager.default.removeItem(at: temporaryAudioURL)

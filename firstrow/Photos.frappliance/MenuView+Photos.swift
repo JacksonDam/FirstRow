@@ -1,9 +1,6 @@
 import AVFoundation
 import Photos
 import SwiftUI
-#if os(iOS)
-    import UIKit
-#endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
@@ -21,19 +18,11 @@ private let photosCarouselArtworkLoadQueue = DispatchQueue(
 
 extension MenuView {
     var photosCarouselArtworkLoadLimit: Int {
-        #if os(iOS)
-            20
-        #else
-            48
-        #endif
+        48
     }
 
     var photosCarouselArtworkTargetSize: CGSize {
-        #if os(iOS)
-            CGSize(width: 1728, height: 1728)
-        #else
-            CGSize(width: 2048, height: 2048)
-        #endif
+        CGSize(width: 2048, height: 2048)
     }
 
     var photosCarouselArtworkDeliveryMode: PHImageRequestOptionsDeliveryMode {
@@ -41,30 +30,15 @@ extension MenuView {
     }
 
     var photosAlbumCoverPrefetchRadius: Int {
-        #if os(iOS)
-            3
-        #else
-            4
-        #endif
+        4
     }
 
     var photosAlbumCoverPrefetchBatchLimit: Int {
-        #if os(iOS)
-            12
-        #else
-            14
-        #endif
+        14
     }
 
     var photoSlideshowImageTargetSize: CGSize {
-        #if os(iOS)
-            let nativeSize = activeWindowScreen?.nativeBounds.size ?? CGSize(width: 1920, height: 1080)
-            let longestSide = max(nativeSize.width, nativeSize.height)
-            let cappedLongestSide = min(max(longestSide, 1920), 2688)
-            return CGSize(width: cappedLongestSide, height: cappedLongestSide)
-        #else
-            CGSize(width: 3200, height: 2000)
-        #endif
+        CGSize(width: 3200, height: 2000)
     }
 
     var photoSlideshowImageDeliveryMode: PHImageRequestOptionsDeliveryMode {
@@ -76,27 +50,15 @@ extension MenuView {
     }
 
     var photoSlideshowPrefetchRadius: Int {
-        #if os(iOS)
-            1
-        #else
-            2
-        #endif
+        2
     }
 
     var photoSlideshowCacheLimit: Int {
-        #if os(iOS)
-            4
-        #else
-            8
-        #endif
+        8
     }
 
     var photoSlideshowFallbackTargetSize: CGSize {
-        #if os(iOS)
-            CGSize(width: 1536, height: 1536)
-        #else
-            CGSize(width: 2048, height: 2048)
-        #endif
+        CGSize(width: 2048, height: 2048)
     }
 
     var photosLastImportAlbum: PhotoLibraryAlbumEntry {
@@ -419,7 +381,6 @@ extension MenuView {
             return
         }
         transitionMenuForFolderSwap(
-            useOverlayFade: true,
             revealWhen: { !isLoadingPhotoLibrary },
         ) {
             thirdMenuMode = .photosDateAlbums
@@ -463,7 +424,6 @@ extension MenuView {
         guard album.isPlayable else { return }
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
         guard !isFullscreenSceneTransitioning else { return }
-        resetScreenSaverIdleTimer()
         let requestID = incrementRequestID(&photoSlideshowRequestID)
         stopMusicPlaybackSession(clearDisplayState: false)
         stopPhotoSlideshowMusic()
@@ -601,7 +561,6 @@ extension MenuView {
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + self.photoSlideshowMenuRevealDuration) {
                         guard self.photoSlideshowRequestID == requestID else { return }
-                        self.resetScreenSaverIdleTimer()
                         self.isFullscreenSceneTransitioning = false
                     }
                 }
@@ -838,7 +797,6 @@ extension MenuView {
                     fullscreenTransitionOverlayOpacity = 0
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + photoSlideshowMenuRevealDuration) {
-                    resetScreenSaverIdleTimer()
                     isFullscreenSceneTransitioning = false
                 }
             }
@@ -1228,20 +1186,11 @@ extension MenuView {
     ) -> CGSize {
         let safeWidth = max(1, targetSize.width)
         let safeHeight = max(1, targetSize.height)
-        let maxRequestedDimension: CGFloat
-        #if os(iOS)
-            if deliveryMode == .highQualityFormat {
-                maxRequestedDimension = 2688
-            } else {
-                maxRequestedDimension = 1536
-            }
-        #else
-            if deliveryMode == .highQualityFormat {
-                maxRequestedDimension = 3200
-            } else {
-                maxRequestedDimension = 2048
-            }
-        #endif
+        let maxRequestedDimension: CGFloat = if deliveryMode == .highQualityFormat {
+            3200
+        } else {
+            2048
+        }
         let longestSide = max(safeWidth, safeHeight)
         guard longestSide > maxRequestedDimension else {
             return CGSize(width: safeWidth, height: safeHeight)

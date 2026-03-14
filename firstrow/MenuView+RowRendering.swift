@@ -1,7 +1,4 @@
 import SwiftUI
-#if os(iOS)
-    import UIKit
-#endif
 
 private extension View {
     func arrowGlow(_ glowing: Bool, _ appearance: ArrowAppearance) -> some View {
@@ -47,7 +44,6 @@ private struct RootMenuSelectionCenterPreferenceKey: PreferenceKey {
 
 enum MenuVirtualScenePreset {
     static let widescreen = CGSize(width: 1920, height: 1080)
-    static let iPad = CGSize(width: 1440, height: 1080)
 
     static func scaledX(_ value: CGFloat, for virtualSize: CGSize) -> CGFloat {
         guard widescreen.width > 0 else { return value }
@@ -55,7 +51,8 @@ enum MenuVirtualScenePreset {
     }
 
     static func additionalMenuGapX(for virtualSize: CGSize) -> CGFloat {
-        virtualSize == iPad ? 56 : 0
+        _ = virtualSize
+        return 0
     }
 }
 
@@ -95,6 +92,116 @@ struct MenuVirtualSceneLayout {
     }
 }
 
+private struct RootStagePlacement {
+    let horizontalOffset: CGFloat
+    let verticalOffset: CGFloat
+    let zIndex: CGFloat
+    let scale: CGFloat
+    let baseSizeMultiplier: CGFloat
+    let blurRadius: CGFloat
+    let opacity: CGFloat
+}
+
+private func interpolatedCGFloat(
+    from start: CGFloat,
+    to end: CGFloat,
+    progress: CGFloat,
+) -> CGFloat {
+    start + ((end - start) * progress)
+}
+
+private func unitProgress(_ raw: CGFloat) -> CGFloat {
+    min(max(raw, 0), 1)
+}
+
+private func smoothStep(_ raw: CGFloat) -> CGFloat {
+    let clamped = unitProgress(raw)
+    return clamped * clamped * (3 - (2 * clamped))
+}
+
+private func projectedRootStagePlacement(
+    for index: Int,
+    selectionValue: Double,
+    itemCount: Int,
+    radius: CGFloat,
+    tiltDegrees: Double,
+    centerYOffset: CGFloat,
+    perspectiveDistance: CGFloat,
+    baseSizeMultiplier: CGFloat,
+) -> RootStagePlacement {
+    let visibleCount = max(1, min(itemCount, 4))
+    let angleStep = (2.0 * Double.pi) / Double(visibleCount)
+    let angle = (Double(index) - selectionValue) * angleStep
+    let tiltRadians = tiltDegrees * (.pi / 180)
+    let sideBiasProgress = max(0, 1 - abs(CGFloat(cos(angle))))
+    let sideHorizontalBias = CGFloat(sin(angle).sign == .minus ? -18 : 18) * sideBiasProgress
+    let sideVerticalBias = -60 * sideBiasProgress
+    let depth = radius * CGFloat(cos(angle))
+    let projectedDepth = depth * CGFloat(cos(tiltRadians))
+    let normalizedDepth = projectedDepth / max(1, radius * CGFloat(cos(tiltRadians)))
+    let perspectiveScale =
+        perspectiveDistance /
+        max(1, perspectiveDistance - projectedDepth)
+    let opacity = 0.84 + (0.16 * ((normalizedDepth + 1) * 0.5))
+    let blurRadius = max(0, -normalizedDepth) * 0.35
+
+    return RootStagePlacement(
+        horizontalOffset: (radius * CGFloat(sin(angle))) + sideHorizontalBias,
+        verticalOffset: centerYOffset + (depth * CGFloat(sin(tiltRadians))) + sideVerticalBias,
+        zIndex: projectedDepth,
+        scale: perspectiveScale,
+        baseSizeMultiplier: baseSizeMultiplier,
+        blurRadius: blurRadius,
+        opacity: opacity,
+    )
+}
+
+private struct RootOrbitModifier: AnimatableModifier {
+    let index: Int
+    let itemCount: Int
+    let radius: CGFloat
+    let tiltDegrees: Double
+    let centerYOffset: CGFloat
+    let perspectiveDistance: CGFloat
+    let baseSizeMultiplier: CGFloat
+    let isSelectedRootItem: Bool
+    let isEnteringSubmenu: Bool
+    let isBackground: Bool
+    var selectionValue: Double
+    var introProgress: Double
+
+    var animatableData: AnimatablePair<Double, Double> {
+        get { .init(selectionValue, introProgress) }
+        set {
+            selectionValue = newValue.first
+            introProgress = newValue.second
+        }
+    }
+
+    func body(content: Content) -> some View {
+        let placement = projectedRootStagePlacement(
+            for: index,
+            selectionValue: selectionValue,
+            itemCount: itemCount,
+            radius: radius,
+            tiltDegrees: tiltDegrees,
+            centerYOffset: centerYOffset,
+            perspectiveDistance: perspectiveDistance,
+            baseSizeMultiplier: baseSizeMultiplier,
+        )
+        let opacity: CGFloat = isEnteringSubmenu && isBackground ? 0.06 : 1.0
+        let scale = placement.scale * (isEnteringSubmenu && isBackground ? 0.82 : 1.0)
+        let verticalOffset = placement.verticalOffset + (isEnteringSubmenu && isBackground ? 240 : 0)
+
+        content
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .offset(x: placement.horizontalOffset, y: verticalOffset)
+            .blur(radius: placement.blurRadius)
+            .zIndex(Double(placement.zIndex))
+    }
+}
+
 extension MenuView {
     var selectionMovementAnimation: Animation {
         if useLinearSelectionSweepAnimation {
@@ -110,10 +217,7 @@ extension MenuView {
     @ViewBuilder
     func headerView(geometry: GeometryProxy) -> some View {
         if isInSubmenu, activeRootItemID != nil {
-            let effectiveSubmenuTitleOpacity = shouldHidePodcastsSubmenuChromeUntilLoadCompletes
-                ? 0
-                : submenuTitleOpacity
-            Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).opacity(effectiveSubmenuTitleOpacity).offset(x: firstRowHeaderOffsetX(geometry: geometry) + (landedIconWidth * 0.6)).offset(y: menuHeaderVerticalOffset).animation(.easeInOut(duration: 0.25), value: submenuTitleOpacity).animation(.easeInOut(duration: 0.22), value: shouldHidePodcastsSubmenuChromeUntilLoadCompletes)
+            Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).opacity(submenuTitleOpacity).offset(x: firstRowHeaderOffsetX(geometry: geometry) + (landedIconWidth * 0.6)).offset(y: menuHeaderVerticalOffset).animation(.easeInOut(duration: 0.25), value: submenuTitleOpacity)
         } else {
             Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).offset(x: rootMenuHeaderOffsetX(geometry: geometry)).offset(y: menuHeaderVerticalOffset).opacity(headerOpacity).animation(.easeInOut(duration: 0.25), value: headerOpacity)
         }
@@ -174,11 +278,8 @@ extension MenuView {
         let rootMenuItems = rootListItems()
         let submenuItems = submenuListItems()
         let thirdMenuItems = thirdMenuListItems()
+        let rootMenuVisibleRowCount = min(defaultVisibleMenuRowCount, max(1, rootMenuItems.count))
         let isPhotosSubmenu = activeRootItemID == "photos"
-        let tvShowsSubmenuListTopInset: CGFloat =
-            (activeRootItemID == "tv_shows" && (isInSubmenu || isEnteringSubmenu)) ? 91 : 0
-        let effectiveSubmenuOpacity = shouldHideSubmenuListUntilLoadCompletes ? 0 : submenuOpacity
-        let effectiveThirdMenuOpacity = shouldHideThirdMenuListUntilLoadCompletes ? 0 : thirdMenuOpacity
         return ZStack(alignment: .topLeading) {
             menuListContainer(
                 items: rootMenuItems,
@@ -186,7 +287,7 @@ extension MenuView {
                 geometry: geometry,
                 arrowAppearance: menuArrowAppearance,
                 showsTopOverflowFade: true,
-                visibleRowCount: defaultVisibleMenuRowCount,
+                visibleRowCount: rootMenuVisibleRowCount,
                 selectionBoxWidthScale: 1.0,
                 selectionBoxHeightScale: 1.0,
                 reportsSelectionCenterX: true,
@@ -201,7 +302,7 @@ extension MenuView {
                     visibleRowCount: defaultVisibleMenuRowCount,
                     selectionBoxWidthScale: isPhotosSubmenu ? photosSelectionBoxWidthScale : 1.0,
                     selectionBoxHeightScale: isPhotosSubmenu ? photosSelectionBoxHeightScale : 1.0,
-                ).opacity(effectiveSubmenuOpacity).offset(y: tvShowsSubmenuListTopInset).animation(.none, value: tvShowsSubmenuListTopInset).animation(.easeInOut(duration: 0.18), value: shouldHideSubmenuListUntilLoadCompletes)
+                ).opacity(submenuOpacity)
             }
             if isInThirdMenu || thirdMenuOpacity > 0.001 {
                 let isPhotosThirdMenu = activeRootItemID == "photos" && thirdMenuMode == .photosDateAlbums
@@ -214,71 +315,9 @@ extension MenuView {
                     visibleRowCount: thirdLevelVisibleMenuRowCount,
                     selectionBoxWidthScale: isPhotosThirdMenu ? photosSelectionBoxWidthScale : 1.0,
                     selectionBoxHeightScale: isPhotosThirdMenu ? photosSelectionBoxHeightScale : 1.0,
-                ).opacity(effectiveThirdMenuOpacity).animation(.easeInOut(duration: 0.18), value: shouldHideThirdMenuListUntilLoadCompletes)
-            }
-            if shouldShowTVShowsSortPill {
-                tvShowsSortPillView().frame(width: menuWidthConstrained(geometry: geometry), alignment: .center).offset(y: 6).transition(.opacity).animation(.easeInOut(duration: 0.2), value: shouldShowTVShowsSortPill)
+                ).opacity(thirdMenuOpacity)
             }
         }.frame(height: stableMenuListLayoutHeight, alignment: .top)
-    }
-
-    var shouldShowTVShowsSortPill: Bool {
-        activeRootItemID == "tv_shows" &&
-            isInSubmenu &&
-            !isInThirdMenu &&
-            submenuOpacity > 0.001
-    }
-
-    @ViewBuilder
-    func tvShowsSortPillView() -> some View {
-        let pillWidth: CGFloat = 209
-        let pillHeight: CGFloat = 28
-        let segmentWidth = pillWidth * 0.5
-        let selectedX = tvShowsSortMode == .date ? -(segmentWidth * 0.5) : (segmentWidth * 0.5)
-        let usesDateSelection = tvShowsSortMode == .date
-        ZStack {
-            Capsule(style: .continuous).fill(
-                LinearGradient(
-                    gradient: Gradient(stops: [.init(color: Color(red: 30 / 255, green: 45 / 255, blue: 60 / 255), location: 0.0), .init(color: Color(red: 2 / 255, green: 6 / 255, blue: 8 / 255), location: 1.0)]),
-                    startPoint: .top,
-                    endPoint: .bottom,
-                ),
-            ).overlay(LinearGradient(
-                gradient: Gradient(stops: [.init(color: .white.opacity(0.30), location: 0.0), .init(color: .white.opacity(0.12), location: 0.34), .init(color: .clear, location: 0.92)]),
-                startPoint: .top,
-                endPoint: .bottom,
-            ).mask(
-                TVShowsSortPillUpperGlossMask().fill(Color.white).blur(radius: 0.45),
-            ))
-            TVShowsSortPillSelectionShape(
-                roundsLeftSide: usesDateSelection,
-                roundsRightSide: !usesDateSelection,
-            ).fill(
-                LinearGradient(
-                    gradient: Gradient(stops: [.init(color: Color(red: 70 / 255, green: 120 / 255, blue: 180 / 255), location: 0.0), .init(color: Color(red: 70 / 255, green: 112 / 255, blue: 165 / 255), location: 1.0)]),
-                    startPoint: .top,
-                    endPoint: .bottom,
-                ),
-            ).overlay(LinearGradient(
-                gradient: Gradient(stops: [.init(color: .white.opacity(0.30), location: 0.0), .init(color: .white.opacity(0.12), location: 0.34), .init(color: .clear, location: 0.9)]),
-                startPoint: .top,
-                endPoint: .bottom,
-            ).mask(
-                TVShowsSortPillUpperGlossMask().fill(Color.white).blur(radius: 0.45),
-            ).clipShape(
-                TVShowsSortPillSelectionShape(
-                    roundsLeftSide: usesDateSelection,
-                    roundsRightSide: !usesDateSelection,
-                ),
-            )).frame(width: segmentWidth, height: pillHeight).offset(x: selectedX)
-            Rectangle().fill(Color.black.opacity(0.34)).frame(width: 1, height: pillHeight - 10)
-            HStack(spacing: 0) {
-                Text("Date").font(.custom("Lucida Grande", size: 20)).foregroundColor(tvShowsSortMode == .date ? .white : Color.white.opacity(0.56)).frame(width: segmentWidth, height: pillHeight, alignment: .center)
-                Text("Show").font(.custom("Lucida Grande", size: 20)).foregroundColor(tvShowsSortMode == .show ? .white : Color.white.opacity(0.56)).frame(width: segmentWidth, height: pillHeight, alignment: .center)
-            }
-        }.frame(width: pillWidth, height: pillHeight).clipShape(Capsule(style: .continuous)).overlay(
-            Capsule(style: .continuous).stroke(Color(red: 82 / 255, green: 147 / 255, blue: 221 / 255).opacity(0.96), lineWidth: 2),
-        ).accessibilityHidden(true)
     }
 
     func menuListContainer(
@@ -414,12 +453,9 @@ extension MenuView {
                         trailingText: item.trailingText,
                         trailingSymbolName: item.trailingSymbolName,
                         showsPlaybackSpeaker:
-                        (thirdMenuMode == .musicSongs &&
+                        thirdMenuMode == .musicSongs &&
                             activeMusicPlaybackSongID == item.id &&
-                            hasActiveMusicPlaybackSession()) ||
-                            (thirdMenuMode == .podcastsEpisodes &&
-                                isPodcastAudioNowPlaying &&
-                                activePodcastPlaybackEpisodeID == item.id),
+                            hasActiveMusicPlaybackSession(),
                         showsBlueDot: item.showsBlueDot,
                         alignsTextToDividerStart: item.alignsTextToDividerStart,
                         arrowAppearance: arrowAppearance,
@@ -490,35 +526,35 @@ extension MenuView {
     // MARK: - Layout geometry
 
     func visibleIndices() -> [Int] {
-        let indices = [0, 1, 2, 3, 4, 5, 6].map { offset in
+        let visibleCount = min(menuItems.count, 4)
+        let indices = Array(0 ..< visibleCount).map { offset in
             (selectedIndex + offset + menuItems.count) % menuItems.count
         }
         return indices.reversed()
     }
 
     func carouselWidth(geometry: GeometryProxy) -> CGFloat {
-        min(
-            iconSize * CGFloat(menuItems.count) + iconSpacing * CGFloat(menuItems.count - 1),
-            baselineLayoutWidth(geometry: geometry) * 0.67,
-        )
+        min(1240, baselineLayoutWidth(geometry: geometry) * 0.62)
     }
 
     func carouselOffsetY() -> CGFloat {
-        -arcRadius * 0.3 * 1.5
+        48
     }
 
-    func landedSelectedHorizontalOffset(geometry: GeometryProxy) -> CGFloat {
-        let titleLeadingX = submenuHeaderTitleLeadingGlobalX(geometry: geometry)
-        let iconHalfWidth = landedIconWidth * 0.5
-        let desiredGap: CGFloat = -50
-        let baselineWidth = baselineLayoutWidth(geometry: geometry)
-        let carouselLaneWidth = carouselWidth(geometry: geometry)
-        let carouselContainerOffsetX = MenuVirtualScenePreset.scaledX(
-            20,
-            for: activeMenuVirtualSceneSize,
-        )
-        let carouselCenterX = (-baselineWidth * 0.5) + (carouselLaneWidth * 0.5) + carouselContainerOffsetX
-        return titleLeadingX - desiredGap - iconHalfWidth - carouselCenterX
+    func landedSelectedHorizontalOffset(geometry _: GeometryProxy) -> CGFloat {
+        let font = NSFont(name: firstRowBoldFontName, size: 88)
+            ?? NSFont.boldSystemFont(ofSize: 88)
+        let titleText: String = {
+            if isEnteringSubmenu, !isReturningToRoot {
+                return rootMenuTitle(for: activeRootItemID)
+            }
+            return headerText
+        }()
+        let titleWidth = ceil((titleText as NSString).size(withAttributes: [.font: font]).width)
+        let iconWidth: CGFloat = 92
+        let spacing: CGFloat = 20
+        let totalWidth = iconWidth + spacing + titleWidth
+        return -(totalWidth * 0.5) + (iconWidth * 0.5)
     }
 
     func submenuHeaderTitleLeadingGlobalX(geometry: GeometryProxy) -> CGFloat {
@@ -567,7 +603,7 @@ extension MenuView {
     }
 
     func menuWidthConstrained(geometry: GeometryProxy) -> CGFloat {
-        min(menuWidth, baselineLayoutWidth(geometry: geometry) * 0.35 + 100)
+        min(1080, baselineLayoutWidth(geometry: geometry) * 0.52)
     }
 
     func menuViewportHeight(for visibleRowCount: Int) -> CGFloat {
@@ -671,68 +707,138 @@ extension MenuView {
 
     // MARK: - Carousel item views
 
+    var activeRootCarouselRadius: CGFloat {
+        let startRadius = isRootExitRunning
+            ? rootExitEndCarouselRadius
+            : rootIntroStartCarouselRadius
+        return interpolatedValue(
+            from: startRadius,
+            to: rootCarouselRadius,
+            progress: unitProgress(introProgress),
+        )
+    }
+
+    private func rootStagePlacement(for index: Int) -> RootStagePlacement {
+        projectedRootStagePlacement(
+            for: index,
+            selectionValue: rootCarouselSelectionValue,
+            itemCount: menuItems.count,
+            radius: activeRootCarouselRadius,
+            tiltDegrees: rootCarouselTiltDegrees,
+            centerYOffset: rootCarouselCenterYOffset,
+            perspectiveDistance: rootCarouselPerspectiveDistance,
+            baseSizeMultiplier: rootCarouselBaseSizeMultiplier,
+        )
+    }
+
+    func interpolatedValue(
+        from start: CGFloat,
+        to end: CGFloat,
+        progress: CGFloat,
+    ) -> CGFloat {
+        start + ((end - start) * progress)
+    }
+
     func carouselItemView(for index: Int, geometry: GeometryProxy) -> some View {
-        let position = CGFloat(index - selectedIndex)
-        let angle = position * .pi / 6
-        var horizontalOffset: CGFloat
-        var verticalOffset: CGFloat
-        var zInd: CGFloat
-        let scale = position == 0 && isIconAnimated ? landedIconScale : (1.0 - (abs(position) * scaleReduction))
-        if position == 0 && isIconAnimated {
-            horizontalOffset = landedSelectedHorizontalOffset(geometry: geometry)
-            verticalOffset = landedSelectedVerticalOffset
-            zInd = 1000
-        } else if position == 0 {
-            horizontalOffset = -1.25 * arcRadius * sin(angle) * 1.5 + restingSelectedHorizontalOffset
-            verticalOffset = restingSelectedVerticalOffset
-            zInd = 0
-        } else if position == 1 || position == 2 || position == 3 {
-            horizontalOffset = -1.25 * arcRadius * sin(angle) * 0.9 - (0.1 * iconSize)
-            verticalOffset = -arcRadius * (1 - cos(angle)) * 0.025 + (position < 2 ? (0.2 * iconSize) : (0.15 * iconSize))
-            zInd = 0
-        } else {
-            horizontalOffset = -1920
-            verticalOffset = 1280
-            zInd = 1000
-        }
-        if isEnteringSubmenu && position != 0 {
-            horizontalOffset -= max(geometry.size.width * 1.15, iconSize * 3.0)
-        }
-        let baseOpacity: CGFloat = position == 0 ? 1.0 : (abs(position) <= 2 ? 1.0 : 1.0 - (abs(position) * 0.4))
-        let opacity = isEnteringSubmenu && position != 0 ? max(0.0, baseOpacity - 0.95) : baseOpacity
-        let isIncoming = position == 0 && !isIconAnimated
+        let placement = rootStagePlacement(for: index)
+        let isSelectedRootItem = index == selectedIndex
+        let isBackground = !isSelectedRootItem
+        let adjustedIconSize = iconSize * placement.baseSizeMultiplier
+        let isIncoming = false
         let entryOffset = selectedCarouselEntryOffset
-        let isBackground = abs(position) > 0
-        let adjustedIconSize: CGFloat =
-            abs(position) == 1 || abs(position) == 2 ? iconSize * 1 : iconSize * selectedCarouselAdjustedSizeMultiplier
+        let reflectionYOffsetOverride: CGFloat = menuItems[index].id == "movies" ? 18 : 0
         let reflectionCompensationX =
-            (position == 0 && (isIconAnimated || isEnteringSubmenu))
-                ? (horizontalOffset - restingSelectedHorizontalOffset)
+            (isSelectedRootItem && (isIconAnimated || isEnteringSubmenu))
+                ? (placement.horizontalOffset - restingSelectedHorizontalOffset)
                 : 0
         let reflectionCompensationY =
-            (position == 0 && (isIconAnimated || isEnteringSubmenu))
-                ? (verticalOffset - restingSelectedVerticalOffset)
+            (isSelectedRootItem && (isIconAnimated || isEnteringSubmenu))
+                ? (placement.verticalOffset - restingSelectedVerticalOffset)
                 : 0
         return Group {
             if let image = menuImage(forRootID: menuItems[index].id) {
-                standardCarouselIconView(
-                    image: image,
-                    adjustedIconSize: adjustedIconSize,
-                    scale: scale,
-                    opacity: opacity,
-                    horizontalOffset: horizontalOffset,
-                    verticalOffset: verticalOffset,
-                    isIncoming: isIncoming,
-                    entryOffset: entryOffset,
-                    zInd: zInd,
-                    isBackground: isBackground,
-                    showReflection: !(position == 0 && isInSubmenu && !isEnteringSubmenu && !isReturningToRoot),
-                    animateReflection: position == 0 && (!isInSubmenu || isEnteringSubmenu || isReturningToRoot),
-                    reflectionCompensationX: reflectionCompensationX,
-                    reflectionCompensationY: reflectionCompensationY,
-                )
+                if isSelectedRootItem, isIconAnimated {
+                    standardCarouselIconView(
+                        image: image,
+                        adjustedIconSize: adjustedIconSize,
+                        scale: landedIconScale,
+                        opacity: 1,
+                        horizontalOffset: landedSelectedHorizontalOffset(geometry: geometry),
+                        verticalOffset: landedSelectedVerticalOffset,
+                        isIncoming: false,
+                        entryOffset: entryOffset,
+                        zInd: 1000,
+                        isBackground: false,
+                        backgroundBlur: 0,
+                        showReflection: !(isSelectedRootItem && isInSubmenu && !isEnteringSubmenu && !isReturningToRoot),
+                        animateReflection: isSelectedRootItem && (!isInSubmenu || isEnteringSubmenu || isReturningToRoot),
+                        reflectionYOffsetOverride: reflectionYOffsetOverride,
+                        reflectionCompensationX: reflectionCompensationX,
+                        reflectionCompensationY: reflectionCompensationY,
+                    )
+                } else {
+                    standardCarouselIconView(
+                        image: image,
+                        adjustedIconSize: adjustedIconSize,
+                        scale: 1,
+                        opacity: 1,
+                        horizontalOffset: 0,
+                        verticalOffset: 0,
+                        isIncoming: isIncoming,
+                        entryOffset: entryOffset,
+                        zInd: 0,
+                        isBackground: isBackground,
+                        backgroundBlur: 0,
+                        showReflection: !(isSelectedRootItem && isInSubmenu && !isEnteringSubmenu && !isReturningToRoot),
+                        animateReflection: isSelectedRootItem && (!isInSubmenu || isEnteringSubmenu || isReturningToRoot),
+                        reflectionYOffsetOverride: reflectionYOffsetOverride,
+                        reflectionCompensationX: reflectionCompensationX,
+                        reflectionCompensationY: reflectionCompensationY,
+                    )
+                    .modifier(
+                        RootOrbitModifier(
+                            index: index,
+                            itemCount: menuItems.count,
+                            radius: activeRootCarouselRadius,
+                            tiltDegrees: rootCarouselTiltDegrees,
+                            centerYOffset: rootCarouselCenterYOffset,
+                            perspectiveDistance: rootCarouselPerspectiveDistance,
+                            baseSizeMultiplier: rootCarouselBaseSizeMultiplier,
+                            isSelectedRootItem: isSelectedRootItem,
+                            isEnteringSubmenu: isEnteringSubmenu,
+                            isBackground: isBackground,
+                            selectionValue: rootCarouselSelectionValue,
+                            introProgress: Double(introProgress),
+                        ),
+                    )
+                }
             }
         }.padding(.bottom, 100)
+    }
+
+    func rootIntroStageScaleCompensation() -> CGFloat {
+        guard isRootIntroRunning else { return 1 }
+        let currentPlacement = projectedRootStagePlacement(
+            for: selectedIndex,
+            selectionValue: rootCarouselSelectionValue,
+            itemCount: menuItems.count,
+            radius: activeRootCarouselRadius,
+            tiltDegrees: rootCarouselTiltDegrees,
+            centerYOffset: rootCarouselCenterYOffset,
+            perspectiveDistance: rootCarouselPerspectiveDistance,
+            baseSizeMultiplier: rootCarouselBaseSizeMultiplier,
+        )
+        let finalPlacement = projectedRootStagePlacement(
+            for: selectedIndex,
+            selectionValue: Double(selectedIndex),
+            itemCount: menuItems.count,
+            radius: rootCarouselRadius,
+            tiltDegrees: rootCarouselTiltDegrees,
+            centerYOffset: rootCarouselCenterYOffset,
+            perspectiveDistance: rootCarouselPerspectiveDistance,
+            baseSizeMultiplier: rootCarouselBaseSizeMultiplier,
+        )
+        return max(1, finalPlacement.scale / max(0.001, currentPlacement.scale))
     }
 
     func standardCarouselIconView(
@@ -746,8 +852,10 @@ extension MenuView {
         entryOffset: CGFloat,
         zInd: CGFloat,
         isBackground: Bool,
+        backgroundBlur: CGFloat = 0,
         showReflection: Bool = true,
         animateReflection: Bool = false,
+        reflectionYOffsetOverride: CGFloat = 0,
         reflectionCompensationX: CGFloat = 0,
         reflectionCompensationY: CGFloat = 0,
     ) -> some View {
@@ -755,8 +863,12 @@ extension MenuView {
         let baseY = verticalOffset + (isIncoming ? entryOffset : 0)
         let usesDetachedReflection = animateReflection &&
             ((isEnteringSubmenu && !isReturningToRoot) || (isReturningToRoot && isIconAnimated))
+        let reflectionYOffsetAdjustment: CGFloat = -38
         let reflectionX = usesDetachedReflection ? 90.0 : 0.0
-        let reflectionY = usesDetachedReflection ? 920.0 : -(adjustedIconSize * 0.215)
+        let reflectionY =
+            (usesDetachedReflection ? 920.0 : (adjustedIconSize * (scale - 1))) +
+            reflectionYOffsetAdjustment +
+            reflectionYOffsetOverride
         let reflectionOpacity = usesDetachedReflection ? 0.22 : 0.34
         let reflectionBlur = usesDetachedReflection ? 3.0 : 0.0
         let backgroundIconTransitionDuration =
@@ -767,7 +879,11 @@ extension MenuView {
             if showReflection {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: adjustedIconSize, height: adjustedIconSize).mask(
                     LinearGradient(
-                        gradient: Gradient(stops: [.init(color: .white, location: 0.0), .init(color: .clear, location: 0.6)]),
+                        gradient: Gradient(stops: [
+                            .init(color: .white, location: 0.0),
+                            .init(color: .white, location: 0.9),
+                            .init(color: .clear, location: 1.0),
+                        ]),
                         startPoint: .bottom,
                         endPoint: .top,
                     ),
@@ -777,7 +893,7 @@ extension MenuView {
                 ).blur(radius: reflectionBlur).scaleEffect(usesDetachedReflection ? 1.0 : scale)
             }
             Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: adjustedIconSize, height: adjustedIconSize).scaleEffect(scale)
-        }.opacity(opacity).offset(x: baseX, y: baseY).zIndex(isIncoming ? 1 : zInd).blur(radius: isBackground ? 10 : 0).animation(.easeInOut(duration: selectionAnimationDuration * 0.85), value: selectedIndex).animation(.easeInOut(duration: backgroundIconTransitionDuration), value: isEnteringSubmenu && isBackground).animation(.easeInOut(duration: iconFlightAnimationDuration), value: isIconAnimated)
+        }.opacity(opacity).offset(x: baseX, y: baseY).zIndex(isIncoming ? 1 : zInd).blur(radius: backgroundBlur).animation(.easeInOut(duration: backgroundIconTransitionDuration), value: isEnteringSubmenu && isBackground).animation(.easeInOut(duration: iconFlightAnimationDuration), value: isIconAnimated)
     }
 
     // MARK: - Menu item row view
@@ -824,7 +940,7 @@ extension MenuView {
             isDotTrail &&
             title == "Shared Photos"
         let effectiveArrowXOffset = isSharedPhotosDotsRow ? -10 : arrowAppearance.xOffset
-        let trailingFontSize: CGFloat = isDotTrail ? 17 : 32
+        let trailingFontSize: CGFloat = isDotTrail ? 22 : 42
         let trailingVerticalOffset: CGFloat = isDotTrail ? -0.6 : 0
         let trailingToArrowSpacing: CGFloat = isDotTrail ? -0.2 : 6
         let trailingMeasuredTextWidth: CGFloat = {
@@ -921,7 +1037,7 @@ extension MenuView {
                 )
             }.frame(width: leftColumnWidth > 0 ? leftColumnWidth : nil, alignment: .leading).padding(.leading, leadingTextPadding)
             if showsPlaybackSpeaker {
-                Image(systemName: "speaker.wave.3.fill").foregroundColor(.white).font(.system(size: 34, weight: .semibold)).shadow(
+                Image(systemName: "speaker.wave.3.fill").foregroundColor(.white).font(.system(size: 42, weight: .semibold)).shadow(
                     color: isPlaybackSpeakerGlowing ? .white.opacity(0.9) : .clear,
                     radius: isPlaybackSpeakerGlowing ? 4.5 : 0,
                 ).shadow(
@@ -929,7 +1045,7 @@ extension MenuView {
                     radius: isPlaybackSpeakerGlowing ? 10 : 0,
                 ).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
             } else if let trailingSymbolName {
-                Image(systemName: trailingSymbolName).foregroundColor(.white).font(.system(size: 34, weight: .semibold)).opacity(trailingTextOpacity).arrowGlow(isTrailingSymbolGlowing, arrowAppearance).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
+                Image(systemName: trailingSymbolName).foregroundColor(.white).font(.system(size: 42, weight: .semibold)).opacity(trailingTextOpacity).arrowGlow(isTrailingSymbolGlowing, arrowAppearance).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
             } else if let resolvedTrailingText, showsArrow {
                 HStack(spacing: trailingToArrowSpacing) {
                     if isDotTrail {
@@ -944,7 +1060,7 @@ extension MenuView {
                     Image(systemName: arrowAppearance.symbolName).foregroundColor(arrowAppearance.color).font(.system(size: arrowAppearance.fontSize, weight: arrowAppearance.fontWeight)).opacity(trailingTextOpacity).arrowGlow(isArrowGlowing, arrowAppearance)
                 }.frame(width: trailingColumnWidth, alignment: .trailing).offset(x: symmetricArrowXOffset)
             } else if let resolvedTrailingText {
-                Text(resolvedTrailingText).font(.firstRowRegular(size: 32)).foregroundColor(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
+                Text(resolvedTrailingText).font(.firstRowRegular(size: 42)).foregroundColor(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
             } else if showsArrow {
                 Image(systemName: arrowAppearance.symbolName).foregroundColor(arrowAppearance.color).font(.system(size: arrowAppearance.fontSize, weight: arrowAppearance.fontWeight)).opacity(trailingTextOpacity).arrowGlow(isArrowGlowing, arrowAppearance).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: symmetricArrowXOffset)
             }
@@ -976,7 +1092,7 @@ extension MenuView {
         if let cached = MenuRowRenderingCache.titleWidthByTitle[title] {
             return cached
         }
-        let font = NSFont(name: firstRowBoldFontName, size: 40) ?? NSFont.boldSystemFont(ofSize: 40)
+        let font = NSFont(name: firstRowBoldFontName, size: 54) ?? NSFont.boldSystemFont(ofSize: 54)
         let measured = ceil((title as NSString).size(withAttributes: [.font: font]).width)
         MenuRowRenderingCache.titleWidthByTitle[title] = measured
         return measured
@@ -1008,7 +1124,7 @@ extension MenuView {
     func menuRowTitleView(title: String, availableWidth: CGFloat, shouldScroll: Bool) -> some View {
         ZStack(alignment: .leading) {
             Text(title)
-                .font(.firstRowBold(size: 40))
+                .font(.firstRowBold(size: 54))
                 .foregroundColor(.white)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -1027,88 +1143,6 @@ extension MenuView {
     }
 }
 
-private struct TVShowsSortPillUpperGlossMask: Shape {
-    func path(in rect: CGRect) -> Path {
-        let sideCurveWidth = rect.width * 0.085
-        let topEdgeY = rect.minY + rect.height * 0.03
-        let sideBottomY = rect.minY + rect.height * 0.12
-        let flatBottomY = rect.minY + rect.height * 0.57
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: topEdgeY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: topEdgeY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: sideBottomY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX - sideCurveWidth, y: flatBottomY),
-            control: CGPoint(x: rect.maxX - (sideCurveWidth * 0.12), y: flatBottomY),
-        )
-        path.addLine(to: CGPoint(x: rect.minX + sideCurveWidth, y: flatBottomY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX, y: sideBottomY),
-            control: CGPoint(x: rect.minX + (sideCurveWidth * 0.12), y: flatBottomY),
-        )
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct TVShowsSortPillSelectionShape: Shape {
-    let roundsLeftSide: Bool
-    let roundsRightSide: Bool
-    func path(in rect: CGRect) -> Path {
-        let radius = min(rect.height * 0.5, rect.width * 0.5)
-        let minX = rect.minX
-        let maxX = rect.maxX
-        let minY = rect.minY
-        let maxY = rect.maxY
-        var path = Path()
-        path.move(to: CGPoint(x: roundsLeftSide ? minX + radius : minX, y: minY))
-        path.addLine(to: CGPoint(x: roundsRightSide ? maxX - radius : maxX, y: minY))
-        if roundsRightSide {
-            path.addArc(
-                center: CGPoint(x: maxX - radius, y: minY + radius),
-                radius: radius,
-                startAngle: .degrees(-90),
-                endAngle: .degrees(0),
-                clockwise: false,
-            )
-            path.addLine(to: CGPoint(x: maxX, y: maxY - radius))
-            path.addArc(
-                center: CGPoint(x: maxX - radius, y: maxY - radius),
-                radius: radius,
-                startAngle: .degrees(0),
-                endAngle: .degrees(90),
-                clockwise: false,
-            )
-        } else {
-            path.addLine(to: CGPoint(x: maxX, y: minY))
-            path.addLine(to: CGPoint(x: maxX, y: maxY))
-        }
-        path.addLine(to: CGPoint(x: roundsLeftSide ? minX + radius : minX, y: maxY))
-        if roundsLeftSide {
-            path.addArc(
-                center: CGPoint(x: minX + radius, y: maxY - radius),
-                radius: radius,
-                startAngle: .degrees(90),
-                endAngle: .degrees(180),
-                clockwise: false,
-            )
-            path.addLine(to: CGPoint(x: minX, y: minY + radius))
-            path.addArc(
-                center: CGPoint(x: minX + radius, y: minY + radius),
-                radius: radius,
-                startAngle: .degrees(180),
-                endAngle: .degrees(270),
-                clockwise: false,
-            )
-        } else {
-            path.addLine(to: CGPoint(x: minX, y: maxY))
-            path.addLine(to: CGPoint(x: minX, y: minY))
-        }
-        path.closeSubpath()
-        return path
-    }
-}
-
 private struct MenuRowMarqueeText: View {
     let title: String
     let viewportWidth: CGFloat
@@ -1118,7 +1152,7 @@ private struct MenuRowMarqueeText: View {
     @State private var xOffset: CGFloat = 0
     @State private var animationGeneration = 0
     private var measuredWidth: CGFloat {
-        let font = NSFont(name: firstRowBoldFontName, size: 40) ?? NSFont.boldSystemFont(ofSize: 40)
+        let font = NSFont(name: firstRowBoldFontName, size: 54) ?? NSFont.boldSystemFont(ofSize: 54)
         return ceil((title as NSString).size(withAttributes: [.font: font]).width)
     }
 
@@ -1126,8 +1160,8 @@ private struct MenuRowMarqueeText: View {
         let safeViewportWidth = max(1, viewportWidth)
         let edgeFadeFraction = min(0.5, max(0, edgeFadeWidth / safeViewportWidth))
         HStack(spacing: gap) {
-            Text(title).font(.firstRowBold(size: 40)).foregroundColor(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
-            Text(title).font(.firstRowBold(size: 40)).foregroundColor(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
+            Text(title).font(.firstRowBold(size: 54)).foregroundColor(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
+            Text(title).font(.firstRowBold(size: 54)).foregroundColor(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
         }.offset(x: xOffset).frame(width: safeViewportWidth, alignment: .leading).clipped().mask(LinearGradient(
             gradient: Gradient(stops: [.init(color: .clear, location: 0.0), .init(color: .white, location: edgeFadeFraction), .init(color: .white, location: 1.0 - edgeFadeFraction), .init(color: .clear, location: 1.0)]),
             startPoint: .leading,
@@ -1185,15 +1219,16 @@ extension MenuView {
     }
 
     var restingSelectedHorizontalOffset: CGFloat {
-        iconSize * 0.75
+        0
     }
 
     var restingSelectedVerticalOffset: CGFloat {
-        -(0.1 * iconSize)
+        rootCarouselCenterYOffset +
+            (rootCarouselRadius * CGFloat(sin(rootCarouselTiltDegrees * (.pi / 180))))
     }
 
     var landedSelectedVerticalOffset: CGFloat {
-        (-selectionBoxHeight * landedIconVerticalMultiplier) + landedFinalYOffsetAdjustment + menuHeaderVerticalOffset
+        -392
     }
 
     var gapContentHorizontalOffset: CGFloat {
@@ -1209,41 +1244,17 @@ extension MenuView {
     }
 
     var carouselSceneOffsetX: CGFloat {
-        MenuVirtualScenePreset.scaledX(40, for: activeMenuVirtualSceneSize)
+        MenuVirtualScenePreset.scaledX(12, for: activeMenuVirtualSceneSize)
     }
 
     var rightMenuSceneOffsetX: CGFloat {
-        MenuVirtualScenePreset.scaledX(-214, for: activeMenuVirtualSceneSize) +
+        MenuVirtualScenePreset.scaledX(-154, for: activeMenuVirtualSceneSize) +
             MenuVirtualScenePreset.additionalMenuGapX(for: activeMenuVirtualSceneSize)
     }
 
     var activeMenuVirtualSceneSize: CGSize {
-        #if os(iOS)
-            UIDevice.current.userInterfaceIdiom == .pad
-                ? MenuVirtualScenePreset.iPad
-                : MenuVirtualScenePreset.widescreen
-        #else
-            MenuVirtualScenePreset.widescreen
-        #endif
+        MenuVirtualScenePreset.widescreen
     }
-
-    #if os(iOS)
-        var activeWindowScreen: UIScreen? {
-            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-            if let foreground = scenes.first(where: { $0.activationState == .foregroundActive }) {
-                return foreground.screen
-            }
-            return scenes.first?.screen
-        }
-
-        var activeFullscreenContainerSize: CGSize {
-            guard let screenBounds = activeWindowScreen?.bounds else { return .zero }
-            return CGSize(
-                width: max(screenBounds.width, screenBounds.height),
-                height: min(screenBounds.width, screenBounds.height),
-            )
-        }
-    #endif
 
     var body: some View {
         ZStack {
@@ -1262,73 +1273,6 @@ extension MenuView {
                         handleDirectionalPressEnded(key)
                     },
                 )
-                #if os(iOS)
-                .overlay {
-                    TouchNavigationInputOverlay(
-                        onArrowKeyDown: { key in handleDirectionalPressBegan(key) },
-                        onArrowKeyUp: { key in handleDirectionalPressEnded(key) },
-                        onEnter: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.enter, isRepeat: false, modifiers: [])
-                        },
-                        onBackspace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.delete, isRepeat: false, modifiers: [])
-                        },
-                        onSpace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.space, isRepeat: false, modifiers: [])
-                        },
-                        onSingleFingerTap: {
-                            guard activeFullscreenScene?.key == screenSaverFullscreenKey else { return false }
-                            dismissScreenSaverForUserInteraction()
-                            return true
-                        },
-                    ).ignoresSafeArea()
-                }
-                #endif
-                #if os(tvOS)
-                .overlay {
-                    TVRemoteInputOverlay(
-                        onKeyDown: { key in
-                            if key == .upArrow || key == .downArrow || key == .leftArrow || key == .rightArrow {
-                                handleDirectionalPressBegan(key)
-                            } else {
-                                endDirectionalHoldSession()
-                                handleKeyInput(key, isRepeat: false, modifiers: [])
-                            }
-                        },
-                        onKeyUp: { key in
-                            handleDirectionalPressEnded(key)
-                        },
-                    ).ignoresSafeArea()
-                }
-                #endif
-                #if os(iOS) || os(tvOS)
-                .overlay {
-                    GameControllerInputOverlay(
-                        onArrowKeyDown: { key in
-                            handleDirectionalPressBegan(key)
-                        },
-                        onArrowKeyUp: { key in
-                            handleDirectionalPressEnded(key)
-                        },
-                        onEnter: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.enter, isRepeat: false, modifiers: [])
-                        },
-                        onBackspace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.delete, isRepeat: false, modifiers: [])
-                        },
-                        onSpace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.space, isRepeat: false, modifiers: [])
-                        },
-                    ).ignoresSafeArea().allowsHitTesting(false)
-                }
-                #endif
-                #if os(macOS)
                 .overlay(
                     GameControllerInputOverlay(
                         onArrowKeyDown: { key in
@@ -1351,15 +1295,32 @@ extension MenuView {
                         },
                     ).allowsHitTesting(false),
                 )
-                #endif
                 .onAppear {
                     beginStartupMusicLibraryPreloadIfNeeded()
-                    registerUserInteractionForScreenSaver()
-                    startScreenSaverIdleMonitor()
-                    SoundEffectPlayer.shared.warmUp(soundNames: ["Selection", "SelectionChange", "Exit", "Limit"])
+                    syncRootLabelWithSelection()
+                    SoundEffectPlayer.shared.warmUp(soundNames: [
+                        "Selection",
+                        "SelectionChange",
+                        "Exit",
+                        "Limit",
+                        "Begin",
+                        "End",
+                        "MainLeft",
+                        "MainTransitionFrom",
+                        "MainDVDSelection",
+                        "MainMusicSelection",
+                        "MainPhotosSelection",
+                        "MainVideosSelection",
+                    ])
+                }.onReceive(NotificationCenter.default.publisher(for: .firstRowIntroBegin)) { _ in
+                    startRootIntroIfNeeded()
+                }.onReceive(NotificationCenter.default.publisher(for: .firstRowCommandEscapeRequested)) { _ in
+                    handleCommandEscapeRequested()
                 }.onDisappear {
                     endDirectionalHoldSession()
-                    stopScreenSaverIdleMonitor()
+                    rootLabelSwapWorkItem?.cancel()
+                    cancelRootIntroWorkItems()
+                    rootExitWorkItem?.cancel()
                 }
             }
             if startupMusicLibraryPreloadOverlayOpacity > 0.001 {
@@ -1369,63 +1330,29 @@ extension MenuView {
                     .allowsHitTesting(true)
             }
         }.ignoresSafeArea()
-        #if os(iOS)
-            .sheet(isPresented: $isMoviesFolderPickerPresented) {
-                IOSFolderPicker(
-                    onPick: { selectedURL in
-                        handleMoviesFolderPickedFromFiles(selectedURL)
-                    },
-                    onCancel: {
-                        hasPromptedMoviesFolderPickerThisSession = false
-                    },
-                ).ignoresSafeArea()
-            }
-        #endif
     }
 
     @ViewBuilder
     func menuLayoutContainer(in geometry: GeometryProxy) -> some View {
-        #if os(iOS)
-            let virtualSize = activeMenuVirtualSceneSize
-            let scale = geometry.size.height / virtualSize.height
-            let screenBounds = activeWindowScreen?.bounds ?? .zero
-            let deviceLandscapeWidth = max(screenBounds.width, screenBounds.height)
-            let horizontalCompensation = max(0, (deviceLandscapeWidth - geometry.size.width) * 0.5)
-            let fullscreenContainerSize = {
-                let resolved = activeFullscreenContainerSize
-                guard resolved.width > 0, resolved.height > 0 else { return geometry.size }
-                return resolved
-            }()
-            ZStack {
-                GeometryReader { virtualGeometry in
-                    menuScene(geometry: virtualGeometry)
-                }.frame(width: virtualSize.width, height: virtualSize.height).scaleEffect(scale, anchor: .center).frame(width: geometry.size.width, height: geometry.size.height).offset(x: -horizontalCompensation)
-                fullscreenPresentationLayers(containerSize: fullscreenContainerSize)
-                menuDisplayFadeOverlays(containerSize: fullscreenContainerSize)
+        let layout = MenuVirtualSceneLayout(
+            containerSize: geometry.size,
+            virtualSize: MenuVirtualScenePreset.widescreen,
+        )
+        ZStack {
+            GeometryReader { virtualGeometry in
+                menuScene(geometry: virtualGeometry)
             }
-        #elseif os(tvOS) || os(macOS)
-            let layout = MenuVirtualSceneLayout(
-                containerSize: geometry.size,
-                virtualSize: MenuVirtualScenePreset.widescreen,
+            .frame(width: layout.virtualSize.width, height: layout.virtualSize.height)
+            .scaleEffect(layout.scale, anchor: .topLeading)
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                alignment: .topLeading,
             )
-            ZStack {
-                GeometryReader { virtualGeometry in
-                    menuScene(geometry: virtualGeometry)
-                }
-                .frame(width: layout.virtualSize.width, height: layout.virtualSize.height)
-                .scaleEffect(layout.scale, anchor: .topLeading)
-                .frame(
-                    width: geometry.size.width,
-                    height: geometry.size.height,
-                    alignment: .topLeading,
-                )
-                .offset(x: layout.offset.width, y: layout.offset.height)
-                fullscreenPresentationLayers(containerSize: geometry.size)
-                menuDisplayFadeOverlays(containerSize: geometry.size)
-            }
-        #else
-            menuScene(geometry: geometry)
-        #endif
+            .offset(x: layout.offset.width, y: layout.offset.height)
+            fullscreenPresentationLayers(containerSize: geometry.size)
+            menuDisplayFadeOverlays(containerSize: geometry.size)
+        }
     }
 
     @ViewBuilder
@@ -1478,56 +1405,268 @@ extension MenuView {
             .ignoresSafeArea()
             .zIndex(5000)
         }
-        if activeFullscreenScene?.key == screenSaverFullscreenKey {
-            screenSaverNowPlayingToastView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .padding(.leading, 42)
-                .padding(.bottom, 36)
-                .opacity(screenSaverNowPlayingToastOpacity)
-                .allowsHitTesting(false)
-                .zIndex(5105)
+    }
+
+    @ViewBuilder
+    func rootBackdropView(geometry: GeometryProxy) -> some View {
+        let stageOpacity = (isInSubmenu || isEnteringSubmenu) ? 0.72 : 1.0
+        ZStack {
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: .black, location: 0.0),
+                    .init(color: .black, location: 0.54),
+                    .init(color: Color(white: 0.13).opacity(0.96 * stageOpacity), location: 0.76),
+                    .init(color: Color(white: 0.32).opacity(0.8 * stageOpacity), location: 1.0),
+                ]),
+                startPoint: .top,
+                endPoint: .bottom,
+            )
+            RadialGradient(
+                gradient: Gradient(stops: [
+                    .init(color: Color.white.opacity(0.12 * stageOpacity), location: 0.0),
+                    .init(color: Color.white.opacity(0.05 * stageOpacity), location: 0.2),
+                    .init(color: .clear, location: 0.72),
+                ]),
+                center: .init(x: 0.5, y: 0.86),
+                startRadius: 0,
+                endRadius: max(geometry.size.width, geometry.size.height) * 0.52,
+            )
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: .clear, location: 0.0),
+                    .init(color: Color.white.opacity(0.03 * stageOpacity), location: 0.62),
+                    .init(color: Color.white.opacity(0.12 * stageOpacity), location: 0.82),
+                    .init(color: .clear, location: 1.0),
+                ]),
+                startPoint: .top,
+                endPoint: .bottom,
+            )
         }
+        .frame(width: geometry.size.width, height: geometry.size.height)
+        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.28), value: isInSubmenu)
+    }
+
+    var isRootVisible: Bool {
+        !isInSubmenu && !isEnteringSubmenu && !isReturningToRoot
+    }
+
+    @ViewBuilder
+    func introBackdropView(geometry: GeometryProxy) -> some View {
+        if let image = introBackdropImage,
+           isRootVisible || isRootIntroRunning
+        {
+            let progress = max(0, min(1, introBackdropProgress))
+            let fadeProgress = unitProgress(
+                (progress - rootIntroBackdropFadeStartProgress) /
+                    max(0.001, 1 - rootIntroBackdropFadeStartProgress),
+            )
+            let scale = interpolatedValue(
+                from: 1.0,
+                to: rootIntroBackdropMinimumScale,
+                progress: progress,
+            )
+            let yOffset = interpolatedValue(
+                from: 0,
+                to: rootIntroBackdropFinalYOffset,
+                progress: progress,
+            )
+            let opacity = interpolatedValue(
+                from: 1.0,
+                to: 0.0,
+                progress: smoothStep(fadeProgress),
+            )
+            let reflectionOpacity = opacity * 0.5
+            let reflectionYOffset = yOffset + (geometry.size.height * scale)
+
+            ZStack {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .scaleEffect(scale)
+                    .offset(y: yOffset)
+                    .clipped()
+                    .opacity(Double(opacity))
+
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .scaleEffect(x: scale, y: -scale)
+                    .offset(y: reflectionYOffset)
+                    .mask(
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: .white, location: 0.0),
+                                .init(color: .white, location: 0.8),
+                                .init(color: .clear, location: 1.0),
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom,
+                        ),
+                    )
+                    .clipped()
+                    .opacity(Double(reflectionOpacity))
+            }
+            .onAppear {
+                guard !hasAnnouncedIntroBackdropAppearance else { return }
+                hasAnnouncedIntroBackdropAppearance = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                    NotificationCenter.default.post(name: .firstRowIntroReady, object: nil)
+                }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
+    func rootStageView(geometry: GeometryProxy) -> some View {
+        let progress = max(0, min(1, introProgress))
+        let stageStartYOffset = max(
+            rootIntroStageStartYOffset,
+            geometry.size.height * 1.45,
+        )
+        let introYOffset = interpolatedValue(
+            from: stageStartYOffset,
+            to: -6,
+            progress: progress,
+        )
+        let introScale =
+            rootIntroStageScaleCompensation() *
+            interpolatedValue(
+                from: rootIntroStageStartScale,
+                to: 1,
+                progress: progress,
+            )
+        ZStack {
+            ForEach(visibleIndices(), id: \.self) { index in
+                carouselItemView(for: index, geometry: geometry)
+                    .opacity(
+                        (isInSubmenu && !isEnteringSubmenu && !isReturningToRoot)
+                            ? 0
+                            : 1,
+                    )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .scaleEffect(introScale, anchor: .bottom)
+        .offset(y: introYOffset)
+        .opacity(1)
+    }
+
+    @ViewBuilder
+    func rootLabelView(geometry _: GeometryProxy) -> some View {
+        if isRootVisible, isRootLabelVisible || !isRootIntroRunning {
+            Text(rootLabelText)
+                .font(.firstRowBold(size: 92))
+                .foregroundColor(.white)
+                .shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4)
+                .opacity(rootLabelOpacity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .offset(y: -40)
+        }
+    }
+
+    @ViewBuilder
+    func menuColumnView(
+        rootID: String?,
+        headerText: String,
+        items: [MenuListItemConfig],
+        selectedIndex: Int,
+        geometry: GeometryProxy,
+    ) -> some View {
+        let clampedSelectedIndex = min(max(0, selectedIndex), max(0, items.count - 1))
+        let isPhotosMenu = rootID == "photos"
+        let selectionWidthScale = isPhotosMenu
+            ? max(menuSelectionWidthScale, photosSelectionBoxWidthScale)
+            : menuSelectionWidthScale
+        let selectionHeightScale = isPhotosMenu
+            ? max(menuSelectionHeightScale, photosSelectionBoxHeightScale)
+            : menuSelectionHeightScale
+        VStack(spacing: 20) {
+            HStack(spacing: 20) {
+                if let rootID, let image = menuImage(forRootID: rootID) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 92, height: 92)
+                }
+                Text(headerText)
+                    .font(.firstRowBold(size: 88))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Rectangle()
+                .fill(Color.white.opacity(0.9))
+                .frame(width: min(1500, geometry.size.width * 0.86), height: 3)
+            menuListContainer(
+                items: items,
+                selectedIndex: clampedSelectedIndex,
+                geometry: geometry,
+                arrowAppearance: menuArrowAppearance,
+                showsTopOverflowFade: true,
+                visibleRowCount: 6,
+                selectionBoxWidthScale: selectionWidthScale,
+                selectionBoxHeightScale: selectionHeightScale,
+            )
+            .frame(height: menuListLayoutHeight(for: 6))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 44)
+    }
+
+    @ViewBuilder
+    func submenuStageView(geometry: GeometryProxy) -> some View {
+        let liveItems = isInThirdMenu ? thirdMenuListItems() : submenuListItems()
+        let liveSelectedIndex = isInThirdMenu ? selectedThirdIndex : selectedSubIndex
+        let liveOpacity = isInThirdMenu ? thirdMenuOpacity : submenuOpacity
+        ZStack {
+            if let snapshot = menuTransitionSnapshot {
+                menuColumnView(
+                    rootID: snapshot.rootID,
+                    headerText: snapshot.headerText,
+                    items: snapshot.items,
+                    selectedIndex: snapshot.selectedIndex,
+                    geometry: geometry,
+                )
+                .offset(x: -menuSlideDistance * menuTransitionProgress)
+                .opacity(1 - (0.15 * Double(menuTransitionProgress)))
+            }
+            menuColumnView(
+                rootID: activeRootItemID,
+                headerText: headerText,
+                items: liveItems,
+                selectedIndex: liveSelectedIndex,
+                geometry: geometry,
+            )
+            .offset(
+                x: menuTransitionSnapshot == nil
+                    ? 0
+                    : menuSlideDistance * (1 - menuTransitionProgress),
+            )
+            .opacity(
+                (menuTransitionSnapshot == nil ? 1 : (0.82 + (0.18 * menuTransitionProgress))) *
+                    liveOpacity,
+            )
+        }
+        .animation(.easeInOut(duration: 0.2), value: liveOpacity)
     }
 
     func menuScene(geometry: GeometryProxy) -> some View {
         ZStack {
-            VStack {
-                Spacer()
-                headerView(geometry: geometry).offset(y: menuClusterVerticalCompensation)
-                HStack(spacing: 0) {
-                    ZStack {
-                        if showsSettledLandedIcon, let activeRootItemID, let image = menuImage(forRootID: activeRootItemID) {
-                            settledLandedIconView(image: image, geometry: geometry)
-                        }
-                        ForEach(visibleIndices(), id: \.self) { index in
-                            carouselItemView(for: index, geometry: geometry).opacity(
-                                showsSettledLandedIcon
-                                    ? 0
-                                    : (isInSubmenu && !isReturningToRoot && index != selectedIndex ? 0 : 1),
-                            )
-                        }
-                    }.background(Group {
-                        if isInSubmenu {
-                            detailContentView(sceneSize: geometry.size).opacity(detailContentVisibilityOpacity).animation(.easeInOut(duration: 0.22),
-                                                                                                                          value: shouldHidePodcastsSubmenuChromeUntilLoadCompletes)
-                        }
-                    }).frame(width: carouselWidth(geometry: geometry)).offset(x: carouselSceneOffsetX).offset(y: carouselOffsetY()).offset(y: -menuClusterVerticalCompensation)
-                    Spacer()
-                    rightMenuArea(geometry: geometry).frame(
-                        width: menuWidthConstrained(geometry: geometry),
-                        height: stableMenuListLayoutHeight,
-                        alignment: .top,
-                    )
-                    .offset(x: rightMenuSceneOffsetX)
-                }.frame(width: geometry.size.width, alignment: .center).offset(y: menuClusterVerticalCompensation)
-                Spacer()
-            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center).opacity(menuSceneOpacity)
+            rootBackdropView(geometry: geometry)
+            introBackdropView(geometry: geometry)
+            rootStageView(geometry: geometry)
+            rootLabelView(geometry: geometry)
+            if isInSubmenu || isEnteringSubmenu || isReturningToRoot {
+                submenuStageView(geometry: geometry)
+                    .opacity(menuSceneOpacity)
+            }
             if isMovieResumePromptVisible {
                 movieResumePromptOverlay(geometry: geometry).frame(width: geometry.size.width, height: geometry.size.height).opacity(movieResumePromptOpacity).zIndex(4200)
             }
-        }.onPreferenceChange(RootMenuSelectionCenterPreferenceKey.self) { centerX in
-            guard centerX.isFinite else { return }
-            rootMenuSelectionCenterSceneX = centerX
         }
         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
         .coordinateSpace(name: "menuSceneSpace")

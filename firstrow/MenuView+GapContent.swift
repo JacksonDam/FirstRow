@@ -25,13 +25,6 @@ extension MenuView {
             }
             return moviePreviewTargetURL != nil && moviePreviewImage != nil
         }
-        if activeRootItemID == "tv_shows",
-           isInThirdMenu,
-           thirdMenuMode == .tvITunesTopEpisodes
-        {
-            return currentITunesTopPreviewTargetID(.tvEpisodes) != nil &&
-                currentITunesTopPreviewImage(.tvEpisodes) != nil
-        }
         return false
     }
 
@@ -76,20 +69,6 @@ extension MenuView {
                 id: "itunes:\(previewID)",
                 image: iTunesTopMoviePreviewImage,
                 aspectRatio: aspectRatio(for: iTunesTopMoviePreviewImage, fallback: 2.0 / 3.0),
-                sizeScale: 0.75,
-            )
-        }
-        if activeRootItemID == "tv_shows",
-           isInThirdMenu,
-           thirdMenuMode == .tvITunesTopEpisodes,
-           shouldShowMoviePreviewContent,
-           let iTunesTopTVEpisodePreviewImage = currentITunesTopPreviewImage(.tvEpisodes)
-        {
-            let previewID = currentITunesTopPreviewTargetID(.tvEpisodes) ?? "itunes_tv_episode_preview"
-            return MovieGapPreviewDescriptor(
-                id: "itunes_tv:\(previewID)",
-                image: iTunesTopTVEpisodePreviewImage,
-                aspectRatio: aspectRatio(for: iTunesTopTVEpisodePreviewImage, fallback: 2.0 / 3.0),
                 sizeScale: 0.75,
             )
         }
@@ -156,20 +135,6 @@ extension MenuView {
             )
         }
 
-        if activeRootItemID == "tv_shows",
-           isInThirdMenu,
-           thirdMenuMode == .tvITunesTopEpisodes,
-           currentITunesTopPreviewTargetID(.tvEpisodes) != nil,
-           currentITunesTopPreviewImage(.tvEpisodes) == nil
-        {
-            let previewID = currentITunesTopPreviewTargetID(.tvEpisodes) ?? "itunes_tv_loading"
-            return MovieGapPreviewDescriptor(
-                id: "itunes_tv_loading:\(previewID)",
-                image: moviesFallbackImage,
-                aspectRatio: aspectRatio(for: moviesFallbackImage),
-                sizeScale: 0.5,
-            )
-        }
         return nil
     }
 
@@ -268,14 +233,6 @@ extension MenuView {
         selectedMoviesSubmenuItemID == "movies_itunes_top"
     }
 
-    var selectedTVShowsSubmenuItemID: String? {
-        selectedSubmenuItemID(for: "tv_shows")
-    }
-
-    var shouldUseITunesTopTVEpisodesCarouselSlot: Bool {
-        selectedTVShowsSubmenuItemID == "tv_itunestopepisodes"
-    }
-
     var selectedMusicSubmenuItemID: String? {
         selectedSubmenuItemID(for: "music")
     }
@@ -356,18 +313,6 @@ extension MenuView {
             ? (1 - menuSceneOpacity)
             : 0
         return min(1, max(0, max(backspaceExitOverlay, max(forwardExitOverlay, photosCarouselLoadOverlayOpacity))))
-    }
-
-    var selectedPodcastsSubmenuItemID: String? {
-        selectedSubmenuItemID(for: "podcasts")
-    }
-
-    var selectedPodcastSeriesForPreview: PodcastSeriesEntry? {
-        podcastSeriesForSubmenuItemID(selectedPodcastsSubmenuItemID)
-    }
-
-    var selectedPodcastEpisodeForPreview: PodcastEpisodeEntry? {
-        selectedPodcastEpisodeFromThirdMenuSelection()
     }
 
     /// Movie and music previews have different projected width/yaw, so they need
@@ -492,60 +437,6 @@ extension MenuView {
                             ).id(activeMoviePreviewDescriptor.id).transition(.opacity).opacity(shouldShowMovieGapPreviewContent ? 1 : 0)
                         }
                     }.animation(.easeInOut(duration: 0.22), value: moviePreviewAnimationKey)
-                } else if activeRootItemID == "tv_shows" {
-                    let activeEpisodePreviewDescriptor = movieGapPreviewDescriptor
-                    let selectedITunesTopTVEpisode = resolveITunesTopTVEpisodePreviewTarget()
-                    let shouldShowEpisodeGapPreviewContent = activeEpisodePreviewDescriptor != nil
-                    let shouldShowITunesTopTVEpisodesCarousel = shouldShowITunesTopCarouselContent(.tvEpisodes)
-                    let shouldReserveITunesTopTVEpisodesCarouselSlot = shouldUseITunesTopTVEpisodesCarouselSlot
-                    let shouldUseITunesTopTVEpisodeMetadataPreview =
-                        isInThirdMenu &&
-                        thirdMenuMode == .tvITunesTopEpisodes &&
-                        shouldShowMoviePreviewContent &&
-                        selectedITunesTopTVEpisode != nil
-                    let episodePreviewAnimationKey = activeEpisodePreviewDescriptor?.id ?? "none"
-                    ZStack {
-                        defaultGapIcon(image, opacity: (shouldShowEpisodeGapPreviewContent || shouldReserveITunesTopTVEpisodesCarouselSlot) ? 0 : 1)
-                        if shouldShowITunesTopTVEpisodesCarousel {
-                            gapCarousel(artworks: currentITunesTopCarouselArtworks(.tvEpisodes), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
-                        }
-                        if shouldUseITunesTopTVEpisodeMetadataPreview,
-                           let selectedITunesTopTVEpisode,
-                           let activeEpisodePreviewDescriptor,
-                           !shouldShowITunesTopTVEpisodesCarousel
-                        {
-                            AnimatedMetadataGapContentView(
-                                image: activeEpisodePreviewDescriptor.image,
-                                aspectRatio: activeEpisodePreviewDescriptor.aspectRatio,
-                                forcedPreviewAspectRatio: 1.0,
-                                sizeScale: activeEpisodePreviewDescriptor.sizeScale,
-                                titleText: selectedITunesTopTVEpisode.title,
-                                descriptionText: selectedITunesTopTVEpisode.summary,
-                                baseIconSize: iconSize,
-                                horizontalOffset: movieGapPreviewHorizontalOffset,
-                                verticalOffset: gapContentVerticalOffset + 8,
-                                transitionIdentity: selectedITunesTopTVEpisode.id,
-                                sceneSize: sceneSize,
-                            ).id("itunes_tv_metadata:\(selectedITunesTopTVEpisode.id)").transition(.opacity).opacity(shouldShowEpisodeGapPreviewContent ? 1 : 0)
-                        } else if let activeEpisodePreviewDescriptor, !shouldShowITunesTopTVEpisodesCarousel {
-                            MoviePreviewGapContentView(
-                                image: activeEpisodePreviewDescriptor.image,
-                                aspectRatio: activeEpisodePreviewDescriptor.aspectRatio,
-                                sizeScale: activeEpisodePreviewDescriptor.sizeScale,
-                                baseIconSize: iconSize,
-                                horizontalOffset: movieGapPreviewHorizontalOffset,
-                                verticalOffset: gapContentVerticalOffset + 8,
-                                previewYawDegrees:
-                                isInThirdMenu && thirdMenuMode == .tvITunesTopEpisodes
-                                    ? 10
-                                    : 36,
-                                reflectionYawDegrees:
-                                isInThirdMenu && thirdMenuMode == .tvITunesTopEpisodes
-                                    ? 9.8
-                                    : 35.8,
-                            ).id(activeEpisodePreviewDescriptor.id).transition(.opacity).opacity(shouldShowEpisodeGapPreviewContent ? 1 : 0)
-                        }
-                    }.animation(.easeInOut(duration: 0.22), value: episodePreviewAnimationKey)
                 } else if activeRootItemID == "music" {
                     let shouldShowMusicTopLevelCarousel = shouldShowMusicTopLevelCarouselContent
                     let shouldShowITunesTopSongsCarousel = shouldShowITunesTopCarouselContent(.songs)
@@ -649,73 +540,6 @@ extension MenuView {
                             gapCarousel(artworks: photosCarouselArtworks, preserveAspect: true, exitOpacity: photosCarouselExitOverlayOpacity)
                         }
                     }
-                } else if activeRootItemID == "podcasts" {
-                    let selectedSeries = selectedPodcastSeriesForPreview
-                    let selectedEpisode = selectedPodcastEpisodeForPreview
-                    let selectedSeriesArtwork = selectedSeries?.artwork ?? podcastFallbackImage
-                    let selectedSeriesPreviewImage = selectedSeriesArtwork ?? image
-                    let selectedEpisodePreviewImage = selectedEpisode?.artwork ?? selectedSeriesArtwork ?? image
-                    let shouldShowEpisodePreview = selectedEpisode != nil
-                    let shouldShowSeriesPreview = selectedSeries != nil && !shouldShowEpisodePreview
-                    let shouldHidePodcastsRootIcon = shouldShowSeriesPreview || shouldShowEpisodePreview
-                    let selectedSeriesMostRecentDate = selectedSeries?.episodes.compactMap(\.airedDate).max()
-                    let resolvedEpisodeDescription = normalizedPodcastText(selectedEpisode?.description)
-                        ?? normalizedPodcastText(selectedSeries?.description)
-                        ?? "No description available."
-                    let resolvedEpisodeArtist = normalizedPodcastText(selectedEpisode?.artist)
-                        ?? normalizedPodcastText(selectedSeries?.artist)
-                        ?? "Unknown Artist"
-                    ZStack {
-                        defaultGapIcon(image, opacity: shouldHidePodcastsRootIcon ? 0 : 1).animation(.easeInOut(duration: 0.18), value: shouldHidePodcastsRootIcon)
-                        if shouldShowSeriesPreview, let selectedSeries {
-                            AnimatedMetadataGapContentView(
-                                image: selectedSeriesPreviewImage,
-                                aspectRatio: aspectRatio(for: selectedSeriesPreviewImage, fallback: 1.0),
-                                forcedPreviewAspectRatio: 1.0,
-                                sizeScale: 0.92,
-                                titleText: selectedSeries.title,
-                                descriptionText: nil,
-                                metadataLines: [.init(
-                                    label: "Number of Episodes",
-                                    value: "\(selectedSeries.episodes.count)",
-                                ), .init(
-                                    label: "Most Recent",
-                                    value: podcastEpisodeAiredText(for: selectedSeriesMostRecentDate),
-                                )],
-                                baseIconSize: iconSize,
-                                horizontalOffset: musicGapPreviewHorizontalOffset - 56,
-                                verticalOffset: gapContentVerticalOffset - 8,
-                                transitionIdentity: "podcast_series_metadata:\(selectedSeries.id)",
-                                sceneSize: sceneSize,
-                            ).id("podcast_series_metadata:\(selectedSeries.id)").transition(.opacity.animation(.easeInOut(duration: 0.2)))
-                        }
-                        if let selectedEpisode {
-                            AnimatedMetadataGapContentView(
-                                image: selectedEpisodePreviewImage,
-                                aspectRatio: aspectRatio(for: selectedEpisodePreviewImage, fallback: 1.0),
-                                forcedPreviewAspectRatio: 1.0,
-                                sizeScale: 0.92,
-                                titleText: selectedEpisode.title,
-                                descriptionText: resolvedEpisodeDescription,
-                                metadataLines: [.init(label: "Artist", value: resolvedEpisodeArtist), .init(
-                                    label: "Length",
-                                    value: podcastEpisodeLengthText(for: selectedEpisode.durationSeconds),
-                                ), .init(
-                                    label: "Aired",
-                                    value: podcastEpisodeAiredText(for: selectedEpisode.airedDate),
-                                )],
-                                baseIconSize: iconSize,
-                                horizontalOffset: musicGapPreviewHorizontalOffset - 56,
-                                verticalOffset: gapContentVerticalOffset - 8,
-                                transitionIdentity: "podcast_episode_metadata:\(selectedEpisode.id)",
-                                transitionDelay: 0,
-                                animatePreviewTransition: false,
-                                sceneSize: sceneSize,
-                            ).id("podcast_episode_metadata:\(selectedEpisode.id)").transition(.opacity.animation(.easeInOut(duration: 0.18)))
-                        }
-                    }
-                } else if activeRootItemID == "settings" {
-                    PlainGapContentIconView(image: image, adjustedIconSize: gapContentAdjustedIconSize, horizontalOffset: gapContentHorizontalOffset, verticalOffset: gapContentVerticalOffset)
                 } else {
                     defaultGapIcon(image)
                 }
@@ -727,8 +551,6 @@ extension MenuView {
         switch activeRootItemID {
         case "movies":
             shouldUseITunesTopMoviesCarouselSlot || shouldShowITunesTopCarouselContent(.movies)
-        case "tv_shows":
-            shouldUseITunesTopTVEpisodesCarouselSlot || shouldShowITunesTopCarouselContent(.tvEpisodes)
         case "music":
             shouldUseMusicTopLevelCarouselSlot ||
                 shouldUseITunesTopSongsCarouselSlot ||
@@ -744,9 +566,6 @@ extension MenuView {
     }
 
     var detailContentVisibilityOpacity: Double {
-        if shouldHidePodcastsSubmenuChromeUntilLoadCompletes {
-            return 0
-        }
-        return shouldKeepDetailContentFullyOpaqueForCarousel ? 1 : detailContentOpacity
+        shouldKeepDetailContentFullyOpaqueForCarousel ? 1 : detailContentOpacity
     }
 }

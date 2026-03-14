@@ -82,18 +82,14 @@ extension MenuView {
         if key == musicNowPlayingFullscreenKey {
             clearMusicSongSwitchTransitionState()
         }
-        if key == screenSaverFullscreenKey {
-            clearScreenSaverNowPlayingToast()
-        }
         isFullscreenSceneTransitioning = true
         activeFullscreenScene = FullscreenScenePresentation(key: key, payload: payload)
         fullscreenSceneOpacity = 0
         fullscreenTransitionOverlayOpacity = 0
         let shouldRevealDeferredNowPlaying =
             key == musicNowPlayingFullscreenKey && deferNowPlayingMenuItemUntilAfterFadeOut
-        let isScreenSaverTransition = key == screenSaverFullscreenKey
-        let fadeOutDuration = isScreenSaverTransition ? 1 : 0.28
-        let fadeInDuration = isScreenSaverTransition ? 1 : 0.24
+        let fadeOutDuration = 0.28
+        let fadeInDuration = 0.24
         if usingExistingBlackout {
             isMenuFolderSwapTransitioning = false
             let totalRevealDelay = max(0, revealDelay)
@@ -121,14 +117,13 @@ extension MenuView {
             return
         }
         let useOverlayForMenuFade =
-            key == screenSaverFullscreenKey ||
-            (key == musicNowPlayingFullscreenKey &&
-                activeRootItemID == "music" &&
-                isInSubmenu &&
-                !isInThirdMenu &&
-                (shouldShowMusicTopLevelCarouselContent ||
-                    shouldShowITunesTopSongsCarouselContent ||
-                    shouldShowITunesTopMusicVideosCarouselContent))
+            key == musicNowPlayingFullscreenKey &&
+            activeRootItemID == "music" &&
+            isInSubmenu &&
+            !isInThirdMenu &&
+            (shouldShowMusicTopLevelCarouselContent ||
+                shouldShowITunesTopSongsCarouselContent ||
+                shouldShowITunesTopMusicVideosCarouselContent)
         if useOverlayForMenuFade {
             withAnimation(.easeInOut(duration: fadeOutDuration)) {
                 fullscreenTransitionOverlayOpacity = 1
@@ -191,9 +186,6 @@ extension MenuView {
         guard activeFullscreenScene != nil else { return }
         guard !isFullscreenSceneTransitioning else { return }
         let dismissedKey = activeFullscreenScene?.key
-        if dismissedKey == screenSaverFullscreenKey {
-            clearScreenSaverNowPlayingToast()
-        }
         let shouldPreserveMusicPlayback = preserveMusicPlayback && dismissedKey == musicNowPlayingFullscreenKey
         if dismissedKey == musicNowPlayingFullscreenKey {
             clearMusicSongSwitchTransitionState()
@@ -206,22 +198,19 @@ extension MenuView {
             stopMusicPlaybackSession(clearDisplayState: false)
         }
         isFullscreenSceneTransitioning = true
-        let isScreenSaverTransition = dismissedKey == screenSaverFullscreenKey
-        let fadeOutDuration = isScreenSaverTransition ? 1.0 : 0.28
+        let fadeOutDuration = 0.28
         let holdDuration: Double =
-            (isScreenSaverTransition ||
-                dismissedKey == featureErrorFullscreenKey ||
+            (dismissedKey == featureErrorFullscreenKey ||
                 dismissedKey == theatricalTrailersLoadingFullscreenKey) ? 0 : 1.0
-        let fadeInDuration = isScreenSaverTransition ? 1.0 : 0.24
+        let fadeInDuration = 0.24
         let useOverlayForMenuFade =
-            dismissedKey == screenSaverFullscreenKey ||
-            (dismissedKey == musicNowPlayingFullscreenKey &&
-                activeRootItemID == "music" &&
-                isInSubmenu &&
-                !isInThirdMenu &&
-                (shouldShowMusicTopLevelCarouselContent ||
-                    shouldShowITunesTopSongsCarouselContent ||
-                    shouldShowITunesTopMusicVideosCarouselContent))
+            dismissedKey == musicNowPlayingFullscreenKey &&
+            activeRootItemID == "music" &&
+            isInSubmenu &&
+            !isInThirdMenu &&
+            (shouldShowMusicTopLevelCarouselContent ||
+                shouldShowITunesTopSongsCarouselContent ||
+                shouldShowITunesTopMusicVideosCarouselContent)
         if useOverlayForMenuFade {
             withAnimation(.easeInOut(duration: fadeOutDuration)) {
                 fullscreenTransitionOverlayOpacity = 1
@@ -285,15 +274,6 @@ extension MenuView {
             musicNowPlayingFullscreenKey: { _ in
                 AnyView(
                     musicNowPlayingSceneView(),
-                )
-            },
-            screenSaverFullscreenKey: { _ in
-                AnyView(
-                    ScreenSaverFullscreenView(
-                        onDismiss: {
-                            dismissScreenSaverForUserInteraction()
-                        },
-                    ),
                 )
             },
             featureErrorFullscreenKey: { scene in

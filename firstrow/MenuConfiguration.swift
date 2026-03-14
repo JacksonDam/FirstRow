@@ -3,12 +3,9 @@ import SwiftUI
 enum MenuConfiguration {
     private static let catalog = MenuCatalog(features: [
         MoviesMenuFeature(),
-        TVShowsMenuFeature(),
         MusicMenuFeature(),
-        PodcastsMenuFeature(),
         PhotosMenuFeature(),
-        SettingsMenuFeature(),
-        SourcesMenuFeature(),
+        DVDMenuFeature(),
     ])
     static var rootItems: [RootMenuItemConfig] {
         catalog.rootItems
@@ -17,13 +14,13 @@ enum MenuConfiguration {
     static let defaultArrowAppearance = ArrowAppearance(
         symbolName: "chevron.right",
         color: .white,
-        fontSize: 30,
+        fontSize: 36,
         fontWeight: .heavy,
-        xOffset: -20,
-        glowPrimaryRadius: 2.5,
-        glowSecondaryRadius: 5,
-        glowPrimaryOpacity: 1.0,
-        glowSecondaryOpacity: 1.0,
+        xOffset: -4,
+        glowPrimaryRadius: 1.8,
+        glowSecondaryRadius: 3.8,
+        glowPrimaryOpacity: 0.9,
+        glowSecondaryOpacity: 0.65,
     )
     static func rootItem(withID id: String) -> RootMenuItemConfig? {
         catalog.rootItem(withID: id)

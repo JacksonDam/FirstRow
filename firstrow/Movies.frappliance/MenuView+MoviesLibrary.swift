@@ -2,141 +2,12 @@ import AVFoundation
 import Darwin
 import SwiftUI
 import UniformTypeIdentifiers
-#if os(iOS)
-    import UIKit
-#endif
 
 extension MenuView {
-    #if os(iOS)
-        var moviesFolderBookmarkDefaultsKey: String {
-            "firstRow.movies.bookmarkedFolder"
-        }
-
-        func resolveBookmarkedMoviesFolderURL() -> URL? {
-            guard let bookmarkData = UserDefaults.standard.data(forKey: moviesFolderBookmarkDefaultsKey) else {
-                return nil
-            }
-            var isStale = false
-            do {
-                let resolvedURL = try URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: [],
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale,
-                )
-                if isStale {
-                    storeBookmarkedMoviesFolderURL(resolvedURL)
-                }
-                return resolvedURL
-            } catch {
-                UserDefaults.standard.removeObject(forKey: moviesFolderBookmarkDefaultsKey)
-                return nil
-            }
-        }
-
-        func storeBookmarkedMoviesFolderURL(_ folderURL: URL) {
-            do {
-                let bookmarkData = try folderURL.bookmarkData(
-                    options: [],
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil,
-                )
-                UserDefaults.standard.set(bookmarkData, forKey: moviesFolderBookmarkDefaultsKey)
-            } catch {
-                print("Unable to bookmark picked Movies folder at path: \(folderURL.path) (\(error.localizedDescription))")
-            }
-        }
-
-        func isSupportedMovieFile(url: URL, values: URLResourceValues?) -> Bool {
-            let normalizedExtension = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let isSupportedByExtension = supportedMovieFileExtensions.contains(normalizedExtension)
-            let isSupportedByType = values?.contentType?.conforms(to: .movie) ?? false
-            return isSupportedByExtension || isSupportedByType
-        }
-
-        func importMoviesFromFolderIntoDocuments(_ folderURL: URL) {
-            let didStartSecurityScope = folderURL.startAccessingSecurityScopedResource()
-            defer {
-                if didStartSecurityScope {
-                    folderURL.stopAccessingSecurityScopedResource()
-                }
-            }
-            let fileManager = FileManager.default
-            let documentsDirectory = moviesDocumentsDirectoryURL().standardizedFileURL
-            let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
-            let urls: [URL]
-            do {
-                urls = try fileManager.contentsOfDirectory(
-                    at: folderURL,
-                    includingPropertiesForKeys: Array(resourceKeys),
-                    options: [.skipsHiddenFiles],
-                )
-            } catch {
-                print("Unable to import movies from picked folder at path: \(folderURL.path) (\(error.localizedDescription))")
-                return
-            }
-            for sourceURL in urls {
-                let values = try? sourceURL.resourceValues(forKeys: resourceKeys)
-                let isDirectory = values?.isDirectory ?? false
-                if isDirectory { continue }
-                guard isSupportedMovieFile(url: sourceURL, values: values) else { continue }
-                let standardizedSource = sourceURL.standardizedFileURL
-                if standardizedSource.path.hasPrefix(documentsDirectory.path + "/") {
-                    continue
-                }
-                var destinationURL = documentsDirectory.appendingPathComponent(sourceURL.lastPathComponent, isDirectory: false)
-                if fileManager.fileExists(atPath: destinationURL.path) {
-                    let baseName = sourceURL.deletingPathExtension().lastPathComponent
-                    let pathExtension = sourceURL.pathExtension
-                    var duplicateIndex = 2
-                    while fileManager.fileExists(atPath: destinationURL.path) {
-                        let duplicateName = if pathExtension.isEmpty {
-                            "\(baseName) \(duplicateIndex)"
-                        } else {
-                            "\(baseName) \(duplicateIndex).\(pathExtension)"
-                        }
-                        destinationURL = documentsDirectory.appendingPathComponent(duplicateName, isDirectory: false)
-                        duplicateIndex += 1
-                    }
-                }
-                do {
-                    try fileManager.copyItem(at: sourceURL, to: destinationURL)
-                } catch {
-                    print(
-                        "Unable to copy movie from \(sourceURL.lastPathComponent) to Documents (\(error.localizedDescription))",
-                    )
-                }
-            }
-        }
-
-        func importMoviesFromBookmarkedFolderIfNeeded() {
-            guard let bookmarkedFolderURL = resolveBookmarkedMoviesFolderURL() else { return }
-            importMoviesFromFolderIntoDocuments(bookmarkedFolderURL)
-        }
-
-        func handleMoviesFolderPickedFromFiles(_ selectedFolderURL: URL) {
-            storeBookmarkedMoviesFolderURL(selectedFolderURL)
-            importMoviesFromFolderIntoDocuments(selectedFolderURL)
-            if thirdMenuMode == .moviesFolder {
-                loadThirdMenuDirectory(moviesRootDirectoryURL(), resetSelection: true)
-            }
-        }
-
-        func promptForMoviesFolderPickerIfNeeded() {
-            guard thirdMenuMode == .moviesFolder else { return }
-            guard thirdMenuItems.isEmpty else { return }
-            guard !hasPromptedMoviesFolderPickerThisSession else { return }
-            hasPromptedMoviesFolderPickerThisSession = true
-            DispatchQueue.main.async {
-                self.isMoviesFolderPickerPresented = true
-            }
-        }
-    #else
-        func isSupportedMovieFile(url: URL, values _: URLResourceValues?) -> Bool {
-            let normalizedExtension = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return supportedMovieFileExtensions.contains(normalizedExtension)
-        }
-    #endif
+    func isSupportedMovieFile(url: URL, values _: URLResourceValues?) -> Bool {
+        let normalizedExtension = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return supportedMovieFileExtensions.contains(normalizedExtension)
+    }
 
     nonisolated func realUserHomeDirectoryURL() -> URL? {
         guard let passwdEntry = getpwuid(getuid()),
@@ -193,33 +64,14 @@ extension MenuView {
     }
 
     func moviesRootDirectoryURL() -> URL {
-        #if os(iOS)
-            importMoviesFromBookmarkedFolderIfNeeded()
-            let documentsDirectory = moviesDocumentsDirectoryURL()
-            let fileManager = FileManager.default
-            let legacyfirstRowDirectory = documentsDirectory.appendingPathComponent("Front Row", isDirectory: true)
-            let inboxDirectory = documentsDirectory.appendingPathComponent("Inbox", isDirectory: true)
-            let candidates = [documentsDirectory, legacyfirstRowDirectory, inboxDirectory]
-            for candidate in candidates {
-                var isDirectory: ObjCBool = false
-                guard fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-                    continue
-                }
-                if !movieFileEntries(in: candidate).isEmpty {
-                    return candidate
-                }
-            }
-            return documentsDirectory
-        #else
-            if let homeURL = realUserHomeDirectoryURL() {
-                return homeURL.appendingPathComponent("Movies", isDirectory: true)
-            }
-            let guessedHome = URL(fileURLWithPath: "/Users/\(NSUserName())", isDirectory: true)
-            if FileManager.default.fileExists(atPath: guessedHome.path) {
-                return guessedHome.appendingPathComponent("Movies", isDirectory: true)
-            }
-            return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("Movies", isDirectory: true)
-        #endif
+        if let homeURL = realUserHomeDirectoryURL() {
+            return homeURL.appendingPathComponent("Movies", isDirectory: true)
+        }
+        let guessedHome = URL(fileURLWithPath: "/Users/\(NSUserName())", isDirectory: true)
+        if FileManager.default.fileExists(atPath: guessedHome.path) {
+            return guessedHome.appendingPathComponent("Movies", isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("Movies", isDirectory: true)
     }
 
     var supportedMovieFileExtensions: Set<String> {
@@ -239,11 +91,7 @@ extension MenuView {
     }
 
     var moviesFolderSubmenuPreviewLoadLimit: Int {
-        #if os(iOS)
-            6
-        #else
-            8
-        #endif
+        8
     }
 
     func moviesFolderContainsNavigableContent(in directoryURL: URL) -> Bool {
@@ -615,9 +463,6 @@ extension MenuView {
             thirdMenuRootURL = rootURL
             loadThirdMenuDirectory(rootURL, resetSelection: true)
             isInThirdMenu = true
-            #if os(iOS)
-                promptForMoviesFolderPickerIfNeeded()
-            #endif
             submenuOpacity = 0
             thirdMenuOpacity = 1
         }

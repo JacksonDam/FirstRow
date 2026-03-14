@@ -1,12 +1,7 @@
 import SwiftUI
 
-#if os(iOS) || os(tvOS)
-    let firstRowRegularFontName = "Helvetica Neue"
-    let firstRowBoldFontName = "Helvetica Neue Bold"
-#else
-    let firstRowRegularFontName = "Lucida Grande"
-    let firstRowBoldFontName = "Lucida Grande Bold"
-#endif
+let firstRowRegularFontName = "Lucida Grande"
+let firstRowBoldFontName = "Lucida Grande Bold"
 extension Font {
     static func firstRowRegular(size: CGFloat) -> Font {
         .custom(firstRowRegularFontName, size: size)
@@ -31,47 +26,18 @@ struct FirstRowTimelineView<Content: View>: View {
     }
 
     var body: some View {
-        #if os(macOS)
-            if #available(macOS 12.0, *) {
-                TimelineView(.animation(minimumInterval: minimumInterval, paused: false)) { timeline in
-                    content(timeline.date)
-                }
-            } else {
-                content(fallbackDate)
-                    .onAppear {
-                        fallbackDate = Date()
-                    }
-                    .onReceive(Timer.publish(every: minimumInterval, on: .main, in: .common).autoconnect()) { currentDate in
-                        fallbackDate = currentDate
-                    }
-            }
-        #else
+        if #available(macOS 12.0, *) {
             TimelineView(.animation(minimumInterval: minimumInterval, paused: false)) { timeline in
                 content(timeline.date)
             }
-        #endif
+        } else {
+            content(fallbackDate)
+                .onAppear {
+                    fallbackDate = Date()
+                }
+                .onReceive(Timer.publish(every: minimumInterval, on: .main, in: .common).autoconnect()) { currentDate in
+                    fallbackDate = currentDate
+                }
+        }
     }
 }
-
-#if os(iOS) || os(tvOS)
-    import UIKit
-
-    typealias NSImage = UIImage
-    typealias NSSize = CGSize
-    typealias NSFont = UIFont
-    extension NSImage {
-        convenience init?(contentsOf url: URL) {
-            self.init(contentsOfFile: url.path)
-        }
-
-        convenience init?(cgImage: CGImage, size _: NSSize) {
-            self.init(cgImage: cgImage)
-        }
-    }
-
-    extension Image {
-        init(nsImage: NSImage) {
-            self.init(uiImage: nsImage)
-        }
-    }
-#endif

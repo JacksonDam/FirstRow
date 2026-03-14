@@ -5,13 +5,11 @@ extension MenuView {
         case none
         case moviesFolder
         case moviesITunesTop
-        case tvITunesTopEpisodes
         case musicITunesTopSongs
         case musicITunesTopMusicVideos
         case musicCategories
         case musicSongs
         case photosDateAlbums
-        case podcastsEpisodes
     }
 }
 
@@ -32,9 +30,6 @@ extension MenuView {
             refreshMoviePreviewForCurrentContext()
             refreshITunesTopPreviewForCurrentContext(.movies)
             refreshITunesTopCarouselForCurrentContext(.movies)
-        case "tv_shows":
-            refreshITunesTopPreviewForCurrentContext(.tvEpisodes)
-            refreshITunesTopCarouselForCurrentContext(.tvEpisodes)
         case "music":
             refreshMusicPreviewForCurrentContext()
             refreshMusicTopLevelCarouselForCurrentContext()
@@ -42,8 +37,6 @@ extension MenuView {
             refreshITunesTopCarouselForCurrentContext(.songs)
             refreshITunesTopPreviewForCurrentContext(.musicVideos)
             refreshITunesTopCarouselForCurrentContext(.musicVideos)
-        case "podcasts":
-            refreshPodcastsForCurrentContext()
         case "photos":
             refreshPhotosForCurrentContext()
         default:
@@ -55,30 +48,25 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos:
             true
-        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .none:
+        case .moviesFolder, .moviesITunesTop, .photosDateAlbums, .none:
             false
         }
-        if isExitingMusicThirdMenu {
-            isMusicSongsShuffleMode = false
-            isMusicSongsCategoryScoped = false
-            activeMusicCategoryKind = nil
-            activeMusicCategoryMenuTitle = ""
-            lastSelectedMusicCategoryIndex = 0
-            activeMusicLibraryMediaType = .songs
-            musicSongsShowsShuffleAction = false
-            musicCategoryThirdMenuItems = []
+        transitionMenuForFolderSwap {
+            if isExitingMusicThirdMenu {
+                isMusicSongsShuffleMode = false
+                isMusicSongsCategoryScoped = false
+                activeMusicCategoryKind = nil
+                activeMusicCategoryMenuTitle = ""
+                lastSelectedMusicCategoryIndex = 0
+                activeMusicLibraryMediaType = .songs
+                musicSongsShowsShuffleAction = false
+                musicCategoryThirdMenuItems = []
+            }
             headerText = rootMenuTitle(for: activeRootItemID)
-        } else {
-            headerText = rootMenuTitle(for: activeRootItemID)
-        }
-        withAnimation(.easeInOut(duration: 0.2)) {
-            thirdMenuOpacity = 0
-            submenuOpacity = 1
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             isInThirdMenu = false
             thirdMenuMode = .none
-            syncPodcastSubmenuSelectionForActiveSeries()
+            thirdMenuOpacity = 0
+            submenuOpacity = 1
             refreshDetailPreviewForCurrentContext()
         }
     }
@@ -92,19 +80,7 @@ extension MenuView {
             headerText = rootMenuTitle(for: activeRootItemID)
             resetThirdMenuDirectoryState()
             moviesFolderSelectionIndexByDirectoryPath = [:]
-            resetITunesTopCarouselAndPreviewState(for: [.movies, .tvEpisodes])
-            refreshDetailPreviewForCurrentContext()
-        }
-    }
-
-    func exitPodcastsThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
-        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
-            isInThirdMenu = false
-            thirdMenuMode = .none
-            thirdMenuOpacity = 0
-            submenuOpacity = 1
-            headerText = rootMenuTitle(for: activeRootItemID)
-            syncPodcastSubmenuSelectionForActiveSeries()
+            resetITunesTopCarouselAndPreviewState(for: [.movies])
             refreshDetailPreviewForCurrentContext()
         }
     }
@@ -134,13 +110,10 @@ extension MenuView {
         switch thirdMenuMode {
         case .musicITunesTopSongs, .musicITunesTopMusicVideos, .musicSongs, .musicCategories:
             playSound(named: "Exit")
-            exitMusicThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
-        case .moviesITunesTop, .tvITunesTopEpisodes:
+            exitMusicThirdMenuToSecondLevelWithSwap()
+        case .moviesITunesTop:
             playSound(named: "Exit")
-            exitMoviesThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
-        case .podcastsEpisodes:
-            playSound(named: "Exit")
-            exitPodcastsThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
+            exitMoviesThirdMenuToSecondLevelWithSwap()
         case .moviesFolder:
             guard let currentURL = thirdMenuCurrentURL else {
                 exitMoviesThirdMenuToSecondLevelWithSwap()
@@ -175,6 +148,42 @@ extension MenuView {
         guard !isFullscreenSceneTransitioning else { return }
         guard !isMovieTransitioning else { return }
         isMenuFolderSwapTransitioning = true
+        if !useOverlayFade {
+            menuTransitionSnapshot = currentMenuTransitionSnapshot()
+            menuTransitionProgress = menuTransitionSnapshot == nil ? 1 : 0
+            var instant = Transaction()
+            instant.animation = nil
+            withTransaction(instant) {
+                update()
+            }
+            let revealDeadline = Date().addingTimeInterval(max(0, maxRevealWait))
+            func revealWhenReady() {
+                guard isMenuFolderSwapTransitioning else { return }
+                let canRevealNow = revealWhen() || Date() >= revealDeadline
+                guard canRevealNow else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        revealWhenReady()
+                    }
+                    return
+                }
+                guard menuTransitionSnapshot != nil else {
+                    menuTransitionProgress = 1
+                    isMenuFolderSwapTransitioning = false
+                    return
+                }
+                withAnimation(.easeInOut(duration: menuSlideDuration)) {
+                    menuTransitionProgress = 1
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + menuSlideDuration) {
+                    menuTransitionSnapshot = nil
+                    isMenuFolderSwapTransitioning = false
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                revealWhenReady()
+            }
+            return
+        }
         if useOverlayFade {
             menuSceneOpacity = 1
             withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {

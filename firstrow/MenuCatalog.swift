@@ -33,7 +33,7 @@ struct MenuCatalog {
     }
 
     var rootItems: [RootMenuItemConfig] {
-        features.map(\.rootItem)
+        features.map(\.rootItem).filter(\.showsInRootMenu)
     }
 
     func rootItem(withID id: String) -> RootMenuItemConfig? {

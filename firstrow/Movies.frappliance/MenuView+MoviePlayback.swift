@@ -1,20 +1,14 @@
+import AppKit
 import AVFoundation
 import AVKit
 import Darwin
 import SwiftUI
-#if os(macOS)
-    import AppKit
-#elseif canImport(UIKit)
-    import UIKit
-#endif
 
 extension MenuView {
     func startMoviePlayback(from url: URL) {
         guard !isMovieTransitioning else { return }
-        resetScreenSaverIdleTimer()
         let normalizedURL = url.standardizedFileURL
         if shouldTreatAsAudioOnlyPlayback(url: normalizedURL) {
-            clearActivePodcastAudioPlaybackContext()
             startAudioOnlyPlayback(
                 from: normalizedURL,
                 title: normalizedURL.deletingPathExtension().lastPathComponent,
@@ -64,19 +58,9 @@ extension MenuView {
     }
 
     func handleProtectedMoviePlaybackAttempt(for url: URL) {
-        #if os(macOS)
-            if NSWorkspace.shared.open(url) {
-                return
-            }
-        #elseif canImport(UIKit)
-            if Thread.isMainThread {
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
-            } else {
-                DispatchQueue.main.async {
-                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
-                }
-            }
-        #endif
+        if NSWorkspace.shared.open(url) {
+            return
+        }
         playSound(named: "Limit")
         presentFeatureErrorScreen(.protectedVideoUnsupported)
     }
@@ -334,7 +318,6 @@ extension MenuView {
                     movieTransitionOverlayOpacity = 0
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-                    resetScreenSaverIdleTimer()
                     isMovieTransitioning = false
                 }
             }

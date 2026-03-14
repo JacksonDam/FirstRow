@@ -1,8 +1,33 @@
 import AVFoundation
 import SwiftUI
 
+struct MenuTransitionSnapshot: Identifiable {
+    let id = UUID()
+    let rootID: String?
+    let headerText: String
+    let items: [MenuListItemConfig]
+    let selectedIndex: Int
+}
+
 struct MenuView: View {
+    let initialBackdropImage: NSImage?
     let menuItems = MenuConfiguration.rootItems
+
+    init(initialBackdropImage: NSImage? = nil) {
+        self.initialBackdropImage = initialBackdropImage
+
+        let rootItems = MenuConfiguration.rootItems
+        let defaultRootIndex = rootItems.firstIndex(where: { $0.id == "music" }) ?? 0
+        let defaultRootTitle =
+            rootItems.indices.contains(defaultRootIndex)
+                ? rootItems[defaultRootIndex].title
+                : (rootItems.first?.title ?? "")
+
+        _selectedIndex = State(initialValue: defaultRootIndex)
+        _rootLabelText = State(initialValue: defaultRootTitle)
+        _introBackdropImage = State(initialValue: initialBackdropImage)
+        _rootCarouselSelectionValue = State(initialValue: Double(defaultRootIndex - 4))
+    }
 
     // MARK: - Layout constants
 
@@ -28,6 +53,24 @@ struct MenuView: View {
     let landedFinalYOffsetAdjustment: CGFloat = 32
     let menuHeaderVerticalOffset: CGFloat = -10
     let selectedCarouselEntryOffset: CGFloat = 200 * 1.5
+    let rootCarouselRadius: CGFloat = 480
+    let rootIntroStartCarouselRadius: CGFloat = 280
+    let rootExitEndCarouselRadius: CGFloat = 680
+    let rootCarouselTiltDegrees: Double = 26
+    let rootCarouselCenterYOffset: CGFloat = -26
+    let rootCarouselPerspectiveDistance: CGFloat = 2000
+    let rootCarouselBaseSizeMultiplier: CGFloat = 0.8
+    let rootIntroBackdropMinimumScale: CGFloat = 0.25
+    let rootIntroBackdropFinalYOffset: CGFloat = -512
+    let rootIntroBackdropFadeStartProgress: CGFloat = 0.75
+    let rootIntroStageStartYOffset: CGFloat = 2325
+    let rootIntroStageStartScale: CGFloat = 1.85
+    let rootIntroStageStartOpacity: Double = 1
+    let rootNavigationDurationMultiplier: Double = 1.7
+    let rootIntroAnimationStartDelay: Double = 0.05
+    let rootIntroLabelStartDelay: Double = 1.5
+    let rootIntroLabelFadeDuration: Double = 0.25
+    let rootIntroBackdropDuration: Double = 2.75
 
     // MARK: - Duration constants
 
@@ -46,10 +89,6 @@ struct MenuView: View {
     let menuOverlayBlackoutSafetyDuration: Double = 0.1
     let menuFolderSwapHoldDuration: Double = 0.5
     let fullscreenOverlayBlackoutSafetyDuration: Double = 0.1
-    let screenSaverNowPlayingToastFadeDuration: Double = 0.5
-    let screenSaverNowPlayingToastVisibleDuration: Double = 10.0
-    let screenSaverNowPlayingToastSize = CGSize(width: 500, height: 170)
-    let screenSaverMusicTrackSwitchCoalesceDelay: TimeInterval = 0.07
     let photoSlideshowPhotoDisplayDuration: Double = 3.0
     let photoSlideshowCrossfadeDuration: Double = 1.0
     let photoSlideshowMenuFadeDuration: Double = 0.28
@@ -60,8 +99,6 @@ struct MenuView: View {
     let musicSongIncomingTransitionDelay: Double = 0.2
     let musicNowPlayingFlipInterval: TimeInterval = 18.0
     let musicNowPlayingFlipDuration: TimeInterval = 1.2
-    let screenSaverIdleActivationDelay: TimeInterval = 60.0
-    let screenSaverIdleCheckInterval: TimeInterval = 1.0
 
     // MARK: - Input constants
 
@@ -75,6 +112,10 @@ struct MenuView: View {
     let movieControlsAutoHideDelay: TimeInterval = 3.0
     let movieControlsFadeDuration: TimeInterval = 1.0
     let movieScrubReleaseGracePeriod: TimeInterval = 0.18
+    let rootIntroDuration: Double = 2.325
+    let rootLabelFadeOutDuration: Double = 0.12
+    let rootLabelFadeInDuration: Double = 0.18
+    let menuSlideDuration: Double = 0.42
 
     // MARK: - Appearance constants
 
@@ -89,18 +130,20 @@ struct MenuView: View {
     let photosCompactSelectionVisualWidthReduction: CGFloat = 18
     let movieResumeSelectionTextureLeadingAdjustment: CGFloat = -14
     let movieResumeSelectionTextureTrailingAdjustment: CGFloat = 0
+    let menuSelectionWidthScale: CGFloat = 1.16
+    let menuSelectionHeightScale: CGFloat = 1.18
+    let menuSlideDistance: CGFloat = 580
 
     // MARK: - Fullscreen scene keys
 
     let musicNowPlayingFullscreenKey = "music_now_playing"
-    let screenSaverFullscreenKey = "settings_screen_saver"
     let featureErrorFullscreenKey = "feature_error"
     let theatricalTrailersLoadingFullscreenKey = "movies_theatrical_trailers_loading"
     let photoSlideshowFullscreenKey = "photo_slideshow"
 
     // MARK: - Navigation state
 
-    @State var selectedIndex = 0
+    @State var selectedIndex = MenuConfiguration.rootItems.firstIndex(where: { $0.id == "music" }) ?? 0
     @State var selectedSubIndex = 0
     @State var activeRootItemID: String?
     @State var isIconAnimated = false
@@ -120,6 +163,26 @@ struct MenuView: View {
     @State var isMenuOverflowScrollingDown = false
     @State var submenuEntryWorkItem: DispatchWorkItem?
     @State var overflowFadeWorkItem: DispatchWorkItem?
+    @State var rootLabelText = MenuConfiguration.rootItems.first(where: { $0.id == "music" })?.title
+        ?? MenuConfiguration.rootItems.first?.title
+        ?? ""
+    @State var rootLabelOpacity: Double = 0
+    @State var isRootLabelVisible = false
+    @State var rootLabelSwapWorkItem: DispatchWorkItem?
+    @State var rootIntroStartWorkItem: DispatchWorkItem?
+    @State var rootLabelRevealWorkItem: DispatchWorkItem?
+    @State var rootIntroCompletionWorkItem: DispatchWorkItem?
+    @State var rootExitWorkItem: DispatchWorkItem?
+    @State var introBackdropImage: NSImage?
+    @State var introBackdropProgress: CGFloat = 0
+    @State var introProgress: CGFloat = 0
+    @State var isRootIntroRunning = true
+    @State var isRootExitRunning = false
+    @State var hasStartedRootIntro = false
+    @State var hasAnnouncedIntroBackdropAppearance = false
+    @State var rootCarouselSelectionValue: Double = 0
+    @State var menuTransitionSnapshot: MenuTransitionSnapshot?
+    @State var menuTransitionProgress: CGFloat = 1
 
     // MARK: - Input handling state
 
@@ -150,11 +213,9 @@ struct MenuView: View {
     // MARK: - iTunes Top state
 
     @State var iTunesTopMovies: [ITunesTopMovieEntry] = []
-    @State var iTunesTopTVEpisodes: [ITunesTopTVEpisodeEntry] = []
     @State var iTunesTopSongs: [ITunesTopSongEntry] = []
     @State var iTunesTopMusicVideos: [ITunesTopMusicVideoEntry] = []
     @State var iTunesTopStateByKind: [ITunesTopCarouselKind: ITunesTopKindState] = ITunesTopCarouselKind.defaultStateMap
-    @State var tvShowsSortMode: TVShowsSortMode = .show
 
     // MARK: - Music library state
 
@@ -250,20 +311,6 @@ struct MenuView: View {
     @State var isLoadingMusicTopLevelCarousel = false
     @State var musicTopLevelCarouselLoadOverlayOpacity: Double = 0
 
-    // MARK: - Podcasts state
-
-    @State var podcastSeriesItems: [PodcastSeriesEntry] = []
-    @State var podcastEpisodesThirdMenuItems: [PodcastEpisodeEntry] = []
-    @State var activePodcastSeriesID: String?
-    @State var activePodcastPlaybackSeriesID: String?
-    @State var activePodcastPlaybackEpisodeID: String?
-    @State var isLoadingPodcasts = false
-    @State var podcastsLoadError: String?
-    @State var podcastsRequestID = 0
-    @State var podcastsHasLoadedAtLeastOnce = false
-    @State var hasPresentedNoPodcastsErrorInCurrentSession = false
-    @State var isResolvingPodcastsRootSelection = false
-
     // MARK: - Photos state
 
     @State var photosDateAlbums: [PhotoLibraryAlbumEntry] = []
@@ -344,11 +391,6 @@ struct MenuView: View {
     @State var musicLastScrubInputDate: Date?
     @State var musicLastScrubTickDate: Date?
     @State var musicScrubTimer: Timer?
-    #if os(tvOS)
-        @State var musicKitProgressTimer: Timer?
-        @State var musicKitScrubGlyphResetWorkItem: DispatchWorkItem?
-        @State var musicKitDidHandleTrackEnd = false
-    #endif
 
     // MARK: - Fullscreen / transitions state
 
@@ -360,24 +402,11 @@ struct MenuView: View {
     @State var theatricalTrailersLoadingShowsSpinner = false
     @State var theatricalTrailersLoadingRequestID = 0
 
-    // MARK: - Screen saver state
-
-    @State var screenSaverNowPlayingToastOpacity: Double = 0
-    @State var screenSaverNowPlayingToastHideWorkItem: DispatchWorkItem?
-    @State var screenSaverPendingMusicTrackSwitchDelta = 0
-    @State var screenSaverPendingMusicTrackSwitchWorkItem: DispatchWorkItem?
     @State var lastUserInteractionAt = Date()
-    @State var screenSaverIdleMonitorTimer: Timer?
 
     // MARK: - Settings
 
     @AppStorage("isUISoundEffectsEnabled") var isUISoundEffectsEnabled = true
-    @AppStorage("isScreenSaverEnabled") var isScreenSaverEnabled = true
-
-    #if os(iOS)
-        @State var isMoviesFolderPickerPresented = false
-        @State var hasPromptedMoviesFolderPickerThisSession = false
-    #endif
 }
 
 extension MenuView {

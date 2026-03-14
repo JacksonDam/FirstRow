@@ -1,12 +1,6 @@
 import AVFoundation
 import AVKit
 import SwiftUI
-#if os(iOS)
-    import MediaPlayer
-#endif
-#if os(tvOS)
-    import MusicKit
-#endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
@@ -80,34 +74,18 @@ extension MenuView {
         resetTransitionState: Bool = true,
     ) {
         let resolvedPlaybackID = playbackID ?? "audio::\(mediaURL.path)"
-        #if os(tvOS)
-            let pseudoSong = MusicLibrarySongEntry(
-                id: resolvedPlaybackID,
-                title: title,
-                artist: artist,
-                album: album,
-                genre: "Podcast",
-                composer: "",
-                durationSeconds: 0,
-                artworkAlbumKey: nil,
-                url: mediaURL,
-                artwork: artwork,
-                musicKitSong: nil,
-            )
-        #else
-            let pseudoSong = MusicLibrarySongEntry(
-                id: resolvedPlaybackID,
-                title: title,
-                artist: artist,
-                album: album,
-                genre: "Podcast",
-                composer: "",
-                durationSeconds: 0,
-                artworkAlbumKey: nil,
-                url: mediaURL,
-                artwork: artwork,
-            )
-        #endif
+        let pseudoSong = MusicLibrarySongEntry(
+            id: resolvedPlaybackID,
+            title: title,
+            artist: artist,
+            album: album,
+            genre: "Audio",
+            composer: "",
+            durationSeconds: 0,
+            artworkAlbumKey: nil,
+            url: mediaURL,
+            artwork: artwork,
+        )
         startMusicPlayback(
             from: pseudoSong,
             trackIndex: trackIndex,
@@ -229,55 +207,21 @@ extension MenuView {
         if let cachedArtworkData = cachedMusicLibraryArtworkData(for: song) {
             return cachedArtworkData
         }
-        #if os(iOS)
-            guard MPMediaLibrary.authorizationStatus() == .authorized else { return nil }
-            guard let persistentID = UInt64(song.id) else { return nil }
-            let query = MPMediaQuery.songs()
-            let predicate = MPMediaPropertyPredicate(
-                value: NSNumber(value: persistentID),
-                forProperty: MPMediaItemPropertyPersistentID,
-                comparisonType: .equalTo,
-            )
-            query.addFilterPredicate(predicate)
-            return query.items?.first?.artwork?.image(at: CGSize(width: 800, height: 800))?.pngData()
-        #elseif canImport(iTunesLibrary)
-            return nil
-        #else
-            return nil
-        #endif
+        return nil
     }
 
     func hasActiveMusicPlaybackSession() -> Bool {
         if musicAudioPlayer != nil {
             return true
         }
-        #if os(macOS)
-            return activeMusicPlaybackSongID != nil
-        #elseif os(tvOS)
-            return activeMusicPlaybackSongID != nil
-        #else
-            return false
-        #endif
+        return activeMusicPlaybackSongID != nil
     }
 
     func isMusicPlaybackRunning() -> Bool {
         if let musicAudioPlayer {
             return musicAudioPlayer.rate > 0.01
         }
-        #if os(macOS)
-            return isCurrentMusicPlaybackUsingAppleScript && activeMusicPlaybackSongID != nil
-        #elseif os(tvOS)
-            guard activeMusicPlaybackSongID != nil else { return false }
-            let status = ApplicationMusicPlayer.shared.state.playbackStatus
-            switch status {
-            case .playing, .seekingForward, .seekingBackward:
-                return true
-            default:
-                return false
-            }
-        #else
-            return false
-        #endif
+        return isCurrentMusicPlaybackUsingAppleScript && activeMusicPlaybackSongID != nil
     }
 
     func startMusicPlayback(
@@ -302,34 +246,16 @@ extension MenuView {
             activeMusicPlaybackQueue = playbackQueue
         }
         isCurrentMusicPlaybackUsingAppleScript = false
-        #if os(tvOS)
-            if let musicKitSong = song.musicKitSong {
-                startMusicPlaybackUsingMusicKit(song: musicKitSong)
-            } else if let songURL = song.url?.standardizedFileURL {
-                let player = AVPlayer(url: songURL)
-                player.automaticallyWaitsToMinimizeStalling = false
-                configureMusicPlaybackObservation(for: player)
-                musicAudioPlayer = player
-                player.playImmediately(atRate: 1.0)
-            } else {
-                return
-            }
-        #else
-            if let songURL = song.url?.standardizedFileURL {
-                let player = AVPlayer(url: songURL)
-                player.automaticallyWaitsToMinimizeStalling = false
-                configureMusicPlaybackObservation(for: player)
-                musicAudioPlayer = player
-                player.playImmediately(atRate: 1.0)
-            } else {
-                #if os(macOS)
-                    isCurrentMusicPlaybackUsingAppleScript = true
-                    playMusicTrackViaAppleScript(persistentIDDecimal: song.id)
-                #else
-                    return
-                #endif
-            }
-        #endif
+        if let songURL = song.url?.standardizedFileURL {
+            let player = AVPlayer(url: songURL)
+            player.automaticallyWaitsToMinimizeStalling = false
+            configureMusicPlaybackObservation(for: player)
+            musicAudioPlayer = player
+            player.playImmediately(atRate: 1.0)
+        } else {
+            isCurrentMusicPlaybackUsingAppleScript = true
+            playMusicTrackViaAppleScript(persistentIDDecimal: song.id)
+        }
         let resolvedTrackCount = playbackQueue?.count ?? trackCount
         musicNowPlayingTrackPositionText = resolvedTrackCount > 0 ? "\(trackIndex + 1) of \(resolvedTrackCount)" : ""
         musicNowPlayingTitle = song.title
@@ -342,13 +268,10 @@ extension MenuView {
         activeMusicPlaybackSongID = song.id
         let artworkRequestID = incrementRequestID(&musicNowPlayingArtworkRequestID)
         updateNowPlayingArtworkIfNeeded(for: song, requestID: artworkRequestID)
-        if activeFullscreenScene?.key != screenSaverFullscreenKey {
-            prefetchMusicArtworkAroundTrackIndex(
-                trackIndex,
-                activeSongID: song.id,
-            )
-        }
-        resetScreenSaverIdleTimer()
+        prefetchMusicArtworkAroundTrackIndex(
+            trackIndex,
+            activeSongID: song.id,
+        )
         if presentsFullscreen {
             presentFullscreenScene(
                 key: musicNowPlayingFullscreenKey,
@@ -356,7 +279,6 @@ extension MenuView {
             )
         }
         updateMusicNowPlayingFlipTimerState()
-        triggerScreenSaverNowPlayingToastIfNeeded()
     }
 
     #if os(macOS)
@@ -397,74 +319,6 @@ extension MenuView {
             }
         }
     #endif
-
-    func clearActivePodcastAudioPlaybackContext() {
-        activePodcastPlaybackSeriesID = nil
-        activePodcastPlaybackEpisodeID = nil
-    }
-
-    func startPodcastEpisodeAudioPlayback(
-        _ episode: PodcastEpisodeEntry,
-        trackIndex: Int,
-        trackCount: Int,
-        presentsFullscreen: Bool = true,
-        resetTransitionState: Bool = true,
-    ) {
-        guard let mediaURL = episode.mediaURL?.standardizedFileURL else { return }
-        startAudioOnlyPlayback(
-            from: mediaURL,
-            title: episode.title,
-            artist: episode.artist,
-            album: episode.seriesTitle,
-            artwork: episode.artwork ?? podcastFallbackImage,
-            playbackID: episode.id,
-            trackIndex: trackIndex,
-            trackCount: trackCount,
-            showsTrackPosition: true,
-            presentsFullscreen: presentsFullscreen,
-            resetTransitionState: resetTransitionState,
-        )
-        activePodcastPlaybackSeriesID = episode.seriesID
-        activePodcastPlaybackEpisodeID = episode.id
-        // Keep the owning series selected in the hidden second-level menu immediately
-        // so "Now Playing" insertion does not visibly shift rows on back navigation.
-        if activeRootItemID == "podcasts", isInSubmenu {
-            let targetSeriesMenuItemID = "\(podcastSeriesSubmenuItemPrefix)\(episode.seriesID)"
-            let submenuItems = currentSubmenuItems()
-            if let seriesIndex = submenuItems.firstIndex(where: { $0.id == targetSeriesMenuItemID }) {
-                selectedSubIndex = seriesIndex
-            }
-        }
-    }
-
-    func podcastPlaybackContextForEpisode(_ episode: PodcastEpisodeEntry) -> (trackIndex: Int, trackCount: Int) {
-        let episodes = podcastSeriesItems.first(where: { $0.id == episode.seriesID })?.episodes
-            ?? podcastEpisodesThirdMenuItems.filter { $0.seriesID == episode.seriesID }
-        guard !episodes.isEmpty else { return (0, 1) }
-        let trackIndex = episodes.firstIndex(where: { $0.id == episode.id }) ?? 0
-        return (trackIndex, episodes.count)
-    }
-
-    func startPodcastEpisodePlayback(_ episode: PodcastEpisodeEntry) {
-        guard let mediaURL = episode.mediaURL?.standardizedFileURL else { return }
-        let hasVideoTrack = mediaTrackFlags(for: mediaURL).hasVideo
-        if hasVideoTrack {
-            clearActivePodcastAudioPlaybackContext()
-            startMoviePlayback(from: mediaURL)
-            return
-        }
-        if episode.isVideo, !shouldTreatAsAudioOnlyPlayback(url: mediaURL) {
-            clearActivePodcastAudioPlaybackContext()
-            startMoviePlayback(from: mediaURL)
-            return
-        }
-        let context = podcastPlaybackContextForEpisode(episode)
-        startPodcastEpisodeAudioPlayback(
-            episode,
-            trackIndex: context.trackIndex,
-            trackCount: context.trackCount,
-        )
-    }
 
     func configureMusicPlaybackObservation(for player: AVPlayer) {
         removeMusicPlaybackObservation()
@@ -525,113 +379,8 @@ extension MenuView {
         return 0
     }
 
-    #if os(tvOS)
-        func startMusicPlaybackUsingMusicKit(song: Song) {
-            removeMusicPlaybackObservation()
-            musicAudioPlayer = nil
-            observedMusicAudioPlayer = nil
-            stopMusicKitProgressTimer()
-            musicKitScrubGlyphResetWorkItem?.cancel()
-            musicKitScrubGlyphResetWorkItem = nil
-            musicKitDidHandleTrackEnd = false
-            musicNowPlayingDurationSeconds = max(0, song.duration ?? 0)
-            musicNowPlayingElapsedSeconds = 0
-            Task { @MainActor in
-                do {
-                    let player = ApplicationMusicPlayer.shared
-                    player.stop()
-                    player.queue = ApplicationMusicPlayer.Queue(for: [song], startingAt: song)
-                    try await player.play()
-                    refreshMusicKitPlaybackProgress()
-                    startMusicKitProgressTimerIfNeeded()
-                    updateMusicNowPlayingFlipTimerState()
-                } catch {
-                    self.musicSongsLoadError = self.musicLibraryErrorMessage(for: error)
-                }
-            }
-        }
-
-        func startMusicKitProgressTimerIfNeeded() {
-            guard musicKitProgressTimer == nil else { return }
-            let timer = Timer(timeInterval: 1.0 / 10.0, repeats: true) { _ in
-                self.refreshMusicKitPlaybackProgress()
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            musicKitProgressTimer = timer
-        }
-
-        func stopMusicKitProgressTimer() {
-            musicKitProgressTimer?.invalidate()
-            musicKitProgressTimer = nil
-        }
-
-        func refreshMusicKitPlaybackProgress() {
-            guard activeMusicPlaybackSongID != nil else {
-                stopMusicKitProgressTimer()
-                return
-            }
-            let player = ApplicationMusicPlayer.shared
-            let playbackStatus = player.state.playbackStatus
-            let currentTime = player.playbackTime
-            let elapsed = max(0, currentTime.isFinite ? currentTime : 0)
-            if musicScrubDirection == 0 {
-                musicNowPlayingElapsedSeconds = elapsed
-            }
-            if musicNowPlayingDurationSeconds <= 0,
-               let activeMusicPlaybackSongID,
-               let activeSong = musicSongsThirdMenuItems.first(where: { $0.id == activeMusicPlaybackSongID }),
-               let duration = activeSong.musicKitSong?.duration,
-               duration.isFinite,
-               duration > 0
-            {
-                musicNowPlayingDurationSeconds = duration
-            }
-            let duration = musicNowPlayingDurationSeconds
-            if duration > 0 {
-                let isAtOrPastEnd = elapsed >= (duration - 0.05)
-                let didStopAtEnd = playbackStatus == .stopped
-                if isAtOrPastEnd && didStopAtEnd && !musicKitDidHandleTrackEnd {
-                    musicKitDidHandleTrackEnd = true
-                    stopMusicScrubbing(showPauseGlyph: false)
-                    musicNowPlayingLeadingGlyphState = nil
-                    switchMusicNowPlayingTrack(direction: 1)
-                } else if !isAtOrPastEnd || playbackStatus == .playing {
-                    musicKitDidHandleTrackEnd = false
-                }
-            }
-        }
-
-        func seekMusicKitPlayback(direction: Int, isRepeat: Bool) {
-            guard direction != 0 else { return }
-            guard activeMusicPlaybackSongID != nil else { return }
-            let stepSeconds: Double = isRepeat ? 16 : 10
-            let currentTime = ApplicationMusicPlayer.shared.playbackTime
-            let safeCurrent = max(0, currentTime.isFinite ? currentTime : 0)
-            var target = safeCurrent + (Double(direction) * stepSeconds)
-            if musicNowPlayingDurationSeconds > 0 {
-                target = min(max(0, target), musicNowPlayingDurationSeconds)
-            } else {
-                target = max(0, target)
-            }
-            ApplicationMusicPlayer.shared.playbackTime = target
-            musicNowPlayingElapsedSeconds = target
-            musicNowPlayingLeadingGlyphState = direction > 0 ? .fastForward(1) : .rewind(1)
-            musicKitScrubGlyphResetWorkItem?.cancel()
-            let workItem = DispatchWorkItem {
-                guard self.musicScrubDirection == 0 else { return }
-                if self.isMusicPlaybackRunning() {
-                    self.musicNowPlayingLeadingGlyphState = nil
-                } else {
-                    self.musicNowPlayingLeadingGlyphState = .pause
-                }
-            }
-            musicKitScrubGlyphResetWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: workItem)
-        }
-    #endif
     func stopMusicPlaybackSession(clearDisplayState: Bool = true) {
         stopMusicScrubbing(showPauseGlyph: false)
-        cancelScreenSaverMusicTrackSwitchQueue()
         _ = incrementRequestID(&musicNowPlayingArtworkRequestID)
         musicAudioPlayer?.pause()
         #if os(macOS)
@@ -639,20 +388,12 @@ extension MenuView {
                 pauseMusicPlaybackViaAppleScript()
             }
         #endif
-        #if os(tvOS)
-            ApplicationMusicPlayer.shared.stop()
-            stopMusicKitProgressTimer()
-            musicKitScrubGlyphResetWorkItem?.cancel()
-            musicKitScrubGlyphResetWorkItem = nil
-            musicKitDidHandleTrackEnd = false
-        #endif
         removeMusicPlaybackObservation()
         musicAudioPlayer = nil
         isCurrentMusicPlaybackUsingAppleScript = false
         removeCurrentMusicPlaybackTemporaryFileIfNeeded()
         activeMusicPlaybackQueue = []
         activeMusicPlaybackSongID = nil
-        clearActivePodcastAudioPlaybackContext()
         invalidateMusicNowPlayingFlipTimer()
         musicNowPlayingFlipMidpointWorkItem?.cancel()
         musicNowPlayingFlipMidpointWorkItem = nil
@@ -660,7 +401,6 @@ extension MenuView {
             clearMusicNowPlayingDisplayState()
             resetMusicNowPlayingFlipState()
         }
-        resetScreenSaverIdleTimer()
     }
 
     func clearMusicSongSwitchTransitionState() {
@@ -795,82 +535,6 @@ extension MenuView {
             }
             clearMusicSongSwitchTransitionState()
         }
-        if isPodcastAudioNowPlaying {
-            let episodes = activePodcastPlaybackEpisodes()
-            guard !episodes.isEmpty else { return }
-            guard let currentEpisodeID = activePodcastPlaybackEpisodeID else { return }
-            guard let currentIndex = episodes.firstIndex(where: { $0.id == currentEpisodeID }) else { return }
-            let targetIndex = max(0, min(episodes.count - 1, currentIndex + direction))
-            guard targetIndex != currentIndex else { return }
-            let targetEpisode = episodes[targetIndex]
-            let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
-            if isMusicNowPlayingSceneVisible {
-                cancelMusicNowPlayingFlipAnimation()
-                let transitionGeneration = incrementRequestID(&musicSongTransitionRequestID)
-                musicSongTransitionDeadline = Date().addingTimeInterval(
-                    musicSongIncomingTransitionDelay + musicSongSwitchTransitionDuration + 0.05,
-                )
-                musicSongTransitionDirection = direction > 0 ? 1 : -1
-                musicSongTransitionSnapshot = currentMusicNowPlayingSnapshot
-                musicSongTransitionOutgoingProgress = 0
-                musicSongTransitionOutgoingOpacityProgress = 0
-                musicSongTransitionIncomingProgress = 0
-                isMusicSongTransitioning = true
-                startPodcastEpisodeAudioPlayback(
-                    targetEpisode,
-                    trackIndex: targetIndex,
-                    trackCount: episodes.count,
-                    presentsFullscreen: true,
-                    resetTransitionState: false,
-                )
-                if isInThirdMenu,
-                   thirdMenuMode == .podcastsEpisodes,
-                   activePodcastSeriesID == targetEpisode.seriesID
-                {
-                    selectedThirdIndex = targetIndex
-                }
-                DispatchQueue.main.async {
-                    guard self.musicSongTransitionRequestID == transitionGeneration else { return }
-                    let outgoingFadeAnimation: Animation = direction > 0
-                        ? .easeOut(duration: musicSongOutgoingFadeDuration)
-                        : .easeInOut(duration: musicSongSwitchTransitionDuration)
-                    withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
-                        musicSongTransitionOutgoingProgress = 1
-                    }
-                    withAnimation(outgoingFadeAnimation) {
-                        musicSongTransitionOutgoingOpacityProgress = 1
-                    }
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + musicSongIncomingTransitionDelay) {
-                    guard self.musicSongTransitionRequestID == transitionGeneration else { return }
-                    withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
-                        musicSongTransitionIncomingProgress = 1
-                    }
-                }
-                DispatchQueue.main.asyncAfter(
-                    deadline: .now() + musicSongIncomingTransitionDelay + musicSongSwitchTransitionDuration,
-                ) {
-                    guard self.musicSongTransitionRequestID == transitionGeneration else { return }
-                    clearMusicSongSwitchTransitionState()
-                    updateMusicNowPlayingFlipTimerState()
-                }
-                return
-            }
-            clearMusicSongSwitchTransitionState()
-            startPodcastEpisodeAudioPlayback(
-                targetEpisode,
-                trackIndex: targetIndex,
-                trackCount: episodes.count,
-                presentsFullscreen: isMusicNowPlayingSceneVisible,
-            )
-            if isInThirdMenu,
-               thirdMenuMode == .podcastsEpisodes,
-               activePodcastSeriesID == targetEpisode.seriesID
-            {
-                selectedThirdIndex = targetIndex
-            }
-            return
-        }
         if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == "iTunes Top Songs" {
             return
         }
@@ -976,31 +640,6 @@ extension MenuView {
     }
 
     func handleMusicSpacebarPressed() {
-        #if os(tvOS)
-            if musicAudioPlayer == nil, activeMusicPlaybackSongID != nil {
-                let player = ApplicationMusicPlayer.shared
-                let status = player.state.playbackStatus
-                let isPlaying = status == .playing || status == .seekingForward || status == .seekingBackward
-                if isPlaying {
-                    player.pause()
-                    stopMusicScrubbing(showPauseGlyph: false)
-                    musicNowPlayingLeadingGlyphState = .pause
-                } else {
-                    stopMusicScrubbing(showPauseGlyph: false)
-                    musicNowPlayingLeadingGlyphState = nil
-                    Task {
-                        try? await player.play()
-                        await MainActor.run {
-                            self.startMusicKitProgressTimerIfNeeded()
-                        }
-                    }
-                }
-                startMusicKitProgressTimerIfNeeded()
-                refreshMusicKitPlaybackProgress()
-                updateMusicNowPlayingFlipTimerState()
-                return
-            }
-        #endif
         guard let player = musicAudioPlayer else { return }
         let isCurrentlyPlaying = player.rate > 0.01
         if isCurrentlyPlaying {
@@ -1017,12 +656,6 @@ extension MenuView {
     }
 
     func beginMusicScrubbing(direction: Int, isRepeat: Bool) {
-        #if os(tvOS)
-            if musicAudioPlayer == nil, activeMusicPlaybackSongID != nil {
-                seekMusicKitPlayback(direction: direction, isRepeat: isRepeat)
-                return
-            }
-        #endif
         guard let player = musicAudioPlayer else { return }
         guard direction != 0 else { return }
         guard !isMusicSongTransitioning else { return }
@@ -1104,10 +737,6 @@ extension MenuView {
         musicLastScrubInputDate = nil
         musicLastScrubTickDate = nil
         stopMusicScrubTimer()
-        #if os(tvOS)
-            musicKitScrubGlyphResetWorkItem?.cancel()
-            musicKitScrubGlyphResetWorkItem = nil
-        #endif
         if showPauseGlyph {
             musicNowPlayingLeadingGlyphState = .pause
         }
