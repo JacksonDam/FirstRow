@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "7AE49B402D1491FC0022CD0D"
-               BuildableName = "First Row.app"
-               BlueprintName = "First Row"
-               ReferencedContainer = "container:First Row.xcodeproj">
+               BuildableName = "First Row Classic.app"
+               BlueprintName = "First Row Classic"
+               ReferencedContainer = "container:First Row Classic.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7AE49B402D1491FC0022CD0D"
-            BuildableName = "First Row.app"
-            BlueprintName = "First Row"
-            ReferencedContainer = "container:First Row.xcodeproj">
+            BuildableName = "First Row Classic.app"
+            BlueprintName = "First Row Classic"
+            ReferencedContainer = "container:First Row Classic.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,9 +62,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7AE49B402D1491FC0022CD0D"
-            BuildableName = "First Row.app"
-            BlueprintName = "First Row"
-            ReferencedContainer = "container:First Row.xcodeproj">
+            BuildableName = "First Row Classic.app"
+            BlueprintName = "First Row Classic"
+            ReferencedContainer = "container:First Row Classic.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
