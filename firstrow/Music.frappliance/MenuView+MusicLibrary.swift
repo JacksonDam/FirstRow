@@ -879,7 +879,7 @@ extension MenuView {
     }
 
     func exitMusicThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
-        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
+        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade, direction: .backward) {
             isInThirdMenu = false
             thirdMenuMode = .none
             thirdMenuOpacity = 0

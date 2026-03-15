@@ -51,7 +51,7 @@ extension MenuView {
         case .moviesFolder, .moviesITunesTop, .photosDateAlbums, .none:
             false
         }
-        transitionMenuForFolderSwap {
+        transitionMenuForFolderSwap(direction: .backward) {
             if isExitingMusicThirdMenu {
                 isMusicSongsShuffleMode = false
                 isMusicSongsCategoryScoped = false
@@ -72,7 +72,7 @@ extension MenuView {
     }
 
     func exitMoviesThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
-        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
+        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade, direction: .backward) {
             isInThirdMenu = false
             thirdMenuMode = .none
             thirdMenuOpacity = 0
@@ -88,7 +88,7 @@ extension MenuView {
     func navigateUpInThirdMenuOrExit() {
         if thirdMenuMode == .musicSongs, isMusicSongsCategoryScoped {
             playSound(named: "Exit")
-            transitionMenuForFolderSwap {
+            transitionMenuForFolderSwap(direction: .backward) {
                 thirdMenuMode = .musicCategories
                 isMusicSongsCategoryScoped = false
                 isLoadingMusicSongs = false
@@ -125,7 +125,7 @@ extension MenuView {
             if let standardizedRoot, standardizedCurrent != standardizedRoot {
                 let parentURL = standardizedCurrent.deletingLastPathComponent()
                 rememberCurrentMoviesFolderSelectionIndex()
-                transitionMenuForFolderSwap {
+                transitionMenuForFolderSwap(direction: .backward) {
                     loadThirdMenuDirectory(parentURL, resetSelection: true)
                 }
             } else {
@@ -140,6 +140,7 @@ extension MenuView {
 
     func transitionMenuForFolderSwap(
         useOverlayFade: Bool = false,
+        direction: MenuTransitionDirection = .forward,
         revealWhen: @escaping () -> Bool = { true },
         maxRevealWait: TimeInterval = 10.0,
         _ update: @escaping () -> Void,
@@ -149,6 +150,7 @@ extension MenuView {
         guard !isMovieTransitioning else { return }
         isMenuFolderSwapTransitioning = true
         if !useOverlayFade {
+            menuTransitionDirection = direction
             menuTransitionSnapshot = currentMenuTransitionSnapshot()
             menuTransitionProgress = menuTransitionSnapshot == nil ? 1 : 0
             var instant = Transaction()

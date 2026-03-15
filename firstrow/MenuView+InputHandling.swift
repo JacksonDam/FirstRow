@@ -172,9 +172,13 @@ extension MenuView {
         selectedSubIndex = max(0, min(preferredSubmenuIndex, maxSubmenuIndex))
         isEnteringSubmenu = true
         isIconAnimated = true
+        submenuTransitionProgress = 0
         submenuTitleOpacity = 0
         submenuOpacity = 0
         detailContentOpacity = 0
+        withAnimation(.easeInOut(duration: iconFlightAnimationDuration)) {
+            submenuTransitionProgress = 1
+        }
         withAnimation(.easeInOut(duration: 0.32)) {
             rootMenuOpacity = 0
             headerOpacity = 0
@@ -272,42 +276,53 @@ extension MenuView {
         }
         withAnimation(.easeInOut(duration: submenuBackgroundIconReturnDuration)) {
             isEnteringSubmenu = false
+            submenuTransitionProgress = 0
         }
         if playExitSound {
             playSound(named: "MainTransitionFrom")
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + rootRevealDelay) {
             holdNowPlayingMenuItemDuringExitFade = false
-            isInThirdMenu = false
-            thirdMenuMode = .none
-            thirdMenuOpacity = 0
-            resetThirdMenuDirectoryState()
-            resetAllITunesTopMenusForNonITunesContext()
-            moviePreviewTargetURL = nil
-            moviePreviewImage = nil
-            moviesFolderSubmenuPreviewDescriptors = []
-            moviesFolderSubmenuPreviewIdentity = ""
-            musicPreviewTargetSongID = nil
-            musicPreviewImage = nil
-            resetMusicCategoryStateForNonMusicITunesTop()
-            if shouldPreserveMusicPlaybackStateOnRootExit {
-                musicSongsThirdMenuItems = preservedMusicSongsThirdMenuItems
-                musicSongsShowsShuffleAction = preservedMusicSongsShowsShuffleAction
-                isMusicSongsShuffleMode = preservedMusicSongsShuffleMode
-                activeMusicLibraryMediaType = preservedActiveMusicLibraryMediaType
-            } else {
-                activeMusicLibraryMediaType = .songs
-                musicSongsShowsShuffleAction = false
+            var instantRootLabelState = Transaction()
+            instantRootLabelState.disablesAnimations = true
+            withTransaction(instantRootLabelState) {
+                isInThirdMenu = false
+                thirdMenuMode = .none
+                thirdMenuOpacity = 0
+                resetThirdMenuDirectoryState()
+                resetAllITunesTopMenusForNonITunesContext()
+                moviePreviewTargetURL = nil
+                moviePreviewImage = nil
+                moviesFolderSubmenuPreviewDescriptors = []
+                moviesFolderSubmenuPreviewIdentity = ""
+                musicPreviewTargetSongID = nil
+                musicPreviewImage = nil
+                resetMusicCategoryStateForNonMusicITunesTop()
+                if shouldPreserveMusicPlaybackStateOnRootExit {
+                    musicSongsThirdMenuItems = preservedMusicSongsThirdMenuItems
+                    musicSongsShowsShuffleAction = preservedMusicSongsShowsShuffleAction
+                    isMusicSongsShuffleMode = preservedMusicSongsShuffleMode
+                    activeMusicLibraryMediaType = preservedActiveMusicLibraryMediaType
+                } else {
+                    activeMusicLibraryMediaType = .songs
+                    musicSongsShowsShuffleAction = false
+                }
+                selectedThirdIndex = 0
+                headerText = "First Row"
+                isInSubmenu = false
+                activeRootItemID = nil
+                submenuTransitionProgress = 0
+                isReturningToRoot = false
+                rootLabelSwapWorkItem?.cancel()
+                if menuItems.indices.contains(selectedIndex) {
+                    rootLabelText = menuItems[selectedIndex].title
+                }
+                isRootLabelVisible = true
+                rootLabelOpacity = 1
             }
-            selectedThirdIndex = 0
-            headerText = "First Row"
-            isInSubmenu = false
-            activeRootItemID = nil
-            syncRootLabelWithSelection()
             withAnimation(.easeInOut(duration: 0.32)) {
                 rootMenuOpacity = 1
                 headerOpacity = 1
-                isReturningToRoot = false
             }
         }
     }
@@ -567,6 +582,7 @@ extension MenuView {
             submenuTitleOpacity = 1
             submenuOpacity = 1
             detailContentOpacity = 1
+            submenuTransitionProgress = 1
             rootMenuOpacity = 0
             headerOpacity = 0
             refreshDetailPreviewForCurrentContext()
@@ -582,6 +598,7 @@ extension MenuView {
         rowOffsets: [CGFloat],
         contentHeight: CGFloat,
         viewportHeight: CGFloat,
+        selectionAnchorY: CGFloat? = nil,
     ) -> Int? {
         guard itemCount > 0 else { return nil }
         guard prepareNavigationTiming(for: key, isRepeat: isRepeat) else { return nil }
@@ -595,12 +612,14 @@ extension MenuView {
             selectedIndex: currentIndex,
             rowOffsets: rowOffsets,
             viewportHeight: viewportHeight,
+            selectionAnchorY: selectionAnchorY,
         )
         let newScrollOffset = menuScrollOffset(
             contentHeight: contentHeight,
             selectedIndex: nextIndex,
             rowOffsets: rowOffsets,
             viewportHeight: viewportHeight,
+            selectionAnchorY: selectionAnchorY,
         )
         updateOverflowFadeVisibility(oldOffset: oldScrollOffset, newOffset: newScrollOffset)
         didPlayLimitForCurrentHold = false
@@ -649,19 +668,18 @@ extension MenuView {
     func navigateSubmenuSelection(direction: Int, isRepeat: Bool) {
         let submenuItems = submenuListItems()
         let submenuCount = submenuItems.count
-        let viewportHeight = menuViewportHeight()
-        let submenuSelectionHeightScale = activeRootItemID == "photos" ? photosSelectionBoxHeightScale : 1.0
+        let viewportHeight = activeMenuVirtualSceneSize.height - submenuSelectionBoxTopInset
+        let selectionAnchorY: CGFloat = 0
+        let submenuSelectionHeightScale: CGFloat = 1.0
         let dividerGap = effectiveDividerSectionGap(
             forSelectionBoxHeightScale: submenuSelectionHeightScale,
         )
-        let rowPitch = effectiveRowPitch(
-            forSelectionBoxHeightScale: submenuSelectionHeightScale,
-        )
+        let rowPitch = submenuSelectionRowPitch
         let rowOffsets = menuRowOffsets(for: submenuItems, dividerGap: dividerGap, rowPitch: rowPitch)
         let contentHeight = menuContentHeight(
             for: submenuItems,
             rowOffsets: rowOffsets,
-            rowHeight: selectionBoxHeight * max(1, submenuSelectionHeightScale),
+            rowHeight: submenuRowHeight,
         )
         guard let nextIndex = resolvedNextNavigationIndex(
             direction: direction,
@@ -672,6 +690,7 @@ extension MenuView {
             rowOffsets: rowOffsets,
             contentHeight: contentHeight,
             viewportHeight: viewportHeight,
+            selectionAnchorY: selectionAnchorY,
         ) else { return }
 
         DispatchQueue.main.async {
@@ -703,9 +722,15 @@ extension MenuView {
         }
         let listItems = thirdMenuListItems()
         let thirdMenuCount = listItems.count
-        let viewportHeight = menuViewportHeight()
-        let rowOffsets = menuRowOffsets(for: listItems)
-        let contentHeight = menuContentHeight(for: listItems, rowOffsets: rowOffsets)
+        let viewportHeight = activeMenuVirtualSceneSize.height - submenuSelectionBoxTopInset
+        let selectionAnchorY: CGFloat = 0
+        let submenuSelectionHeightScale: CGFloat = 1.0
+        let dividerGap = effectiveDividerSectionGap(
+            forSelectionBoxHeightScale: submenuSelectionHeightScale,
+        )
+        let rowPitch = submenuSelectionRowPitch
+        let rowOffsets = menuRowOffsets(for: listItems, dividerGap: dividerGap, rowPitch: rowPitch)
+        let contentHeight = menuContentHeight(for: listItems, rowOffsets: rowOffsets, rowHeight: submenuRowHeight)
         guard let nextIndex = resolvedNextNavigationIndex(
             direction: direction,
             key: direction > 0 ? .downArrow : .upArrow,
@@ -715,6 +740,7 @@ extension MenuView {
             rowOffsets: rowOffsets,
             contentHeight: contentHeight,
             viewportHeight: viewportHeight,
+            selectionAnchorY: selectionAnchorY,
         ) else { return }
 
         DispatchQueue.main.async {
@@ -1031,6 +1057,8 @@ extension MenuView {
     }
 
     func handleCommandEscapeRequested() {
+        endDirectionalHoldSession()
+        resetNavigationAccelerationState()
         guard !isRootExitRunning else { return }
         guard isRootVisible else {
             NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
@@ -1052,12 +1080,13 @@ extension MenuView {
         }
 
         SoundEffectPlayer.shared.play(named: "End")
+        let exitSelectionValue = rootCarouselSelectionValue - 4
 
         withAnimation(.timingCurve(0.45, 0.0, 0.34, 1.0, duration: rootIntroBackdropDuration)) {
             introBackdropProgress = 0
         }
         withAnimation(.timingCurve(0.45, 0.0, 0.34, 1.0, duration: rootIntroDuration)) {
-            rootCarouselSelectionValue = Double(selectedIndex - 4)
+            rootCarouselSelectionValue = exitSelectionValue
             introProgress = 0
         }
 

@@ -9,14 +9,8 @@ struct MoviesMenuFeature: MenuFeatureConfiguration {
     )
     let submenuItems: [SubmenuItemConfig] = [
         .init(id: "movies_folder", title: "Movies", leadsToMenu: true),
-        .init(
-            id: "movies_theatrical_trailers",
-            title: "Theatrical Trailers",
-            leadsToMenu: true,
-            trailingText: "•••",
-            showsTopDivider: true,
-        ),
-        .init(id: "movies_itunes_top", title: "iTunes Top Movies", leadsToMenu: true, trailingText: "•••"),
+        .init(id: "movies_theatrical_trailers", title: "Theatrical Trailers", leadsToMenu: true),
+        .init(id: "movies_itunes_top", title: "iTunes Top Movies", leadsToMenu: true),
     ]
     let defaultSubmenuSelectedIndex = 0
 }

@@ -9,6 +9,11 @@ struct MenuTransitionSnapshot: Identifiable {
     let selectedIndex: Int
 }
 
+enum MenuTransitionDirection {
+    case forward
+    case backward
+}
+
 struct MenuView: View {
     let initialBackdropImage: NSImage?
     let menuItems = MenuConfiguration.rootItems
@@ -37,20 +42,45 @@ struct MenuView: View {
     let selectionBoxHeight: CGFloat = 75
     let menuRowSpacing: CGFloat = 5
     let defaultVisibleMenuRowCount: Int = 9
-    let thirdLevelVisibleMenuRowCount: Int = 10
+    let thirdLevelVisibleMenuRowCount: Int = 9
     let baselineVisibleMenuRowCount: Int = 7
-    let stickySelectionRowIndex: Int = 3
+    let stickySelectionRowIndex: Int = 4
     let dividerSectionGapAfterLine: CGFloat = 14
     let dividerLineInsetHorizontal: CGFloat = 33
     let dividerLineYOffsetInGap: CGFloat = 2
     let menuListBottomInset: CGFloat = 200
     let submenuTopFadeHeight: CGFloat = 30
+    let submenuHeaderTopInset: CGFloat = 40
+    let submenuDividerTopInset: CGFloat = 160
+    let submenuDividerThickness: CGFloat = 8
+    let submenuSelectionBoxLeading: CGFloat = 405
+    let submenuSelectionBoxTopInset: CGFloat = 560
+    let submenuListClipTopInset: CGFloat = 206
+    let submenuVisibleMenuRowCount: Int = 4
+    let submenuRowSpacing: CGFloat = 34
+    let submenuRowHeight: CGFloat = 128
+    let submenuSelectionRowPitch: CGFloat = 115
+    let submenuSelectedRowContentYOffset: CGFloat = 0
+    let submenuRowContentVerticalOffset: CGFloat = -5
+    let submenuRowTitleFontSize: CGFloat = 69
+    let submenuRowTrailingFontSize: CGFloat = 53
+    let submenuArrowFontSize: CGFloat = 65
+    let submenuSelectionVisualWidth: CGFloat = 1440
+    let submenuSelectionVisualHeight: CGFloat = 140
+    let submenuTextLeadingInset: CGFloat = 72
+    let submenuTrailingSymbolRightInset: CGFloat = 150
+    let submenuHeaderIconOpticalYOffset: CGFloat = 10
+    let selectedCarouselReflectionYOffset: CGFloat = 0
+    let selectedCarouselDetachedReflectionXOffset: CGFloat = -54
+    let selectedCarouselDetachedReflectionYOffset: CGFloat = 1140
+    let backgroundCarouselGroupLift: CGFloat = -820
+    let backgroundCarouselZDepth: CGFloat = 960
     let arcRadius: CGFloat = 550
     let scaleReduction: CGFloat = 0.3
     let selectedCarouselAdjustedSizeMultiplier: CGFloat = 1.65
-    let landedIconScale: CGFloat = 0.2
+    let landedIconScale: CGFloat = 0.168
     let landedIconVerticalMultiplier: CGFloat = 2.5
-    let landedFinalYOffsetAdjustment: CGFloat = 32
+    let landedFinalYOffsetAdjustment: CGFloat = 30
     let menuHeaderVerticalOffset: CGFloat = -10
     let selectedCarouselEntryOffset: CGFloat = 200 * 1.5
     let rootCarouselRadius: CGFloat = 480
@@ -74,9 +104,9 @@ struct MenuView: View {
 
     // MARK: - Duration constants
 
-    let iconFlightAnimationDuration: Double = 0.75
-    let submenuBackgroundIconTransitionDuration: Double = 0.75
-    let submenuBackgroundIconReturnDuration: Double = 0.75
+    let iconFlightAnimationDuration: Double = 1.0
+    let submenuBackgroundIconTransitionDuration: Double = 1.0
+    let submenuBackgroundIconReturnDuration: Double = 1.0
     let movieEntryFadeDuration: Double = 0.48
     let movieEntryBlackHoldDuration: Double = 1.0
     let movieExitFreezeHoldDuration: Double = 0.5
@@ -115,7 +145,7 @@ struct MenuView: View {
     let rootIntroDuration: Double = 2.325
     let rootLabelFadeOutDuration: Double = 0.12
     let rootLabelFadeInDuration: Double = 0.18
-    let menuSlideDuration: Double = 0.42
+    let menuSlideDuration: Double = 0.6
 
     // MARK: - Appearance constants
 
@@ -183,6 +213,8 @@ struct MenuView: View {
     @State var rootCarouselSelectionValue: Double = 0
     @State var menuTransitionSnapshot: MenuTransitionSnapshot?
     @State var menuTransitionProgress: CGFloat = 1
+    @State var menuTransitionDirection: MenuTransitionDirection = .forward
+    @State var submenuTransitionProgress: CGFloat = 0
 
     // MARK: - Input handling state
 

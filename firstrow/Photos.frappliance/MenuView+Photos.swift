@@ -100,7 +100,7 @@ extension MenuView {
                 trailingSymbolName: nil,
                 showsTopDivider: false,
                 showsBlueDot: false,
-                showsLightRowBackground: true,
+                showsLightRowBackground: false,
                 alignsTextToDividerStart: false,
             )
         }
