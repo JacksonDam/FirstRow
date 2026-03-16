@@ -44,6 +44,10 @@ extension MenuView {
             }
             return
         }
+        if thirdMenuMode == .musicNowPlaying {
+            handleMusicNowPlayingPageInput(key, isRepeat: isRepeat)
+            return
+        }
         if isMovieTransitioning {
             return
         }
@@ -339,7 +343,7 @@ extension MenuView {
             guard isMusicActivelyPlaying else { return }
             clearMusicSongSwitchTransitionState()
             playSound(named: "Selection")
-            presentFullscreenScene(key: musicNowPlayingFullscreenKey)
+            enterMusicNowPlayingPage()
             return
         }
         if activeRootItemID == "movies", item.id == "movies_folder" {
@@ -438,6 +442,27 @@ extension MenuView {
         performSubmenuAction(item)
     }
 
+    func handleMusicNowPlayingPageInput(_ key: KeyCode, isRepeat: Bool) {
+        switch key {
+        case .delete, .escape:
+            stopMusicScrubbing(showPauseGlyph: false)
+            clearMusicSongSwitchTransitionState()
+            navigateUpInThirdMenuOrExit()
+        case .space:
+            handleMusicSpacebarPressed()
+        case .upArrow:
+            switchMusicNowPlayingTrack(direction: -1)
+        case .downArrow:
+            switchMusicNowPlayingTrack(direction: 1)
+        case .leftArrow:
+            beginMusicScrubbing(direction: -1, isRepeat: isRepeat)
+        case .rightArrow:
+            beginMusicScrubbing(direction: 1, isRepeat: isRepeat)
+        default:
+            break
+        }
+    }
+
     func triggerThirdMenuAction() {
         playSound(named: "Selection")
         switch thirdMenuMode {
@@ -473,7 +498,7 @@ extension MenuView {
                     : "\(songIndex + 1) of \(musicSongsThirdMenuItems.count)"
                 musicNowPlayingShowsShuffleGlyph = isMusicSongsShuffleMode
                 clearMusicSongSwitchTransitionState()
-                presentFullscreenScene(key: musicNowPlayingFullscreenKey)
+                enterMusicNowPlayingPage()
             } else {
                 startPlaybackForMusicLibraryEntry(
                     song,
@@ -482,6 +507,8 @@ extension MenuView {
                     playbackQueue: musicSongsThirdMenuItems,
                 )
             }
+        case .musicNowPlaying:
+            break
         case .photosDateAlbums:
             guard photosDateAlbums.indices.contains(selectedThirdIndex) else { return }
             let album = photosDateAlbums[selectedThirdIndex]
@@ -529,7 +556,7 @@ extension MenuView {
                 musicNowPlayingTrackPositionText = "1 of 1"
                 musicNowPlayingShowsShuffleGlyph = false
                 clearMusicSongSwitchTransitionState()
-                presentFullscreenScene(key: musicNowPlayingFullscreenKey)
+                enterMusicNowPlayingPage()
                 return
             }
             startITunesTopSongPreviewPlayback(
@@ -1108,6 +1135,7 @@ extension MenuView {
             headerText: headerText,
             items: items,
             selectedIndex: selectedIndex,
+            isNowPlayingPage: isInThirdMenu && thirdMenuMode == .musicNowPlaying,
         )
     }
 

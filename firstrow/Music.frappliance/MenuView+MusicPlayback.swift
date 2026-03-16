@@ -273,10 +273,7 @@ extension MenuView {
             activeSongID: song.id,
         )
         if presentsFullscreen {
-            presentFullscreenScene(
-                key: musicNowPlayingFullscreenKey,
-                usingExistingBlackout: usingExistingBlackout,
-            )
+            enterMusicNowPlayingPage(usingExistingBlackout: usingExistingBlackout)
         }
         updateMusicNowPlayingFlipTimerState()
     }
@@ -338,7 +335,11 @@ extension MenuView {
                 self.stopMusicScrubbing(showPauseGlyph: false)
                 self.musicNowPlayingLeadingGlyphState = nil
                 if self.musicNowPlayingArtist == "iTunes Top Songs" {
-                    self.dismissFullscreenScene(preserveMusicPlayback: false)
+                    if self.thirdMenuMode == .musicNowPlaying {
+                        self.exitMusicNowPlayingPage()
+                    } else {
+                        self.dismissFullscreenScene(preserveMusicPlayback: false)
+                    }
                 } else {
                     self.switchMusicNowPlayingTrack(direction: 1)
                 }
@@ -444,8 +445,67 @@ extension MenuView {
         musicNowPlayingFlipTimer = nil
     }
 
+    func enterMusicNowPlayingPage(usingExistingBlackout: Bool = false) {
+        guard isInSubmenu || isInThirdMenu else { return }
+        guard thirdMenuMode != .musicNowPlaying else { return }
+        let returnMode = isInThirdMenu ? thirdMenuMode : .none
+        let returnHeader = headerText
+        if usingExistingBlackout {
+            isMenuFolderSwapTransitioning = false
+            var instant = Transaction()
+            instant.animation = nil
+            withTransaction(instant) {
+                musicNowPlayingReturnThirdMenuMode = returnMode
+                musicNowPlayingReturnHeaderText = returnHeader
+                deferNowPlayingMenuItemUntilAfterFadeOut = false
+                headerText = "Now Playing"
+                isInThirdMenu = true
+                thirdMenuMode = .musicNowPlaying
+                thirdMenuOpacity = 1
+                submenuOpacity = 0
+            }
+            withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
+                menuFolderSwapOverlayOpacity = 0
+            }
+            return
+        }
+        transitionMenuForFolderSwap(direction: .forward) {
+            musicNowPlayingReturnThirdMenuMode = returnMode
+            musicNowPlayingReturnHeaderText = returnHeader
+            headerText = "Now Playing"
+            isInThirdMenu = true
+            thirdMenuMode = .musicNowPlaying
+            thirdMenuOpacity = 1
+            submenuOpacity = 0
+        }
+    }
+
+    func exitMusicNowPlayingPage() {
+        stopMusicScrubbing(showPauseGlyph: false)
+        clearMusicSongSwitchTransitionState()
+        let returnMode = musicNowPlayingReturnThirdMenuMode
+        let returnHeader = musicNowPlayingReturnHeaderText
+        transitionMenuForFolderSwap(direction: .backward) {
+            if returnMode != .none {
+                headerText = returnHeader.isEmpty ? rootMenuTitle(for: activeRootItemID) : returnHeader
+                isInThirdMenu = true
+                thirdMenuMode = returnMode
+                thirdMenuOpacity = 1
+                submenuOpacity = 0
+            } else {
+                headerText = rootMenuTitle(for: activeRootItemID)
+                isInThirdMenu = false
+                thirdMenuMode = .none
+                thirdMenuOpacity = 0
+                submenuOpacity = 1
+                refreshDetailPreviewForCurrentContext()
+            }
+        }
+    }
+
     func updateMusicNowPlayingFlipTimerState() {
         let isMusicSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
+            || thirdMenuMode == .musicNowPlaying
         let isMusicPlaying = isMusicPlaybackRunning()
         let shouldRun = isMusicSceneVisible && isMusicPlaying && !isMovieTransitioning && !isMoviePlaybackVisible
         if !shouldRun {
@@ -466,7 +526,7 @@ extension MenuView {
     }
 
     func performMusicNowPlayingFlip() {
-        guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
+        guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey || thirdMenuMode == .musicNowPlaying else { return }
         guard isMusicPlaybackRunning() else { return }
         guard !isMusicSongTransitioning else { return }
         guard !isMusicNowPlayingFlipAnimating else { return }
@@ -481,7 +541,7 @@ extension MenuView {
         musicNowPlayingFlipMidpointWorkItem?.cancel()
         let midpointWorkItem = DispatchWorkItem {
             guard generation == musicNowPlayingFlipGeneration else { return }
-            guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
+            guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey || thirdMenuMode == .musicNowPlaying else { return }
             musicNowPlayingUsesAlternateLayout.toggle()
             var resetTransaction = Transaction()
             resetTransaction.disablesAnimations = true
@@ -530,6 +590,7 @@ extension MenuView {
                 return
             }
             let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
+                || thirdMenuMode == .musicNowPlaying
             if !isMusicNowPlayingSceneVisible {
                 return
             }
@@ -546,6 +607,7 @@ extension MenuView {
         guard targetIndex != currentIndex else { return }
         let targetSong = playbackQueue[targetIndex]
         let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
+            || thirdMenuMode == .musicNowPlaying
         if !isMusicNowPlayingSceneVisible {
             clearMusicSongSwitchTransitionState()
             startMusicPlayback(

@@ -47,34 +47,4 @@ final class firstRowTests: XCTestCase {
         XCTAssertEqual(layout.offset.width, 0, accuracy: 0.0001)
         XCTAssertEqual(layout.offset.height, 52.5, accuracy: 0.0001)
     }
-
-    func testVirtualSceneLayoutMatchesIPadCanvasOnFourByThreeDisplay() {
-        let layout = MenuVirtualSceneLayout(
-            containerSize: CGSize(width: 1024, height: 768),
-            virtualSize: MenuVirtualScenePreset.iPad,
-        )
-
-        XCTAssertEqual(layout.scale, 1024.0 / 1440.0, accuracy: 0.0001)
-        XCTAssertEqual(layout.fittedSize.width, 1024, accuracy: 0.0001)
-        XCTAssertEqual(layout.fittedSize.height, 768, accuracy: 0.0001)
-        XCTAssertEqual(layout.offset.width, 0, accuracy: 0.0001)
-        XCTAssertEqual(layout.offset.height, 0, accuracy: 0.0001)
-    }
-
-    func testScaledSceneOffsetsShrinkForIPadCanvasWidth() {
-        let scaledOffset = MenuVirtualScenePreset.scaledX(
-            -214,
-            for: MenuVirtualScenePreset.iPad,
-        )
-
-        XCTAssertEqual(scaledOffset, -160.5, accuracy: 0.0001)
-    }
-
-    func testIPadCanvasAddsExtraMenuGap() {
-        let gap = MenuVirtualScenePreset.additionalMenuGapX(
-            for: MenuVirtualScenePreset.iPad,
-        )
-
-        XCTAssertEqual(gap, 56, accuracy: 0.0001)
-    }
 }

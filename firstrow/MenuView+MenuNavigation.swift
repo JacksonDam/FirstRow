@@ -9,6 +9,7 @@ extension MenuView {
         case musicITunesTopMusicVideos
         case musicCategories
         case musicSongs
+        case musicNowPlaying
         case photosDateAlbums
     }
 }
@@ -48,7 +49,7 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos:
             true
-        case .moviesFolder, .moviesITunesTop, .photosDateAlbums, .none:
+        case .moviesFolder, .moviesITunesTop, .photosDateAlbums, .musicNowPlaying, .none:
             false
         }
         transitionMenuForFolderSwap(direction: .backward) {
@@ -111,6 +112,9 @@ extension MenuView {
         case .musicITunesTopSongs, .musicITunesTopMusicVideos, .musicSongs, .musicCategories:
             playSound(named: "Exit")
             exitMusicThirdMenuToSecondLevelWithSwap()
+        case .musicNowPlaying:
+            playSound(named: "Exit")
+            exitMusicNowPlayingPage()
         case .moviesITunesTop:
             playSound(named: "Exit")
             exitMoviesThirdMenuToSecondLevelWithSwap()

@@ -1450,6 +1450,7 @@ extension MenuView {
         lastSelectedMusicCategoryIndex = 0
         musicCategoryThirdMenuItems = []
         musicSongsLoadError = nil
+        deferNowPlayingMenuItemUntilAfterFadeOut = false
         thirdMenuMode = .none
         isInThirdMenu = false
         thirdMenuOpacity = 0

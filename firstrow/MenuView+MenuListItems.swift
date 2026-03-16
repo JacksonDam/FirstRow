@@ -22,7 +22,7 @@ extension MenuView {
     }
 
     var isMusicActivelyPlaying: Bool {
-        isMusicPlaybackRunning()
+        hasActiveMusicPlaybackSession()
     }
 
     var shouldHideThirdMenuListUntilLoadCompletes: Bool {
@@ -81,25 +81,13 @@ extension MenuView {
 
     func submenuListItems() -> [MenuListItemConfig] {
         currentSubmenuItems().map {
-            var resolvedLeadingImageAssetName = $0.leadingImageAssetName
-            var resolvedLeadingImage: NSImage?
-            let resolvedTrailingText: String?
-            if activeRootItemID == "photos", let album = photoAlbumForSubmenuItemID($0.id) {
-                resolvedTrailingText = "(\(album.count))"
-                resolvedLeadingImage = photoLeadingImage(for: album)
-                if resolvedLeadingImage != nil {
-                    resolvedLeadingImageAssetName = nil
-                }
-            } else {
-                resolvedTrailingText = $0.trailingText
-            }
-            return .init(
+            .init(
                 id: $0.id,
                 title: $0.title,
                 leadsToMenu: $0.leadsToMenu,
-                leadingImageAssetName: resolvedLeadingImageAssetName,
-                leadingImage: resolvedLeadingImage,
-                trailingText: resolvedTrailingText,
+                leadingImageAssetName: $0.leadingImageAssetName,
+                leadingImage: nil,
+                trailingText: $0.trailingText,
                 trailingSymbolName: $0.trailingSymbolName,
                 showsTopDivider: $0.showsTopDivider,
                 showsBlueDot: $0.showsBlueDot,
@@ -168,6 +156,8 @@ extension MenuView {
                 )
             }
             return songsItems
+        case .musicNowPlaying:
+            return []
         case .photosDateAlbums:
             if isLoadingPhotoLibrary, photosDateAlbums.isEmpty {
                 return []

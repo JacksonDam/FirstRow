@@ -7,6 +7,7 @@ struct MenuTransitionSnapshot: Identifiable {
     let headerText: String
     let items: [MenuListItemConfig]
     let selectedIndex: Int
+    var isNowPlayingPage: Bool = false
 }
 
 enum MenuTransitionDirection {
@@ -52,7 +53,7 @@ struct MenuView: View {
     let submenuTopFadeHeight: CGFloat = 30
     let submenuHeaderTopInset: CGFloat = 40
     let submenuDividerTopInset: CGFloat = 160
-    let submenuDividerThickness: CGFloat = 8
+    let submenuDividerThickness: CGFloat = 6
     let submenuSelectionBoxLeading: CGFloat = 405
     let submenuSelectionBoxTopInset: CGFloat = 560
     let submenuListClipTopInset: CGFloat = 206
@@ -68,7 +69,7 @@ struct MenuView: View {
     let submenuSelectionVisualWidth: CGFloat = 1440
     let submenuSelectionVisualHeight: CGFloat = 140
     let submenuTextLeadingInset: CGFloat = 72
-    let submenuTrailingSymbolRightInset: CGFloat = 150
+    let submenuTrailingSymbolRightInset: CGFloat = 206
     let submenuHeaderIconOpticalYOffset: CGFloat = 10
     let selectedCarouselReflectionYOffset: CGFloat = 0
     let selectedCarouselDetachedReflectionXOffset: CGFloat = -54
@@ -78,7 +79,7 @@ struct MenuView: View {
     let arcRadius: CGFloat = 550
     let scaleReduction: CGFloat = 0.3
     let selectedCarouselAdjustedSizeMultiplier: CGFloat = 1.65
-    let landedIconScale: CGFloat = 0.168
+    let landedIconScale: CGFloat = 0.1512
     let landedIconVerticalMultiplier: CGFloat = 2.5
     let landedFinalYOffsetAdjustment: CGFloat = 30
     let menuHeaderVerticalOffset: CGFloat = -10
@@ -380,6 +381,11 @@ struct MenuView: View {
     @State var photoSlideshowMusicFallbackWorkItem: DispatchWorkItem?
     @State var photoSlideshowMusicHasStarted = false
     @State var photoSlideshowUsesAppleScriptMusic = false
+
+    // MARK: - Music now-playing page state
+
+    @State var musicNowPlayingReturnThirdMenuMode: ThirdMenuMode = .none
+    @State var musicNowPlayingReturnHeaderText: String = ""
 
     // MARK: - Music playback state
 

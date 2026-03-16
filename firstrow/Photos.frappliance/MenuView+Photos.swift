@@ -93,10 +93,10 @@ extension MenuView {
             .init(
                 id: album.id,
                 title: album.title,
-                leadsToMenu: false,
-                leadingImageAssetName: "photos",
+                leadsToMenu: true,
+                leadingImageAssetName: nil,
                 leadingImage: nil,
-                trailingText: "(\(album.count))",
+                trailingText: nil,
                 trailingSymbolName: nil,
                 showsTopDivider: false,
                 showsBlueDot: false,

@@ -187,9 +187,6 @@ private struct RootOrbitModifier: AnimatableModifier {
         let transitionProgress = smoothStep(submenuTransitionProgress)
         let metrics: (opacity: CGFloat, scale: CGFloat, horizontalOffset: CGFloat, verticalOffset: CGFloat, blurRadius: CGFloat) = {
             if isBackground {
-                // Simulate the group receding as one block in Z: scale each icon by the perspective
-                // depth factor and converge its position toward screen center, so left icons shift
-                // right and right icons shift left (matching a shared vanishing point).
                 let focalLength: CGFloat = 1000
                 let zOffset = backgroundZDepth * transitionProgress
                 let depthScale = focalLength / (focalLength + zOffset)
@@ -625,10 +622,11 @@ extension MenuView {
         title: String,
     ) -> CGPoint {
         let baseCenter = selectedOverlayBaseCenter(geometry: geometry)
+        let opticalYOffset = selectedCarouselIconOpticalYOffset(for: rootID)
         return CGPoint(
             x: baseCenter.x + landedSelectedHorizontalOffset(geometry: geometry, title: title),
             y: baseCenter.y + landedSelectedVerticalOffset + submenuHeaderIconOpticalYOffset +
-                selectedCarouselIconOpticalYOffset(for: rootID),
+                (opticalYOffset * landedIconScale),
         )
     }
 
@@ -670,10 +668,10 @@ extension MenuView {
     }
 
     func settledLandedIconView(image: NSImage, geometry: GeometryProxy) -> some View {
-        let adjustedIconSize: CGFloat = iconSize * selectedCarouselAdjustedSizeMultiplier
-        return Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: adjustedIconSize, height: adjustedIconSize).scaleEffect(landedIconScale).offset(
+        let opticalYOffset = selectedCarouselIconOpticalYOffset(for: activeRootItemID)
+        return Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit).frame(width: landedIconWidth, height: landedIconWidth).offset(
             x: landedSelectedHorizontalOffset(geometry: geometry),
-            y: landedSelectedVerticalOffset + selectedCarouselIconOpticalYOffset(for: activeRootItemID),
+            y: landedSelectedVerticalOffset + (opticalYOffset * landedIconScale),
         ).padding(.bottom, 100).zIndex(1200).transaction { transaction in
             transaction.disablesAnimations = true
         }
@@ -844,19 +842,24 @@ extension MenuView {
                 progress: selectedTransitionProgress,
             )
             : 0
+        let opticalYOffset = selectedCarouselIconOpticalYOffset(for: menuItems[index].id)
         let verticalOffset = isSelectedRootItem
             ? interpolatedCGFloat(
                 from: 0,
-                to: landedSelectedVerticalOffset +
-                    selectedCarouselIconOpticalYOffset(for: menuItems[index].id),
+                to: landedSelectedVerticalOffset + (opticalYOffset * landedIconScale),
                 progress: selectedTransitionProgress,
             )
             : 0
         let isIncoming = false
         let entryOffset = selectedCarouselEntryOffset
-        let reflectionYOffsetOverride: CGFloat =
-            selectedCarouselReflectionRootOffset(for: menuItems[index].id) +
-            (isSelectedRootItem ? selectedCarouselReflectionYOffset : 0)
+        let reflectionRootOffset = selectedCarouselReflectionRootOffset(for: menuItems[index].id)
+        let reflectionYOffsetOverride: CGFloat = isSelectedRootItem
+            ? interpolatedCGFloat(
+                from: reflectionRootOffset + selectedCarouselReflectionYOffset,
+                to: (reflectionRootOffset * landedIconScale) + selectedCarouselReflectionYOffset,
+                progress: selectedTransitionProgress,
+            )
+            : reflectionRootOffset + (isSelectedRootItem ? selectedCarouselReflectionYOffset : 0)
         let currentOrbitHorizontalOffset = interpolatedCGFloat(
             from: placement.horizontalOffset,
             to: 0,
@@ -993,7 +996,7 @@ extension MenuView {
                         startPoint: .bottom,
                         endPoint: .top,
                     ),
-                ).scaleEffect(x: 1.0, y: -1.0, anchor: .bottom).scaleEffect(usesDetachedReflection ? 1.0 : scale).opacity(reflectionOpacity).offset(
+                ).scaleEffect(x: 1.0, y: -1.0, anchor: .bottom).scaleEffect(scale).opacity(reflectionOpacity).offset(
                     x: reflectionX - (usesDetachedReflection ? detachedReflectionCompensationX : 0),
                     y: reflectionY - (usesDetachedReflection ? detachedReflectionCompensationY : 0),
                 ).blur(radius: reflectionBlur)
@@ -1735,11 +1738,12 @@ extension MenuView {
             to: landedSelectedHorizontalOffset(geometry: geometry),
             progress: progress,
         )
+        let opticalYOffset = selectedCarouselIconOpticalYOffset(for: activeRootItemID ?? menuItems[selectedIndex].id)
         let localVerticalOffset = interpolatedCGFloat(
             from: 0,
             to: landedSelectedVerticalOffset +
-                submenuHeaderIconOpticalYOffset +
-                selectedCarouselIconOpticalYOffset(for: activeRootItemID ?? menuItems[selectedIndex].id),
+                (opticalYOffset * landedIconScale) +
+                (submenuHeaderIconOpticalYOffset * progress),
             progress: progress,
         )
         let baseCenter = selectedOverlayBaseCenter(geometry: geometry)
@@ -1806,10 +1810,11 @@ extension MenuView {
                 to: landedSelectedHorizontalOffset(geometry: geometry),
                 progress: progress,
             )
+            let opticalYOffset = selectedCarouselIconOpticalYOffset(for: activeRootItemID)
             let localVerticalOffset = interpolatedCGFloat(
                 from: 0,
                 to: landedSelectedVerticalOffset +
-                    selectedCarouselIconOpticalYOffset(for: activeRootItemID) +
+                    (opticalYOffset * landedIconScale) +
                     (submenuHeaderIconOpticalYOffset * progress),
                 progress: progress,
             )
@@ -1825,7 +1830,7 @@ extension MenuView {
                 to: selectedCarouselDetachedReflectionYOffset,
                 progress: progress,
             )
-            let reflectionScale = orbitScale * rootIconScale
+            let reflectionScale = iconScale
             let rootStageYOffset = currentRootStageYOffset(geometry: geometry)
             let rootLabelCenter = selectedOverlayRootLabelCenter(geometry: geometry)
             let headerLabelCenter = selectedOverlayHeaderLabelCenter(
@@ -1845,8 +1850,10 @@ extension MenuView {
                 ),
             )
             let reflectionOpacity = max(0, 1 - (progress * 1.2))
-            let baseReflectionYOffsetOverride =
-                selectedCarouselReflectionRootOffset(for: activeRootItemID) + selectedCarouselReflectionYOffset
+            let reflectionRootOffset = selectedCarouselReflectionRootOffset(for: activeRootItemID)
+            let carouselReflectionYOffset = reflectionRootOffset + selectedCarouselReflectionYOffset
+            let landedReflectionYOffset = (reflectionRootOffset * landedIconScale) + selectedCarouselReflectionYOffset
+            let baseReflectionYOffsetOverride = interpolatedCGFloat(from: carouselReflectionYOffset, to: landedReflectionYOffset, progress: progress)
             let reflectionYOffsetAdjustmentConst: CGFloat = -38
             let reflectionYOffsetOverride =
                 baseReflectionYOffsetOverride +
@@ -1961,8 +1968,6 @@ extension MenuView {
                 rootID: rootID,
                 title: title,
             )
-            let overlayIconSize = iconSize * selectedCarouselAdjustedSizeMultiplier
-
             ZStack {
                 if let rootID,
                    let image = menuImage(forRootID: rootID)
@@ -1974,9 +1979,9 @@ extension MenuView {
                     )
                     Image(nsImage: image)
                         .resizable()
+                        .interpolation(.high)
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: overlayIconSize, height: overlayIconSize)
-                        .scaleEffect(landedIconScale)
+                        .frame(width: landedIconWidth, height: landedIconWidth)
                         .position(
                             x: headerIconCenter.x,
                             y: headerIconCenter.y,
@@ -2041,7 +2046,7 @@ extension MenuView {
         let clampedSelectedIndex = min(max(0, selectedIndex), max(0, items.count - 1))
         let visibleRowCount = submenuVisibleMenuRowCount
         let transitionProgress = smoothStep(submenuTransitionProgress)
-        // Track the divider's top edge directly so the list stays a constant distance below it.
+
         let listGapBelowDivider = submenuListClipTopInset - (submenuDividerTopInset + submenuDividerThickness)
         let dividerTopEdge = interpolatedCGFloat(
             from: geometry.size.height,
@@ -2109,34 +2114,69 @@ extension MenuView {
             }
         }()
         let showsEmbeddedHeader = !showsHeaderTransitionOverlay
+        let isLiveNowPlaying = isInThirdMenu && thirdMenuMode == .musicNowPlaying
         ZStack {
             settledSubmenuDividerView(geometry: geometry)
             if let snapshot = menuTransitionSnapshot {
+                if snapshot.isNowPlayingPage {
+                    ZStack(alignment: .topLeading) {
+                        musicNowPlayingMenuPageView(geometry: geometry)
+                        if showsEmbeddedHeader {
+                            submenuPageHeaderView(
+                                rootID: snapshot.rootID,
+                                title: snapshot.headerText,
+                                geometry: geometry,
+                            )
+                        }
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                    .offset(x: snapshotOffsetX)
+                } else {
+                    submenuPageView(
+                        rootID: snapshot.rootID,
+                        headerText: snapshot.headerText,
+                        items: snapshot.items,
+                        selectedIndex: snapshot.selectedIndex,
+                        geometry: geometry,
+                        showsEmbeddedHeader: showsEmbeddedHeader,
+                    )
+                    .offset(x: snapshotOffsetX)
+                }
+            }
+            if isLiveNowPlaying {
+                ZStack(alignment: .topLeading) {
+                    musicNowPlayingMenuPageView(geometry: geometry)
+                    if showsEmbeddedHeader {
+                        submenuPageHeaderView(
+                            rootID: activeRootItemID,
+                            title: headerText,
+                            geometry: geometry,
+                        )
+                    }
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                .offset(x: menuTransitionSnapshot == nil ? 0 : liveOffsetX)
+                .opacity(
+                    menuTransitionSnapshot == nil
+                        ? max(liveOpacity, transitionOpacity)
+                        : 1,
+                )
+            } else {
                 submenuPageView(
-                    rootID: snapshot.rootID,
-                    headerText: snapshot.headerText,
-                    items: snapshot.items,
-                    selectedIndex: snapshot.selectedIndex,
+                    rootID: activeRootItemID,
+                    headerText: headerText,
+                    items: liveItems,
+                    selectedIndex: liveSelectedIndex,
                     geometry: geometry,
                     showsEmbeddedHeader: showsEmbeddedHeader,
                 )
-                .offset(x: snapshotOffsetX)
+                .offset(x: menuTransitionSnapshot == nil ? 0 : liveOffsetX)
+                .opacity(
+                    menuTransitionSnapshot == nil
+                        ? (isEnteringSubmenu || isReturningToRoot ? 1 : max(liveOpacity, transitionOpacity))
+                        : 1,
+                )
             }
-            submenuPageView(
-                rootID: activeRootItemID,
-                headerText: headerText,
-                items: liveItems,
-                selectedIndex: liveSelectedIndex,
-                geometry: geometry,
-                showsEmbeddedHeader: showsEmbeddedHeader,
-            )
-            .offset(x: menuTransitionSnapshot == nil ? 0 : liveOffsetX)
-            .opacity(
-                menuTransitionSnapshot == nil
-                    ? (isEnteringSubmenu || isReturningToRoot ? 1 : max(liveOpacity, transitionOpacity))
-                    : 1,
-            )
-
         }
         .animation(.easeInOut(duration: 0.2), value: liveOpacity)
     }

@@ -135,7 +135,7 @@ struct MusicNowPlayingFullscreenView: View {
     }
 }
 
-private struct MusicNowPlayingLeadingGlyphView: View {
+struct MusicNowPlayingLeadingGlyphView: View {
     let state: MoviePlaybackGlyphState
     let fontSize: CGFloat
     var body: some View {

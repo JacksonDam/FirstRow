@@ -32,6 +32,7 @@
 		7A73DEA22F5776A20021C281 /* MenuView+ITunesTopLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE2D2F5776A20021C281 /* MenuView+ITunesTopLibrary.swift */; };
 		7A73DEA42F5776A20021C281 /* MenuView+Photos.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE3C2F5776A20021C281 /* MenuView+Photos.swift */; };
 		7A73DEA52F5776A20021C281 /* MusicNowPlayingFullscreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE382F5776A20021C281 /* MusicNowPlayingFullscreenView.swift */; };
+		AABB00022F5776A20021C281 /* MusicNowPlayingMenuPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */; };
 		7A73DEA62F5776A20021C281 /* PhotosMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE3E2F5776A20021C281 /* PhotosMenuFeature.swift */; };
 		7A73DEA72F5776A20021C281 /* DVDMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE272F5776A20021C281 /* DVDMenuFeature.swift */; };
 		7A73DEA82F5776A20021C281 /* MenuView+InputHandling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE762F5776A20021C281 /* MenuView+InputHandling.swift */; };
@@ -100,6 +101,7 @@
 		7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MusicPlayback.swift"; sourceTree = "<group>"; };
 		7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicMenuFeature.swift; sourceTree = "<group>"; };
 		7A73DE382F5776A20021C281 /* MusicNowPlayingFullscreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingFullscreenView.swift; sourceTree = "<group>"; };
+		AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingMenuPageView.swift; sourceTree = "<group>"; };
 		7A73DE392F5776A20021C281 /* MusicPreviewGapContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPreviewGapContentView.swift; sourceTree = "<group>"; };
 		7A73DE3A2F5776A20021C281 /* MusicTopLevelCarouselGapContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTopLevelCarouselGapContentView.swift; sourceTree = "<group>"; };
 		7A73DE3C2F5776A20021C281 /* MenuView+Photos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Photos.swift"; sourceTree = "<group>"; };
@@ -221,6 +223,7 @@
 				7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */,
 				7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */,
 				7A73DE382F5776A20021C281 /* MusicNowPlayingFullscreenView.swift */,
+				AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */,
 				7A73DE392F5776A20021C281 /* MusicPreviewGapContentView.swift */,
 				7A73DE3A2F5776A20021C281 /* MusicTopLevelCarouselGapContentView.swift */,
 			);
@@ -529,6 +532,7 @@
 				7A73DEA22F5776A20021C281 /* MenuView+ITunesTopLibrary.swift in Sources */,
 				7A73DEA42F5776A20021C281 /* MenuView+Photos.swift in Sources */,
 				7A73DEA52F5776A20021C281 /* MusicNowPlayingFullscreenView.swift in Sources */,
+				AABB00022F5776A20021C281 /* MusicNowPlayingMenuPageView.swift in Sources */,
 				7A73DEA62F5776A20021C281 /* PhotosMenuFeature.swift in Sources */,
 				7A73DEA72F5776A20021C281 /* DVDMenuFeature.swift in Sources */,
 				7A73DEA82F5776A20021C281 /* MenuView+InputHandling.swift in Sources */,

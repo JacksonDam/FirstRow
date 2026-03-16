@@ -315,8 +315,6 @@ extension MenuView {
         return min(1, max(0, max(backspaceExitOverlay, max(forwardExitOverlay, photosCarouselLoadOverlayOpacity))))
     }
 
-    /// Movie and music previews have different projected width/yaw, so they need
-    /// separate horizontal anchors after removing the old menu-scene HStack padding.
     var movieGapPreviewHorizontalOffset: CGFloat {
         gapContentHorizontalOffset - 62
     }
