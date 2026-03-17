@@ -26,9 +26,7 @@ import SwiftUI
             view.onKeyDown = onKeyDown
             view.onKeyUp = onKeyUp
             context.coordinator.startMonitoring()
-            DispatchQueue.main.async {
-                view.window?.makeFirstResponder(view)
-            }
+            Task { @MainActor in view.window?.makeFirstResponder(view) }
             return view
         }
 
@@ -39,9 +37,7 @@ import SwiftUI
             }
             context.coordinator.onKeyDown = onKeyDown
             context.coordinator.onKeyUp = onKeyUp
-            DispatchQueue.main.async {
-                nsView.window?.makeFirstResponder(nsView)
-            }
+            Task { @MainActor in nsView.window?.makeFirstResponder(nsView) }
         }
 
         static func dismantleNSView(_: NSView, coordinator: Coordinator) {

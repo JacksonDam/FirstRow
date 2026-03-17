@@ -57,9 +57,7 @@ extension MenuView {
             var error: NSError?
             _ = asset.statusOfValue(forKey: key, error: &error)
             let isProtected = asset.hasProtectedContent
-            DispatchQueue.main.async {
-                completion(isProtected)
-            }
+            Task { @MainActor in completion(isProtected) }
         }
     }
 
@@ -72,9 +70,7 @@ extension MenuView {
             if Thread.isMainThread {
                 UIApplication.shared.open(url, options: [:], completionHandler: nil)
             } else {
-                DispatchQueue.main.async {
-                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
-                }
+                Task { @MainActor in UIApplication.shared.open(url, options: [:], completionHandler: nil) }
             }
         #endif
         playSound(named: "Limit")
@@ -89,14 +85,16 @@ extension MenuView {
             menuSceneOpacity = 0
         }
         let revealDelay = movieEntryFadeDuration + movieResumePromptRevealDelay
-        DispatchQueue.main.asyncAfter(deadline: .now() + revealDelay) {
+        Task {
+            try? await firstRowSleep(revealDelay)
+            guard !Task.isCancelled else { return }
             presentMovieResumePrompt(for: url)
             withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
                 movieResumePromptOpacity = 1
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + movieResumePromptFadeDuration) {
-                isMovieTransitioning = false
-            }
+            try? await firstRowSleep(movieResumePromptFadeDuration)
+            guard !Task.isCancelled else { return }
+            isMovieTransitioning = false
         }
     }
 
@@ -107,7 +105,9 @@ extension MenuView {
             movieTransitionOverlayOpacity = 1
             menuSceneOpacity = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieEntryFadeDuration + movieEntryBlackHoldDuration) {
+        Task {
+            try? await firstRowSleep(movieEntryFadeDuration + movieEntryBlackHoldDuration)
+            guard !Task.isCancelled else { return }
             activateMoviePlayback(from: url, startSeconds: 0, showsPlayGlyphOnStart: false)
             var instant = Transaction()
             instant.animation = nil
@@ -174,14 +174,16 @@ extension MenuView {
         withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
             movieResumePromptOpacity = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieResumePromptFadeDuration) {
+        Task {
+            try? await firstRowSleep(movieResumePromptFadeDuration)
+            guard !Task.isCancelled else { return }
             dismissMovieResumePrompt()
             withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
                 menuSceneOpacity = 1
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + movieResumePromptFadeDuration) {
-                isMovieTransitioning = false
-            }
+            try? await firstRowSleep(movieResumePromptFadeDuration)
+            guard !Task.isCancelled else { return }
+            isMovieTransitioning = false
         }
     }
 
@@ -228,26 +230,28 @@ extension MenuView {
             movieTransitionOverlayOpacity = 1
             movieResumePromptOpacity = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieResumePromptLaunchFadeDuration) {
-            let resumeFromSavedPosition = (self.movieResumePromptSelectedIndex == 0)
-            let startSeconds = resumeFromSavedPosition ? self.movieResumePromptResumeSeconds : 0
-            self.dismissMovieResumePrompt()
-            self.clearMoviePlaybackControlState()
-            self.isMovieTransitioning = true
+        Task {
+            try? await firstRowSleep(movieResumePromptLaunchFadeDuration)
+            guard !Task.isCancelled else { return }
+            let resumeFromSavedPosition = (movieResumePromptSelectedIndex == 0)
+            let startSeconds = resumeFromSavedPosition ? movieResumePromptResumeSeconds : 0
+            dismissMovieResumePrompt()
+            clearMoviePlaybackControlState()
+            isMovieTransitioning = true
             var instant = Transaction()
             instant.animation = nil
             withTransaction(instant) {
-                self.menuSceneOpacity = 0
+                menuSceneOpacity = 0
             }
-            self.activateMoviePlayback(
+            activateMoviePlayback(
                 from: targetURL,
                 startSeconds: startSeconds,
                 showsPlayGlyphOnStart: true,
             )
             withTransaction(instant) {
-                self.movieTransitionOverlayOpacity = 0
+                movieTransitionOverlayOpacity = 0
             }
-            self.isMovieTransitioning = false
+            isMovieTransitioning = false
         }
     }
 
@@ -318,26 +322,28 @@ extension MenuView {
             lastClosedMovieURL = nil
             lastClosedMovieTimestamp = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieExitFreezeHoldDuration) {
+        Task {
+            try? await firstRowSleep(movieExitFreezeHoldDuration)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: movieExitFadeDuration)) {
                 movieTransitionOverlayOpacity = 1
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + movieExitFadeDuration) {
-                removeMoviePlaybackObservation()
-                moviePlayer = nil
-                isMoviePlaybackVisible = false
-                clearMoviePlaybackControlState()
-                isCurrentMoviePlaybackEphemeralPreview = false
-                removeCurrentMoviePlaybackTemporaryFileIfNeeded()
-                withAnimation(.easeInOut(duration: 0.24)) {
-                    menuSceneOpacity = 1
-                    movieTransitionOverlayOpacity = 0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-                    resetScreenSaverIdleTimer()
-                    isMovieTransitioning = false
-                }
+            try? await firstRowSleep(movieExitFadeDuration)
+            guard !Task.isCancelled else { return }
+            removeMoviePlaybackObservation()
+            moviePlayer = nil
+            isMoviePlaybackVisible = false
+            clearMoviePlaybackControlState()
+            isCurrentMoviePlaybackEphemeralPreview = false
+            removeCurrentMoviePlaybackTemporaryFileIfNeeded()
+            withAnimation(.easeInOut(duration: 0.24)) {
+                menuSceneOpacity = 1
+                movieTransitionOverlayOpacity = 0
             }
+            try? await firstRowSleep(0.24)
+            guard !Task.isCancelled else { return }
+            resetScreenSaverIdleTimer()
+            isMovieTransitioning = false
         }
     }
 
@@ -515,7 +521,9 @@ extension MenuView {
         withAnimation(.easeOut(duration: movieControlsFadeDuration)) {
             movieControlsOpacity = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieControlsFadeDuration) {
+        Task {
+            try? await firstRowSleep(movieControlsFadeDuration)
+            guard !Task.isCancelled else { return }
             guard movieControlsOpacity <= 0.001 else { return }
             areMovieControlsVisible = false
         }
@@ -523,11 +531,11 @@ extension MenuView {
 
     func scheduleMovieControlsAutoHide() {
         cancelMovieControlsAutoHide()
-        let workItem = DispatchWorkItem {
+        movieControlsHideWorkItem = Task {
+            try? await firstRowSleep(movieControlsAutoHideDelay)
+            guard !Task.isCancelled else { return }
             hideMovieControlsWithFade()
         }
-        movieControlsHideWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieControlsAutoHideDelay, execute: workItem)
     }
 
     func cancelMovieControlsAutoHide() {

@@ -15,7 +15,9 @@ extension MenuView {
             key: theatricalTrailersLoadingFullscreenKey,
             payload: ["header": "Loading Theatrical Trailers..."],
         )
-        DispatchQueue.main.asyncAfter(deadline: .now() + spinnerRevealDelay) {
+        Task {
+            try? await firstRowSleep(spinnerRevealDelay)
+            guard !Task.isCancelled else { return }
             guard self.theatricalTrailersLoadingRequestID == requestID else { return }
             guard self.activeFullscreenScene?.key == self.theatricalTrailersLoadingFullscreenKey else { return }
             var instant = Transaction()
@@ -24,7 +26,9 @@ extension MenuView {
                 self.theatricalTrailersLoadingShowsSpinner = true
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + errorTransitionDelay) {
+        Task {
+            try? await firstRowSleep(errorTransitionDelay)
+            guard !Task.isCancelled else { return }
             guard self.theatricalTrailersLoadingRequestID == requestID else { return }
             guard self.activeFullscreenScene?.key == self.theatricalTrailersLoadingFullscreenKey else { return }
             self.transitionActiveFullscreenSceneWithOverlay(
@@ -46,28 +50,26 @@ extension MenuView {
             fullscreenTransitionOverlayOpacity = 1
         }
         let swapDelay = fadeDuration + fullscreenOverlayBlackoutSafetyDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + swapDelay) {
+        Task {
+            try? await firstRowSleep(swapDelay)
+            guard !Task.isCancelled else { return }
             guard self.isFullscreenSceneTransitioning else { return }
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
                 self.fullscreenTransitionOverlayOpacity = 1
             }
-            DispatchQueue.main.async {
-                guard self.isFullscreenSceneTransitioning else { return }
-                var instant = Transaction()
-                instant.disablesAnimations = true
-                withTransaction(instant) {
-                    self.activeFullscreenScene = FullscreenScenePresentation(key: key, payload: payload)
-                    self.fullscreenSceneOpacity = 1
-                }
-                withAnimation(.easeInOut(duration: fadeDuration)) {
-                    self.fullscreenTransitionOverlayOpacity = 0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + fadeDuration) {
-                    self.isFullscreenSceneTransitioning = false
-                }
+            guard self.isFullscreenSceneTransitioning else { return }
+            withTransaction(instant) {
+                self.activeFullscreenScene = FullscreenScenePresentation(key: key, payload: payload)
+                self.fullscreenSceneOpacity = 1
             }
+            withAnimation(.easeInOut(duration: fadeDuration)) {
+                self.fullscreenTransitionOverlayOpacity = 0
+            }
+            try? await firstRowSleep(fadeDuration)
+            guard !Task.isCancelled else { return }
+            self.isFullscreenSceneTransitioning = false
         }
     }
 
@@ -97,7 +99,9 @@ extension MenuView {
         if usingExistingBlackout {
             isMenuFolderSwapTransitioning = false
             let totalRevealDelay = max(0, revealDelay)
-            DispatchQueue.main.asyncAfter(deadline: .now() + totalRevealDelay) {
+            Task {
+                try? await firstRowSleep(totalRevealDelay)
+                guard !Task.isCancelled else { return }
                 guard self.isFullscreenSceneTransitioning else { return }
                 if shouldRevealDeferredNowPlaying {
                     self.revealDeferredNowPlayingMenuItemIfNeeded(compensateSelection: true)
@@ -111,12 +115,12 @@ extension MenuView {
                     self.menuFolderSwapOverlayOpacity = 0
                     self.fullscreenSceneOpacity = 1
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + fadeInDuration) {
-                    if key == musicNowPlayingFullscreenKey {
-                        self.updateMusicNowPlayingFlipTimerState()
-                    }
-                    self.isFullscreenSceneTransitioning = false
+                try? await firstRowSleep(fadeInDuration)
+                guard !Task.isCancelled else { return }
+                if key == musicNowPlayingFullscreenKey {
+                    self.updateMusicNowPlayingFlipTimerState()
                 }
+                self.isFullscreenSceneTransitioning = false
             }
             return
         }
@@ -135,33 +139,33 @@ extension MenuView {
             }
             let totalRevealDelay = fadeOutDuration + max(0, revealDelay)
             let swapDelay = totalRevealDelay + fullscreenOverlayBlackoutSafetyDuration
-            DispatchQueue.main.asyncAfter(deadline: .now() + fadeOutDuration) {
+            Task {
+                try? await firstRowSleep(fadeOutDuration)
+                guard !Task.isCancelled else { return }
                 if shouldRevealDeferredNowPlaying {
                     revealDeferredNowPlayingMenuItemIfNeeded(compensateSelection: true)
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + swapDelay) {
+            Task {
+                try? await firstRowSleep(swapDelay)
+                guard !Task.isCancelled else { return }
                 guard self.isFullscreenSceneTransitioning else { return }
                 var instant = Transaction()
                 instant.disablesAnimations = true
                 withTransaction(instant) {
                     self.fullscreenTransitionOverlayOpacity = 1
                 }
-                DispatchQueue.main.async {
-                    guard self.isFullscreenSceneTransitioning else { return }
-                    var instant = Transaction()
-                    instant.disablesAnimations = true
-                    withTransaction(instant) {
-                        self.menuSceneOpacity = 0
-                        self.fullscreenSceneOpacity = 1
-                    }
-                    withAnimation(.easeInOut(duration: fadeInDuration)) {
-                        self.fullscreenTransitionOverlayOpacity = 0
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + fadeInDuration) {
-                        self.isFullscreenSceneTransitioning = false
-                    }
+                guard self.isFullscreenSceneTransitioning else { return }
+                withTransaction(instant) {
+                    self.menuSceneOpacity = 0
+                    self.fullscreenSceneOpacity = 1
                 }
+                withAnimation(.easeInOut(duration: fadeInDuration)) {
+                    self.fullscreenTransitionOverlayOpacity = 0
+                }
+                try? await firstRowSleep(fadeInDuration)
+                guard !Task.isCancelled else { return }
+                self.isFullscreenSceneTransitioning = false
             }
             return
         }
@@ -169,21 +173,25 @@ extension MenuView {
             menuSceneOpacity = 0
         }
         let totalRevealDelay = fadeOutDuration + max(0, revealDelay)
-        DispatchQueue.main.asyncAfter(deadline: .now() + fadeOutDuration) {
+        Task {
+            try? await firstRowSleep(fadeOutDuration)
+            guard !Task.isCancelled else { return }
             if shouldRevealDeferredNowPlaying {
                 revealDeferredNowPlayingMenuItemIfNeeded(compensateSelection: true)
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + totalRevealDelay) {
+        Task {
+            try? await firstRowSleep(totalRevealDelay)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: fadeInDuration)) {
                 fullscreenSceneOpacity = 1
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + fadeInDuration) {
-                if key == musicNowPlayingFullscreenKey {
-                    updateMusicNowPlayingFlipTimerState()
-                }
-                isFullscreenSceneTransitioning = false
+            try? await firstRowSleep(fadeInDuration)
+            guard !Task.isCancelled else { return }
+            if key == musicNowPlayingFullscreenKey {
+                updateMusicNowPlayingFlipTimerState()
             }
+            isFullscreenSceneTransitioning = false
         }
     }
 
@@ -227,7 +235,9 @@ extension MenuView {
                 fullscreenTransitionOverlayOpacity = 1
             }
             let sceneSwapDelay = fadeOutDuration + fullscreenOverlayBlackoutSafetyDuration
-            DispatchQueue.main.asyncAfter(deadline: .now() + sceneSwapDelay) {
+            Task {
+                try? await firstRowSleep(sceneSwapDelay)
+                guard !Task.isCancelled else { return }
                 guard self.isFullscreenSceneTransitioning else { return }
                 var instant = Transaction()
                 instant.disablesAnimations = true
@@ -235,27 +245,27 @@ extension MenuView {
                     self.fullscreenTransitionOverlayOpacity = 1
                     self.activeFullscreenScene = nil
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration) {
-                    guard self.isFullscreenSceneTransitioning else { return }
-                    var instant = Transaction()
-                    instant.disablesAnimations = true
-                    withTransaction(instant) {
-                        self.menuSceneOpacity = 1
-                    }
-                    withAnimation(.easeInOut(duration: fadeInDuration)) {
-                        self.fullscreenTransitionOverlayOpacity = 0
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + fadeInDuration) {
-                        self.isFullscreenSceneTransitioning = false
-                    }
+                try? await firstRowSleep(holdDuration)
+                guard !Task.isCancelled else { return }
+                guard self.isFullscreenSceneTransitioning else { return }
+                withTransaction(instant) {
+                    self.menuSceneOpacity = 1
                 }
+                withAnimation(.easeInOut(duration: fadeInDuration)) {
+                    self.fullscreenTransitionOverlayOpacity = 0
+                }
+                try? await firstRowSleep(fadeInDuration)
+                guard !Task.isCancelled else { return }
+                self.isFullscreenSceneTransitioning = false
             }
             return
         }
         withAnimation(.easeInOut(duration: fadeOutDuration)) {
             fullscreenSceneOpacity = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + fadeOutDuration) {
+        Task {
+            try? await firstRowSleep(fadeOutDuration)
+            guard !Task.isCancelled else { return }
             activeFullscreenScene = nil
             if dismissedKey == musicNowPlayingFullscreenKey {
                 updateMusicNowPlayingFlipTimerState()
@@ -263,14 +273,14 @@ extension MenuView {
             if dismissedKey == musicNowPlayingFullscreenKey, !shouldPreserveMusicPlayback {
                 clearMusicNowPlayingDisplayState()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration) {
-                withAnimation(.easeInOut(duration: fadeInDuration)) {
-                    menuSceneOpacity = 1
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + fadeInDuration) {
-                    isFullscreenSceneTransitioning = false
-                }
+            try? await firstRowSleep(holdDuration)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: fadeInDuration)) {
+                menuSceneOpacity = 1
             }
+            try? await firstRowSleep(fadeInDuration)
+            guard !Task.isCancelled else { return }
+            isFullscreenSceneTransitioning = false
         }
     }
 }
@@ -280,65 +290,45 @@ extension MenuView {
         NSImage(named: "itunes")
     }
 
-    var fullscreenSceneBuilders: [String: FullscreenSceneBuilder] {
-        [
-            musicNowPlayingFullscreenKey: { _ in
-                AnyView(
-                    musicNowPlayingSceneView(),
-                )
-            },
-            screenSaverFullscreenKey: { _ in
-                AnyView(
-                    ScreenSaverFullscreenView(
-                        onDismiss: {
-                            dismissScreenSaverForUserInteraction()
-                        },
-                    ),
-                )
-            },
-            featureErrorFullscreenKey: { scene in
-                let copy = FeatureErrorCopy.resolve(from: scene.payload)
-                return AnyView(
-                    FeatureErrorFullscreenView(
-                        headerText: copy.headerText,
-                        subcaptionText: copy.subcaptionText,
-                    ),
-                )
-            },
-            theatricalTrailersLoadingFullscreenKey: { scene in
-                AnyView(
-                    FeatureLoadingFullscreenView(
-                        headerText: scene.payload["header"] ?? "Loading Theatrical Trailers...",
-                        showsSpinner: theatricalTrailersLoadingShowsSpinner,
-                    ),
-                )
-            },
-            photoSlideshowFullscreenKey: { _ in
-                AnyView(
-                    PhotoSlideshowFullscreenView(
-                        imageCount: photoSlideshowAssetLocalIdentifiers.count,
-                        imageForIndex: { index in
-                            photoSlideshowImageCache[index]
-                        },
-                        isPaused: photoSlideshowIsPaused,
-                        pausedIndex: photoSlideshowPausedIndex,
-                        playbackStartDate: photoSlideshowPlaybackStartDate,
-                        playbackElapsedOffset: photoSlideshowPlaybackElapsedOffset,
-                        displayDuration: photoSlideshowPhotoDisplayDuration,
-                        crossfadeDuration: photoSlideshowCrossfadeDuration,
-                        hasAlreadyFinished: photoSlideshowHasFinished,
-                        onFrameIndicesChanged: { primaryIndex, secondaryIndex in
-                            updatePhotoSlideshowVisibleIndices(
-                                primaryIndex: primaryIndex,
-                                secondaryIndex: secondaryIndex,
-                            )
-                        },
-                        onFinished: {
-                            handlePhotoSlideshowPlaybackFinished()
-                        },
-                    ),
-                )
-            },
-        ]
+    @ViewBuilder
+    func fullscreenSceneView(for scene: FullscreenScenePresentation) -> some View {
+        switch scene.key {
+        case musicNowPlayingFullscreenKey:
+            musicNowPlayingSceneView()
+        case screenSaverFullscreenKey:
+            ScreenSaverFullscreenView(onDismiss: { dismissScreenSaverForUserInteraction() })
+        case featureErrorFullscreenKey:
+            let copy = FeatureErrorCopy.resolve(from: scene.payload)
+            FeatureErrorFullscreenView(
+                headerText: copy.headerText,
+                subcaptionText: copy.subcaptionText,
+            )
+        case theatricalTrailersLoadingFullscreenKey:
+            FeatureLoadingFullscreenView(
+                headerText: scene.payload["header"] ?? "Loading Theatrical Trailers...",
+                showsSpinner: theatricalTrailersLoadingShowsSpinner,
+            )
+        case photoSlideshowFullscreenKey:
+            PhotoSlideshowFullscreenView(
+                imageCount: photoSlideshowAssetLocalIdentifiers.count,
+                imageForIndex: { index in photoSlideshowImageCache[index] },
+                isPaused: photoSlideshowIsPaused,
+                pausedIndex: photoSlideshowPausedIndex,
+                playbackStartDate: photoSlideshowPlaybackStartDate,
+                playbackElapsedOffset: photoSlideshowPlaybackElapsedOffset,
+                displayDuration: photoSlideshowPhotoDisplayDuration,
+                crossfadeDuration: photoSlideshowCrossfadeDuration,
+                hasAlreadyFinished: photoSlideshowHasFinished,
+                onFrameIndicesChanged: { primaryIndex, secondaryIndex in
+                    updatePhotoSlideshowVisibleIndices(
+                        primaryIndex: primaryIndex,
+                        secondaryIndex: secondaryIndex,
+                    )
+                },
+                onFinished: { handlePhotoSlideshowPlaybackFinished() },
+            )
+        default:
+            Color.black
+        }
     }
 }

@@ -113,9 +113,9 @@ extension MenuView {
             let effectiveSubmenuTitleOpacity = shouldHidePodcastsSubmenuChromeUntilLoadCompletes
                 ? 0
                 : submenuTitleOpacity
-            Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).opacity(effectiveSubmenuTitleOpacity).offset(x: firstRowHeaderOffsetX(geometry: geometry) + (landedIconWidth * 0.6)).offset(y: menuHeaderVerticalOffset).animation(.easeInOut(duration: 0.25), value: submenuTitleOpacity).animation(.easeInOut(duration: 0.22), value: shouldHidePodcastsSubmenuChromeUntilLoadCompletes)
+            Text(headerText).font(.firstRowBold(size: 60)).foregroundStyleCompat(.white).opacity(effectiveSubmenuTitleOpacity).offset(x: firstRowHeaderOffsetX(geometry: geometry) + (landedIconWidth * 0.6)).offset(y: menuHeaderVerticalOffset).animation(.easeInOut(duration: 0.25), value: submenuTitleOpacity).animation(.easeInOut(duration: 0.22), value: shouldHidePodcastsSubmenuChromeUntilLoadCompletes)
         } else {
-            Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).offset(x: rootMenuHeaderOffsetX(geometry: geometry)).offset(y: menuHeaderVerticalOffset).opacity(headerOpacity).animation(.easeInOut(duration: 0.25), value: headerOpacity)
+            Text(headerText).font(.firstRowBold(size: 60)).foregroundStyleCompat(.white).offset(x: rootMenuHeaderOffsetX(geometry: geometry)).offset(y: menuHeaderVerticalOffset).opacity(headerOpacity).animation(.easeInOut(duration: 0.25), value: headerOpacity)
         }
     }
 
@@ -159,7 +159,7 @@ extension MenuView {
                         let isSelected = (index == movieResumePromptSelectedIndex)
                         let hideSelectedText = movieResumePromptSolidBlackSelected && isSelected
                         let hideUnselectedText = movieResumePromptHideUnselected && !isSelected
-                        Text(option).font(.firstRowBold(size: 45)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.72).allowsTightening(true).frame(width: optionWidth, height: optionHeight, alignment: .leading).padding(.leading, optionTextInset).opacity((hideSelectedText || hideUnselectedText) ? 0 : 1)
+                        Text(option).font(.firstRowBold(size: 45)).foregroundStyleCompat(.white).lineLimit(1).minimumScaleFactor(0.72).allowsTightening(true).frame(width: optionWidth, height: optionHeight, alignment: .leading).padding(.leading, optionTextInset).opacity((hideSelectedText || hideUnselectedText) ? 0 : 1)
                     }
                 }
             }.frame(
@@ -273,8 +273,8 @@ extension MenuView {
             )).frame(width: segmentWidth, height: pillHeight).offset(x: selectedX)
             Rectangle().fill(Color.black.opacity(0.34)).frame(width: 1, height: pillHeight - 10)
             HStack(spacing: 0) {
-                Text("Date").font(.custom("Lucida Grande", size: 20)).foregroundColor(tvShowsSortMode == .date ? .white : Color.white.opacity(0.56)).frame(width: segmentWidth, height: pillHeight, alignment: .center)
-                Text("Show").font(.custom("Lucida Grande", size: 20)).foregroundColor(tvShowsSortMode == .show ? .white : Color.white.opacity(0.56)).frame(width: segmentWidth, height: pillHeight, alignment: .center)
+                Text("Date").font(.custom("Lucida Grande", size: 20)).foregroundStyleCompat(tvShowsSortMode == .date ? .white : Color.white.opacity(0.56)).frame(width: segmentWidth, height: pillHeight, alignment: .center)
+                Text("Show").font(.custom("Lucida Grande", size: 20)).foregroundStyleCompat(tvShowsSortMode == .show ? .white : Color.white.opacity(0.56)).frame(width: segmentWidth, height: pillHeight, alignment: .center)
             }
         }.frame(width: pillWidth, height: pillHeight).clipShape(Capsule(style: .continuous)).overlay(
             Capsule(style: .continuous).stroke(Color(red: 82 / 255, green: 147 / 255, blue: 221 / 255).opacity(0.96), lineWidth: 2),
@@ -364,44 +364,47 @@ extension MenuView {
             : selectionVisualYOffset
         let selectionVisualCenterXInContainer =
             effectiveSelectionVisualXOffset + (effectiveSelectionVisualWidth * 0.5)
-        let visibleRowIndices = visibleMenuRowIndices(
-            rowOffsets: rowOffsets,
-            rowHeight: selectionHeight,
-            scrollOffset: scrollOffset,
-            viewportHeight: viewportHeight,
-            prefersWiderOverscan: !isSelectionSettled,
-        )
         return ZStack(alignment: .topLeading) {
             if !items.isEmpty {
                 selectionBox(width: effectiveSelectionVisualWidth, height: effectiveSelectionVisualHeight).offset(
                     x: effectiveSelectionVisualXOffset,
                     y: selectedRowOffset + scrollOffset + effectiveSelectionVisualYOffset,
-                ).animation(selectionMovementAnimation, value: selectedIndex)
+                ).animation(selectionMovementAnimation, value: selectedRowOffset).animation(selectionMovementAnimation, value: scrollOffset)
             }
             ZStack(alignment: .topLeading) {
-                ForEach(visibleRowIndices, id: \.self) { index in
+                ForEach(items.indices, id: \.self) { index in
                     let item = items[index]
                     let rowIsSelected = index == selectedIndex
                     let rowIsNormalHeight = normalHeightIndices.contains(index)
                     let rowHeight = rowIsNormalHeight ? selectionBoxHeight : selectionHeight
                     let rowYOffset = rowIsNormalHeight ? 0 : selectionYOffset
+
                     if item.showsTopDivider {
-                        Rectangle().fill(Color.white.opacity(0.34)).frame(width: max(0, rowContentWidth - (dividerLineInsetHorizontal * 2)), height: 1).offset(
-                            x: rowContentXOffset + dividerLineInsetHorizontal,
-                            y: rowOffsets[index] - dividerGap + dividerLineYOffsetInGap,
-                        )
+                        Rectangle()
+                            .fill(Color.white.opacity(0.34))
+                            .frame(width: max(0, rowContentWidth - (dividerLineInsetHorizontal * 2)), height: 1)
+                            .offset(
+                                x: rowContentXOffset + dividerLineInsetHorizontal,
+                                y: rowOffsets[index] - dividerGap + dividerLineYOffsetInGap,
+                            )
                     }
+
                     if item.showsLightRowBackground {
-                        Rectangle().fill(Color.white.opacity(0.06)).overlay(
-                            Rectangle().stroke(Color.white.opacity(0.02), lineWidth: 1),
-                        ).frame(
-                            width: selectionWidth,
-                            height: rowHeight,
-                        ).offset(
-                            x: selectionXOffset,
-                            y: rowOffsets[index] + rowYOffset,
-                        )
+                        Rectangle()
+                            .fill(Color.white.opacity(0.06))
+                            .overlay(
+                                Rectangle().stroke(Color.white.opacity(0.02), lineWidth: 1),
+                            )
+                            .frame(
+                                width: selectionWidth,
+                                height: rowHeight,
+                            )
+                            .offset(
+                                x: selectionXOffset,
+                                y: rowOffsets[index] + rowYOffset,
+                            )
                     }
+
                     menuItemView(
                         itemID: item.id,
                         title: item.title,
@@ -414,53 +417,69 @@ extension MenuView {
                         trailingText: item.trailingText,
                         trailingSymbolName: item.trailingSymbolName,
                         showsPlaybackSpeaker:
-                        (thirdMenuMode == .musicSongs &&
-                            activeMusicPlaybackSongID == item.id &&
-                            hasActiveMusicPlaybackSession()) ||
+                            (thirdMenuMode == .musicSongs &&
+                             activeMusicPlaybackSongID == item.id &&
+                             hasActiveMusicPlaybackSession()) ||
                             (thirdMenuMode == .podcastsEpisodes &&
-                                isPodcastAudioNowPlaying &&
-                                activePodcastPlaybackEpisodeID == item.id),
+                             isPodcastAudioNowPlaying &&
+                             activePodcastPlaybackEpisodeID == item.id),
                         showsBlueDot: item.showsBlueDot,
                         alignsTextToDividerStart: item.alignsTextToDividerStart,
                         arrowAppearance: arrowAppearance,
-                    ).frame(width: rowContentWidth, height: rowHeight, alignment: .leading).offset(
+                    )
+                    .frame(width: rowContentWidth, height: rowHeight, alignment: .leading)
+                    .offset(
                         x: rowContentXOffset,
                         y: rowOffsets[index] + rowYOffset,
                     )
                 }
-            }.offset(y: scrollOffset).animation(selectionMovementAnimation, value: selectedIndex).frame(height: viewportHeight, alignment: .top).mask(
+            }
+            .offset(y: scrollOffset)
+            .animation(selectionMovementAnimation, value: selectedIndex)
+            .frame(height: viewportHeight, alignment: .top)
+            .mask(
                 Rectangle().frame(width: 5000, height: viewportHeight),
             )
-        }.frame(height: viewportHeight, alignment: .top).overlay(Group {
-            if showsTopOverflowFade {
-                LinearGradient(
-                    colors: [.black, .black.opacity(0.78), .clear],
-                    startPoint: .top,
-                    endPoint: .bottom,
-                ).frame(height: submenuTopFadeHeight).opacity(isMenuOverflowScrollingUp ? 1 : 0).animation(.easeInOut(duration: 0.12), value: isMenuOverflowScrollingUp).allowsHitTesting(false)
-            }
-        }, alignment: .top).overlay(Group {
-            if showsTopOverflowFade {
-                LinearGradient(
-                    colors: [.black, .black.opacity(0.78), .clear],
-                    startPoint: .bottom,
-                    endPoint: .top,
-                ).frame(height: submenuTopFadeHeight).opacity(isMenuOverflowScrollingDown ? 1 : 0).animation(.easeInOut(duration: 0.12), value: isMenuOverflowScrollingDown).allowsHitTesting(false)
-            }
-        }, alignment: .bottom).frame(width: menuWidth, height: menuListLayoutHeight(for: visibleRowCount), alignment: .topLeading).background(
-            Group {
-                if reportsSelectionCenterX {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: RootMenuSelectionCenterPreferenceKey.self,
-                            value: proxy.frame(in: .named("menuSceneSpace")).minX + selectionVisualCenterXInContainer,
-                        )
+        }.frame(height: viewportHeight, alignment: .top)
+            .overlay(
+                Group {
+                    if showsTopOverflowFade {
+                        LinearGradient(
+                            colors: [.black, .black.opacity(0.78), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom,
+                        ).frame(height: submenuTopFadeHeight).opacity(isMenuOverflowScrollingUp ? 1 : 0).animation(.easeInOut(duration: 0.12), value: isMenuOverflowScrollingUp).allowsHitTesting(false)
                     }
-                } else {
-                    Color.clear
-                }
-            },
-        )
+                },
+                alignment: .top,
+            )
+            .overlay(
+                Group {
+                    if showsTopOverflowFade {
+                        LinearGradient(
+                            colors: [.black, .black.opacity(0.78), .clear],
+                            startPoint: .bottom,
+                            endPoint: .top,
+                        ).frame(height: submenuTopFadeHeight).opacity(isMenuOverflowScrollingDown ? 1 : 0).animation(.easeInOut(duration: 0.12), value: isMenuOverflowScrollingDown).allowsHitTesting(false)
+                    }
+                },
+                alignment: .bottom,
+            )
+            .frame(width: menuWidth, height: menuListLayoutHeight(for: visibleRowCount), alignment: .topLeading)
+            .background(
+                Group {
+                    if reportsSelectionCenterX {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: RootMenuSelectionCenterPreferenceKey.self,
+                                value: proxy.frame(in: .named("menuSceneSpace")).minX + selectionVisualCenterXInContainer,
+                            )
+                        }
+                    } else {
+                        Color.clear
+                    }
+                },
+            )
     }
 
     @ViewBuilder
@@ -481,12 +500,11 @@ extension MenuView {
                     Image(nsImage: textures.middle).resizable(resizingMode: .stretch).frame(width: middleWidth, height: textureHeight)
                     Image(nsImage: textures.right).resizable().frame(width: capWidth, height: textureHeight)
                 }.frame(width: width, height: textureHeight)
-            }.drawingGroup().frame(width: width, height: height)
+            }.frame(width: width, height: height)
         } else {
             EmptyView()
         }
     }
-
     // MARK: - Layout geometry
 
     func visibleIndices() -> [Int] {
@@ -921,7 +939,7 @@ extension MenuView {
                 )
             }.frame(width: leftColumnWidth > 0 ? leftColumnWidth : nil, alignment: .leading).padding(.leading, leadingTextPadding)
             if showsPlaybackSpeaker {
-                Image(systemName: "speaker.wave.3.fill").foregroundColor(.white).font(.system(size: 34, weight: .semibold)).shadow(
+                Image(systemName: "speaker.wave.3.fill").foregroundStyleCompat(.white).font(.system(size: 34, weight: .semibold)).shadow(
                     color: isPlaybackSpeakerGlowing ? .white.opacity(0.9) : .clear,
                     radius: isPlaybackSpeakerGlowing ? 4.5 : 0,
                 ).shadow(
@@ -929,7 +947,7 @@ extension MenuView {
                     radius: isPlaybackSpeakerGlowing ? 10 : 0,
                 ).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
             } else if let trailingSymbolName {
-                Image(systemName: trailingSymbolName).foregroundColor(.white).font(.system(size: 34, weight: .semibold)).opacity(trailingTextOpacity).arrowGlow(isTrailingSymbolGlowing, arrowAppearance).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
+                Image(systemName: trailingSymbolName).foregroundStyleCompat(.white).font(.system(size: 34, weight: .semibold)).opacity(trailingTextOpacity).arrowGlow(isTrailingSymbolGlowing, arrowAppearance).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
             } else if let resolvedTrailingText, showsArrow {
                 HStack(spacing: trailingToArrowSpacing) {
                     if isDotTrail {
@@ -939,14 +957,14 @@ extension MenuView {
                             }
                         }.opacity(trailingTextOpacity).offset(x: 8, y: -0.3).arrowGlow(isArrowGlowing, arrowAppearance)
                     } else {
-                        Text(resolvedTrailingText).font(.firstRowRegular(size: trailingFontSize)).foregroundColor(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).offset(y: trailingVerticalOffset)
+                        Text(resolvedTrailingText).font(.firstRowRegular(size: trailingFontSize)).foregroundStyleCompat(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).offset(y: trailingVerticalOffset)
                     }
-                    Image(systemName: arrowAppearance.symbolName).foregroundColor(arrowAppearance.color).font(.system(size: arrowAppearance.fontSize, weight: arrowAppearance.fontWeight)).opacity(trailingTextOpacity).arrowGlow(isArrowGlowing, arrowAppearance)
+                    Image(systemName: arrowAppearance.symbolName).foregroundStyleCompat(arrowAppearance.color).font(.system(size: arrowAppearance.fontSize, weight: arrowAppearance.fontWeight)).opacity(trailingTextOpacity).arrowGlow(isArrowGlowing, arrowAppearance)
                 }.frame(width: trailingColumnWidth, alignment: .trailing).offset(x: symmetricArrowXOffset)
             } else if let resolvedTrailingText {
-                Text(resolvedTrailingText).font(.firstRowRegular(size: 32)).foregroundColor(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
+                Text(resolvedTrailingText).font(.firstRowRegular(size: 32)).foregroundStyleCompat(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
             } else if showsArrow {
-                Image(systemName: arrowAppearance.symbolName).foregroundColor(arrowAppearance.color).font(.system(size: arrowAppearance.fontSize, weight: arrowAppearance.fontWeight)).opacity(trailingTextOpacity).arrowGlow(isArrowGlowing, arrowAppearance).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: symmetricArrowXOffset)
+                Image(systemName: arrowAppearance.symbolName).foregroundStyleCompat(arrowAppearance.color).font(.system(size: arrowAppearance.fontSize, weight: arrowAppearance.fontWeight)).opacity(trailingTextOpacity).arrowGlow(isArrowGlowing, arrowAppearance).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: symmetricArrowXOffset)
             }
         }.frame(width: rowInnerWidth, alignment: .leading).padding(.horizontal, rowHorizontalPadding).overlay(Group {
             if showsBlueDot {
@@ -1009,7 +1027,7 @@ extension MenuView {
         ZStack(alignment: .leading) {
             Text(title)
                 .font(.firstRowBold(size: 40))
-                .foregroundColor(.white)
+                .foregroundStyleCompat(.white)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .allowsTightening(true)
@@ -1126,8 +1144,8 @@ private struct MenuRowMarqueeText: View {
         let safeViewportWidth = max(1, viewportWidth)
         let edgeFadeFraction = min(0.5, max(0, edgeFadeWidth / safeViewportWidth))
         HStack(spacing: gap) {
-            Text(title).font(.firstRowBold(size: 40)).foregroundColor(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
-            Text(title).font(.firstRowBold(size: 40)).foregroundColor(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
+            Text(title).font(.firstRowBold(size: 40)).foregroundStyleCompat(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
+            Text(title).font(.firstRowBold(size: 40)).foregroundStyleCompat(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
         }.offset(x: xOffset).frame(width: safeViewportWidth, alignment: .leading).clipped().mask(LinearGradient(
             gradient: Gradient(stops: [.init(color: .clear, location: 0.0), .init(color: .white, location: edgeFadeFraction), .init(color: .white, location: 1.0 - edgeFadeFraction), .init(color: .clear, location: 1.0)]),
             startPoint: .leading,
@@ -1469,10 +1487,9 @@ extension MenuView {
             .zIndex(4500)
         }
         if let activeFullscreenScene {
-            FullscreenSceneHost(
-                scene: activeFullscreenScene,
-                builders: fullscreenSceneBuilders,
-            )
+            FullscreenSceneHost(scene: activeFullscreenScene) { scene in
+                fullscreenSceneView(for: scene)
+            }
             .frame(width: containerSize.width, height: containerSize.height)
             .opacity(fullscreenSceneOpacity)
             .ignoresSafeArea()

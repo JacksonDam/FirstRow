@@ -11,18 +11,15 @@ extension MenuView {
         guard direction != 0 else { return }
         screenSaverPendingMusicTrackSwitchDelta += direction
         screenSaverPendingMusicTrackSwitchWorkItem?.cancel()
-        let workItem = DispatchWorkItem {
-            let pendingDelta = self.screenSaverPendingMusicTrackSwitchDelta
-            self.screenSaverPendingMusicTrackSwitchDelta = 0
-            self.screenSaverPendingMusicTrackSwitchWorkItem = nil
-            guard self.activeFullscreenScene?.key == self.screenSaverFullscreenKey else { return }
-            self.switchMusicNowPlayingTrack(direction: pendingDelta)
+        screenSaverPendingMusicTrackSwitchWorkItem = Task {
+            try? await firstRowSleep(screenSaverMusicTrackSwitchCoalesceDelay)
+            guard !Task.isCancelled else { return }
+            let pendingDelta = screenSaverPendingMusicTrackSwitchDelta
+            screenSaverPendingMusicTrackSwitchDelta = 0
+            screenSaverPendingMusicTrackSwitchWorkItem = nil
+            guard activeFullscreenScene?.key == screenSaverFullscreenKey else { return }
+            switchMusicNowPlayingTrack(direction: pendingDelta)
         }
-        screenSaverPendingMusicTrackSwitchWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + screenSaverMusicTrackSwitchCoalesceDelay,
-            execute: workItem,
-        )
     }
 
     func cancelScreenSaverMusicTrackSwitchQueue() {
@@ -58,17 +55,14 @@ extension MenuView {
         withAnimation(.easeInOut(duration: screenSaverNowPlayingToastFadeDuration)) {
             screenSaverNowPlayingToastOpacity = 1
         }
-        let hideWorkItem = DispatchWorkItem {
-            withAnimation(.easeInOut(duration: self.screenSaverNowPlayingToastFadeDuration)) {
-                self.screenSaverNowPlayingToastOpacity = 0
+        screenSaverNowPlayingToastHideWorkItem = Task {
+            try? await firstRowSleep(screenSaverNowPlayingToastVisibleDuration)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: screenSaverNowPlayingToastFadeDuration)) {
+                screenSaverNowPlayingToastOpacity = 0
             }
-            self.screenSaverNowPlayingToastHideWorkItem = nil
+            screenSaverNowPlayingToastHideWorkItem = nil
         }
-        screenSaverNowPlayingToastHideWorkItem = hideWorkItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + screenSaverNowPlayingToastVisibleDuration,
-            execute: hideWorkItem,
-        )
     }
 
     func clearScreenSaverNowPlayingToast() {
@@ -100,9 +94,9 @@ extension MenuView {
                 Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1),
             )
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.firstRowBold(size: 30)).foregroundColor(Color.white).lineLimit(1).truncationMode(.tail)
-                Text(album).font(.firstRowRegular(size: 24)).foregroundColor(Color.white.opacity(0.9)).lineLimit(1).truncationMode(.tail)
-                Text(artist).font(.firstRowRegular(size: 24)).foregroundColor(Color.white.opacity(0.9)).lineLimit(1).truncationMode(.tail)
+                Text(title).font(.firstRowBold(size: 30)).foregroundStyleCompat(.white).lineLimit(1).truncationMode(.tail)
+                Text(album).font(.firstRowRegular(size: 24)).foregroundStyleCompat(.white.opacity(0.9)).lineLimit(1).truncationMode(.tail)
+                Text(artist).font(.firstRowRegular(size: 24)).foregroundStyleCompat(.white.opacity(0.9)).lineLimit(1).truncationMode(.tail)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.horizontal, 18).frame(width: screenSaverNowPlayingToastSize.width, height: screenSaverNowPlayingToastSize.height).background(Color.black.opacity(0.5))
     }

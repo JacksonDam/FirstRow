@@ -127,9 +127,7 @@ extension MenuView {
             guard thirdMenuItems.isEmpty else { return }
             guard !hasPromptedMoviesFolderPickerThisSession else { return }
             hasPromptedMoviesFolderPickerThisSession = true
-            DispatchQueue.main.async {
-                self.isMoviesFolderPickerPresented = true
-            }
+            isMoviesFolderPickerPresented = true
         }
     #else
         func isSupportedMovieFile(url: URL, values _: URLResourceValues?) -> Bool {
@@ -565,39 +563,39 @@ extension MenuView {
         thirdMenuCurrentURL = standardizedDirectory
         isLoadingMoviesFolderEntries = true
         let requestID = incrementRequestID(&moviesFolderEntriesRequestID)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let scannedEntries = self.scanMoviesFolderEntries(in: standardizedDirectory)
-            DispatchQueue.main.async {
-                guard self.moviesFolderEntriesRequestID == requestID else { return }
-                guard self.thirdMenuMode == .moviesFolder else { return }
-                guard self.thirdMenuCurrentURL?.standardizedFileURL == standardizedDirectory else { return }
-                self.isLoadingMoviesFolderEntries = false
-                self.thirdMenuItems = scannedEntries
+        Task(priority: .userInitiated) {
+            let scannedEntries = scanMoviesFolderEntries(in: standardizedDirectory)
+            await MainActor.run {
+                guard moviesFolderEntriesRequestID == requestID else { return }
+                guard thirdMenuMode == .moviesFolder else { return }
+                guard thirdMenuCurrentURL?.standardizedFileURL == standardizedDirectory else { return }
+                isLoadingMoviesFolderEntries = false
+                thirdMenuItems = scannedEntries
                 let maxIndex = max(0, scannedEntries.count - 1)
-                if let remembered = self.rememberedMoviesFolderSelectionIndex(for: standardizedDirectory) {
-                    self.selectedThirdIndex = min(max(0, remembered), maxIndex)
+                if let remembered = rememberedMoviesFolderSelectionIndex(for: standardizedDirectory) {
+                    selectedThirdIndex = min(max(0, remembered), maxIndex)
                 } else if resetSelection {
-                    self.selectedThirdIndex = 0
+                    selectedThirdIndex = 0
                 } else {
-                    self.selectedThirdIndex = min(max(0, self.selectedThirdIndex), maxIndex)
+                    selectedThirdIndex = min(max(0, selectedThirdIndex), maxIndex)
                 }
                 if !scannedEntries.isEmpty {
-                    let key = self.moviesFolderDirectorySelectionKey(for: standardizedDirectory)
-                    self.moviesFolderSelectionIndexByDirectoryPath[key] = self.selectedThirdIndex
+                    let key = moviesFolderDirectorySelectionKey(for: standardizedDirectory)
+                    moviesFolderSelectionIndexByDirectoryPath[key] = selectedThirdIndex
                 }
-                self.refreshDetailPreviewForCurrentContext()
+                refreshDetailPreviewForCurrentContext()
                 let isShowingRootDirectory =
-                    self.thirdMenuRootURL?.standardizedFileURL == standardizedDirectory
+                    thirdMenuRootURL?.standardizedFileURL == standardizedDirectory
                 if isShowingRootDirectory, scannedEntries.isEmpty {
-                    self.isInThirdMenu = false
-                    self.thirdMenuMode = .none
-                    self.thirdMenuOpacity = 0
-                    self.submenuOpacity = 1
-                    self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
-                    self.resetThirdMenuDirectoryState()
-                    self.moviesFolderSelectionIndexByDirectoryPath = [:]
-                    self.refreshDetailPreviewForCurrentContext()
-                    self.presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: true)
+                    isInThirdMenu = false
+                    thirdMenuMode = .none
+                    thirdMenuOpacity = 0
+                    submenuOpacity = 1
+                    headerText = rootMenuTitle(for: activeRootItemID)
+                    resetThirdMenuDirectoryState()
+                    moviesFolderSelectionIndexByDirectoryPath = [:]
+                    refreshDetailPreviewForCurrentContext()
+                    presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: true)
                 }
             }
         }

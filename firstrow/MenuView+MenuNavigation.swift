@@ -75,7 +75,9 @@ extension MenuView {
             thirdMenuOpacity = 0
             submenuOpacity = 1
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        Task {
+            try? await firstRowSleep(0.2)
+            guard !Task.isCancelled else { return }
             isInThirdMenu = false
             thirdMenuMode = .none
             syncPodcastSubmenuSelectionForActiveSeries()
@@ -187,7 +189,9 @@ extension MenuView {
             }
         }
         let swapUpdateDelay = menuFolderSwapFadeDuration + menuOverlayBlackoutSafetyDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + swapUpdateDelay) {
+        Task {
+            try? await firstRowSleep(swapUpdateDelay)
+            guard !Task.isCancelled else { return }
             guard isMenuFolderSwapTransitioning else { return }
             var instant = Transaction()
             instant.animation = nil
@@ -198,40 +202,34 @@ extension MenuView {
                     menuSceneOpacity = 0
                 }
             }
-            DispatchQueue.main.async {
-                guard isMenuFolderSwapTransitioning else { return }
-                var instant = Transaction()
-                instant.animation = nil
-                withTransaction(instant) {
-                    update()
-                }
-                let revealDeadline = Date().addingTimeInterval(max(0, maxRevealWait))
-                func revealWhenReady() {
-                    guard isMenuFolderSwapTransitioning else { return }
-                    let canRevealNow = revealWhen() || Date() >= revealDeadline
-                    guard canRevealNow else {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            revealWhenReady()
-                        }
-                        return
-                    }
-                    if useOverlayFade {
-                        withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
-                            menuFolderSwapOverlayOpacity = 0
-                        }
-                    } else {
-                        withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
-                            menuSceneOpacity = 1
-                        }
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + menuFolderSwapFadeDuration) {
-                        isMenuFolderSwapTransitioning = false
-                    }
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + menuFolderSwapHoldDuration) {
-                    revealWhenReady()
-                }
+            guard isMenuFolderSwapTransitioning else { return }
+            withTransaction(instant) {
+                update()
             }
+            let revealDeadline = Date().addingTimeInterval(max(0, maxRevealWait))
+            try? await firstRowSleep(menuFolderSwapHoldDuration)
+            guard !Task.isCancelled else { return }
+            func revealWhenReady() async {
+                guard isMenuFolderSwapTransitioning else { return }
+                let canRevealNow = revealWhen() || Date() >= revealDeadline
+                guard canRevealNow else {
+                    try? await firstRowSleep(0.05)
+                    await revealWhenReady()
+                    return
+                }
+                if useOverlayFade {
+                    withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
+                        menuFolderSwapOverlayOpacity = 0
+                    }
+                } else {
+                    withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
+                        menuSceneOpacity = 1
+                    }
+                }
+                try? await firstRowSleep(menuFolderSwapFadeDuration)
+                isMenuFolderSwapTransitioning = false
+            }
+            await revealWhenReady()
         }
     }
 }

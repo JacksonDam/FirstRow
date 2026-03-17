@@ -387,12 +387,12 @@ struct AnimatedMetadataGapContentView: View {
                                                                                                                                                       anchor: UnitPoint(x: 0.5, y: 0.25),
                                                                                                                                                       perspective: 0.75).position(x: coverCenterX, y: coverCenterY + (scaledCoverHeight * 0.5))
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(titleText).font(.firstRowBold(size: 30)).foregroundColor(.white).lineLimit(1).truncationMode(.tail).allowsTightening(true)
+                    Text(titleText).font(.firstRowBold(size: 30)).foregroundStyleCompat(.white).lineLimit(1).truncationMode(.tail).allowsTightening(true)
                     if hasDescriptionText || hasMetadataLines {
                         Rectangle().fill(Color.white.opacity(0.18)).frame(height: 1)
                     }
                     if let limitedDescriptionText, hasDescriptionText {
-                        Text(limitedDescriptionText).font(.firstRowRegular(size: 24)).foregroundColor(.white).lineSpacing(1).fixedSize(horizontal: false, vertical: true)
+                        Text(limitedDescriptionText).font(.firstRowRegular(size: 24)).foregroundStyleCompat(.white).lineSpacing(1).fixedSize(horizontal: false, vertical: true)
                     }
                     if hasDescriptionText, hasMetadataLines {
                         Rectangle().fill(Color.white.opacity(0.18)).frame(height: 1)
@@ -598,8 +598,8 @@ struct AnimatedMetadataGapContentView: View {
 
     func metadataLineRow(label: String, value: String, labelColumnWidth: CGFloat) -> some View {
         HStack(spacing: 8) {
-            Text("\(label):").font(.firstRowRegular(size: 21)).foregroundColor(.white.opacity(0.5)).frame(width: labelColumnWidth, alignment: .trailing)
-            Text(value).font(.firstRowRegular(size: 21)).foregroundColor(.white).lineLimit(1).truncationMode(.tail)
+            Text("\(label):").font(.firstRowRegular(size: 21)).foregroundStyleCompat(.white.opacity(0.5)).frame(width: labelColumnWidth, alignment: .trailing)
+            Text(value).font(.firstRowRegular(size: 21)).foregroundStyleCompat(.white).lineLimit(1).truncationMode(.tail)
         }
     }
 }

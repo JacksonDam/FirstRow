@@ -470,7 +470,7 @@ import SwiftUI
                 if Thread.isMainThread {
                     work()
                 } else {
-                    DispatchQueue.main.async(execute: work)
+                    Task { @MainActor in work() }
                 }
             }
         }
@@ -808,7 +808,7 @@ import SwiftUI
                 if Thread.isMainThread {
                     work()
                 } else {
-                    DispatchQueue.main.async(execute: work)
+                    Task { @MainActor in work() }
                 }
             }
         }

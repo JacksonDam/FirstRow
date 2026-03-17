@@ -102,9 +102,7 @@ struct PhotoSlideshowFullscreenView: View {
         }
         let clampedElapsed = min(max(0, elapsed), totalDuration)
         if !hasAlreadyFinished, clampedElapsed >= totalDuration {
-            DispatchQueue.main.async {
-                onFinished()
-            }
+            Task { @MainActor in onFinished() }
         }
         if imageCount == 1 {
             let progress = min(1, clampedElapsed / max(0.001, displayDuration))

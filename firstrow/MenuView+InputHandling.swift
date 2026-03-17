@@ -203,7 +203,9 @@ extension MenuView {
         if playSelectionSound {
             playSound(named: "Selection")
         }
-        let entryWorkItem = DispatchWorkItem {
+        submenuEntryWorkItem = Task {
+            try? await firstRowSleep(iconFlightAnimationDuration)
+            guard !Task.isCancelled else { return }
             guard isEnteringSubmenu, isIconAnimated, !isReturningToRoot else { return }
             headerText = chosenRootItem.title
             isInSubmenu = true
@@ -219,11 +221,6 @@ extension MenuView {
             }
             submenuEntryWorkItem = nil
         }
-        submenuEntryWorkItem = entryWorkItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + iconFlightAnimationDuration,
-            execute: entryWorkItem,
-        )
     }
 
     func returnToRootMenu(playExitSound: Bool = true) {
@@ -287,9 +284,7 @@ extension MenuView {
         _ = incrementRequestID(&moviesFolderSubmenuPreviewRequestID)
         _ = incrementRequestID(&musicPreviewRequestID)
 
-        DispatchQueue.main.async {
-            isIconAnimated = false
-        }
+        isIconAnimated = false
         withAnimation(.easeInOut(duration: submenuExitFadeDuration)) {
             submenuTitleOpacity = 0
             submenuOpacity = 0
@@ -302,7 +297,9 @@ extension MenuView {
         if playExitSound {
             playSound(named: "Exit")
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + rootRevealDelay) {
+        Task {
+            try? await firstRowSleep(rootRevealDelay)
+            guard !Task.isCancelled else { return }
             if shouldStopPodcastAudioAfterExitFade {
                 stopMusicPlaybackSession(clearDisplayState: true)
             }
@@ -576,22 +573,22 @@ extension MenuView {
         guard directoryEntry.isDirectory else { return }
         let selectedDirectory = directoryEntry.url.standardizedFileURL
         let parentDirectory = thirdMenuCurrentURL?.standardizedFileURL
-        DispatchQueue.global(qos: .userInitiated).async {
-            let hasNavigableContent = self.moviesFolderContainsNavigableContent(in: selectedDirectory)
-            DispatchQueue.main.async {
-                guard self.thirdMenuMode == .moviesFolder else { return }
-                guard self.thirdMenuCurrentURL?.standardizedFileURL == parentDirectory else { return }
-                guard self.thirdMenuItems.indices.contains(self.selectedThirdIndex) else { return }
-                let currentSelection = self.thirdMenuItems[self.selectedThirdIndex]
+        Task(priority: .userInitiated) {
+            let hasNavigableContent = moviesFolderContainsNavigableContent(in: selectedDirectory)
+            await MainActor.run {
+                guard thirdMenuMode == .moviesFolder else { return }
+                guard thirdMenuCurrentURL?.standardizedFileURL == parentDirectory else { return }
+                guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return }
+                let currentSelection = thirdMenuItems[selectedThirdIndex]
                 guard currentSelection.isDirectory else { return }
                 guard currentSelection.url.standardizedFileURL == selectedDirectory else { return }
                 if hasNavigableContent {
-                    self.rememberCurrentMoviesFolderSelectionIndex()
-                    self.transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
-                        self.loadThirdMenuDirectory(selectedDirectory, resetSelection: true)
+                    rememberCurrentMoviesFolderSelectionIndex()
+                    transitionMenuForFolderSwap(revealWhen: { !isLoadingMoviesFolderEntries }) {
+                        loadThirdMenuDirectory(selectedDirectory, resetSelection: true)
                     }
                 } else {
-                    self.presentFeatureErrorScreen(.noContentFound)
+                    presentFeatureErrorScreen(.noContentFound)
                 }
             }
         }
@@ -685,9 +682,7 @@ extension MenuView {
             viewportHeight: viewportHeight,
         ) else { return }
 
-        DispatchQueue.main.async {
-            selectedIndex = nextIndex
-        }
+        selectedIndex = nextIndex
     }
 
     func navigateSubmenuSelection(direction: Int, isRepeat: Bool) {
@@ -717,10 +712,8 @@ extension MenuView {
             viewportHeight: viewportHeight,
         ) else { return }
 
-        DispatchQueue.main.async {
-            selectedSubIndex = nextIndex
-            refreshDetailPreviewForCurrentContext()
-        }
+        selectedSubIndex = nextIndex
+        refreshDetailPreviewForCurrentContext()
     }
 
     func navigateThirdMenuSelection(direction: Int, isRepeat: Bool) {
@@ -737,10 +730,8 @@ extension MenuView {
             markSelectionAsMoving()
             playSound(named: "SelectionChange")
 
-            DispatchQueue.main.async {
-                selectedThirdIndex = nextIndex
-                rememberCurrentMoviesFolderSelectionIndex()
-            }
+            selectedThirdIndex = nextIndex
+            rememberCurrentMoviesFolderSelectionIndex()
             return
         }
         let listItems = thirdMenuListItems()
@@ -758,12 +749,10 @@ extension MenuView {
             viewportHeight: viewportHeight,
         ) else { return }
 
-        DispatchQueue.main.async {
-            selectedThirdIndex = nextIndex
-            rememberCurrentMoviesFolderSelectionIndex()
-            if !(activeRootItemID == "photos" && thirdMenuMode == .photosDateAlbums) {
-                refreshDetailPreviewForCurrentContext()
-            }
+        selectedThirdIndex = nextIndex
+        rememberCurrentMoviesFolderSelectionIndex()
+        if !(activeRootItemID == "photos" && thirdMenuMode == .photosDateAlbums) {
+            refreshDetailPreviewForCurrentContext()
         }
     }
 
@@ -779,15 +768,13 @@ extension MenuView {
 
         isMenuOverflowScrollingUp = true
         isMenuOverflowScrollingDown = true
-        let workItem = DispatchWorkItem {
+        let delay = selectionAnimationDuration + 0.02
+        overflowFadeWorkItem = Task {
+            try? await firstRowSleep(delay)
+            guard !Task.isCancelled else { return }
             isMenuOverflowScrollingUp = false
             isMenuOverflowScrollingDown = false
         }
-        overflowFadeWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + selectionAnimationDuration + 0.02,
-            execute: workItem,
-        )
     }
 
     func isDirectionalNavigationKey(_ key: KeyCode) -> Bool {
@@ -810,16 +797,13 @@ extension MenuView {
         activeDirectionalHoldKey = key
         directionalHoldPressStartTime = Date()
         handleKeyInput(key, isRepeat: false, modifiers: modifiers)
-        let startWorkItem = DispatchWorkItem {
+        directionalHoldStartWorkItem = Task {
+            try? await firstRowSleep(directionalHoldInitialDelay)
+            guard !Task.isCancelled else { return }
             guard activeDirectionalHoldKey == key else { return }
             directionalHoldRepeatPhaseStartTime = Date()
             scheduleDirectionalHoldTick(for: key, modifiers: modifiers)
         }
-        directionalHoldStartWorkItem = startWorkItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + directionalHoldInitialDelay,
-            execute: startWorkItem,
-        )
     }
 
     func scheduleDirectionalHoldTick(
@@ -831,13 +815,13 @@ extension MenuView {
         let elapsedInScrollingState = Date().timeIntervalSince(phaseStart)
         let totalHoldDuration = directionalHoldInitialDelay + elapsedInScrollingState
         let interval = minimumHoldRepeatInterval(for: totalHoldDuration)
-        let tickWorkItem = DispatchWorkItem {
+        directionalHoldTickWorkItem = Task {
+            try? await firstRowSleep(interval)
+            guard !Task.isCancelled else { return }
             guard activeDirectionalHoldKey == key else { return }
             handleKeyInput(key, isRepeat: true, modifiers: modifiers)
             scheduleDirectionalHoldTick(for: key, modifiers: modifiers)
         }
-        directionalHoldTickWorkItem = tickWorkItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + interval, execute: tickWorkItem)
     }
 
     func handleDirectionalPressEnded(_ key: KeyCode) {
@@ -955,17 +939,15 @@ extension MenuView {
             isSelectionSettled = false
         }
         settleWorkItem?.cancel()
-        let workItem = DispatchWorkItem {
+        let settleDelay = selectionAnimationDuration + 0.02
+        settleWorkItem = Task {
+            try? await firstRowSleep(settleDelay)
+            guard !Task.isCancelled else { return }
             isSelectionSettled = true
             if activeRootItemID == "photos", isInSubmenu {
                 refreshPhotosForCurrentContext()
             }
         }
-        settleWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + selectionAnimationDuration + 0.02,
-            execute: workItem,
-        )
     }
 
     func resetNavigationAccelerationState() {

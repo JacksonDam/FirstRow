@@ -118,8 +118,8 @@ struct MenuView: View {
     @State var isReturningToRoot = false
     @State var isMenuOverflowScrollingUp = false
     @State var isMenuOverflowScrollingDown = false
-    @State var submenuEntryWorkItem: DispatchWorkItem?
-    @State var overflowFadeWorkItem: DispatchWorkItem?
+    @State var submenuEntryWorkItem: Task<Void, Never>?
+    @State var overflowFadeWorkItem: Task<Void, Never>?
 
     // MARK: - Input handling state
 
@@ -129,12 +129,12 @@ struct MenuView: View {
     @State var selectionAnimationDuration: Double = 0.30
     @State var useLinearSelectionSweepAnimation = false
     @State var isSelectionSettled = true
-    @State var settleWorkItem: DispatchWorkItem?
+    @State var settleWorkItem: Task<Void, Never>?
     @State var didPlayLimitForCurrentHold = false
     @State var activeDirectionalHoldKey: KeyCode = .none
     @State var directionalHoldPressStartTime: Date?
-    @State var directionalHoldStartWorkItem: DispatchWorkItem?
-    @State var directionalHoldTickWorkItem: DispatchWorkItem?
+    @State var directionalHoldStartWorkItem: Task<Void, Never>?
+    @State var directionalHoldTickWorkItem: Task<Void, Never>?
     @State var directionalHoldRepeatPhaseStartTime: Date?
     @State var lastHoldNavigationTime: Date?
     @State var lastArrowNavigationInputTime: Date?
@@ -202,7 +202,7 @@ struct MenuView: View {
     @State var movieResumePromptOpacity: Double = 0
     @State var areMovieControlsVisible = false
     @State var movieControlsOpacity: Double = 0
-    @State var movieControlsHideWorkItem: DispatchWorkItem?
+    @State var movieControlsHideWorkItem: Task<Void, Never>?
     @State var movieControlsGlyphState: MoviePlaybackGlyphState = .pause
     @State var isMoviePreviewDownloadLoading = false
     @State var moviePreviewDownloadProgress: Double = 0
@@ -298,7 +298,7 @@ struct MenuView: View {
     @State var photoSlideshowMusicPlayer: AVPlayer?
     @State var observedPhotoSlideshowMusicPlayer: AVPlayer?
     @State var photoSlideshowMusicDidEndObserver: NSObjectProtocol?
-    @State var photoSlideshowMusicFallbackWorkItem: DispatchWorkItem?
+    @State var photoSlideshowMusicFallbackWorkItem: Task<Void, Never>?
     @State var photoSlideshowMusicHasStarted = false
     @State var photoSlideshowUsesAppleScriptMusic = false
 
@@ -330,7 +330,7 @@ struct MenuView: View {
     @State var musicNowPlayingFlipRotationDegrees: Double = 0
     @State var musicNowPlayingUsesAlternateLayout = false
     @State var musicNowPlayingFlipTimer: Timer?
-    @State var musicNowPlayingFlipMidpointWorkItem: DispatchWorkItem?
+    @State var musicNowPlayingFlipMidpointWorkItem: Task<Void, Never>?
     @State var musicNowPlayingFlipGeneration: Int = 0
     @State var isMusicNowPlayingFlipAnimating = false
     @State var musicAudioPlayer: AVPlayer?
@@ -346,7 +346,7 @@ struct MenuView: View {
     @State var musicScrubTimer: Timer?
     #if os(tvOS)
         @State var musicKitProgressTimer: Timer?
-        @State var musicKitScrubGlyphResetWorkItem: DispatchWorkItem?
+        @State var musicKitScrubGlyphResetWorkItem: Task<Void, Never>?
         @State var musicKitDidHandleTrackEnd = false
     #endif
 
@@ -363,9 +363,9 @@ struct MenuView: View {
     // MARK: - Screen saver state
 
     @State var screenSaverNowPlayingToastOpacity: Double = 0
-    @State var screenSaverNowPlayingToastHideWorkItem: DispatchWorkItem?
+    @State var screenSaverNowPlayingToastHideWorkItem: Task<Void, Never>?
     @State var screenSaverPendingMusicTrackSwitchDelta = 0
-    @State var screenSaverPendingMusicTrackSwitchWorkItem: DispatchWorkItem?
+    @State var screenSaverPendingMusicTrackSwitchWorkItem: Task<Void, Never>?
     @State var lastUserInteractionAt = Date()
     @State var screenSaverIdleMonitorTimer: Timer?
 

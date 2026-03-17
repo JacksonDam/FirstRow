@@ -117,23 +117,42 @@ extension MenuView {
 struct FeatureErrorFullscreenView: View {
     let headerText: String
     let subcaptionText: String
+
+    @ViewBuilder
+    private var headerTextContent: some View {
+        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+            ViewThatFits(in: .horizontal) {
+                Text(headerText)
+                    .font(.firstRowBold(size: 60))
+                    .foregroundStyleCompat(.white)
+                    .fixedSize(horizontal: true, vertical: false)
+                Text(headerText)
+                    .font(.firstRowBold(size: 60))
+                    .foregroundStyleCompat(.white)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 1092)
+            }
+        } else {
+            Text(headerText)
+                .font(.firstRowBold(size: 60))
+                .foregroundStyleCompat(.white)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 1092)
+        }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 15) {
-                HStack(spacing: 8) {
+                HStack(alignment: .top, spacing: 24) {
                     if let icon = NSImage(named: "ErrorTriangle_v1") ?? NSImage(named: "Alert!") {
                         Image(nsImage: icon).resizable().aspectRatio(contentMode: .fit).frame(width: 84, height: 84)
                     }
-                    Text(headerText)
-                        .font(.firstRowBold(size: 60))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 1200, alignment: .center)
-                        .offset(y: -12)
+                    headerTextContent.offset(y: -6)
                 }
                 if !subcaptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(subcaptionText).font(.firstRowBold(size: 30)).foregroundColor(.white).multilineTextAlignment(.center).lineSpacing(4)
+                    Text(subcaptionText).font(.firstRowBold(size: 30)).foregroundStyleCompat(.white).multilineTextAlignment(.center).lineSpacing(4)
                 }
             }.frame(maxWidth: 1500).offset(y: -160)
         }
@@ -147,9 +166,13 @@ struct FeatureLoadingFullscreenView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 42) {
-                Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).multilineTextAlignment(.center)
+                Text(headerText).font(.firstRowBold(size: 60)).foregroundStyleCompat(.white).multilineTextAlignment(.center)
                 if showsSpinner {
-                    ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(2.0).frame(width: 72, height: 72)
+                    if #available(macOS 12.0, iOS 15.0, tvOS 15.0, *) {
+                        ProgressView().progressViewStyle(.circular).tint(.white).scaleEffect(2.0).frame(width: 72, height: 72)
+                    } else {
+                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(2.0).frame(width: 72, height: 72)
+                    }
                 } else {
                     Color.clear.frame(width: 72, height: 72)
                 }

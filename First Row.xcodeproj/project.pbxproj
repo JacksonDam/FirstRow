@@ -92,6 +92,17 @@
 		7A73DEDF2F5777260021C281 /* firstrowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE822F5776A20021C281 /* firstrowTests.swift */; };
 		7A73DEE02F5778340021C281 /* First RowTests.xctest in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DEDD2F5777110021C281 /* First RowTests.xctest */; };
 		7A73DEE12F5778380021C281 /* First RowUITests.xctest in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DEDE2F5777110021C281 /* First RowUITests.xctest */; };
+		AA000002AAAAAAAAAAAA0001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0001 /* AppDelegate.swift */; };
+		AA000002AAAAAAAAAAAA0002 /* ArrowAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0002 /* ArrowAppearance.swift */; };
+		AA000002AAAAAAAAAAAA0003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0003 /* ContentView.swift */; };
+		AA000002AAAAAAAAAAAA0004 /* FullscreenSceneHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0004 /* FullscreenSceneHost.swift */; };
+		AA000002AAAAAAAAAAAA0005 /* IOSAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0005 /* IOSAppDelegate.swift */; };
+		AA000002AAAAAAAAAAAA0006 /* LaunchBackRemoteOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0006 /* LaunchBackRemoteOverlay.swift */; };
+		AA000002AAAAAAAAAAAA0007 /* LaunchBackTouchHoldOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0007 /* LaunchBackTouchHoldOverlay.swift */; };
+		AA000002AAAAAAAAAAAA0008 /* MenuListItemConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0008 /* MenuListItemConfig.swift */; };
+		AA000002AAAAAAAAAAAA0009 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0009 /* VideoPlayerView.swift */; };
+		AA000002AAAAAAAAAAAA0010 /* MusicNowPlayingArtworkPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0010 /* MusicNowPlayingArtworkPreview.swift */; };
+		AA000002AAAAAAAAAAAA0011 /* MusicNowPlayingLeadingGlyphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0011 /* MusicNowPlayingLeadingGlyphView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -199,6 +210,17 @@
 		7A73DEDC2F5777110021C281 /* First Row.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "First Row.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A73DEDD2F5777110021C281 /* First RowTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "First RowTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A73DEDE2F5777110021C281 /* First RowUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "First RowUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA000001AAAAAAAAAAAA0001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0002 /* ArrowAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArrowAppearance.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0003 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0004 /* FullscreenSceneHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullscreenSceneHost.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0005 /* IOSAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSAppDelegate.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0006 /* LaunchBackRemoteOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchBackRemoteOverlay.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0007 /* LaunchBackTouchHoldOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchBackTouchHoldOverlay.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0008 /* MenuListItemConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuListItemConfig.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0009 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0010 /* MusicNowPlayingArtworkPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingArtworkPreview.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0011 /* MusicNowPlayingLeadingGlyphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingLeadingGlyphView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -282,6 +304,8 @@
 				7A73DE352F5776A20021C281 /* MenuView+MusicLibrary.swift */,
 				7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */,
 				7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */,
+				AA000001AAAAAAAAAAAA0010 /* MusicNowPlayingArtworkPreview.swift */,
+				AA000001AAAAAAAAAAAA0011 /* MusicNowPlayingLeadingGlyphView.swift */,
 				7A73DE382F5776A20021C281 /* MusicNowPlayingFullscreenView.swift */,
 				7A73DE392F5776A20021C281 /* MusicPreviewGapContentView.swift */,
 				7A73DE3A2F5776A20021C281 /* MusicTopLevelCarouselGapContentView.swift */,
@@ -389,6 +413,15 @@
 				7A73DE632F5776A20021C281 /* Sounds */,
 				7A73DE652F5776A20021C281 /* TV.frappliance */,
 				7A73DE672F5776A20021C281 /* Videos */,
+				AA000001AAAAAAAAAAAA0001 /* AppDelegate.swift */,
+				AA000001AAAAAAAAAAAA0002 /* ArrowAppearance.swift */,
+				AA000001AAAAAAAAAAAA0003 /* ContentView.swift */,
+				AA000001AAAAAAAAAAAA0004 /* FullscreenSceneHost.swift */,
+				AA000001AAAAAAAAAAAA0005 /* IOSAppDelegate.swift */,
+				AA000001AAAAAAAAAAAA0006 /* LaunchBackRemoteOverlay.swift */,
+				AA000001AAAAAAAAAAAA0007 /* LaunchBackTouchHoldOverlay.swift */,
+				AA000001AAAAAAAAAAAA0008 /* MenuListItemConfig.swift */,
+				AA000001AAAAAAAAAAAA0009 /* VideoPlayerView.swift */,
 				7A73DE682F5776A20021C281 /* AppShell.swift */,
 				7A73DE692F5776A20021C281 /* Assets.xcassets */,
 				7A73DE6A2F5776A20021C281 /* FeatureErrorFullscreenView.swift */,
@@ -674,6 +707,17 @@
 				7A73DEB62F5776A20021C281 /* MenuView+MenuListItems.swift in Sources */,
 				7A73DEB72F5776A20021C281 /* MenuView+Podcasts.swift in Sources */,
 				7A73DEB82F5776A20021C281 /* MoviesMenuFeature.swift in Sources */,
+				AA000002AAAAAAAAAAAA0001 /* AppDelegate.swift in Sources */,
+				AA000002AAAAAAAAAAAA0002 /* ArrowAppearance.swift in Sources */,
+				AA000002AAAAAAAAAAAA0003 /* ContentView.swift in Sources */,
+				AA000002AAAAAAAAAAAA0004 /* FullscreenSceneHost.swift in Sources */,
+				AA000002AAAAAAAAAAAA0005 /* IOSAppDelegate.swift in Sources */,
+				AA000002AAAAAAAAAAAA0006 /* LaunchBackRemoteOverlay.swift in Sources */,
+				AA000002AAAAAAAAAAAA0007 /* LaunchBackTouchHoldOverlay.swift in Sources */,
+				AA000002AAAAAAAAAAAA0008 /* MenuListItemConfig.swift in Sources */,
+				AA000002AAAAAAAAAAAA0009 /* VideoPlayerView.swift in Sources */,
+				AA000002AAAAAAAAAAAA0010 /* MusicNowPlayingArtworkPreview.swift in Sources */,
+				AA000002AAAAAAAAAAAA0011 /* MusicNowPlayingLeadingGlyphView.swift in Sources */,
 				7A73DEB92F5776A20021C281 /* MenuView+ScreenSaverIdle.swift in Sources */,
 				7A73DEBA2F5776A20021C281 /* SharedCacheTypes.swift in Sources */,
 			);

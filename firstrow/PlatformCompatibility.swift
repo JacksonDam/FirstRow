@@ -53,6 +53,30 @@ struct FirstRowTimelineView<Content: View>: View {
     }
 }
 
+extension View {
+    @ViewBuilder
+    func foregroundStyleCompat(_ color: Color) -> some View {
+        if #available(macOS 14.0, iOS 17.0, tvOS 17.0, *) {
+            _applyForegroundStyle(color)
+        } else {
+            foregroundColor(color)
+        }
+    }
+
+    @available(macOS 14.0, iOS 17.0, tvOS 17.0, *)
+    private func _applyForegroundStyle(_ color: Color) -> some View {
+        foregroundStyle(color)
+    }
+}
+
+func firstRowSleep(_ seconds: Double) async throws {
+    if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+        try await Task.sleep(for: .seconds(seconds))
+    } else {
+        try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+    }
+}
+
 #if os(iOS) || os(tvOS)
     import UIKit
 

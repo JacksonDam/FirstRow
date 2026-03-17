@@ -213,23 +213,23 @@ extension MenuView {
                 self.finishStartupMusicLibraryPreload()
                 return
             }
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 do {
-                    let snapshot = try self.loadStartupMusicLibrarySnapshot()
-                    DispatchQueue.main.async {
-                        guard self.musicStartupPreloadRequestID == requestID else { return }
-                        self.musicAllSongsCache = snapshot.sortedSongs
-                        self.musicShuffleSongsCache = snapshot.shuffleSongs
+                    let snapshot = try loadStartupMusicLibrarySnapshot()
+                    await MainActor.run {
+                        guard musicStartupPreloadRequestID == requestID else { return }
+                        musicAllSongsCache = snapshot.sortedSongs
+                        musicShuffleSongsCache = snapshot.shuffleSongs
                         #if canImport(iTunesLibrary)
-                            self.musicLibraryItemIndexBySongID = snapshot.itemIndices
-                            self.musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
+                            musicLibraryItemIndexBySongID = snapshot.itemIndices
+                            musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
                         #endif
-                        self.finishStartupMusicLibraryPreload()
+                        finishStartupMusicLibraryPreload()
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        guard self.musicStartupPreloadRequestID == requestID else { return }
-                        self.finishStartupMusicLibraryPreload()
+                    await MainActor.run {
+                        guard musicStartupPreloadRequestID == requestID else { return }
+                        finishStartupMusicLibraryPreload()
                     }
                 }
             }
@@ -488,10 +488,10 @@ extension MenuView {
         requestID: Int,
         completion: @escaping ([MusicLibrarySongEntry]) -> Void,
     ) {
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task(priority: .userInitiated) {
             let shuffledSongs = songs.shuffled()
-            DispatchQueue.main.async {
-                guard self.musicShuffleRequestID == requestID else { return }
+            await MainActor.run {
+                guard musicShuffleRequestID == requestID else { return }
                 completion(shuffledSongs)
             }
         }
@@ -503,13 +503,13 @@ extension MenuView {
         requestID: Int,
         completion: @escaping ([MusicLibrarySongEntry]) -> Void,
     ) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let seededQueue = self.buildSeededShuffleQueue(
+        Task(priority: .userInitiated) {
+            let seededQueue = buildSeededShuffleQueue(
                 from: songs,
                 currentSong: currentSong,
             )
-            DispatchQueue.main.async {
-                guard self.musicShuffleRequestID == requestID else { return }
+            await MainActor.run {
+                guard musicShuffleRequestID == requestID else { return }
                 completion(seededQueue)
             }
         }
@@ -657,48 +657,48 @@ extension MenuView {
                 }
                 return
             }
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 do {
-                    let pageArtworks = try self.fetchMusicTopLevelCarouselArtworks(
+                    let pageArtworks = try fetchMusicTopLevelCarouselArtworks(
                         startIndex: resolvedStartIndex,
-                        limit: self.musicTopLevelCarouselArtworkLimit,
+                        limit: musicTopLevelCarouselArtworkLimit,
                     )
-                    DispatchQueue.main.async {
-                        guard self.musicTopLevelCarouselRequestID == activeRequestID else { return }
-                        self.musicTopLevelCarouselPageStartsInFlight.remove(resolvedStartIndex)
-                        guard let activeSelectedSubmenuID = self.selectedTopLevelMusicCarouselSubmenuID else {
-                            self.musicTopLevelCarouselActiveSubmenuID = nil
-                            self.isLoadingMusicTopLevelCarousel = !self.musicTopLevelCarouselPageStartsInFlight.isEmpty
-                            self.musicTopLevelCarouselLoadOverlayOpacity = 0
+                    await MainActor.run {
+                        guard musicTopLevelCarouselRequestID == activeRequestID else { return }
+                        musicTopLevelCarouselPageStartsInFlight.remove(resolvedStartIndex)
+                        guard let activeSelectedSubmenuID = selectedTopLevelMusicCarouselSubmenuID else {
+                            musicTopLevelCarouselActiveSubmenuID = nil
+                            isLoadingMusicTopLevelCarousel = !musicTopLevelCarouselPageStartsInFlight.isEmpty
+                            musicTopLevelCarouselLoadOverlayOpacity = 0
                             return
                         }
-                        self.musicTopLevelCarouselActiveSubmenuID = activeSelectedSubmenuID
+                        musicTopLevelCarouselActiveSubmenuID = activeSelectedSubmenuID
                         withTransaction(instant) {
                             for (pageOffset, artwork) in pageArtworks.enumerated() {
-                                self.musicTopLevelCarouselArtworksByIndex[resolvedStartIndex + pageOffset] = artwork
+                                musicTopLevelCarouselArtworksByIndex[resolvedStartIndex + pageOffset] = artwork
                             }
                         }
-                        self.musicTopLevelCarouselLoadedArtworkCount = max(
-                            self.musicTopLevelCarouselLoadedArtworkCount,
+                        musicTopLevelCarouselLoadedArtworkCount = max(
+                            musicTopLevelCarouselLoadedArtworkCount,
                             resolvedStartIndex + pageArtworks.count,
                         )
-                        if pageArtworks.count < self.musicTopLevelCarouselArtworkLimit {
-                            self.musicTopLevelCarouselResolvedArtworkCount = resolvedStartIndex + pageArtworks.count
+                        if pageArtworks.count < musicTopLevelCarouselArtworkLimit {
+                            musicTopLevelCarouselResolvedArtworkCount = resolvedStartIndex + pageArtworks.count
                         }
-                        self.isLoadingMusicTopLevelCarousel = !self.musicTopLevelCarouselPageStartsInFlight.isEmpty
+                        isLoadingMusicTopLevelCarousel = !musicTopLevelCarouselPageStartsInFlight.isEmpty
                         if showsOverlay {
                             withAnimation(.easeInOut(duration: 0.22)) {
-                                self.musicTopLevelCarouselLoadOverlayOpacity = 0
+                                musicTopLevelCarouselLoadOverlayOpacity = 0
                             }
                         }
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        guard self.musicTopLevelCarouselRequestID == activeRequestID else { return }
-                        self.musicTopLevelCarouselPageStartsInFlight.remove(resolvedStartIndex)
-                        self.isLoadingMusicTopLevelCarousel = !self.musicTopLevelCarouselPageStartsInFlight.isEmpty
+                    await MainActor.run {
+                        guard musicTopLevelCarouselRequestID == activeRequestID else { return }
+                        musicTopLevelCarouselPageStartsInFlight.remove(resolvedStartIndex)
+                        isLoadingMusicTopLevelCarousel = !musicTopLevelCarouselPageStartsInFlight.isEmpty
                         if showsOverlay {
-                            self.musicTopLevelCarouselLoadOverlayOpacity = 0
+                            musicTopLevelCarouselLoadOverlayOpacity = 0
                         }
                     }
                 }
@@ -1536,7 +1536,7 @@ extension MenuView {
                 completion(false)
             case .notDetermined:
                 MPMediaLibrary.requestAuthorization { newStatus in
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         completion(newStatus == .authorized)
                     }
                 }
@@ -1596,59 +1596,59 @@ extension MenuView {
                 }
                 return
             }
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 do {
                     #if canImport(iTunesLibrary)
                         let songs: [MusicLibrarySongEntry]
                         let itemIndices: [String: Int]
                         let artworkDataByAlbumKey: [String: Data]
                         if requestedMediaType == .songs {
-                            let result = try self.fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
+                            let result = try fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
                             songs = result.songs
                             itemIndices = result.itemIndices
                             artworkDataByAlbumKey = result.artworkDataByAlbumKey
                         } else {
-                            songs = try self.fetchMusicLibraryEntries(for: requestedMediaType)
+                            songs = try fetchMusicLibraryEntries(for: requestedMediaType)
                             itemIndices = [:]
-                            artworkDataByAlbumKey = self.musicLibraryArtworkDataByAlbumKey
+                            artworkDataByAlbumKey = musicLibraryArtworkDataByAlbumKey
                         }
                     #else
-                        let songs = try self.fetchMusicLibraryEntries(for: requestedMediaType)
+                        let songs = try fetchMusicLibraryEntries(for: requestedMediaType)
                     #endif
-                    DispatchQueue.main.async {
-                        guard self.musicSongsRequestID == requestID else { return }
-                        guard self.thirdMenuMode == .musicSongs else { return }
-                        guard !self.isMusicSongsCategoryScoped else { return }
-                        guard self.activeMusicLibraryMediaType == requestedMediaType else { return }
-                        self.isLoadingMusicSongs = false
+                    await MainActor.run {
+                        guard musicSongsRequestID == requestID else { return }
+                        guard thirdMenuMode == .musicSongs else { return }
+                        guard !isMusicSongsCategoryScoped else { return }
+                        guard activeMusicLibraryMediaType == requestedMediaType else { return }
+                        isLoadingMusicSongs = false
                         if requestedMediaType == .songs {
                             #if canImport(iTunesLibrary)
-                                self.musicLibraryItemIndexBySongID = itemIndices
-                                self.musicLibraryArtworkDataByAlbumKey = artworkDataByAlbumKey
+                                musicLibraryItemIndexBySongID = itemIndices
+                                musicLibraryArtworkDataByAlbumKey = artworkDataByAlbumKey
                             #endif
-                            self.musicAllSongsCache = songs
+                            musicAllSongsCache = songs
                         }
-                        self.musicSongsThirdMenuItems = songs
-                        let additionalShuffleRow = (self.musicSongsShowsShuffleAction && !songs.isEmpty) ? 1 : 0
+                        musicSongsThirdMenuItems = songs
+                        let additionalShuffleRow = (musicSongsShowsShuffleAction && !songs.isEmpty) ? 1 : 0
                         let maxSelectionIndex = max(0, (songs.count + additionalShuffleRow) - 1)
-                        self.selectedThirdIndex = min(self.selectedThirdIndex, maxSelectionIndex)
-                        self.musicSongsLoadError = nil
-                        self.refreshMusicPreviewForCurrentContext()
+                        selectedThirdIndex = min(selectedThirdIndex, maxSelectionIndex)
+                        musicSongsLoadError = nil
+                        refreshMusicPreviewForCurrentContext()
                         if songs.isEmpty {
-                            self.presentMusicLibraryEmptyError(for: requestedMediaType)
+                            presentMusicLibraryEmptyError(for: requestedMediaType)
                         }
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        guard self.musicSongsRequestID == requestID else { return }
-                        guard self.thirdMenuMode == .musicSongs else { return }
-                        guard !self.isMusicSongsCategoryScoped else { return }
-                        guard self.activeMusicLibraryMediaType == requestedMediaType else { return }
-                        self.isLoadingMusicSongs = false
-                        self.musicSongsThirdMenuItems = []
-                        self.selectedThirdIndex = 0
-                        self.musicSongsLoadError = self.musicLibraryErrorMessage(for: error)
-                        self.refreshMusicPreviewForCurrentContext()
+                    await MainActor.run {
+                        guard musicSongsRequestID == requestID else { return }
+                        guard thirdMenuMode == .musicSongs else { return }
+                        guard !isMusicSongsCategoryScoped else { return }
+                        guard activeMusicLibraryMediaType == requestedMediaType else { return }
+                        isLoadingMusicSongs = false
+                        musicSongsThirdMenuItems = []
+                        selectedThirdIndex = 0
+                        musicSongsLoadError = musicLibraryErrorMessage(for: error)
+                        refreshMusicPreviewForCurrentContext()
                     }
                 }
             }
@@ -1672,11 +1672,11 @@ extension MenuView {
                 return
             }
             let cachedSongs = self.musicAllSongsCache
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 do {
                     let categories: [MusicCategoryEntry]
                     if kind == .playlists {
-                        categories = try self.fetchMusicLibraryPlaylists()
+                        categories = try fetchMusicLibraryPlaylists()
                     } else {
                         let songs: [MusicLibrarySongEntry]
                         #if canImport(iTunesLibrary)
@@ -1686,51 +1686,51 @@ extension MenuView {
                         if let cachedSongs {
                             songs = cachedSongs
                             #if canImport(iTunesLibrary)
-                                itemIndices = self.musicLibraryItemIndexBySongID
-                                artworkDataByAlbumKey = self.musicLibraryArtworkDataByAlbumKey
+                                itemIndices = musicLibraryItemIndexBySongID
+                                artworkDataByAlbumKey = musicLibraryArtworkDataByAlbumKey
                             #endif
                         } else {
                             #if canImport(iTunesLibrary)
-                                let result = try self.fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
+                                let result = try fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
                                 songs = result.songs
                                 itemIndices = result.itemIndices
                                 artworkDataByAlbumKey = result.artworkDataByAlbumKey
                             #else
-                                songs = try self.fetchMusicLibrarySongs()
+                                songs = try fetchMusicLibrarySongs()
                             #endif
                         }
-                        categories = self.buildMusicCategoryEntries(from: songs, kind: kind)
-                        DispatchQueue.main.async {
-                            self.musicAllSongsCache = songs
+                        categories = buildMusicCategoryEntries(from: songs, kind: kind)
+                        await MainActor.run {
+                            musicAllSongsCache = songs
                             #if canImport(iTunesLibrary)
-                                self.musicLibraryItemIndexBySongID = itemIndices
-                                self.musicLibraryArtworkDataByAlbumKey = artworkDataByAlbumKey
+                                musicLibraryItemIndexBySongID = itemIndices
+                                musicLibraryArtworkDataByAlbumKey = artworkDataByAlbumKey
                             #endif
                         }
                     }
-                    DispatchQueue.main.async {
-                        guard self.musicSongsRequestID == requestID else { return }
-                        guard self.thirdMenuMode == .musicCategories else { return }
-                        guard self.activeMusicCategoryKind == kind else { return }
-                        self.isLoadingMusicSongs = false
-                        self.musicCategoryThirdMenuItems = categories
-                        self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, categories.count - 1))
-                        self.musicSongsLoadError = nil
-                        self.refreshMusicPreviewForCurrentContext()
+                    await MainActor.run {
+                        guard musicSongsRequestID == requestID else { return }
+                        guard thirdMenuMode == .musicCategories else { return }
+                        guard activeMusicCategoryKind == kind else { return }
+                        isLoadingMusicSongs = false
+                        musicCategoryThirdMenuItems = categories
+                        selectedThirdIndex = min(selectedThirdIndex, max(0, categories.count - 1))
+                        musicSongsLoadError = nil
+                        refreshMusicPreviewForCurrentContext()
                         if categories.isEmpty {
-                            self.presentMusicCategoryEmptyError(for: kind)
+                            presentMusicCategoryEmptyError(for: kind)
                         }
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        guard self.musicSongsRequestID == requestID else { return }
-                        guard self.thirdMenuMode == .musicCategories else { return }
-                        guard self.activeMusicCategoryKind == kind else { return }
-                        self.isLoadingMusicSongs = false
-                        self.musicCategoryThirdMenuItems = []
-                        self.selectedThirdIndex = 0
-                        self.musicSongsLoadError = self.musicLibraryErrorMessage(for: error)
-                        self.refreshMusicPreviewForCurrentContext()
+                    await MainActor.run {
+                        guard musicSongsRequestID == requestID else { return }
+                        guard thirdMenuMode == .musicCategories else { return }
+                        guard activeMusicCategoryKind == kind else { return }
+                        isLoadingMusicSongs = false
+                        musicCategoryThirdMenuItems = []
+                        selectedThirdIndex = 0
+                        musicSongsLoadError = musicLibraryErrorMessage(for: error)
+                        refreshMusicPreviewForCurrentContext()
                     }
                 }
             }
@@ -1829,35 +1829,35 @@ extension MenuView {
                 return
             }
             #if canImport(iTunesLibrary)
-                DispatchQueue.global(qos: .userInitiated).async {
+                Task(priority: .userInitiated) {
                     do {
-                        guard let seedSong = try self.fetchRandomMusicLibrarySongForShuffleSeed() else {
-                            DispatchQueue.main.async {
-                                guard self.musicSongsRequestID == requestID else { return }
-                                self.deferNowPlayingMenuItemUntilAfterFadeOut = false
-                                self.isLoadingMusicSongs = false
-                                self.musicSongsThirdMenuItems = []
-                                self.selectedThirdIndex = 0
-                                self.musicSongsLoadError = "No Songs in Music Library"
+                        guard let seedSong = try fetchRandomMusicLibrarySongForShuffleSeed() else {
+                            await MainActor.run {
+                                guard musicSongsRequestID == requestID else { return }
+                                deferNowPlayingMenuItemUntilAfterFadeOut = false
+                                isLoadingMusicSongs = false
+                                musicSongsThirdMenuItems = []
+                                selectedThirdIndex = 0
+                                musicSongsLoadError = "No Songs in Music Library"
                             }
                             return
                         }
-                        DispatchQueue.main.async {
-                            guard self.musicSongsRequestID == requestID else { return }
-                            self.applyResolvedRootMusicShufflePlayback(
+                        await MainActor.run {
+                            guard musicSongsRequestID == requestID else { return }
+                            applyResolvedRootMusicShufflePlayback(
                                 with: [seedSong],
                                 usingExistingBlackout: usingExistingBlackout,
                             )
                         }
-                        let result = try self.fetchMusicLibrarySongsForShuffleWithItemIndices()
-                        DispatchQueue.main.async {
-                            guard self.musicSongsRequestID == requestID else { return }
-                            self.musicLibraryItemIndexBySongID = result.itemIndices
-                            self.musicLibraryArtworkDataByAlbumKey = result.artworkDataByAlbumKey
-                            self.musicShuffleSongsCache = result.songs
-                            guard self.activeMusicPlaybackSongID == seedSong.id else { return }
-                            let shuffleRequestID = incrementRequestID(&self.musicShuffleRequestID)
-                            self.requestSeededShuffleQueue(
+                        let result = try fetchMusicLibrarySongsForShuffleWithItemIndices()
+                        await MainActor.run {
+                            guard musicSongsRequestID == requestID else { return }
+                            musicLibraryItemIndexBySongID = result.itemIndices
+                            musicLibraryArtworkDataByAlbumKey = result.artworkDataByAlbumKey
+                            musicShuffleSongsCache = result.songs
+                            guard activeMusicPlaybackSongID == seedSong.id else { return }
+                            let shuffleRequestID = incrementRequestID(&musicShuffleRequestID)
+                            requestSeededShuffleQueue(
                                 from: result.songs,
                                 currentSong: seedSong,
                                 requestID: shuffleRequestID,
@@ -1869,37 +1869,37 @@ extension MenuView {
                             }
                         }
                     } catch {
-                        DispatchQueue.main.async {
-                            guard self.musicSongsRequestID == requestID else { return }
-                            self.deferNowPlayingMenuItemUntilAfterFadeOut = false
-                            self.isLoadingMusicSongs = false
-                            self.musicSongsThirdMenuItems = []
-                            self.selectedThirdIndex = 0
-                            self.musicSongsLoadError = self.musicLibraryErrorMessage(for: error)
+                        await MainActor.run {
+                            guard musicSongsRequestID == requestID else { return }
+                            deferNowPlayingMenuItemUntilAfterFadeOut = false
+                            isLoadingMusicSongs = false
+                            musicSongsThirdMenuItems = []
+                            selectedThirdIndex = 0
+                            musicSongsLoadError = musicLibraryErrorMessage(for: error)
                         }
                     }
                 }
                 return
             #else
-                DispatchQueue.global(qos: .userInitiated).async {
+                Task(priority: .userInitiated) {
                     do {
-                        let songs = try self.fetchMusicLibrarySongsForShuffle()
-                        DispatchQueue.main.async {
-                            guard self.musicSongsRequestID == requestID else { return }
-                            self.musicShuffleSongsCache = songs
-                            self.applyRootMusicShufflePlayback(
+                        let songs = try fetchMusicLibrarySongsForShuffle()
+                        await MainActor.run {
+                            guard musicSongsRequestID == requestID else { return }
+                            musicShuffleSongsCache = songs
+                            applyRootMusicShufflePlayback(
                                 with: songs,
                                 usingExistingBlackout: usingExistingBlackout,
                             )
                         }
                     } catch {
-                        DispatchQueue.main.async {
-                            guard self.musicSongsRequestID == requestID else { return }
-                            self.deferNowPlayingMenuItemUntilAfterFadeOut = false
-                            self.isLoadingMusicSongs = false
-                            self.musicSongsThirdMenuItems = []
-                            self.selectedThirdIndex = 0
-                            self.musicSongsLoadError = self.musicLibraryErrorMessage(for: error)
+                        await MainActor.run {
+                            guard musicSongsRequestID == requestID else { return }
+                            deferNowPlayingMenuItemUntilAfterFadeOut = false
+                            isLoadingMusicSongs = false
+                            musicSongsThirdMenuItems = []
+                            selectedThirdIndex = 0
+                            musicSongsLoadError = musicLibraryErrorMessage(for: error)
                         }
                     }
                 }
@@ -2006,7 +2006,8 @@ extension MenuView {
             guard activeFullscreenScene == nil else { return }
             guard !isMovieTransitioning, !isFullscreenSceneTransitioning else {
                 guard retryCount < 60 else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                Task {
+                    try? await firstRowSleep(0.05)
                     presentWhenReady(retryCount: retryCount + 1)
                 }
                 return

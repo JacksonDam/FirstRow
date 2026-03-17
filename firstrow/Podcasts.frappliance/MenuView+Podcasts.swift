@@ -358,38 +358,38 @@ extension MenuView {
                 self.beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
                 return
             }
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 do {
-                    let series = try self.loadDownloadedPodcastSeries()
-                    DispatchQueue.main.async {
-                        guard self.podcastsRequestID == requestID else { return }
-                        self.isResolvingPodcastsRootSelection = false
-                        self.isLoadingPodcasts = false
-                        self.podcastSeriesItems = series
-                        self.podcastEpisodesThirdMenuItems = []
-                        self.activePodcastSeriesID = nil
-                        self.podcastsHasLoadedAtLeastOnce = true
-                        self.podcastsLoadError = nil
-                        self.hasPresentedNoPodcastsErrorInCurrentSession = false
-                        guard !self.isInSubmenu, !self.isEnteringSubmenu else { return }
+                    let series = try loadDownloadedPodcastSeries()
+                    await MainActor.run {
+                        guard podcastsRequestID == requestID else { return }
+                        isResolvingPodcastsRootSelection = false
+                        isLoadingPodcasts = false
+                        podcastSeriesItems = series
+                        podcastEpisodesThirdMenuItems = []
+                        activePodcastSeriesID = nil
+                        podcastsHasLoadedAtLeastOnce = true
+                        podcastsLoadError = nil
+                        hasPresentedNoPodcastsErrorInCurrentSession = false
+                        guard !isInSubmenu, !isEnteringSubmenu else { return }
                         if series.isEmpty {
-                            self.presentNoPodcastsFeatureErrorScreen()
+                            presentNoPodcastsFeatureErrorScreen()
                         } else {
-                            self.beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
+                            beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
                         }
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        guard self.podcastsRequestID == requestID else { return }
-                        self.isResolvingPodcastsRootSelection = false
-                        self.isLoadingPodcasts = false
-                        self.podcastSeriesItems = []
-                        self.podcastEpisodesThirdMenuItems = []
-                        self.activePodcastSeriesID = nil
-                        self.podcastsHasLoadedAtLeastOnce = true
-                        self.podcastsLoadError = self.podcastsLibraryErrorMessage(for: error)
-                        guard !self.isInSubmenu, !self.isEnteringSubmenu else { return }
-                        self.beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
+                    await MainActor.run {
+                        guard podcastsRequestID == requestID else { return }
+                        isResolvingPodcastsRootSelection = false
+                        isLoadingPodcasts = false
+                        podcastSeriesItems = []
+                        podcastEpisodesThirdMenuItems = []
+                        activePodcastSeriesID = nil
+                        podcastsHasLoadedAtLeastOnce = true
+                        podcastsLoadError = podcastsLibraryErrorMessage(for: error)
+                        guard !isInSubmenu, !isEnteringSubmenu else { return }
+                        beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
                     }
                 }
             }
@@ -414,37 +414,37 @@ extension MenuView {
                 self.podcastsLoadError = "Podcasts library access denied"
                 return
             }
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 do {
-                    let series = try self.loadDownloadedPodcastSeries()
-                    DispatchQueue.main.async {
-                        guard self.podcastsRequestID == requestID else { return }
-                        guard self.activeRootItemID == "podcasts", self.isInSubmenu else { return }
-                        self.isLoadingPodcasts = false
-                        self.podcastSeriesItems = series
-                        self.podcastsHasLoadedAtLeastOnce = true
-                        self.podcastsLoadError = nil
-                        if self.isInThirdMenu, self.thirdMenuMode == .podcastsEpisodes {
-                            self.syncPodcastEpisodesForActiveSeries()
+                    let series = try loadDownloadedPodcastSeries()
+                    await MainActor.run {
+                        guard podcastsRequestID == requestID else { return }
+                        guard activeRootItemID == "podcasts", isInSubmenu else { return }
+                        isLoadingPodcasts = false
+                        podcastSeriesItems = series
+                        podcastsHasLoadedAtLeastOnce = true
+                        podcastsLoadError = nil
+                        if isInThirdMenu, thirdMenuMode == .podcastsEpisodes {
+                            syncPodcastEpisodesForActiveSeries()
                         } else {
-                            self.selectedSubIndex = min(
-                                self.selectedSubIndex,
-                                max(0, self.podcastSeriesItems.count - 1),
+                            selectedSubIndex = min(
+                                selectedSubIndex,
+                                max(0, podcastSeriesItems.count - 1),
                             )
-                            self.syncPodcastSubmenuSelectionForActiveSeries()
+                            syncPodcastSubmenuSelectionForActiveSeries()
                         }
-                        self.refreshDetailPreviewForCurrentContext()
+                        refreshDetailPreviewForCurrentContext()
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        guard self.podcastsRequestID == requestID else { return }
-                        guard self.activeRootItemID == "podcasts", self.isInSubmenu else { return }
-                        self.isLoadingPodcasts = false
-                        self.podcastSeriesItems = []
-                        self.podcastEpisodesThirdMenuItems = []
-                        self.activePodcastSeriesID = nil
-                        self.podcastsHasLoadedAtLeastOnce = true
-                        self.podcastsLoadError = self.podcastsLibraryErrorMessage(for: error)
+                    await MainActor.run {
+                        guard podcastsRequestID == requestID else { return }
+                        guard activeRootItemID == "podcasts", isInSubmenu else { return }
+                        isLoadingPodcasts = false
+                        podcastSeriesItems = []
+                        podcastEpisodesThirdMenuItems = []
+                        activePodcastSeriesID = nil
+                        podcastsHasLoadedAtLeastOnce = true
+                        podcastsLoadError = podcastsLibraryErrorMessage(for: error)
                     }
                 }
             }
@@ -469,7 +469,7 @@ extension MenuView {
                 completion(false)
             case .notDetermined:
                 MPMediaLibrary.requestAuthorization { newStatus in
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         completion(newStatus == .authorized)
                     }
                 }
@@ -1208,15 +1208,7 @@ extension MenuView {
         guard durationSeconds.isFinite, durationSeconds > 0 else {
             return "--:--"
         }
-        let wholeSeconds = Int(durationSeconds.rounded())
-        let seconds = wholeSeconds % 60
-        let totalMinutes = wholeSeconds / 60
-        let minutes = totalMinutes % 60
-        let hours = totalMinutes / 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
+        return formatfirstRowPlaybackTime(durationSeconds)
     }
 
     func podcastEpisodeAiredText(for date: Date?) -> String {

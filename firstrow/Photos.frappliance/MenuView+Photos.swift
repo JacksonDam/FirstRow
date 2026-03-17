@@ -302,17 +302,17 @@ extension MenuView {
             if self.shouldAbortPhotosCarouselArtworkLoad(requestID: requestID, identity: identity) {
                 return
             }
-            DispatchQueue.main.async {
-                guard self.photosCarouselRequestID == requestID else { return }
-                guard self.photosCarouselIdentity == identity else { return }
-                guard self.shouldUsePhotosCarouselSlot else { return }
+            Task { @MainActor in
+                guard photosCarouselRequestID == requestID else { return }
+                guard photosCarouselIdentity == identity else { return }
+                guard shouldUsePhotosCarouselSlot else { return }
                 var instant = Transaction()
                 instant.disablesAnimations = true
                 withTransaction(instant) {
-                    self.photosCarouselArtworks = images
+                    photosCarouselArtworks = images
                 }
                 withAnimation(.easeInOut(duration: 0.22)) {
-                    self.photosCarouselLoadOverlayOpacity = 0
+                    photosCarouselLoadOverlayOpacity = 0
                 }
             }
         }
@@ -366,21 +366,21 @@ extension MenuView {
                 self.refreshPhotosCarouselForCurrentContext()
                 return
             }
-            DispatchQueue.global(qos: .userInitiated).async {
-                let loadedAlbums = self.loadPhotoLibraryAlbums()
-                DispatchQueue.main.async {
-                    guard self.photoLibraryRequestID == requestID else { return }
-                    guard self.activeRootItemID == "photos", self.isInSubmenu else { return }
-                    self.isLoadingPhotoLibrary = false
-                    self.photosDateAlbums = loadedAlbums.dateAlbums
-                    self.photosDateAlbumMenuItems = self.makePhotosDateAlbumMenuItems(from: loadedAlbums.dateAlbums)
-                    self.photosLastTwelveMonthsAlbum = loadedAlbums.lastTwelveMonths
-                    self.photoLibraryHasLoadedAtLeastOnce = true
-                    self.photoLibraryLoadError = nil
-                    self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, self.photosDateAlbums.count - 1))
-                    self.refreshPhotosForCurrentContext()
-                    if self.thirdMenuMode == .photosDateAlbums, self.photosDateAlbums.isEmpty {
-                        self.abortPhotosDateAlbumsMenuEntryForEmptyLibrary()
+            Task(priority: .userInitiated) {
+                let loadedAlbums = loadPhotoLibraryAlbums()
+                await MainActor.run {
+                    guard photoLibraryRequestID == requestID else { return }
+                    guard activeRootItemID == "photos", isInSubmenu else { return }
+                    isLoadingPhotoLibrary = false
+                    photosDateAlbums = loadedAlbums.dateAlbums
+                    photosDateAlbumMenuItems = makePhotosDateAlbumMenuItems(from: loadedAlbums.dateAlbums)
+                    photosLastTwelveMonthsAlbum = loadedAlbums.lastTwelveMonths
+                    photoLibraryHasLoadedAtLeastOnce = true
+                    photoLibraryLoadError = nil
+                    selectedThirdIndex = min(selectedThirdIndex, max(0, photosDateAlbums.count - 1))
+                    refreshPhotosForCurrentContext()
+                    if thirdMenuMode == .photosDateAlbums, photosDateAlbums.isEmpty {
+                        abortPhotosDateAlbumsMenuEntryForEmptyLibrary()
                     }
                 }
             }
@@ -397,7 +397,7 @@ extension MenuView {
                 completion(false)
             case .notDetermined:
                 PHPhotoLibrary.requestAuthorization(for: .readWrite) { newStatus in
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         completion(newStatus == .authorized || newStatus == .limited)
                     }
                 }
@@ -494,27 +494,31 @@ extension MenuView {
             fullscreenTransitionOverlayOpacity = 1
         }
         let menuHideDelay = photoSlideshowMenuFadeDuration + fullscreenOverlayBlackoutSafetyDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + menuHideDelay) {
-            guard self.photoSlideshowRequestID == requestID else { return }
+        Task {
+            try? await firstRowSleep(menuHideDelay)
+            guard !Task.isCancelled else { return }
+            guard photoSlideshowRequestID == requestID else { return }
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
-                self.fullscreenTransitionOverlayOpacity = 1
-                self.menuSceneOpacity = 0
+                fullscreenTransitionOverlayOpacity = 1
+                menuSceneOpacity = 0
             }
         }
         loadPhotoSlideshowImages(for: album, requestID: requestID)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            guard self.photoSlideshowRequestID == requestID else { return }
-            self.activeFullscreenScene = FullscreenScenePresentation(key: self.photoSlideshowFullscreenKey, payload: [:])
+        Task {
+            try? await firstRowSleep(2.0)
+            guard !Task.isCancelled else { return }
+            guard photoSlideshowRequestID == requestID else { return }
+            activeFullscreenScene = FullscreenScenePresentation(key: photoSlideshowFullscreenKey, payload: [:])
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
-                self.fullscreenSceneOpacity = 1
-                self.fullscreenTransitionOverlayOpacity = 0
+                fullscreenSceneOpacity = 1
+                fullscreenTransitionOverlayOpacity = 0
             }
-            self.isFullscreenSceneTransitioning = false
-            self.resolvePhotoSlideshowMusicURL(forRequestID: requestID)
+            isFullscreenSceneTransitioning = false
+            resolvePhotoSlideshowMusicURL(forRequestID: requestID)
         }
     }
 
@@ -533,7 +537,7 @@ extension MenuView {
                 self.startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded()
                 return
             }
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 let resolvedSong: MusicLibrarySongEntry?
                 let snapshot: (
                     sortedSongs: [MusicLibrarySongEntry],
@@ -542,26 +546,26 @@ extension MenuView {
                     artworkDataByAlbumKey: [String: Data],
                 )?
                 do {
-                    let loadedSnapshot = try self.loadStartupMusicLibrarySnapshot()
+                    let loadedSnapshot = try loadStartupMusicLibrarySnapshot()
                     snapshot = loadedSnapshot
                     resolvedSong = loadedSnapshot.shuffleSongs.randomElement()
                 } catch {
                     snapshot = nil
                     resolvedSong = nil
                 }
-                DispatchQueue.main.async {
-                    guard self.photoSlideshowRequestID == requestID else { return }
+                await MainActor.run {
+                    guard photoSlideshowRequestID == requestID else { return }
                     if let snapshot {
-                        self.musicAllSongsCache = snapshot.sortedSongs
-                        self.musicShuffleSongsCache = snapshot.shuffleSongs
+                        musicAllSongsCache = snapshot.sortedSongs
+                        musicShuffleSongsCache = snapshot.shuffleSongs
                         #if canImport(iTunesLibrary)
-                            self.musicLibraryItemIndexBySongID = snapshot.itemIndices
-                            self.musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
+                            musicLibraryItemIndexBySongID = snapshot.itemIndices
+                            musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
                         #endif
                     }
-                    self.photoSlideshowResolvedMusicEntry = resolvedSong
-                    self.photoSlideshowMusicURL = resolvedSong == nil ? self.defaultPhotoSlideshowMusicURL() : nil
-                    self.startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded()
+                    photoSlideshowResolvedMusicEntry = resolvedSong
+                    photoSlideshowMusicURL = resolvedSong == nil ? defaultPhotoSlideshowMusicURL() : nil
+                    startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded()
                 }
             }
         }
@@ -577,42 +581,42 @@ extension MenuView {
 
     func loadPhotoSlideshowImages(for album: PhotoLibraryAlbumEntry, requestID: Int) {
         let identifiers = album.assetLocalIdentifiers
-        DispatchQueue.main.async {
-            guard self.photoSlideshowRequestID == requestID else { return }
-            self.photoSlideshowAssetLocalIdentifiers = identifiers
-            self.photoSlideshowImageCache = [:]
-            self.photoSlideshowImageRequestsInFlight = []
-            self.photoSlideshowImageFallbackAttempted = []
-            self.photoSlideshowVisiblePrimaryIndex = 0
-            self.photoSlideshowVisibleSecondaryIndex = nil
-            if identifiers.isEmpty {
-                if self.activeFullscreenScene?.key == self.photoSlideshowFullscreenKey {
-                    self.handlePhotoSlideshowPlaybackFinished()
-                } else {
-                    self.stopPhotoSlideshowMusic()
-                    self.resetPhotoSlideshowState()
-                    var instant = Transaction()
-                    instant.disablesAnimations = true
-                    withTransaction(instant) {
-                        self.menuSceneOpacity = 1
-                    }
-                    withAnimation(.easeInOut(duration: self.photoSlideshowMenuRevealDuration)) {
-                        self.fullscreenTransitionOverlayOpacity = 0
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + self.photoSlideshowMenuRevealDuration) {
-                        guard self.photoSlideshowRequestID == requestID else { return }
-                        self.resetScreenSaverIdleTimer()
-                        self.isFullscreenSceneTransitioning = false
-                    }
+        guard photoSlideshowRequestID == requestID else { return }
+        photoSlideshowAssetLocalIdentifiers = identifiers
+        photoSlideshowImageCache = [:]
+        photoSlideshowImageRequestsInFlight = []
+        photoSlideshowImageFallbackAttempted = []
+        photoSlideshowVisiblePrimaryIndex = 0
+        photoSlideshowVisibleSecondaryIndex = nil
+        if identifiers.isEmpty {
+            if activeFullscreenScene?.key == photoSlideshowFullscreenKey {
+                handlePhotoSlideshowPlaybackFinished()
+            } else {
+                stopPhotoSlideshowMusic()
+                resetPhotoSlideshowState()
+                var instant = Transaction()
+                instant.disablesAnimations = true
+                withTransaction(instant) {
+                    menuSceneOpacity = 1
                 }
-                return
+                withAnimation(.easeInOut(duration: photoSlideshowMenuRevealDuration)) {
+                    fullscreenTransitionOverlayOpacity = 0
+                }
+                Task {
+                    try? await firstRowSleep(photoSlideshowMenuRevealDuration)
+                    guard !Task.isCancelled else { return }
+                    guard photoSlideshowRequestID == requestID else { return }
+                    resetScreenSaverIdleTimer()
+                    isFullscreenSceneTransitioning = false
+                }
             }
-            self.prefetchPhotoSlideshowImages(
-                aroundPrimaryIndex: 0,
-                secondaryIndex: nil,
-                requestID: requestID,
-            )
+            return
         }
+        prefetchPhotoSlideshowImages(
+            aroundPrimaryIndex: 0,
+            secondaryIndex: nil,
+            requestID: requestID,
+        )
     }
 
     func startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded() {
@@ -818,30 +822,32 @@ extension MenuView {
             fullscreenSceneOpacity = 0
         }
         let sceneDismissDelay = photoSlideshowMenuFadeDuration + fullscreenOverlayBlackoutSafetyDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + sceneDismissDelay) {
-            guard self.isFullscreenSceneTransitioning else { return }
+        Task {
+            try? await firstRowSleep(sceneDismissDelay)
+            guard !Task.isCancelled else { return }
+            guard isFullscreenSceneTransitioning else { return }
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
-                self.fullscreenTransitionOverlayOpacity = 1
+                fullscreenTransitionOverlayOpacity = 1
             }
             activeFullscreenScene = nil
             stopPhotoSlideshowMusic()
             resetPhotoSlideshowState()
-            DispatchQueue.main.asyncAfter(deadline: .now() + photoSlideshowExitHoldDuration) {
-                var instant = Transaction()
-                instant.disablesAnimations = true
-                withTransaction(instant) {
-                    menuSceneOpacity = 1
-                }
-                withAnimation(.easeInOut(duration: photoSlideshowMenuRevealDuration)) {
-                    fullscreenTransitionOverlayOpacity = 0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + photoSlideshowMenuRevealDuration) {
-                    resetScreenSaverIdleTimer()
-                    isFullscreenSceneTransitioning = false
-                }
+            try? await firstRowSleep(photoSlideshowExitHoldDuration)
+            guard !Task.isCancelled else { return }
+            var instant2 = Transaction()
+            instant2.disablesAnimations = true
+            withTransaction(instant2) {
+                menuSceneOpacity = 1
             }
+            withAnimation(.easeInOut(duration: photoSlideshowMenuRevealDuration)) {
+                fullscreenTransitionOverlayOpacity = 0
+            }
+            try? await firstRowSleep(photoSlideshowMenuRevealDuration)
+            guard !Task.isCancelled else { return }
+            resetScreenSaverIdleTimer()
+            isFullscreenSceneTransitioning = false
         }
     }
 
@@ -1120,9 +1126,7 @@ extension MenuView {
                 if Thread.isMainThread {
                     completion(nil)
                 } else {
-                    DispatchQueue.main.async {
-                        completion(nil)
-                    }
+                    Task { @MainActor in completion(nil) }
                 }
                 return
             }
@@ -1142,9 +1146,7 @@ extension MenuView {
                     if Thread.isMainThread {
                         completion(nil)
                     } else {
-                        DispatchQueue.main.async {
-                            completion(nil)
-                        }
+                        Task { @MainActor in completion(nil) }
                     }
                     return
                 }
@@ -1155,9 +1157,7 @@ extension MenuView {
                 if Thread.isMainThread {
                     completion(image)
                 } else {
-                    DispatchQueue.main.async {
-                        completion(image)
-                    }
+                    Task { @MainActor in completion(image) }
                 }
             }
         }

@@ -375,7 +375,7 @@ extension MenuView {
                 end if
             end tell
             """
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 var error: NSDictionary?
                 NSAppleScript(source: source)?.executeAndReturnError(&error)
                 if let error { print("[AppleScript] playback error: \(error)") }
@@ -390,7 +390,7 @@ extension MenuView {
                 end if
             end tell
             """
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 var error: NSDictionary?
                 NSAppleScript(source: source)?.executeAndReturnError(&error)
                 if let error { print("[AppleScript] pause error: \(error)") }
@@ -617,16 +617,16 @@ extension MenuView {
             musicNowPlayingElapsedSeconds = target
             musicNowPlayingLeadingGlyphState = direction > 0 ? .fastForward(1) : .rewind(1)
             musicKitScrubGlyphResetWorkItem?.cancel()
-            let workItem = DispatchWorkItem {
-                guard self.musicScrubDirection == 0 else { return }
-                if self.isMusicPlaybackRunning() {
-                    self.musicNowPlayingLeadingGlyphState = nil
+            musicKitScrubGlyphResetWorkItem = Task {
+                try? await firstRowSleep(0.22)
+                guard !Task.isCancelled else { return }
+                guard musicScrubDirection == 0 else { return }
+                if isMusicPlaybackRunning() {
+                    musicNowPlayingLeadingGlyphState = nil
                 } else {
-                    self.musicNowPlayingLeadingGlyphState = .pause
+                    musicNowPlayingLeadingGlyphState = .pause
                 }
             }
-            musicKitScrubGlyphResetWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: workItem)
         }
     #endif
     func stopMusicPlaybackSession(clearDisplayState: Bool = true) {
@@ -739,7 +739,9 @@ extension MenuView {
         let spinSign: Double = musicNowPlayingUsesAlternateLayout ? 1 : -1
         let halfTurnDegrees = 90.0 * spinSign
         musicNowPlayingFlipMidpointWorkItem?.cancel()
-        let midpointWorkItem = DispatchWorkItem {
+        musicNowPlayingFlipMidpointWorkItem = Task {
+            try? await firstRowSleep(halfDuration)
+            guard !Task.isCancelled else { return }
             guard generation == musicNowPlayingFlipGeneration else { return }
             guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
             musicNowPlayingUsesAlternateLayout.toggle()
@@ -751,13 +753,11 @@ extension MenuView {
             withAnimation(.linear(duration: halfDuration)) {
                 musicNowPlayingFlipRotationDegrees = 0
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + halfDuration) {
-                guard generation == self.musicNowPlayingFlipGeneration else { return }
-                self.isMusicNowPlayingFlipAnimating = false
-            }
+            try? await firstRowSleep(halfDuration)
+            guard !Task.isCancelled else { return }
+            guard generation == musicNowPlayingFlipGeneration else { return }
+            isMusicNowPlayingFlipAnimating = false
         }
-        musicNowPlayingFlipMidpointWorkItem = midpointWorkItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + halfDuration, execute: midpointWorkItem)
         withAnimation(.linear(duration: halfDuration)) {
             musicNowPlayingFlipRotationDegrees = halfTurnDegrees
         }
@@ -829,27 +829,25 @@ extension MenuView {
                 {
                     selectedThirdIndex = targetIndex
                 }
-                DispatchQueue.main.async {
-                    guard self.musicSongTransitionRequestID == transitionGeneration else { return }
-                    let outgoingFadeAnimation: Animation = direction > 0
-                        ? .easeOut(duration: musicSongOutgoingFadeDuration)
-                        : .easeInOut(duration: musicSongSwitchTransitionDuration)
-                    withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
-                        musicSongTransitionOutgoingProgress = 1
-                    }
-                    withAnimation(outgoingFadeAnimation) {
-                        musicSongTransitionOutgoingOpacityProgress = 1
-                    }
+                guard musicSongTransitionRequestID == transitionGeneration else { return }
+                let outgoingFadeAnimation: Animation = direction > 0
+                    ? .easeOut(duration: musicSongOutgoingFadeDuration)
+                    : .easeInOut(duration: musicSongSwitchTransitionDuration)
+                withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
+                    musicSongTransitionOutgoingProgress = 1
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + musicSongIncomingTransitionDelay) {
+                withAnimation(outgoingFadeAnimation) {
+                    musicSongTransitionOutgoingOpacityProgress = 1
+                }
+                Task {
+                    try? await firstRowSleep(musicSongIncomingTransitionDelay)
+                    guard !Task.isCancelled else { return }
                     guard self.musicSongTransitionRequestID == transitionGeneration else { return }
                     withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
                         musicSongTransitionIncomingProgress = 1
                     }
-                }
-                DispatchQueue.main.asyncAfter(
-                    deadline: .now() + musicSongIncomingTransitionDelay + musicSongSwitchTransitionDuration,
-                ) {
+                    try? await firstRowSleep(musicSongSwitchTransitionDuration)
+                    guard !Task.isCancelled else { return }
                     guard self.musicSongTransitionRequestID == transitionGeneration else { return }
                     clearMusicSongSwitchTransitionState()
                     updateMusicNowPlayingFlipTimerState()
@@ -912,27 +910,25 @@ extension MenuView {
             resetTransitionState: false,
             playbackQueue: playbackQueue,
         )
-        DispatchQueue.main.async {
-            guard self.musicSongTransitionRequestID == transitionGeneration else { return }
-            let outgoingFadeAnimation: Animation = direction > 0
-                ? .easeOut(duration: musicSongOutgoingFadeDuration)
-                : .easeInOut(duration: musicSongSwitchTransitionDuration)
-            withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
-                musicSongTransitionOutgoingProgress = 1
-            }
-            withAnimation(outgoingFadeAnimation) {
-                musicSongTransitionOutgoingOpacityProgress = 1
-            }
+        guard musicSongTransitionRequestID == transitionGeneration else { return }
+        let outgoingFadeAnimation: Animation = direction > 0
+            ? .easeOut(duration: musicSongOutgoingFadeDuration)
+            : .easeInOut(duration: musicSongSwitchTransitionDuration)
+        withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
+            musicSongTransitionOutgoingProgress = 1
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + musicSongIncomingTransitionDelay) {
+        withAnimation(outgoingFadeAnimation) {
+            musicSongTransitionOutgoingOpacityProgress = 1
+        }
+        Task {
+            try? await firstRowSleep(musicSongIncomingTransitionDelay)
+            guard !Task.isCancelled else { return }
             guard self.musicSongTransitionRequestID == transitionGeneration else { return }
             withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
                 musicSongTransitionIncomingProgress = 1
             }
-        }
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + musicSongIncomingTransitionDelay + musicSongSwitchTransitionDuration,
-        ) {
+            try? await firstRowSleep(musicSongSwitchTransitionDuration)
+            guard !Task.isCancelled else { return }
             guard self.musicSongTransitionRequestID == transitionGeneration else { return }
             clearMusicSongSwitchTransitionState()
             updateMusicNowPlayingFlipTimerState()

@@ -180,9 +180,11 @@ extension MenuView {
         withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
             menuSceneOpacity = 1
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieEntryFadeDuration) {
-            guard self.currentITunesTopVideoPreviewPlaybackRequestID(for: source) == requestID else { return }
-            self.isMovieTransitioning = false
+        Task {
+            try? await firstRowSleep(movieEntryFadeDuration)
+            guard !Task.isCancelled else { return }
+            guard currentITunesTopVideoPreviewPlaybackRequestID(for: source) == requestID else { return }
+            isMovieTransitioning = false
         }
     }
 

@@ -111,10 +111,12 @@ struct MoviePlaybackControlsOverlay: View {
                         HStack(spacing: 0) {
                             Color.clear.frame(width: sideSectionWidth, height: trackHeight).overlay(MoviePlaybackGlyphView(state: glyphState), alignment: .center)
                             Spacer(minLength: centerSectionWidth)
-                            Text(isLoading || durationSeconds <= 0.001 ? "" : formatTime(durationSeconds)).font(.firstRowBold(size: 30)).foregroundColor(.white).frame(width: sideSectionWidth, alignment: .center)
+                            Text(isLoading || durationSeconds <= 0.001 ? "" : formatTime(durationSeconds)).font(.firstRowBold(size: 30)).foregroundStyleCompat(.white).frame(width: sideSectionWidth, alignment: .center)
                         }.frame(width: laneWidth, height: trackHeight).offset(x: innerInset)
-                    }.frame(width: controlWidth, height: trackHeight).overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0), lineWidth: 1)).shadow(color: .black.opacity(0.8), radius: 5, x: 0, y: 2)
-                    Text(formatTime(currentTimeSeconds)).font(.firstRowBold(size: 22)).foregroundColor(.white).shadow(color: .black.opacity(0.8), radius: 2, x: 0, y: 1).opacity(isLoading ? 0 : 1).position(x: diamondCenterX, y: 16).frame(width: controlWidth, height: 28, alignment: .leading)
+                    }.frame(width: controlWidth, height: trackHeight).overlay(
+                        Capsule(style: .continuous).stroke(Color.white.opacity(0), lineWidth: 1),
+                    ).shadow(color: .black.opacity(0.8), radius: 5, x: 0, y: 2)
+                    Text(formatTime(currentTimeSeconds)).font(.firstRowBold(size: 22)).foregroundStyleCompat(.white).shadow(color: .black.opacity(0.8), radius: 2, x: 0, y: 1).opacity(isLoading ? 0 : 1).position(x: diamondCenterX, y: 16).frame(width: controlWidth, height: 28, alignment: .leading)
                 }.frame(width: controlWidth, alignment: .leading).padding(.bottom, 52)
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }.ignoresSafeArea().allowsHitTesting(false)
@@ -159,23 +161,27 @@ private struct MoviePlaybackGlyphView: View {
     private var glyphContent: some View {
         switch state {
         case .pause:
-            Image(systemName: "pause.fill").font(.system(size: 23, weight: .bold)).foregroundColor(.white)
+            Image(systemName: "pause.fill").font(.system(size: 23, weight: .bold)).foregroundStyleCompat(.white)
         case .play:
-            Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundColor(.white).offset(x: 1)
+            Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundStyleCompat(.white).offset(x: 1)
         case .loading:
-            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.05)
+            if #available(macOS 12.0, iOS 15.0, tvOS 15.0, *) {
+                ProgressView().progressViewStyle(.circular).tint(.white).scaleEffect(1.05)
+            } else {
+                ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.05)
+            }
         case let .rewind(requestedCount):
             let count = max(1, min(3, requestedCount))
-            LazyHStack(spacing: -7) {
+            HStack(spacing: -7) {
                 ForEach(0 ..< count, id: \.self) { _ in
-                    Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundColor(.white).rotationEffect(.degrees(180))
+                    Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundStyleCompat(.white).rotationEffect(.degrees(180))
                 }
             }.offset(x: 4)
         case let .fastForward(requestedCount):
             let count = max(1, min(3, requestedCount))
-            LazyHStack(spacing: -7) {
+            HStack(spacing: -7) {
                 ForEach(0 ..< count, id: \.self) { _ in
-                    Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundColor(.white)
+                    Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundStyleCompat(.white)
                 }
             }.offset(x: -4)
         }

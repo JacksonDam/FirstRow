@@ -91,11 +91,11 @@ struct MusicNowPlayingFullscreenView: View {
             let transportCenterY = metadataCenterY + (screenHeight * 0.125)
             ZStack {
                 VStack(alignment: layoutMode == .artworkRight ? .trailing : .leading, spacing: 2) {
-                    Text(trackTitle).font(.firstRowBold(size: titleFontSize)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.62)
-                    Text(artistName).font(.firstRowRegular(size: infoFontSize)).foregroundColor(.white.opacity(0.88)).lineLimit(1).minimumScaleFactor(0.62)
-                    Text(albumTitle).font(.firstRowRegular(size: infoFontSize)).foregroundColor(.white.opacity(0.76)).lineLimit(1).minimumScaleFactor(0.62)
+                    Text(trackTitle).font(.firstRowBold(size: titleFontSize)).foregroundStyleCompat(.white).lineLimit(1).minimumScaleFactor(0.62)
+                    Text(artistName).font(.firstRowRegular(size: infoFontSize)).foregroundStyleCompat(.white.opacity(0.88)).lineLimit(1).minimumScaleFactor(0.62)
+                    Text(albumTitle).font(.firstRowRegular(size: infoFontSize)).foregroundStyleCompat(.white.opacity(0.76)).lineLimit(1).minimumScaleFactor(0.62)
                     if !trackPositionText.isEmpty {
-                        Text(trackPositionText).font(.firstRowRegular(size: positionFontSize)).foregroundColor(.white.opacity(0.58)).lineLimit(1).padding(.top, trackPositionVerticalPadding)
+                        Text(trackPositionText).font(.firstRowRegular(size: positionFontSize)).foregroundStyleCompat(.white.opacity(0.58)).lineLimit(1).padding(.top, trackPositionVerticalPadding)
                     }
                 }.multilineTextAlignment(layoutMode == .artworkRight ? .trailing : .leading).frame(width: metadataWidth, alignment: metadataAlignment).position(x: metadataCenterX, y: metadataCenterY)
                 HStack(alignment: .center, spacing: transportGap) {
@@ -106,9 +106,12 @@ struct MusicNowPlayingFullscreenView: View {
                                 fontSize: timeFontSize,
                             )
                         } else {
-                            Text(formatTime(displayElapsed)).font(.firstRowBold(size: timeFontSize)).foregroundColor(.white.opacity(0.95)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(formatTime(displayElapsed)).font(.firstRowBold(size: timeFontSize)).foregroundStyleCompat(.white.opacity(0.95)).lineLimit(1).minimumScaleFactor(0.8)
                         }
-                    }.frame(width: leadingTimeWidth, height: barHeight, alignment: .leading).overlay(Image(systemName: "shuffle").font(.system(size: shuffleFontSize, weight: .regular)).foregroundColor(.white.opacity(0.56)).shadow(color: .white.opacity(0.14), radius: 0.8).offset(y: -(barHeight * 2.2)).opacity(showsShuffleGlyph && layoutMode == .artworkRight ? 1 : 0), alignment: .topLeading)
+                    }.frame(width: leadingTimeWidth, height: barHeight, alignment: .leading).overlay(
+                        Image(systemName: "shuffle").font(.system(size: shuffleFontSize, weight: .regular)).foregroundStyleCompat(.white.opacity(0.56)).shadow(color: .white.opacity(0.14), radius: 0.8).offset(y: -(barHeight * 2.2)).opacity(showsShuffleGlyph && layoutMode == .artworkRight ? 1 : 0),
+                        alignment: .topLeading,
+                    )
                     ZStack(alignment: .leading) {
                         Rectangle().stroke(Color.white.opacity(0.82), lineWidth: 2.4).frame(height: barHeight)
                         Rectangle().fill(Color.white.opacity(0.5)).frame(width: max(0, barWidth * progress), height: barHeight)
@@ -119,7 +122,10 @@ struct MusicNowPlayingFullscreenView: View {
                         )
                         RoundedRectangle(cornerRadius: 1.2, style: .continuous).fill(Color.white).frame(width: diamondSize, height: diamondSize).rotationEffect(.degrees(45)).offset(x: diamondCenterX - (diamondSize * 0.5))
                     }.frame(width: barWidth, height: barHeight)
-                    Text("-\(formatTime(displayRemaining))").font(.firstRowBold(size: timeFontSize)).foregroundColor(.white.opacity(0.95)).lineLimit(1).minimumScaleFactor(0.8).frame(width: trailingTimeWidth, height: barHeight, alignment: .trailing).overlay(Image(systemName: "shuffle").font(.system(size: shuffleFontSize, weight: .regular)).foregroundColor(.white.opacity(0.56)).shadow(color: .white.opacity(0.14), radius: 0.8).offset(y: -(barHeight * 2.2)).opacity(showsShuffleGlyph && layoutMode == .artworkLeft ? 1 : 0), alignment: .topTrailing)
+                    Text("-\(formatTime(displayRemaining))").font(.firstRowBold(size: timeFontSize)).foregroundStyleCompat(.white.opacity(0.95)).lineLimit(1).minimumScaleFactor(0.8).frame(width: trailingTimeWidth, height: barHeight, alignment: .trailing).overlay(
+                        Image(systemName: "shuffle").font(.system(size: shuffleFontSize, weight: .regular)).foregroundStyleCompat(.white.opacity(0.56)).shadow(color: .white.opacity(0.14), radius: 0.8).offset(y: -(barHeight * 2.2)).opacity(showsShuffleGlyph && layoutMode == .artworkLeft ? 1 : 0),
+                        alignment: .topTrailing,
+                    )
                 }.frame(width: transportWidth).position(x: transportCenterX, y: transportCenterY)
                 MusicNowPlayingArtworkPreview(
                     image: artworkImage,
@@ -132,90 +138,5 @@ struct MusicNowPlayingFullscreenView: View {
 
     private func formatTime(_ seconds: Double) -> String {
         formatfirstRowPlaybackTime(seconds)
-    }
-}
-
-private struct MusicNowPlayingLeadingGlyphView: View {
-    let state: MoviePlaybackGlyphState
-    let fontSize: CGFloat
-    var body: some View {
-        switch state {
-        case .pause:
-            Image(systemName: "pause.fill").font(.system(size: fontSize * 0.92, weight: .bold)).foregroundColor(.white)
-        case let .rewind(requestedCount):
-            let count = max(1, min(3, requestedCount))
-            LazyHStack(spacing: -7) {
-                ForEach(0 ..< count, id: \.self) { _ in
-                    Image(systemName: "play.fill").font(.system(size: fontSize * 0.92, weight: .bold)).foregroundColor(.white).rotationEffect(.degrees(180))
-                }
-            }.offset(x: 4)
-        case let .fastForward(requestedCount):
-            let count = max(1, min(3, requestedCount))
-            LazyHStack(spacing: -7) {
-                ForEach(0 ..< count, id: \.self) { _ in
-                    Image(systemName: "play.fill").font(.system(size: fontSize * 0.92, weight: .bold)).foregroundColor(.white)
-                }
-            }.offset(x: -4)
-        case .play:
-            Image(systemName: "pause.fill").font(.system(size: fontSize * 0.92, weight: .bold)).foregroundColor(.white)
-        case .loading:
-            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(0.9)
-        }
-    }
-}
-
-private struct MusicNowPlayingArtworkPreview: View {
-    let image: NSImage?
-    let side: CGFloat
-    let mirrored: Bool
-    private var previewYaw: Angle {
-        Angle(degrees: mirrored ? 9 : -9)
-    }
-
-    private var reflectionYaw: Angle {
-        Angle(degrees: mirrored ? 9 : -9)
-    }
-
-    private let perspective: CGFloat = 0.9
-    var body: some View {
-        let reflectionGap = max(8, side * 0.03)
-        ZStack(alignment: .topLeading) {
-            previewImage.frame(width: side, height: side).shadow(color: .black.opacity(0.45), radius: 8, x: 0, y: 2).rotation3DEffect(
-                previewYaw,
-                axis: (x: 0, y: 1, z: 0),
-                perspective: perspective,
-            )
-            previewImage.frame(width: side, height: side).mask(
-                LinearGradient(
-                    gradient: Gradient(stops: [.init(color: .white, location: 0.0), .init(color: .white.opacity(0.68), location: 0.05), .init(color: .white.opacity(0.26), location: 0.12), .init(color: .white.opacity(0.08), location: 0.17), .init(color: .clear, location: 0.22)]),
-                    startPoint: .bottom,
-                    endPoint: .top,
-                ),
-            ).scaleEffect(x: 1.0, y: -1.0, anchor: .bottom).opacity(0.42).rotation3DEffect(
-                reflectionYaw,
-                axis: (x: 0, y: 1, z: 0),
-                perspective: perspective,
-            ).blur(radius: 0.55).offset(y: reflectionGap)
-        }.frame(width: side * 1.12, height: side * 1.72, alignment: .topLeading)
-    }
-
-    @ViewBuilder
-    private var previewImage: some View {
-        if let image {
-            Image(nsImage: image).resizable().aspectRatio(contentMode: .fill).frame(width: side, height: side).clipped()
-        } else {
-            Rectangle().fill(
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.12, green: 0.13, blue: 0.17),
-                        Color(red: 0.06, green: 0.06, blue: 0.08),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing,
-                ),
-            ).frame(width: side, height: side).overlay(
-                Image(systemName: "music.note").font(.system(size: side * 0.26, weight: .regular)).foregroundColor(.white.opacity(0.72)),
-            ).clipped()
-        }
     }
 }
