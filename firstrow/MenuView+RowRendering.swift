@@ -96,7 +96,7 @@ private enum CarouselIconLayer {
     case icon
 }
 
-private func interpolatedCGFloat(
+func interpolatedCGFloat(
     from start: CGFloat,
     to end: CGFloat,
     progress: CGFloat,
@@ -108,7 +108,7 @@ private func unitProgress(_ raw: CGFloat) -> CGFloat {
     min(max(raw, 0), 1)
 }
 
-private func smoothStep(_ raw: CGFloat) -> CGFloat {
+func smoothStep(_ raw: CGFloat) -> CGFloat {
     let clamped = unitProgress(raw)
     return clamped * clamped * (3 - (2 * clamped))
 }
@@ -1024,6 +1024,7 @@ extension MenuView {
         alignsTextToDividerStart: Bool,
         arrowAppearance: ArrowAppearance,
     ) -> some View {
+        let showsLoadingSpinner = itemID == "movies_theatrical_trailers" && isTheatricalTrailersLoading && isSelected
         let trailingBaseFontSize = submenuRowTrailingFontSize
         let arrowFontSize = submenuArrowFontSize
         let trailingTextOpacity: Double = (isSelected && isSelectionSettled) ? 1.0 : 0.5
@@ -1178,6 +1179,15 @@ extension MenuView {
                 ).offset(x: dotCenterX - 6)
             }
         }, alignment: .leading)
+        .overlay(Group {
+            if showsLoadingSpinner {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .scaleEffect(2.0)
+                    .frame(width: 60, height: 60)
+                    .offset(x: -50)
+            }
+        }, alignment: .trailing)
     }
 
     func measuredMenuRowTitleWidth(_ title: String) -> CGFloat {
@@ -1504,34 +1514,12 @@ extension MenuView {
 
     @ViewBuilder
     func rootBackdropView(geometry: GeometryProxy) -> some View {
-        let stageOpacity: CGFloat = 1.0
         ZStack {
             LinearGradient(
                 gradient: Gradient(stops: [
                     .init(color: .black, location: 0.0),
-                    .init(color: .black, location: 0.54),
-                    .init(color: Color(white: 0.13).opacity(0.96 * stageOpacity), location: 0.76),
-                    .init(color: Color(white: 0.32).opacity(0.8 * stageOpacity), location: 1.0),
-                ]),
-                startPoint: .top,
-                endPoint: .bottom,
-            )
-            RadialGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color.white.opacity(0.12 * stageOpacity), location: 0.0),
-                    .init(color: Color.white.opacity(0.05 * stageOpacity), location: 0.2),
-                    .init(color: .clear, location: 0.72),
-                ]),
-                center: .init(x: 0.5, y: 0.86),
-                startRadius: 0,
-                endRadius: max(geometry.size.width, geometry.size.height) * 0.52,
-            )
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: .clear, location: 0.0),
-                    .init(color: Color.white.opacity(0.03 * stageOpacity), location: 0.62),
-                    .init(color: Color.white.opacity(0.12 * stageOpacity), location: 0.82),
-                    .init(color: .clear, location: 1.0),
+                    .init(color: .black, location: 0.5),
+                    .init(color: Color(red: 100 / 255, green: 100 / 255, blue: 96 / 255), location: 1.0),
                 ]),
                 startPoint: .top,
                 endPoint: .bottom,
@@ -2115,12 +2103,27 @@ extension MenuView {
         }()
         let showsEmbeddedHeader = !showsHeaderTransitionOverlay
         let isLiveNowPlaying = isInThirdMenu && thirdMenuMode == .musicNowPlaying
+        let isLiveErrorPage = isInThirdMenu && thirdMenuMode == .errorPage
+        let isLiveSubmenuErrorPage = !isInThirdMenu && isSubmenuErrorPage
         ZStack {
             settledSubmenuDividerView(geometry: geometry)
             if let snapshot = menuTransitionSnapshot {
                 if snapshot.isNowPlayingPage {
                     ZStack(alignment: .topLeading) {
                         musicNowPlayingMenuPageView(geometry: geometry)
+                        if showsEmbeddedHeader {
+                            submenuPageHeaderView(
+                                rootID: snapshot.rootID,
+                                title: snapshot.headerText,
+                                geometry: geometry,
+                            )
+                        }
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                    .offset(x: snapshotOffsetX)
+                } else if snapshot.isErrorPage || snapshot.isSubmenuErrorPage {
+                    ZStack(alignment: .topLeading) {
+                        errorPageMenuView(geometry: geometry)
                         if showsEmbeddedHeader {
                             submenuPageHeaderView(
                                 rootID: snapshot.rootID,
@@ -2159,6 +2162,24 @@ extension MenuView {
                 .opacity(
                     menuTransitionSnapshot == nil
                         ? max(liveOpacity, transitionOpacity)
+                        : 1,
+                )
+            } else if isLiveErrorPage || isLiveSubmenuErrorPage {
+                ZStack(alignment: .topLeading) {
+                    errorPageMenuView(geometry: geometry)
+                    if showsEmbeddedHeader {
+                        submenuPageHeaderView(
+                            rootID: activeRootItemID,
+                            title: headerText,
+                            geometry: geometry,
+                        )
+                    }
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                .offset(x: menuTransitionSnapshot == nil ? 0 : liveOffsetX)
+                .opacity(
+                    menuTransitionSnapshot == nil
+                        ? (isEnteringSubmenu || isReturningToRoot ? 1 : max(liveOpacity, transitionOpacity))
                         : 1,
                 )
             } else {

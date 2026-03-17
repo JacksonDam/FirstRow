@@ -8,6 +8,8 @@ struct MenuTransitionSnapshot: Identifiable {
     let items: [MenuListItemConfig]
     let selectedIndex: Int
     var isNowPlayingPage: Bool = false
+    var isErrorPage: Bool = false
+    var isSubmenuErrorPage: Bool = false
 }
 
 enum MenuTransitionDirection {
@@ -168,8 +170,6 @@ struct MenuView: View {
     // MARK: - Fullscreen scene keys
 
     let musicNowPlayingFullscreenKey = "music_now_playing"
-    let featureErrorFullscreenKey = "feature_error"
-    let theatricalTrailersLoadingFullscreenKey = "movies_theatrical_trailers_loading"
     let photoSlideshowFullscreenKey = "photo_slideshow"
 
     // MARK: - Navigation state
@@ -387,6 +387,12 @@ struct MenuView: View {
     @State var musicNowPlayingReturnThirdMenuMode: ThirdMenuMode = .none
     @State var musicNowPlayingReturnHeaderText: String = ""
 
+    // MARK: - Error page state
+
+    @State var errorPageHeaderText: String = ""
+    @State var errorPageSubcaptionText: String = ""
+    @State var isSubmenuErrorPage: Bool = false
+
     // MARK: - Music playback state
 
     @State var deferNowPlayingMenuItemUntilAfterFadeOut = false
@@ -437,7 +443,7 @@ struct MenuView: View {
     @State var fullscreenTransitionOverlayOpacity: Double = 0
     @State var isFullscreenSceneTransitioning = false
     @State var isMenuFolderSwapTransitioning = false
-    @State var theatricalTrailersLoadingShowsSpinner = false
+    @State var isTheatricalTrailersLoading = false
     @State var theatricalTrailersLoadingRequestID = 0
 
     @State var lastUserInteractionAt = Date()

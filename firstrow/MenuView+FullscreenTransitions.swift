@@ -1,73 +1,18 @@
 import SwiftUI
 
 extension MenuView {
-    func presentTheatricalTrailersLoadingThenError() {
-        guard activeFullscreenScene == nil else { return }
-        guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
-        guard !isFullscreenSceneTransitioning else { return }
+    func presentTheatricalTrailersLoading() {
+        guard !isTheatricalTrailersLoading else { return }
         let requestID = incrementRequestID(&theatricalTrailersLoadingRequestID)
-        theatricalTrailersLoadingShowsSpinner = false
-        let fadeOutDuration = 0.28
-        let fadeInDuration = 0.24
-        let spinnerRevealDelay = fadeOutDuration + fadeInDuration
-        let errorTransitionDelay = spinnerRevealDelay + 0.5
-        presentFullscreenScene(
-            key: theatricalTrailersLoadingFullscreenKey,
-            payload: ["header": "Loading Theatrical Trailers..."],
-        )
-        DispatchQueue.main.asyncAfter(deadline: .now() + spinnerRevealDelay) {
+        isTheatricalTrailersLoading = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             guard self.theatricalTrailersLoadingRequestID == requestID else { return }
-            guard self.activeFullscreenScene?.key == self.theatricalTrailersLoadingFullscreenKey else { return }
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
-                self.theatricalTrailersLoadingShowsSpinner = true
+                self.isTheatricalTrailersLoading = false
             }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + errorTransitionDelay) {
-            guard self.theatricalTrailersLoadingRequestID == requestID else { return }
-            guard self.activeFullscreenScene?.key == self.theatricalTrailersLoadingFullscreenKey else { return }
-            self.transitionActiveFullscreenSceneWithOverlay(
-                to: self.featureErrorFullscreenKey,
-                payload: FeatureErrorKind.genericOperationFailed.payload,
-            )
-        }
-    }
-
-    func transitionActiveFullscreenSceneWithOverlay(
-        to key: String,
-        payload: [String: String] = [:],
-        fadeDuration: Double = 0.28,
-    ) {
-        guard activeFullscreenScene != nil else { return }
-        guard !isFullscreenSceneTransitioning else { return }
-        isFullscreenSceneTransitioning = true
-        withAnimation(.easeInOut(duration: fadeDuration)) {
-            fullscreenTransitionOverlayOpacity = 1
-        }
-        let swapDelay = fadeDuration + fullscreenOverlayBlackoutSafetyDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + swapDelay) {
-            guard self.isFullscreenSceneTransitioning else { return }
-            var instant = Transaction()
-            instant.disablesAnimations = true
-            withTransaction(instant) {
-                self.fullscreenTransitionOverlayOpacity = 1
-            }
-            DispatchQueue.main.async {
-                guard self.isFullscreenSceneTransitioning else { return }
-                var instant = Transaction()
-                instant.disablesAnimations = true
-                withTransaction(instant) {
-                    self.activeFullscreenScene = FullscreenScenePresentation(key: key, payload: payload)
-                    self.fullscreenSceneOpacity = 1
-                }
-                withAnimation(.easeInOut(duration: fadeDuration)) {
-                    self.fullscreenTransitionOverlayOpacity = 0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + fadeDuration) {
-                    self.isFullscreenSceneTransitioning = false
-                }
-            }
+            self.presentFeatureErrorScreen(.genericOperationFailed)
         }
     }
 
@@ -190,18 +135,12 @@ extension MenuView {
         if dismissedKey == musicNowPlayingFullscreenKey {
             clearMusicSongSwitchTransitionState()
         }
-        if dismissedKey == theatricalTrailersLoadingFullscreenKey {
-            theatricalTrailersLoadingShowsSpinner = false
-            _ = incrementRequestID(&theatricalTrailersLoadingRequestID)
-        }
         if dismissedKey == musicNowPlayingFullscreenKey, !shouldPreserveMusicPlayback {
             stopMusicPlaybackSession(clearDisplayState: false)
         }
         isFullscreenSceneTransitioning = true
         let fadeOutDuration = 0.28
-        let holdDuration: Double =
-            (dismissedKey == featureErrorFullscreenKey ||
-                dismissedKey == theatricalTrailersLoadingFullscreenKey) ? 0 : 1.0
+        let holdDuration: Double = 1.0
         let fadeInDuration = 0.24
         let useOverlayForMenuFade =
             dismissedKey == musicNowPlayingFullscreenKey &&
@@ -274,23 +213,6 @@ extension MenuView {
             musicNowPlayingFullscreenKey: { _ in
                 AnyView(
                     musicNowPlayingSceneView(),
-                )
-            },
-            featureErrorFullscreenKey: { scene in
-                let copy = FeatureErrorCopy.resolve(from: scene.payload)
-                return AnyView(
-                    FeatureErrorFullscreenView(
-                        headerText: copy.headerText,
-                        subcaptionText: copy.subcaptionText,
-                    ),
-                )
-            },
-            theatricalTrailersLoadingFullscreenKey: { scene in
-                AnyView(
-                    FeatureLoadingFullscreenView(
-                        headerText: scene.payload["header"] ?? "Loading Theatrical Trailers...",
-                        showsSpinner: theatricalTrailersLoadingShowsSpinner,
-                    ),
                 )
             },
             photoSlideshowFullscreenKey: { _ in

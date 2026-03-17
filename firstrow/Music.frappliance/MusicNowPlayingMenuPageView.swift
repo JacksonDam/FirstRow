@@ -108,7 +108,9 @@ extension MenuView {
                         .stroke(Color.white.opacity(0.82), lineWidth: 6)
                         .frame(height: barHeight)
                     let diamondInset: CGFloat = 16
-                    let clampedCenter = max(diamondSize * 0.5 + diamondInset, min(barWidth - diamondSize * 0.5 - diamondInset, progress * barWidth))
+                    let minCenter = diamondSize * 0.5 + diamondInset
+                    let maxCenter = barWidth - diamondSize * 0.5 - diamondInset
+                    let clampedCenter = minCenter + (maxCenter - minCenter) * progress
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(Color.white)
                         .frame(width: diamondSize, height: diamondSize)

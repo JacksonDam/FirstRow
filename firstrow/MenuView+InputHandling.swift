@@ -48,6 +48,13 @@ extension MenuView {
             handleMusicNowPlayingPageInput(key, isRepeat: isRepeat)
             return
         }
+        if thirdMenuMode == .errorPage {
+            if key == .delete || key == .escape {
+                exitErrorPage()
+                playSound(named: "Exit")
+            }
+            return
+        }
         if isMovieTransitioning {
             return
         }
@@ -134,6 +141,11 @@ extension MenuView {
         isInThirdMenu = false
         thirdMenuMode = .none
         thirdMenuOpacity = 0
+        isSubmenuErrorPage = false
+        errorPageHeaderText = ""
+        errorPageSubcaptionText = ""
+        _ = incrementRequestID(&theatricalTrailersLoadingRequestID)
+        isTheatricalTrailersLoading = false
         resetThirdMenuDirectoryState()
         resetAllITunesTopMenusForNonITunesContext()
         _ = incrementRequestID(&musicTopLevelCarouselRequestID)
@@ -165,6 +177,14 @@ extension MenuView {
         }
         selectedThirdIndex = 0
         activeRootItemID = chosenRootItem.id
+        
+        if chosenRootItem.id == "dvd" {
+            let copy = FeatureErrorKind.noDVDDisc.copy
+            errorPageHeaderText = copy.headerText
+            errorPageSubcaptionText = copy.subcaptionText
+            isSubmenuErrorPage = true
+        }
+
         let submenuItems = MenuConfiguration.submenuItems(forRootID: chosenRootItem.id)
         let shouldDefaultToNowPlayingInMusic =
             chosenRootItem.id == "music" &&
@@ -268,6 +288,8 @@ extension MenuView {
         _ = incrementRequestID(&moviePreviewRequestID)
         _ = incrementRequestID(&moviesFolderSubmenuPreviewRequestID)
         _ = incrementRequestID(&musicPreviewRequestID)
+        _ = incrementRequestID(&theatricalTrailersLoadingRequestID)
+        isTheatricalTrailersLoading = false
 
         DispatchQueue.main.async {
             isIconAnimated = false
@@ -293,6 +315,9 @@ extension MenuView {
                 isInThirdMenu = false
                 thirdMenuMode = .none
                 thirdMenuOpacity = 0
+                isSubmenuErrorPage = false
+                errorPageHeaderText = ""
+                errorPageSubcaptionText = ""
                 resetThirdMenuDirectoryState()
                 resetAllITunesTopMenusForNonITunesContext()
                 moviePreviewTargetURL = nil
@@ -358,7 +383,7 @@ extension MenuView {
         }
         if activeRootItemID == "movies", item.id == "movies_theatrical_trailers" {
             playSound(named: "Selection")
-            presentTheatricalTrailersLoadingThenError()
+            presentTheatricalTrailersLoading()
             return
         }
         if activeRootItemID == "music", item.id == "music_itunes_top_songs" {
@@ -434,10 +459,6 @@ extension MenuView {
             playSound(named: "Selection")
             return
         }
-        if activeRootItemID == "dvd", item.id == "dvd_no_disc" {
-            playLimitSoundOnceForCurrentHold()
-            return
-        }
         playSound(named: "Selection")
         performSubmenuAction(item)
     }
@@ -450,10 +471,9 @@ extension MenuView {
             navigateUpInThirdMenuOrExit()
         case .space:
             handleMusicSpacebarPressed()
-        case .upArrow:
-            switchMusicNowPlayingTrack(direction: -1)
-        case .downArrow:
-            switchMusicNowPlayingTrack(direction: 1)
+        case .upArrow, .downArrow:
+            guard prepareNavigationTiming(for: key, isRepeat: isRepeat) else { return }
+            switchMusicNowPlayingTrack(direction: key == .upArrow ? -1 : 1)
         case .leftArrow:
             beginMusicScrubbing(direction: -1, isRepeat: isRepeat)
         case .rightArrow:
@@ -507,7 +527,7 @@ extension MenuView {
                     playbackQueue: musicSongsThirdMenuItems,
                 )
             }
-        case .musicNowPlaying:
+        case .musicNowPlaying, .errorPage:
             break
         case .photosDateAlbums:
             guard photosDateAlbums.indices.contains(selectedThirdIndex) else { return }
@@ -885,6 +905,16 @@ extension MenuView {
 
     func prepareNavigationTiming(for key: KeyCode, isRepeat: Bool) -> Bool {
         let now = Date()
+
+        let isNowPlayingSongSwitch = (activeFullscreenScene?.key == musicNowPlayingFullscreenKey || thirdMenuMode == .musicNowPlaying) && (key == .upArrow || key == .downArrow)
+        if isNowPlayingSongSwitch {
+            lastArrowNavigationInputTime = now
+            lastHoldNavigationTime = now
+            lastNavigationKey = key
+            lastNavigationEventTime = now
+            return true
+        }
+
         let isManagedDirectionalHoldRepeat =
             isRepeat &&
             activeDirectionalHoldKey == key &&
@@ -1136,6 +1166,8 @@ extension MenuView {
             items: items,
             selectedIndex: selectedIndex,
             isNowPlayingPage: isInThirdMenu && thirdMenuMode == .musicNowPlaying,
+            isErrorPage: isInThirdMenu && thirdMenuMode == .errorPage,
+            isSubmenuErrorPage: !isInThirdMenu && isSubmenuErrorPage,
         )
     }
 

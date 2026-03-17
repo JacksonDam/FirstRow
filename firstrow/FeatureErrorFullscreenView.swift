@@ -37,6 +37,7 @@ enum FeatureErrorKind: String {
     case noMusicVideos
     case noSongs
     case noPlaylists
+    case noDVDDisc
 
     var copy: FeatureErrorCopy {
         switch self {
@@ -90,6 +91,11 @@ enum FeatureErrorKind: String {
                 headerText: "First Row cannot find any playlists.",
                 subcaptionText: "Use iTunes to create and manage your playlists.",
             )
+        case .noDVDDisc:
+            FeatureErrorCopy(
+                headerText: "Please Insert a DVD",
+                subcaptionText: "",
+            )
         }
     }
 
@@ -99,55 +105,9 @@ enum FeatureErrorKind: String {
 }
 
 extension MenuView {
-    func presentFeatureErrorScreen(_ kind: FeatureErrorKind, usingExistingBlackout: Bool = false) {
-        presentFullscreenScene(
-            key: featureErrorFullscreenKey,
-            payload: kind.payload,
-            usingExistingBlackout: usingExistingBlackout && isMenuFolderSwapTransitioning,
-        )
+    func presentFeatureErrorScreen(_ kind: FeatureErrorKind) {
+        let copy = kind.copy
+        enterErrorPage(header: copy.headerText, subcaption: copy.subcaptionText)
     }
 }
 
-struct FeatureErrorFullscreenView: View {
-    let headerText: String
-    let subcaptionText: String
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 15) {
-                HStack(spacing: 8) {
-                    if let icon = NSImage(named: "ErrorTriangle_v1") ?? NSImage(named: "Alert!") {
-                        Image(nsImage: icon).resizable().aspectRatio(contentMode: .fit).frame(width: 84, height: 84)
-                    }
-                    Text(headerText)
-                        .font(.firstRowBold(size: 60))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 1200, alignment: .center)
-                        .offset(y: -12)
-                }
-                if !subcaptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(subcaptionText).font(.firstRowBold(size: 30)).foregroundColor(.white).multilineTextAlignment(.center).lineSpacing(4)
-                }
-            }.frame(maxWidth: 1500).offset(y: -160)
-        }
-    }
-}
-
-struct FeatureLoadingFullscreenView: View {
-    let headerText: String
-    let showsSpinner: Bool
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 42) {
-                Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).multilineTextAlignment(.center)
-                if showsSpinner {
-                    ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(2.0).frame(width: 72, height: 72)
-                } else {
-                    Color.clear.frame(width: 72, height: 72)
-                }
-            }.frame(maxWidth: 1500, maxHeight: .infinity, alignment: .center)
-        }
-    }
-}

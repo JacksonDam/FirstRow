@@ -49,6 +49,7 @@
 		7A73DEB62F5776A20021C281 /* MenuView+MenuListItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE772F5776A20021C281 /* MenuView+MenuListItems.swift */; };
 		7A73DEB82F5776A20021C281 /* MoviesMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE332F5776A20021C281 /* MoviesMenuFeature.swift */; };
 		7A73DEBA2F5776A20021C281 /* SharedCacheTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE7D2F5776A20021C281 /* SharedCacheTypes.swift */; };
+		7A73DEBC2F5776A20021C281 /* MenuView+ErrorPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE7F2F5776A20021C281 /* MenuView+ErrorPage.swift */; };
 		7A73DEC42F5776A20021C281 /* SelectionChange.aif in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE622F5776A20021C281 /* SelectionChange.aif */; };
 		7A73DEC92F5776A20021C281 /* Selection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE612F5776A20021C281 /* Selection.aif */; };
 		7A73DECD2F5776A20021C281 /* Exit.aif in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE5F2F5776A20021C281 /* Exit.aif */; };
@@ -128,6 +129,7 @@
 		7A73DE742F5776A20021C281 /* MenuView+FullscreenTransitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+FullscreenTransitions.swift"; sourceTree = "<group>"; };
 		7A73DE752F5776A20021C281 /* MenuView+GapContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+GapContent.swift"; sourceTree = "<group>"; };
 		7A73DE762F5776A20021C281 /* MenuView+InputHandling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+InputHandling.swift"; sourceTree = "<group>"; };
+		7A73DE7F2F5776A20021C281 /* MenuView+ErrorPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+ErrorPage.swift"; sourceTree = "<group>"; };
 		7A73DE772F5776A20021C281 /* MenuView+MenuListItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MenuListItems.swift"; sourceTree = "<group>"; };
 		7A73DE782F5776A20021C281 /* MenuView+MenuNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MenuNavigation.swift"; sourceTree = "<group>"; };
 		7A73DE792F5776A20021C281 /* MenuView+RowRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+RowRendering.swift"; sourceTree = "<group>"; };
@@ -301,6 +303,7 @@
 				7A73DE742F5776A20021C281 /* MenuView+FullscreenTransitions.swift */,
 				7A73DE752F5776A20021C281 /* MenuView+GapContent.swift */,
 				7A73DE762F5776A20021C281 /* MenuView+InputHandling.swift */,
+				7A73DE7F2F5776A20021C281 /* MenuView+ErrorPage.swift */,
 				7A73DE772F5776A20021C281 /* MenuView+MenuListItems.swift */,
 				7A73DE782F5776A20021C281 /* MenuView+MenuNavigation.swift */,
 				7A73DE792F5776A20021C281 /* MenuView+RowRendering.swift */,
@@ -525,6 +528,7 @@
 				7A73DE992F5776A20021C281 /* MenuView+MoviesLibrary.swift in Sources */,
 				7A73DE9A2F5776A20021C281 /* MenuView+MusicPlayback.swift in Sources */,
 				7A73DE9B2F5776A20021C281 /* MenuView+ArtworkCache.swift in Sources */,
+				7A73DEBC2F5776A20021C281 /* MenuView+ErrorPage.swift in Sources */,
 				7A73DE9D2F5776A20021C281 /* FullscreenSceneSupport.swift in Sources */,
 				7A73DE9F2F5776A20021C281 /* SoundEffectPlayer.swift in Sources */,
 				7A73DEA02F5776A20021C281 /* MoviePlaybackControlsView.swift in Sources */,

@@ -395,17 +395,11 @@ extension MenuView {
     }
 
     func presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: Bool = false) {
-        presentFeatureErrorScreen(
-            .noMoviesInFolder,
-            usingExistingBlackout: afterMenuSwap,
-        )
+        presentFeatureErrorScreen(.noMoviesInFolder)
     }
 
     func presentNoPhotosLibraryFeatureErrorScreen(afterMenuSwap: Bool = false) {
-        presentFeatureErrorScreen(
-            .noPhotosInLibrary,
-            usingExistingBlackout: afterMenuSwap,
-        )
+        presentFeatureErrorScreen(.noPhotosInLibrary)
     }
 
     func abortPhotosDateAlbumsMenuEntryForEmptyLibrary() {

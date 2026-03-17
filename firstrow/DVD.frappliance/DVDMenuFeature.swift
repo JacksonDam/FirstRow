@@ -7,7 +7,5 @@ struct DVDMenuFeature: MenuFeatureConfiguration {
         iconAssetName: "dvd",
         mainMenuSelectionSoundName: "MainDVDSelection",
     )
-    let submenuItems: [SubmenuItemConfig] = [
-        .init(id: "dvd_no_disc", title: "Please Insert a DVD"),
-    ]
+    let submenuItems: [SubmenuItemConfig] = []
 }

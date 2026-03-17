@@ -586,14 +586,6 @@ extension MenuView {
     func switchMusicNowPlayingTrack(direction: Int) {
         guard direction != 0 else { return }
         if isMusicSongTransitioning {
-            if let deadline = musicSongTransitionDeadline, deadline > Date() {
-                return
-            }
-            let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
-                || thirdMenuMode == .musicNowPlaying
-            if !isMusicNowPlayingSceneVisible {
-                return
-            }
             clearMusicSongSwitchTransitionState()
         }
         if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == "iTunes Top Songs" {
@@ -688,10 +680,9 @@ extension MenuView {
             playSound(named: "Exit")
         case .space:
             handleMusicSpacebarPressed()
-        case .upArrow:
-            switchMusicNowPlayingTrack(direction: -1)
-        case .downArrow:
-            switchMusicNowPlayingTrack(direction: 1)
+        case .upArrow, .downArrow:
+            guard prepareNavigationTiming(for: key, isRepeat: isRepeat) else { return }
+            switchMusicNowPlayingTrack(direction: key == .upArrow ? -1 : 1)
         case .leftArrow:
             beginMusicScrubbing(direction: -1, isRepeat: isRepeat)
         case .rightArrow:

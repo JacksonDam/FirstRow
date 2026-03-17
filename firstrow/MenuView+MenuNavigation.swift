@@ -11,10 +11,59 @@ extension MenuView {
         case musicSongs
         case musicNowPlaying
         case photosDateAlbums
+        case errorPage
     }
+
 }
 
 extension MenuView {
+    func enterErrorPage(header: String, subcaption: String) {
+        guard !isEnteringSubmenu, !isReturningToRoot else { return }
+
+        let returnMode = isInThirdMenu ? thirdMenuMode : .none
+        let returnHeader = headerText
+
+        let snapshot = currentMenuTransitionSnapshot()
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            errorPageHeaderText = header
+            errorPageSubcaptionText = subcaption
+            menuTransitionSnapshot = snapshot
+            menuTransitionDirection = .forward
+            menuTransitionProgress = 0
+            musicNowPlayingReturnThirdMenuMode = returnMode
+            musicNowPlayingReturnHeaderText = returnHeader
+            isInThirdMenu = true
+            thirdMenuMode = .errorPage
+        }
+
+        withAnimation(.easeInOut(duration: menuSlideDuration)) {
+            menuTransitionProgress = 1
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + menuSlideDuration) {
+            self.menuTransitionSnapshot = nil
+        }
+    }
+
+    func exitErrorPage() {
+        guard thirdMenuMode == .errorPage else { return }
+
+        let returnMode = musicNowPlayingReturnThirdMenuMode
+        let returnHeader = musicNowPlayingReturnHeaderText
+
+        transitionMenuForFolderSwap(direction: .backward) {
+            if returnMode == .none {
+                isInThirdMenu = false
+                thirdMenuMode = .none
+            } else {
+                thirdMenuMode = returnMode
+            }
+            headerText = returnHeader
+        }
+    }
+
     func returnToRootMenuViaBlackFade() {
         guard isInSubmenu || isEnteringSubmenu else { return }
         transitionMenuForFolderSwap(
@@ -49,7 +98,7 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos:
             true
-        case .moviesFolder, .moviesITunesTop, .photosDateAlbums, .musicNowPlaying, .none:
+        case .moviesFolder, .moviesITunesTop, .photosDateAlbums, .musicNowPlaying, .errorPage, .none:
             false
         }
         transitionMenuForFolderSwap(direction: .backward) {

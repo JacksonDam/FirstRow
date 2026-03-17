@@ -113,10 +113,9 @@ struct MusicNowPlayingFullscreenView: View {
                         Rectangle().stroke(Color.white.opacity(0.82), lineWidth: 2.4).frame(height: barHeight)
                         Rectangle().fill(Color.white.opacity(0.5)).frame(width: max(0, barWidth * progress), height: barHeight)
                         let diamondSize: CGFloat = 8
-                        let diamondCenterX = max(
-                            diamondSize * 0.5,
-                            min(barWidth - (diamondSize * 0.5), progress * barWidth),
-                        )
+                        let minCenter = diamondSize * 0.5
+                        let maxCenter = barWidth - diamondSize * 0.5
+                        let diamondCenterX = minCenter + (maxCenter - minCenter) * progress
                         RoundedRectangle(cornerRadius: 1.2, style: .continuous).fill(Color.white).frame(width: diamondSize, height: diamondSize).rotationEffect(.degrees(45)).offset(x: diamondCenterX - (diamondSize * 0.5))
                     }.frame(width: barWidth, height: barHeight)
                     Text("-\(formatTime(displayRemaining))").font(.firstRowBold(size: timeFontSize)).foregroundColor(.white.opacity(0.95)).lineLimit(1).minimumScaleFactor(0.8).frame(width: trailingTimeWidth, height: barHeight, alignment: .trailing).overlay(Image(systemName: "shuffle").font(.system(size: shuffleFontSize, weight: .regular)).foregroundColor(.white.opacity(0.56)).shadow(color: .white.opacity(0.14), radius: 0.8).offset(y: -(barHeight * 2.2)).opacity(showsShuffleGlyph && layoutMode == .artworkLeft ? 1 : 0), alignment: .topTrailing)

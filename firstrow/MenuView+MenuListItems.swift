@@ -156,7 +156,7 @@ extension MenuView {
                 )
             }
             return songsItems
-        case .musicNowPlaying:
+        case .musicNowPlaying, .errorPage:
             return []
         case .photosDateAlbums:
             if isLoadingPhotoLibrary, photosDateAlbums.isEmpty {
