@@ -38,7 +38,7 @@ extension MenuView {
         isCurrentMoviePlaybackEphemeralPreview = false
         removeCurrentMoviePlaybackTemporaryFileIfNeeded()
         if shouldPresentMovieResumePrompt(for: normalizedURL) {
-            startMovieResumePromptTransition(for: normalizedURL)
+            enterMovieResumePromptPage(for: normalizedURL)
             return
         }
         startMoviePlaybackWithStandardTransition(from: normalizedURL)
@@ -65,21 +65,68 @@ extension MenuView {
         presentFeatureErrorScreen(.protectedVideoUnsupported)
     }
 
-    func startMovieResumePromptTransition(for url: URL) {
-        guard !isMovieTransitioning else { return }
-        isMovieTransitioning = true
-        movieResumePromptOpacity = 0
-        withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
-            menuSceneOpacity = 0
+    func enterMovieResumePromptPage(for url: URL) {
+        guard !isEnteringSubmenu, !isReturningToRoot else { return }
+
+        movieResumePromptTargetURL = url.standardizedFileURL
+        movieResumePromptResumeSeconds = max(0, lastClosedMovieTimestamp)
+
+        let returnMode = isInThirdMenu ? thirdMenuMode : ThirdMenuMode.none
+        let returnHeader = headerText
+        let returnSelectedIndex = selectedThirdIndex
+
+        let snapshot = currentMenuTransitionSnapshot()
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            movieResumeReturnSelectedThirdIndex = returnSelectedIndex
+            selectedThirdIndex = 0
+            movieResumeReturnThirdMenuMode = returnMode
+            movieResumeReturnHeaderText = returnHeader
+            movieResumeBackdropOpacity = 0
+            movieResumePromptBackdropImage = nil
+            _ = incrementRequestID(&movieResumePromptBackdropRequestID)
+            menuTransitionSnapshot = snapshot
+            menuTransitionDirection = .forward
+            menuTransitionProgress = 0
+            isInThirdMenu = true
+            thirdMenuMode = .movieResumePrompt
         }
-        let revealDelay = movieEntryFadeDuration + movieResumePromptRevealDelay
-        DispatchQueue.main.asyncAfter(deadline: .now() + revealDelay) {
-            presentMovieResumePrompt(for: url)
-            withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
-                movieResumePromptOpacity = 1
+
+        withAnimation(.easeInOut(duration: menuSlideDuration)) {
+            menuTransitionProgress = 1
+        }
+
+        let cacheKey = url.standardizedFileURL.path
+        let capturedResumeSeconds = movieResumePromptResumeSeconds
+        let capturedURL = url.standardizedFileURL
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + menuSlideDuration) {
+            self.menuTransitionSnapshot = nil
+            guard self.thirdMenuMode == .movieResumePrompt else { return }
+
+            if let cached = self.movieResumePromptBackdropCache[cacheKey] {
+                self.movieResumePromptBackdropImage = cached
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self.movieResumeBackdropOpacity = 1
+                }
+                return
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + movieResumePromptFadeDuration) {
-                isMovieTransitioning = false
+
+            let fetchRequestID = self.incrementRequestID(&self.movieResumePromptBackdropRequestID)
+            Task.detached(priority: .userInitiated) { [capturedURL, capturedResumeSeconds, fetchRequestID, cacheKey] in
+                let image = await self.generateMovieThumbnail(for: capturedURL, preferredSeconds: capturedResumeSeconds)
+                await MainActor.run {
+                    guard self.movieResumePromptBackdropRequestID == fetchRequestID else { return }
+                    guard self.thirdMenuMode == .movieResumePrompt else { return }
+                    if let image {
+                        self.movieResumePromptBackdropCache[cacheKey] = image
+                        self.movieResumePromptBackdropImage = image
+                    }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        self.movieResumeBackdropOpacity = 1
+                    }
+                }
             }
         }
     }
@@ -108,126 +155,52 @@ extension MenuView {
         return lastClosedMovieTimestamp > 0.05
     }
 
-    func presentMovieResumePrompt(for url: URL) {
-        movieResumePromptTargetURL = url.standardizedFileURL
-        movieResumePromptResumeSeconds = max(0, lastClosedMovieTimestamp)
-        movieResumePromptSelectedIndex = 0
-        movieResumePromptHideUnselected = false
-        movieResumePromptSolidBlackSelected = false
-        isMovieResumePromptConfirming = false
-        movieResumePromptBackdropImage = nil
-        movieResumePromptOpacity = 0
-        isMovieResumePromptVisible = true
-        let cacheKey = url.standardizedFileURL.path
-        if let cached = movieResumePromptBackdropCache[cacheKey] {
-            movieResumePromptBackdropImage = cached
-            return
-        }
-        let requestID = incrementRequestID(&movieResumePromptBackdropRequestID)
-        Task.detached(priority: .userInitiated) { [url] in
-            let image = await self.generateMovieThumbnail(for: url, preferredSeconds: 0)
-            await MainActor.run {
-                guard self.movieResumePromptBackdropRequestID == requestID else { return }
-                guard self.isMovieResumePromptVisible else { return }
-                guard self.movieResumePromptTargetURL?.standardizedFileURL == url.standardizedFileURL else { return }
-                if let image {
-                    self.movieResumePromptBackdropCache[cacheKey] = image
-                    self.movieResumePromptBackdropImage = image
-                }
-            }
-        }
-    }
-
     func dismissMovieResumePrompt() {
-        isMovieResumePromptVisible = false
-        isMovieResumePromptConfirming = false
-        movieResumePromptHideUnselected = false
-        movieResumePromptSolidBlackSelected = false
         movieResumePromptTargetURL = nil
         movieResumePromptResumeSeconds = 0
         movieResumePromptBackdropImage = nil
         _ = incrementRequestID(&movieResumePromptBackdropRequestID)
-        movieResumePromptOpacity = 0
+        movieResumeBackdropOpacity = 0
         lastArrowNavigationInputTime = nil
     }
 
-    func dismissMovieResumePromptToMenu() {
-        guard isMovieResumePromptVisible else { return }
-        guard !isMovieTransitioning else { return }
-        isMovieTransitioning = true
-        withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
-            movieResumePromptOpacity = 0
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieResumePromptFadeDuration) {
-            dismissMovieResumePrompt()
-            withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
-                menuSceneOpacity = 1
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + movieResumePromptFadeDuration) {
-                isMovieTransitioning = false
-            }
-        }
-    }
-
-    func handleMovieResumePromptInput(_ key: KeyCode, isRepeat: Bool) {
-        guard isMovieResumePromptVisible, !isMovieResumePromptConfirming, !isMovieTransitioning else { return }
-        _ = isRepeat
-        switch key {
-        case .upArrow, .downArrow:
-            let now = Date()
-            if let lastArrowNavigationInputTime,
-               now.timeIntervalSince(lastArrowNavigationInputTime) < arrowInputDebounceInterval
-            {
-                return
-            }
-            lastArrowNavigationInputTime = now
-            let delta = (key == .upArrow) ? -1 : 1
-            let next = max(0, min(1, movieResumePromptSelectedIndex + delta))
-            guard next != movieResumePromptSelectedIndex else { return }
-            withAnimation(.easeInOut(duration: 0.16)) {
-                movieResumePromptSelectedIndex = next
-            }
-            playSound(named: "SelectionChange")
-        case .enter:
-            triggerMovieResumePromptSelection()
-        case .delete, .escape:
-            dismissMovieResumePromptToMenu()
-            playSound(named: "Exit")
-        default:
-            break
-        }
-    }
-
-    func triggerMovieResumePromptSelection() {
+    func triggerMovieResumeFromPage() {
         guard let targetURL = movieResumePromptTargetURL else { return }
-        isMovieResumePromptConfirming = true
-        playSound(named: "Selection")
+        let resumeFromSavedPosition = (selectedThirdIndex == 0)
+        let startSeconds = resumeFromSavedPosition ? movieResumePromptResumeSeconds : 0
+
         var instant = Transaction()
-        instant.animation = nil
+        instant.disablesAnimations = true
         withTransaction(instant) {
-            movieResumePromptHideUnselected = true
-            movieResumePromptSolidBlackSelected = true
+            movieResumeBackdropOpacity = 0
+            _ = incrementRequestID(&movieResumePromptBackdropRequestID)
+            let returnMode = movieResumeReturnThirdMenuMode
+            thirdMenuMode = returnMode == .none ? .moviesFolder : returnMode
+            if !isInThirdMenu { isInThirdMenu = true }
+            headerText = movieResumeReturnHeaderText
+            movieResumePromptTargetURL = nil
+            movieResumePromptResumeSeconds = 0
+            movieResumePromptBackdropImage = nil
         }
-        withAnimation(.linear(duration: movieResumePromptLaunchFadeDuration)) {
+
+        clearMoviePlaybackControlState()
+        isCurrentMoviePlaybackEphemeralPreview = false
+        removeCurrentMoviePlaybackTemporaryFileIfNeeded()
+        isMovieTransitioning = true
+
+        withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
             movieTransitionOverlayOpacity = 1
-            movieResumePromptOpacity = 0
+            menuSceneOpacity = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieResumePromptLaunchFadeDuration) {
-            let resumeFromSavedPosition = (self.movieResumePromptSelectedIndex == 0)
-            let startSeconds = resumeFromSavedPosition ? self.movieResumePromptResumeSeconds : 0
-            self.dismissMovieResumePrompt()
-            self.clearMoviePlaybackControlState()
-            self.isMovieTransitioning = true
-            var instant = Transaction()
-            instant.animation = nil
-            withTransaction(instant) {
-                self.menuSceneOpacity = 0
-            }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + movieEntryFadeDuration + movieEntryBlackHoldDuration) {
             self.activateMoviePlayback(
                 from: targetURL,
                 startSeconds: startSeconds,
-                showsPlayGlyphOnStart: true,
+                showsPlayGlyphOnStart: startSeconds > 0.01,
             )
+            var instant = Transaction()
+            instant.animation = nil
             withTransaction(instant) {
                 self.movieTransitionOverlayOpacity = 0
             }

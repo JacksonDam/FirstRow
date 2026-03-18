@@ -322,7 +322,6 @@ extension MenuView {
                     return
                 }
                 guard self.thirdMenuMode == .musicITunesTopSongs ||
-                    self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey ||
                     self.thirdMenuMode == .musicNowPlaying
                 else {
                     try? FileManager.default.removeItem(at: temporaryAudioURL)

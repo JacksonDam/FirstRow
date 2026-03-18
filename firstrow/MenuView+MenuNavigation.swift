@@ -12,6 +12,7 @@ extension MenuView {
         case musicNowPlaying
         case photosDateAlbums
         case errorPage
+        case movieResumePrompt
     }
 
 }
@@ -64,6 +65,34 @@ extension MenuView {
         }
     }
 
+    func exitMovieResumePromptPage() {
+        guard thirdMenuMode == .movieResumePrompt else { return }
+
+        let returnMode = movieResumeReturnThirdMenuMode
+        let returnHeader = movieResumeReturnHeaderText
+
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            movieResumeBackdropOpacity = 0
+            movieResumePromptBackdropImage = nil
+            _ = incrementRequestID(&movieResumePromptBackdropRequestID)
+        }
+
+        transitionMenuForFolderSwap(direction: .backward) {
+            movieResumePromptTargetURL = nil
+            movieResumePromptResumeSeconds = 0
+            selectedThirdIndex = movieResumeReturnSelectedThirdIndex
+            if returnMode == .none {
+                isInThirdMenu = false
+                thirdMenuMode = .none
+            } else {
+                thirdMenuMode = returnMode
+            }
+            headerText = returnHeader
+        }
+    }
+
     func returnToRootMenuViaBlackFade() {
         guard isInSubmenu || isEnteringSubmenu else { return }
         transitionMenuForFolderSwap(
@@ -98,7 +127,7 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos:
             true
-        case .moviesFolder, .moviesITunesTop, .photosDateAlbums, .musicNowPlaying, .errorPage, .none:
+        case .moviesFolder, .moviesITunesTop, .photosDateAlbums, .musicNowPlaying, .errorPage, .movieResumePrompt, .none:
             false
         }
         transitionMenuForFolderSwap(direction: .backward) {
@@ -123,6 +152,7 @@ extension MenuView {
 
     func exitMoviesThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
         transitionMenuForFolderSwap(useOverlayFade: useOverlayFade, direction: .backward) {
+            stopMoviesFolderGapPlayer()
             isInThirdMenu = false
             thirdMenuMode = .none
             thirdMenuOpacity = 0
@@ -131,6 +161,8 @@ extension MenuView {
             resetThirdMenuDirectoryState()
             moviesFolderSelectionIndexByDirectoryPath = [:]
             resetITunesTopCarouselAndPreviewState(for: [.movies])
+            _ = incrementRequestID(&moviePlaybackLoadingRequestID)
+            isMoviePlaybackLoading = false
             refreshDetailPreviewForCurrentContext()
         }
     }
@@ -164,6 +196,9 @@ extension MenuView {
         case .musicNowPlaying:
             playSound(named: "Exit")
             exitMusicNowPlayingPage()
+        case .movieResumePrompt:
+            playSound(named: "Exit")
+            exitMovieResumePromptPage()
         case .moviesITunesTop:
             playSound(named: "Exit")
             exitMoviesThirdMenuToSecondLevelWithSwap()

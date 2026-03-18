@@ -31,8 +31,6 @@
 		7A73DEA12F5776A20021C281 /* MenuView+RowRendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE792F5776A20021C281 /* MenuView+RowRendering.swift */; };
 		7A73DEA22F5776A20021C281 /* MenuView+ITunesTopLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE2D2F5776A20021C281 /* MenuView+ITunesTopLibrary.swift */; };
 		7A73DEA42F5776A20021C281 /* MenuView+Photos.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE3C2F5776A20021C281 /* MenuView+Photos.swift */; };
-		7A73DEA52F5776A20021C281 /* MusicNowPlayingFullscreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE382F5776A20021C281 /* MusicNowPlayingFullscreenView.swift */; };
-		AABB00022F5776A20021C281 /* MusicNowPlayingMenuPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */; };
 		7A73DEA62F5776A20021C281 /* PhotosMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE3E2F5776A20021C281 /* PhotosMenuFeature.swift */; };
 		7A73DEA72F5776A20021C281 /* DVDMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE272F5776A20021C281 /* DVDMenuFeature.swift */; };
 		7A73DEA82F5776A20021C281 /* MenuView+InputHandling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE762F5776A20021C281 /* MenuView+InputHandling.swift */; };
@@ -69,6 +67,7 @@
 		8AF900001234567890ABCDE6 /* MainPhotosSelection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 8AF900001234567890ABCDF6 /* MainPhotosSelection.aif */; };
 		8AF900001234567890ABCDE7 /* MainVideosSelection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 8AF900001234567890ABCDF7 /* MainVideosSelection.aif */; };
 		8AF900001234567890ABCDE8 /* End.aif in Resources */ = {isa = PBXBuildFile; fileRef = 8AF900001234567890ABCDF8 /* End.aif */; };
+		AABB00022F5776A20021C281 /* MusicNowPlayingMenuPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -101,8 +100,6 @@
 		7A73DE352F5776A20021C281 /* MenuView+MusicLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MusicLibrary.swift"; sourceTree = "<group>"; };
 		7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MusicPlayback.swift"; sourceTree = "<group>"; };
 		7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicMenuFeature.swift; sourceTree = "<group>"; };
-		7A73DE382F5776A20021C281 /* MusicNowPlayingFullscreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingFullscreenView.swift; sourceTree = "<group>"; };
-		AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingMenuPageView.swift; sourceTree = "<group>"; };
 		7A73DE392F5776A20021C281 /* MusicPreviewGapContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPreviewGapContentView.swift; sourceTree = "<group>"; };
 		7A73DE3A2F5776A20021C281 /* MusicTopLevelCarouselGapContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTopLevelCarouselGapContentView.swift; sourceTree = "<group>"; };
 		7A73DE3C2F5776A20021C281 /* MenuView+Photos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Photos.swift"; sourceTree = "<group>"; };
@@ -129,7 +126,6 @@
 		7A73DE742F5776A20021C281 /* MenuView+FullscreenTransitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+FullscreenTransitions.swift"; sourceTree = "<group>"; };
 		7A73DE752F5776A20021C281 /* MenuView+GapContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+GapContent.swift"; sourceTree = "<group>"; };
 		7A73DE762F5776A20021C281 /* MenuView+InputHandling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+InputHandling.swift"; sourceTree = "<group>"; };
-		7A73DE7F2F5776A20021C281 /* MenuView+ErrorPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+ErrorPage.swift"; sourceTree = "<group>"; };
 		7A73DE772F5776A20021C281 /* MenuView+MenuListItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MenuListItems.swift"; sourceTree = "<group>"; };
 		7A73DE782F5776A20021C281 /* MenuView+MenuNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MenuNavigation.swift"; sourceTree = "<group>"; };
 		7A73DE792F5776A20021C281 /* MenuView+RowRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+RowRendering.swift"; sourceTree = "<group>"; };
@@ -138,6 +134,7 @@
 		7A73DE7C2F5776A20021C281 /* ReflectedGapContentIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReflectedGapContentIconView.swift; sourceTree = "<group>"; };
 		7A73DE7D2F5776A20021C281 /* SharedCacheTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedCacheTypes.swift; sourceTree = "<group>"; };
 		7A73DE7E2F5776A20021C281 /* SoundEffectPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundEffectPlayer.swift; sourceTree = "<group>"; };
+		7A73DE7F2F5776A20021C281 /* MenuView+ErrorPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+ErrorPage.swift"; sourceTree = "<group>"; };
 		7A73DE802F5776A20021C281 /* GameControllerInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameControllerInputOverlay.swift; sourceTree = "<group>"; };
 		7A73DE822F5776A20021C281 /* firstrowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = firstrowTests.swift; sourceTree = "<group>"; };
 		7A73DE842F5776A20021C281 /* firstrowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = firstrowUITests.swift; sourceTree = "<group>"; };
@@ -153,6 +150,7 @@
 		8AF900001234567890ABCDF6 /* MainPhotosSelection.aif */ = {isa = PBXFileReference; lastKnownFileType = file; path = MainPhotosSelection.aif; sourceTree = "<group>"; };
 		8AF900001234567890ABCDF7 /* MainVideosSelection.aif */ = {isa = PBXFileReference; lastKnownFileType = file; path = MainVideosSelection.aif; sourceTree = "<group>"; };
 		8AF900001234567890ABCDF8 /* End.aif */ = {isa = PBXFileReference; lastKnownFileType = file; path = End.aif; sourceTree = "<group>"; };
+		AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingMenuPageView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -224,7 +222,6 @@
 				7A73DE352F5776A20021C281 /* MenuView+MusicLibrary.swift */,
 				7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */,
 				7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */,
-				7A73DE382F5776A20021C281 /* MusicNowPlayingFullscreenView.swift */,
 				AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */,
 				7A73DE392F5776A20021C281 /* MusicPreviewGapContentView.swift */,
 				7A73DE3A2F5776A20021C281 /* MusicTopLevelCarouselGapContentView.swift */,
@@ -535,7 +532,6 @@
 				7A73DEA12F5776A20021C281 /* MenuView+RowRendering.swift in Sources */,
 				7A73DEA22F5776A20021C281 /* MenuView+ITunesTopLibrary.swift in Sources */,
 				7A73DEA42F5776A20021C281 /* MenuView+Photos.swift in Sources */,
-				7A73DEA52F5776A20021C281 /* MusicNowPlayingFullscreenView.swift in Sources */,
 				AABB00022F5776A20021C281 /* MusicNowPlayingMenuPageView.swift in Sources */,
 				7A73DEA62F5776A20021C281 /* PhotosMenuFeature.swift in Sources */,
 				7A73DEA72F5776A20021C281 /* DVDMenuFeature.swift in Sources */,

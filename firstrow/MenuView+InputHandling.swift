@@ -22,18 +22,10 @@ extension MenuView {
         if isFullscreenSceneTransitioning {
             return
         }
-        if isMovieResumePromptVisible {
-            handleMovieResumePromptInput(key, isRepeat: isRepeat)
-            return
-        }
         if isMenuFolderSwapTransitioning {
             return
         }
         if let activeFullscreenScene {
-            if activeFullscreenScene.key == musicNowPlayingFullscreenKey {
-                handleMusicPlaybackInput(key, isRepeat: isRepeat)
-                return
-            }
             if activeFullscreenScene.key == photoSlideshowFullscreenKey {
                 handlePhotoSlideshowInput(key, isRepeat: isRepeat)
                 return
@@ -146,6 +138,9 @@ extension MenuView {
         errorPageSubcaptionText = ""
         _ = incrementRequestID(&theatricalTrailersLoadingRequestID)
         isTheatricalTrailersLoading = false
+        _ = incrementRequestID(&moviePlaybackLoadingRequestID)
+        isMoviePlaybackLoading = false
+        stopMoviesFolderGapPlayer()
         resetThirdMenuDirectoryState()
         resetAllITunesTopMenusForNonITunesContext()
         _ = incrementRequestID(&musicTopLevelCarouselRequestID)
@@ -290,6 +285,8 @@ extension MenuView {
         _ = incrementRequestID(&musicPreviewRequestID)
         _ = incrementRequestID(&theatricalTrailersLoadingRequestID)
         isTheatricalTrailersLoading = false
+        _ = incrementRequestID(&moviePlaybackLoadingRequestID)
+        isMoviePlaybackLoading = false
 
         DispatchQueue.main.async {
             isIconAnimated = false
@@ -324,6 +321,12 @@ extension MenuView {
                 moviePreviewImage = nil
                 moviesFolderSubmenuPreviewDescriptors = []
                 moviesFolderSubmenuPreviewIdentity = ""
+                stopMoviesFolderGapPlayer()
+                movieResumeBackdropOpacity = 0
+                movieResumePromptTargetURL = nil
+                movieResumePromptResumeSeconds = 0
+                movieResumePromptBackdropImage = nil
+                _ = incrementRequestID(&movieResumePromptBackdropRequestID)
                 musicPreviewTargetSongID = nil
                 musicPreviewImage = nil
                 resetMusicCategoryStateForNonMusicITunesTop()
@@ -366,7 +369,6 @@ extension MenuView {
         let item = submenuItems[clampedSubIndex]
         if activeRootItemID == "music", item.id == "music_now_playing" {
             guard isMusicActivelyPlaying else { return }
-            clearMusicSongSwitchTransitionState()
             playSound(named: "Selection")
             enterMusicNowPlayingPage()
             return
@@ -467,7 +469,6 @@ extension MenuView {
         switch key {
         case .delete, .escape:
             stopMusicScrubbing(showPauseGlyph: false)
-            clearMusicSongSwitchTransitionState()
             navigateUpInThirdMenuOrExit()
         case .space:
             handleMusicSpacebarPressed()
@@ -488,11 +489,14 @@ extension MenuView {
         switch thirdMenuMode {
         case .moviesFolder:
             guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return }
+            guard !isMoviePlaybackLoading else { return }
             let item = thirdMenuItems[selectedThirdIndex]
             if item.isDirectory {
                 requestMoviesFolderDirectoryOpenIfNotEmpty(item)
             } else {
-                startMoviePlayback(from: item.url)
+                showMoviePlaybackLoadingThen {
+                    startMoviePlayback(from: item.url)
+                }
             }
         case .moviesITunesTop:
             startSelectedITunesTopThirdMenuItemPlayback(for: .movies)
@@ -517,7 +521,6 @@ extension MenuView {
                     ? ""
                     : "\(songIndex + 1) of \(musicSongsThirdMenuItems.count)"
                 musicNowPlayingShowsShuffleGlyph = isMusicSongsShuffleMode
-                clearMusicSongSwitchTransitionState()
                 enterMusicNowPlayingPage()
             } else {
                 startPlaybackForMusicLibraryEntry(
@@ -527,6 +530,8 @@ extension MenuView {
                     playbackQueue: musicSongsThirdMenuItems,
                 )
             }
+        case .movieResumePrompt:
+            triggerMovieResumeFromPage()
         case .musicNowPlaying, .errorPage:
             break
         case .photosDateAlbums:
@@ -575,7 +580,6 @@ extension MenuView {
             if activeMusicPlaybackSongID == selectedSong.id, hasActiveMusicPlaybackSession() {
                 musicNowPlayingTrackPositionText = "1 of 1"
                 musicNowPlayingShowsShuffleGlyph = false
-                clearMusicSongSwitchTransitionState()
                 enterMusicNowPlayingPage()
                 return
             }
@@ -906,7 +910,7 @@ extension MenuView {
     func prepareNavigationTiming(for key: KeyCode, isRepeat: Bool) -> Bool {
         let now = Date()
 
-        let isNowPlayingSongSwitch = (activeFullscreenScene?.key == musicNowPlayingFullscreenKey || thirdMenuMode == .musicNowPlaying) && (key == .upArrow || key == .downArrow)
+        let isNowPlayingSongSwitch = thirdMenuMode == .musicNowPlaying && (key == .upArrow || key == .downArrow)
         if isNowPlayingSongSwitch {
             lastArrowNavigationInputTime = now
             lastHoldNavigationTime = now
@@ -1168,6 +1172,8 @@ extension MenuView {
             isNowPlayingPage: isInThirdMenu && thirdMenuMode == .musicNowPlaying,
             isErrorPage: isInThirdMenu && thirdMenuMode == .errorPage,
             isSubmenuErrorPage: !isInThirdMenu && isSubmenuErrorPage,
+            isMoviesFolderPage: isInThirdMenu && thirdMenuMode == .moviesFolder,
+            isMovieResumePromptPage: isInThirdMenu && thirdMenuMode == .movieResumePrompt,
         )
     }
 
@@ -1181,6 +1187,20 @@ extension MenuView {
 
     func menuImage(forRootID rootID: String) -> NSImage? {
         MenuConfiguration.imageName(forRootID: rootID).flatMap { NSImage(named: $0) }
+    }
+
+    func showMoviePlaybackLoadingThen(_ action: @escaping () -> Void) {
+        let requestID = incrementRequestID(&moviePlaybackLoadingRequestID)
+        isMoviePlaybackLoading = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard self.moviePlaybackLoadingRequestID == requestID else { return }
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                self.isMoviePlaybackLoading = false
+            }
+            action()
+        }
     }
 }
 

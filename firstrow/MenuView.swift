@@ -10,6 +10,8 @@ struct MenuTransitionSnapshot: Identifiable {
     var isNowPlayingPage: Bool = false
     var isErrorPage: Bool = false
     var isSubmenuErrorPage: Bool = false
+    var isMoviesFolderPage: Bool = false
+    var isMovieResumePromptPage: Bool = false
 }
 
 enum MenuTransitionDirection {
@@ -114,10 +116,6 @@ struct MenuView: View {
     let movieEntryBlackHoldDuration: Double = 1.0
     let movieExitFreezeHoldDuration: Double = 0.5
     let movieExitFadeDuration: Double = 0.48
-    let movieResumePromptRevealDelay: Double = 1.0
-    let movieResumePromptFadeDuration: Double = 0.24
-    let movieResumePromptSelectionSlideDuration: Double = 0.2
-    let movieResumePromptLaunchFadeDuration: Double = 0.4
     let menuFolderSwapFadeDuration: Double = 0.22
     let menuOverlayBlackoutSafetyDuration: Double = 0.1
     let menuFolderSwapHoldDuration: Double = 0.5
@@ -127,12 +125,6 @@ struct MenuView: View {
     let photoSlideshowMenuFadeDuration: Double = 0.28
     let photoSlideshowMenuRevealDuration: Double = 0.24
     let photoSlideshowExitHoldDuration: Double = 1.0
-    let musicSongSwitchTransitionDuration: Double = 1.0
-    let musicSongOutgoingFadeDuration: Double = 0.6
-    let musicSongIncomingTransitionDelay: Double = 0.2
-    let musicNowPlayingFlipInterval: TimeInterval = 18.0
-    let musicNowPlayingFlipDuration: TimeInterval = 1.2
-
     // MARK: - Input constants
 
     let arrowInputDebounceInterval: TimeInterval = 0.05
@@ -161,15 +153,12 @@ struct MenuView: View {
     let photosSelectionTextureTrailingAdjustment: CGFloat = 3
     let photosSelectionTextureHeightAdjustment: CGFloat = -2
     let photosCompactSelectionVisualWidthReduction: CGFloat = 18
-    let movieResumeSelectionTextureLeadingAdjustment: CGFloat = -14
-    let movieResumeSelectionTextureTrailingAdjustment: CGFloat = 0
     let menuSelectionWidthScale: CGFloat = 1.16
     let menuSelectionHeightScale: CGFloat = 1.18
     let menuSlideDistance: CGFloat = 580
 
     // MARK: - Fullscreen scene keys
 
-    let musicNowPlayingFullscreenKey = "music_now_playing"
     let photoSlideshowFullscreenKey = "photo_slideshow"
 
     // MARK: - Navigation state
@@ -283,17 +272,14 @@ struct MenuView: View {
     @State var isMoviePlaybackVisible = false
     @State var isMovieTransitioning = false
     @State var movieTransitionOverlayOpacity: Double = 0
-    @State var isMovieResumePromptVisible = false
-    @State var isMovieResumePromptConfirming = false
-    @State var movieResumePromptSelectedIndex = 0
-    @State var movieResumePromptHideUnselected = false
-    @State var movieResumePromptSolidBlackSelected = false
     @State var movieResumePromptTargetURL: URL?
     @State var movieResumePromptResumeSeconds: Double = 0
     @State var movieResumePromptBackdropImage: NSImage?
     @State var movieResumePromptBackdropRequestID = 0
     @State var movieResumePromptBackdropCache: [String: NSImage] = [:]
-    @State var movieResumePromptOpacity: Double = 0
+    @State var movieResumeBackdropOpacity: Double = 0
+    @State var isMoviePlaybackLoading = false
+    @State var moviePlaybackLoadingRequestID = 0
     @State var areMovieControlsVisible = false
     @State var movieControlsOpacity: Double = 0
     @State var movieControlsHideWorkItem: DispatchWorkItem?
@@ -321,6 +307,10 @@ struct MenuView: View {
     @State var moviePreviewImage: NSImage?
     @State var moviePreviewRequestID = 0
     @State var moviePreviewCache: [String: NSImage] = [:]
+    @State var moviesFolderGapPlayer: AVQueuePlayer?
+    @State var moviesFolderGapPlayerLooper: AVPlayerLooper?
+    @State var moviesFolderGapPlayerURL: URL?
+    @State var moviesFolderGapPlayerDebounceWork: DispatchWorkItem?
     @State var moviesFolderSelectionIndexByDirectoryPath: [String: Int] = [:]
     @State var moviesFolderSubmenuPreviewDescriptors: [MovieGapPreviewDescriptor] = []
     @State var moviesFolderSubmenuPreviewIdentity: String = ""
@@ -387,6 +377,12 @@ struct MenuView: View {
     @State var musicNowPlayingReturnThirdMenuMode: ThirdMenuMode = .none
     @State var musicNowPlayingReturnHeaderText: String = ""
 
+    // MARK: - Movie resume page state
+
+    @State var movieResumeReturnThirdMenuMode: ThirdMenuMode = .none
+    @State var movieResumeReturnHeaderText: String = ""
+    @State var movieResumeReturnSelectedThirdIndex: Int = 0
+
     // MARK: - Error page state
 
     @State var errorPageHeaderText: String = ""
@@ -410,20 +406,6 @@ struct MenuView: View {
     @State var musicNowPlayingDurationSeconds: Double = 0
     @State var musicNowPlayingShowsShuffleGlyph = false
     @State var musicNowPlayingLeadingGlyphState: MoviePlaybackGlyphState?
-    @State var musicSongTransitionSnapshot: MusicNowPlayingSnapshot?
-    @State var musicSongTransitionOutgoingProgress: CGFloat = 0
-    @State var musicSongTransitionOutgoingOpacityProgress: CGFloat = 0
-    @State var musicSongTransitionIncomingProgress: CGFloat = 0
-    @State var musicSongTransitionDirection: Int = 1
-    @State var musicSongTransitionRequestID: Int = 0
-    @State var musicSongTransitionDeadline: Date?
-    @State var isMusicSongTransitioning = false
-    @State var musicNowPlayingFlipRotationDegrees: Double = 0
-    @State var musicNowPlayingUsesAlternateLayout = false
-    @State var musicNowPlayingFlipTimer: Timer?
-    @State var musicNowPlayingFlipMidpointWorkItem: DispatchWorkItem?
-    @State var musicNowPlayingFlipGeneration: Int = 0
-    @State var isMusicNowPlayingFlipAnimating = false
     @State var musicAudioPlayer: AVPlayer?
     @State var isCurrentMusicPlaybackUsingAppleScript = false
     @State var currentMusicPlaybackTemporaryFileURL: URL?
@@ -447,6 +429,10 @@ struct MenuView: View {
     @State var theatricalTrailersLoadingRequestID = 0
 
     @State var lastUserInteractionAt = Date()
+
+    // MARK: - Layout state
+
+    @State var menuContainerSize: CGSize = MenuVirtualScenePreset.widescreen
 
     // MARK: - Settings
 

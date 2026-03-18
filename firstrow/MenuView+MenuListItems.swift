@@ -156,6 +156,11 @@ extension MenuView {
                 )
             }
             return songsItems
+        case .movieResumePrompt:
+            return [
+                plainMenuListItem(id: "movie_resume_resume", title: "Resume Playing"),
+                plainMenuListItem(id: "movie_resume_start", title: "Start from Beginning"),
+            ]
         case .musicNowPlaying, .errorPage:
             return []
         case .photosDateAlbums:

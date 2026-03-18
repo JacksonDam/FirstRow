@@ -71,7 +71,6 @@ extension MenuView {
         trackCount: Int = 1,
         showsTrackPosition: Bool = false,
         presentsFullscreen: Bool = true,
-        resetTransitionState: Bool = true,
     ) {
         let resolvedPlaybackID = playbackID ?? "audio::\(mediaURL.path)"
         let pseudoSong = MusicLibrarySongEntry(
@@ -91,7 +90,6 @@ extension MenuView {
             trackIndex: trackIndex,
             trackCount: trackCount,
             presentsFullscreen: presentsFullscreen,
-            resetTransitionState: resetTransitionState,
         )
         if !showsTrackPosition {
             musicNowPlayingTrackPositionText = ""
@@ -229,19 +227,11 @@ extension MenuView {
         trackIndex: Int,
         trackCount: Int,
         presentsFullscreen: Bool = true,
-        resetTransitionState: Bool = true,
         usingExistingBlackout: Bool = false,
         playbackQueue: [MusicLibrarySongEntry]? = nil,
     ) {
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
-        if resetTransitionState {
-            clearMusicSongSwitchTransitionState()
-        }
-        let hadActiveSession = hasActiveMusicPlaybackSession()
         stopMusicPlaybackSession(clearDisplayState: false)
-        if !hadActiveSession {
-            resetMusicNowPlayingFlipState()
-        }
         if let playbackQueue {
             activeMusicPlaybackQueue = playbackQueue
         }
@@ -275,7 +265,6 @@ extension MenuView {
         if presentsFullscreen {
             enterMusicNowPlayingPage(usingExistingBlackout: usingExistingBlackout)
         }
-        updateMusicNowPlayingFlipTimerState()
     }
 
     #if os(macOS)
@@ -338,12 +327,11 @@ extension MenuView {
                     if self.thirdMenuMode == .musicNowPlaying {
                         self.exitMusicNowPlayingPage()
                     } else {
-                        self.dismissFullscreenScene(preserveMusicPlayback: false)
+                        self.dismissFullscreenScene()
                     }
                 } else {
                     self.switchMusicNowPlayingTrack(direction: 1)
                 }
-                self.updateMusicNowPlayingFlipTimerState()
             }
         }
         let interval = CMTime(seconds: 1.0 / 20.0, preferredTimescale: 600)
@@ -395,54 +383,9 @@ extension MenuView {
         removeCurrentMusicPlaybackTemporaryFileIfNeeded()
         activeMusicPlaybackQueue = []
         activeMusicPlaybackSongID = nil
-        invalidateMusicNowPlayingFlipTimer()
-        musicNowPlayingFlipMidpointWorkItem?.cancel()
-        musicNowPlayingFlipMidpointWorkItem = nil
         if clearDisplayState {
             clearMusicNowPlayingDisplayState()
-            resetMusicNowPlayingFlipState()
         }
-    }
-
-    func clearMusicSongSwitchTransitionState() {
-        musicSongTransitionSnapshot = nil
-        musicSongTransitionOutgoingProgress = 0
-        musicSongTransitionOutgoingOpacityProgress = 0
-        musicSongTransitionIncomingProgress = 0
-        musicSongTransitionDeadline = nil
-        isMusicSongTransitioning = false
-        _ = incrementRequestID(&musicSongTransitionRequestID)
-    }
-
-    func cancelMusicNowPlayingFlipAnimation(preserveLayout: Bool = true) {
-        invalidateMusicNowPlayingFlipTimer()
-        musicNowPlayingFlipMidpointWorkItem?.cancel()
-        musicNowPlayingFlipMidpointWorkItem = nil
-        musicNowPlayingFlipGeneration += 1
-        musicNowPlayingFlipRotationDegrees = 0
-        isMusicNowPlayingFlipAnimating = false
-        if !preserveLayout {
-            musicNowPlayingUsesAlternateLayout = false
-        }
-    }
-
-    func musicNowPlayingFlipVisibilityOpacity() -> Double {
-        1
-    }
-
-    func resetMusicNowPlayingFlipState() {
-        invalidateMusicNowPlayingFlipTimer()
-        musicNowPlayingFlipMidpointWorkItem?.cancel()
-        musicNowPlayingFlipMidpointWorkItem = nil
-        musicNowPlayingFlipGeneration = 0
-        musicNowPlayingFlipRotationDegrees = 0
-        musicNowPlayingUsesAlternateLayout = false
-        isMusicNowPlayingFlipAnimating = false
-    }
-
-    func invalidateMusicNowPlayingFlipTimer() {
-        musicNowPlayingFlipTimer?.invalidate()
-        musicNowPlayingFlipTimer = nil
     }
 
     func enterMusicNowPlayingPage(usingExistingBlackout: Bool = false) {
@@ -482,7 +425,6 @@ extension MenuView {
 
     func exitMusicNowPlayingPage() {
         stopMusicScrubbing(showPauseGlyph: false)
-        clearMusicSongSwitchTransitionState()
         let returnMode = musicNowPlayingReturnThirdMenuMode
         let returnHeader = musicNowPlayingReturnHeaderText
         transitionMenuForFolderSwap(direction: .backward) {
@@ -500,66 +442,6 @@ extension MenuView {
                 submenuOpacity = 1
                 refreshDetailPreviewForCurrentContext()
             }
-        }
-    }
-
-    func updateMusicNowPlayingFlipTimerState() {
-        let isMusicSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
-            || thirdMenuMode == .musicNowPlaying
-        let isMusicPlaying = isMusicPlaybackRunning()
-        let shouldRun = isMusicSceneVisible && isMusicPlaying && !isMovieTransitioning && !isMoviePlaybackVisible
-        if !shouldRun {
-            invalidateMusicNowPlayingFlipTimer()
-            musicNowPlayingFlipMidpointWorkItem?.cancel()
-            musicNowPlayingFlipMidpointWorkItem = nil
-            if !isMusicNowPlayingFlipAnimating {
-                musicNowPlayingFlipRotationDegrees = 0
-            }
-            return
-        }
-        guard musicNowPlayingFlipTimer == nil else { return }
-        let timer = Timer(timeInterval: musicNowPlayingFlipInterval, repeats: true) { _ in
-            self.performMusicNowPlayingFlip()
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        musicNowPlayingFlipTimer = timer
-    }
-
-    func performMusicNowPlayingFlip() {
-        guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey || thirdMenuMode == .musicNowPlaying else { return }
-        guard isMusicPlaybackRunning() else { return }
-        guard !isMusicSongTransitioning else { return }
-        guard !isMusicNowPlayingFlipAnimating else { return }
-        isMusicNowPlayingFlipAnimating = true
-        musicNowPlayingFlipGeneration += 1
-        let generation = musicNowPlayingFlipGeneration
-        let halfDuration = musicNowPlayingFlipDuration * 0.5
-        // Alternate the spin sign so each pass is the exact reverse of the previous one.
-        // Right -> Left uses one direction; Left -> Right uses the mirrored reverse path.
-        let spinSign: Double = musicNowPlayingUsesAlternateLayout ? 1 : -1
-        let halfTurnDegrees = 90.0 * spinSign
-        musicNowPlayingFlipMidpointWorkItem?.cancel()
-        let midpointWorkItem = DispatchWorkItem {
-            guard generation == musicNowPlayingFlipGeneration else { return }
-            guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey || thirdMenuMode == .musicNowPlaying else { return }
-            musicNowPlayingUsesAlternateLayout.toggle()
-            var resetTransaction = Transaction()
-            resetTransaction.disablesAnimations = true
-            withTransaction(resetTransaction) {
-                musicNowPlayingFlipRotationDegrees = -halfTurnDegrees
-            }
-            withAnimation(.linear(duration: halfDuration)) {
-                musicNowPlayingFlipRotationDegrees = 0
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + halfDuration) {
-                guard generation == self.musicNowPlayingFlipGeneration else { return }
-                self.isMusicNowPlayingFlipAnimating = false
-            }
-        }
-        musicNowPlayingFlipMidpointWorkItem = midpointWorkItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + halfDuration, execute: midpointWorkItem)
-        withAnimation(.linear(duration: halfDuration)) {
-            musicNowPlayingFlipRotationDegrees = halfTurnDegrees
         }
     }
 
@@ -585,9 +467,6 @@ extension MenuView {
 
     func switchMusicNowPlayingTrack(direction: Int) {
         guard direction != 0 else { return }
-        if isMusicSongTransitioning {
-            clearMusicSongSwitchTransitionState()
-        }
         if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == "iTunes Top Songs" {
             return
         }
@@ -598,63 +477,14 @@ extension MenuView {
         let targetIndex = max(0, min(playbackQueue.count - 1, currentIndex + direction))
         guard targetIndex != currentIndex else { return }
         let targetSong = playbackQueue[targetIndex]
-        let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
-            || thirdMenuMode == .musicNowPlaying
-        if !isMusicNowPlayingSceneVisible {
-            clearMusicSongSwitchTransitionState()
-            startMusicPlayback(
-                from: targetSong,
-                trackIndex: targetIndex,
-                trackCount: playbackQueue.count,
-                presentsFullscreen: false,
-                playbackQueue: playbackQueue,
-            )
-            return
-        }
-        cancelMusicNowPlayingFlipAnimation()
-        let transitionGeneration = incrementRequestID(&musicSongTransitionRequestID)
-        musicSongTransitionDeadline = Date().addingTimeInterval(
-            musicSongIncomingTransitionDelay + musicSongSwitchTransitionDuration + 0.05,
-        )
-        musicSongTransitionDirection = direction > 0 ? 1 : -1
-        musicSongTransitionSnapshot = currentMusicNowPlayingSnapshot
-        musicSongTransitionOutgoingProgress = 0
-        musicSongTransitionOutgoingOpacityProgress = 0
-        musicSongTransitionIncomingProgress = 0
-        isMusicSongTransitioning = true
         selectedThirdIndex = thirdMenuSelectionIndex(forMusicSongIndex: targetIndex)
         startMusicPlayback(
             from: targetSong,
             trackIndex: targetIndex,
             trackCount: playbackQueue.count,
-            resetTransitionState: false,
+            presentsFullscreen: false,
             playbackQueue: playbackQueue,
         )
-        DispatchQueue.main.async {
-            guard self.musicSongTransitionRequestID == transitionGeneration else { return }
-            let outgoingFadeAnimation: Animation = direction > 0
-                ? .easeOut(duration: musicSongOutgoingFadeDuration)
-                : .easeInOut(duration: musicSongSwitchTransitionDuration)
-            withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
-                musicSongTransitionOutgoingProgress = 1
-            }
-            withAnimation(outgoingFadeAnimation) {
-                musicSongTransitionOutgoingOpacityProgress = 1
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + musicSongIncomingTransitionDelay) {
-            guard self.musicSongTransitionRequestID == transitionGeneration else { return }
-            withAnimation(.easeInOut(duration: musicSongSwitchTransitionDuration)) {
-                musicSongTransitionIncomingProgress = 1
-            }
-        }
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + musicSongIncomingTransitionDelay + musicSongSwitchTransitionDuration,
-        ) {
-            guard self.musicSongTransitionRequestID == transitionGeneration else { return }
-            clearMusicSongSwitchTransitionState()
-            updateMusicNowPlayingFlipTimerState()
-        }
     }
 
     func clearMusicNowPlayingDisplayState() {
@@ -671,27 +501,6 @@ extension MenuView {
 
     // MARK: - Music Input & Scrubbing
 
-    func handleMusicPlaybackInput(_ key: KeyCode, isRepeat: Bool) {
-        switch key {
-        case .delete, .escape:
-            stopMusicScrubbing(showPauseGlyph: false)
-            clearMusicSongSwitchTransitionState()
-            dismissFullscreenScene(preserveMusicPlayback: true)
-            playSound(named: "Exit")
-        case .space:
-            handleMusicSpacebarPressed()
-        case .upArrow, .downArrow:
-            guard prepareNavigationTiming(for: key, isRepeat: isRepeat) else { return }
-            switchMusicNowPlayingTrack(direction: key == .upArrow ? -1 : 1)
-        case .leftArrow:
-            beginMusicScrubbing(direction: -1, isRepeat: isRepeat)
-        case .rightArrow:
-            beginMusicScrubbing(direction: 1, isRepeat: isRepeat)
-        default:
-            break
-        }
-    }
-
     func handleMusicSpacebarPressed() {
         guard let player = musicAudioPlayer else { return }
         let isCurrentlyPlaying = player.rate > 0.01
@@ -699,22 +508,18 @@ extension MenuView {
             player.pause()
             stopMusicScrubbing(showPauseGlyph: false)
             musicNowPlayingLeadingGlyphState = .pause
-            updateMusicNowPlayingFlipTimerState()
             return
         }
         stopMusicScrubbing(showPauseGlyph: false)
         musicNowPlayingLeadingGlyphState = nil
         player.playImmediately(atRate: 1.0)
-        updateMusicNowPlayingFlipTimerState()
     }
 
     func beginMusicScrubbing(direction: Int, isRepeat: Bool) {
         guard let player = musicAudioPlayer else { return }
         guard direction != 0 else { return }
-        guard !isMusicSongTransitioning else { return }
         _ = isRepeat
         player.pause()
-        updateMusicNowPlayingFlipTimerState()
         let now = Date()
         if musicScrubDirection != direction {
             musicScrubDirection = direction
@@ -793,7 +598,6 @@ extension MenuView {
         if showPauseGlyph {
             musicNowPlayingLeadingGlyphState = .pause
         }
-        updateMusicNowPlayingFlipTimerState()
     }
 
     func musicScrubVelocity(for level: Int) -> Double {
@@ -808,71 +612,3 @@ extension MenuView {
     }
 }
 
-extension MenuView {
-    struct MusicNowPlayingSnapshot {
-        let artworkImage: NSImage?
-        let trackTitle: String
-        let artistName: String
-        let albumTitle: String
-        let trackPositionText: String
-        let elapsedSeconds: Double
-        let durationSeconds: Double
-        let showsShuffleGlyph: Bool
-        let leadingGlyphState: MoviePlaybackGlyphState?
-    }
-
-    var currentMusicNowPlayingSnapshot: MusicNowPlayingSnapshot {
-        .init(
-            artworkImage: musicNowPlayingArtwork,
-            trackTitle: musicNowPlayingTitle,
-            artistName: musicNowPlayingArtist,
-            albumTitle: musicNowPlayingAlbum,
-            trackPositionText: musicNowPlayingTrackPositionText,
-            elapsedSeconds: musicNowPlayingElapsedSeconds,
-            durationSeconds: musicNowPlayingDurationSeconds,
-            showsShuffleGlyph: musicNowPlayingShowsShuffleGlyph,
-            leadingGlyphState: musicNowPlayingLeadingGlyphState,
-        )
-    }
-
-    func musicNowPlayingView(for snapshot: MusicNowPlayingSnapshot) -> some View {
-        MusicNowPlayingFullscreenView(
-            artworkImage: snapshot.artworkImage,
-            trackTitle: snapshot.trackTitle,
-            artistName: snapshot.artistName,
-            albumTitle: snapshot.albumTitle,
-            trackPositionText: snapshot.trackPositionText,
-            elapsedSeconds: snapshot.elapsedSeconds,
-            durationSeconds: snapshot.durationSeconds,
-            showsShuffleGlyph: snapshot.showsShuffleGlyph,
-            leadingGlyphState: snapshot.leadingGlyphState,
-            layoutMode: musicNowPlayingUsesAlternateLayout ? .artworkLeft : .artworkRight,
-        )
-    }
-
-    func musicNowPlayingSceneView() -> some View {
-        let hasTransition = musicSongTransitionSnapshot != nil
-        let incomingStartScale: CGFloat = musicSongTransitionDirection > 0 ? 0.25 : 6
-        let outgoingEndScale: CGFloat = musicSongTransitionDirection > 0 ? 6 : 0.25
-        let outgoingProgress = min(max(musicSongTransitionOutgoingProgress, 0), 1)
-        let outgoingOpacityProgress = min(max(musicSongTransitionOutgoingOpacityProgress, 0), 1)
-        let incomingProgress = min(max(musicSongTransitionIncomingProgress, 0), 1)
-        let incomingScale = hasTransition
-            ? (incomingStartScale + ((1 - incomingStartScale) * incomingProgress))
-            : 1
-        let outgoingScale = hasTransition
-            ? (1 + ((outgoingEndScale - 1) * outgoingProgress))
-            : 1
-        let incomingOpacity = hasTransition ? Double(incomingProgress) : 1
-        let outgoingOpacity = hasTransition ? Double(1 - outgoingOpacityProgress) : 1
-        let flipOpacity = musicNowPlayingFlipVisibilityOpacity()
-        return ZStack {
-            musicNowPlayingView(for: currentMusicNowPlayingSnapshot).scaleEffect(incomingScale).opacity(incomingOpacity)
-            if let outgoing = musicSongTransitionSnapshot {
-                musicNowPlayingView(for: outgoing).scaleEffect(outgoingScale).opacity(outgoingOpacity)
-            }
-        }.rotation3DEffect(.degrees(musicNowPlayingFlipRotationDegrees),
-                           axis: (x: 0, y: 1, z: 0),
-                           perspective: 0.9).opacity(flipOpacity)
-    }
-}

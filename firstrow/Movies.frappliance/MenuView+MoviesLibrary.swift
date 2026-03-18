@@ -345,7 +345,49 @@ extension MenuView {
         }
     }
 
+    func refreshMoviesFolderGapPlayer() {
+        guard isInThirdMenu,
+              thirdMenuMode == .moviesFolder,
+              thirdMenuItems.indices.contains(selectedThirdIndex),
+              !thirdMenuItems[selectedThirdIndex].isDirectory
+        else {
+            stopMoviesFolderGapPlayer()
+            return
+        }
+        let url = thirdMenuItems[selectedThirdIndex].url.standardizedFileURL
+
+        guard url != moviesFolderGapPlayerURL else { return }
+
+        moviesFolderGapPlayerDebounceWork?.cancel()
+
+        let work = DispatchWorkItem {
+            moviesFolderGapPlayer?.pause()
+            moviesFolderGapPlayerLooper = nil
+            moviesFolderGapPlayer = nil
+            moviesFolderGapPlayerURL = url
+            let item = AVPlayerItem(url: url)
+            let queuePlayer = AVQueuePlayer()
+            queuePlayer.isMuted = true
+            let looper = AVPlayerLooper(player: queuePlayer, templateItem: item)
+            queuePlayer.play()
+            moviesFolderGapPlayer = queuePlayer
+            moviesFolderGapPlayerLooper = looper
+        }
+        moviesFolderGapPlayerDebounceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
+    func stopMoviesFolderGapPlayer() {
+        moviesFolderGapPlayerDebounceWork?.cancel()
+        moviesFolderGapPlayerDebounceWork = nil
+        moviesFolderGapPlayer?.pause()
+        moviesFolderGapPlayerLooper = nil
+        moviesFolderGapPlayer = nil
+        moviesFolderGapPlayerURL = nil
+    }
+
     func refreshMoviePreviewForCurrentContext() {
+        refreshMoviesFolderGapPlayer()
         refreshMoviesFolderSubmenuPreviewForCurrentContext()
         if isInThirdMenu, thirdMenuMode == .moviesITunesTop {
             moviePreviewTargetURL = nil

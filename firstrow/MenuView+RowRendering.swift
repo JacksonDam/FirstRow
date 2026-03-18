@@ -1,3 +1,5 @@
+import AVFoundation
+import AVKit
 import SwiftUI
 
 
@@ -12,6 +14,33 @@ private enum SelectionBoxTextureCache {
         }
         return (left: left, middle: middle, right: right)
     }()
+}
+
+private class AVPlayerLayerView: NSView {
+    let playerLayer = AVPlayerLayer()
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.addSublayer(playerLayer)
+        playerLayer.videoGravity = .resizeAspectFill
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layout() {
+        super.layout()
+        playerLayer.frame = bounds
+    }
+}
+
+private struct MovieGapPlayerView: NSViewRepresentable {
+    let player: AVQueuePlayer
+    func makeNSView(context: Context) -> AVPlayerLayerView {
+        let view = AVPlayerLayerView()
+        view.playerLayer.player = player
+        return view
+    }
+    func updateNSView(_ nsView: AVPlayerLayerView, context: Context) {
+        nsView.playerLayer.player = player
+    }
 }
 
 private enum MenuRowRenderingCache {
@@ -33,6 +62,15 @@ private struct RootMenuSelectionCenterPreferenceKey: PreferenceKey {
 
 enum MenuVirtualScenePreset {
     static let widescreen = CGSize(width: 1920, height: 1080)
+
+    static func virtualSize(for containerSize: CGSize) -> CGSize {
+        guard containerSize.width > 0, containerSize.height > 0 else { return widescreen }
+        let widescreenAspect = widescreen.width / widescreen.height
+        let containerAspect = containerSize.width / containerSize.height
+        guard containerAspect < widescreenAspect else { return widescreen }
+        let virtualHeight = ceil(widescreen.width * containerSize.height / containerSize.width)
+        return CGSize(width: widescreen.width, height: virtualHeight)
+    }
 
     static func scaledX(_ value: CGFloat, for virtualSize: CGSize) -> CGFloat {
         guard widescreen.width > 0 else { return value }
@@ -260,57 +298,6 @@ extension MenuView {
         } else {
             Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).offset(x: rootMenuHeaderOffsetX(geometry: geometry)).offset(y: menuHeaderVerticalOffset).opacity(headerOpacity).animation(.easeInOut(duration: 0.25), value: headerOpacity)
         }
-    }
-
-    @ViewBuilder
-    func movieResumePromptOverlay(geometry: GeometryProxy) -> some View {
-        let options = ["Resume Playing", "Start from Beginning"]
-        let optionWidth = min(menuWidthConstrained(geometry: geometry) * 0.88, 860)
-        let optionHeight = selectionBoxHeight
-        let optionSelectionHeightScale = optionHeight / selectionBoxHeight
-        let optionVisualWidth =
-            optionWidth +
-            selectionTextureVisualWidthDelta +
-            movieResumeSelectionTextureLeadingAdjustment +
-            movieResumeSelectionTextureTrailingAdjustment
-        let optionVisualHeight = optionHeight + (selectionTextureVisualHeightDelta * optionSelectionHeightScale)
-        let optionVisualXOffset =
-            -((optionVisualWidth - optionWidth) * 0.5) +
-            ((movieResumeSelectionTextureTrailingAdjustment - movieResumeSelectionTextureLeadingAdjustment) * 0.5)
-        let optionVisualYOffset = -((optionVisualHeight - optionHeight) * 0.5)
-        let optionPressedBlackLeftInset: CGFloat = 12
-        let optionPressedBlackWidth = max(0, optionWidth - optionPressedBlackLeftInset)
-        let optionTextInset: CGFloat = 32
-        let optionRowSpacing: CGFloat = 10
-        let optionRowPitch = optionHeight + optionRowSpacing
-        let selectedRowOffset = CGFloat(movieResumePromptSelectedIndex) * optionRowPitch
-        ZStack {
-            if let backdrop = movieResumePromptBackdropImage {
-                Image(nsImage: backdrop).resizable().scaledToFill().frame(width: geometry.size.width, height: geometry.size.height).clipped().blur(radius: 28).saturation(0.92)
-            } else {
-                Color.black
-            }
-            Color.black.opacity(0.33)
-            ZStack(alignment: .topLeading) {
-                if movieResumePromptSolidBlackSelected {
-                    RoundedRectangle(cornerRadius: 5).fill(Color.black).frame(width: optionPressedBlackWidth, height: optionHeight).offset(x: optionPressedBlackLeftInset, y: selectedRowOffset).animation(.easeInOut(duration: movieResumePromptSelectionSlideDuration), value: movieResumePromptSelectedIndex)
-                } else {
-                    selectionBox(width: optionVisualWidth, height: optionVisualHeight).offset(x: optionVisualXOffset, y: selectedRowOffset + optionVisualYOffset).animation(.easeInOut(duration: movieResumePromptSelectionSlideDuration), value: movieResumePromptSelectedIndex)
-                }
-                LazyVStack(spacing: optionRowSpacing) {
-                    ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                        let isSelected = (index == movieResumePromptSelectedIndex)
-                        let hideSelectedText = movieResumePromptSolidBlackSelected && isSelected
-                        let hideUnselectedText = movieResumePromptHideUnselected && !isSelected
-                        Text(option).font(.firstRowBold(size: 45)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.72).allowsTightening(true).frame(width: optionWidth, height: optionHeight, alignment: .leading).padding(.leading, optionTextInset).opacity((hideSelectedText || hideUnselectedText) ? 0 : 1)
-                    }
-                }
-            }.frame(
-                width: optionWidth,
-                height: (optionHeight * 2) + optionRowSpacing,
-                alignment: .topLeading,
-            ).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        }.ignoresSafeArea()
     }
 
     func rightMenuArea(geometry: GeometryProxy) -> some View {
@@ -1024,7 +1011,8 @@ extension MenuView {
         alignsTextToDividerStart: Bool,
         arrowAppearance: ArrowAppearance,
     ) -> some View {
-        let showsLoadingSpinner = itemID == "movies_theatrical_trailers" && isTheatricalTrailersLoading && isSelected
+        let showsLoadingSpinner = (itemID == "movies_theatrical_trailers" && isTheatricalTrailersLoading && isSelected)
+            || (thirdMenuMode == .moviesFolder && isMoviePlaybackLoading && isSelected)
         let trailingBaseFontSize = submenuRowTrailingFontSize
         let arrowFontSize = submenuArrowFontSize
         let trailingTextOpacity: Double = (isSelected && isSelectionSettled) ? 1.0 : 0.5
@@ -1229,6 +1217,7 @@ extension MenuView {
             Text(title)
                 .font(.firstRowBold(size: submenuRowTitleFontSize))
                 .foregroundColor(.white)
+                .shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .allowsTightening(true)
@@ -1265,8 +1254,8 @@ private struct MenuRowMarqueeText: View {
         let safeViewportWidth = max(1, viewportWidth)
         let edgeFadeFraction = min(0.5, max(0, edgeFadeWidth / safeViewportWidth))
         HStack(spacing: gap) {
-            Text(title).font(.firstRowBold(size: fontSize)).foregroundColor(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
-            Text(title).font(.firstRowBold(size: fontSize)).foregroundColor(.white).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
+            Text(title).font(.firstRowBold(size: fontSize)).foregroundColor(.white).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
+            Text(title).font(.firstRowBold(size: fontSize)).foregroundColor(.white).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
         }.offset(x: xOffset).frame(width: safeViewportWidth, alignment: .leading).clipped().mask(LinearGradient(
             gradient: Gradient(stops: [.init(color: .clear, location: 0.0), .init(color: .white, location: edgeFadeFraction), .init(color: .white, location: 1.0 - edgeFadeFraction), .init(color: .clear, location: 1.0)]),
             startPoint: .leading,
@@ -1358,7 +1347,7 @@ extension MenuView {
     }
 
     var activeMenuVirtualSceneSize: CGSize {
-        MenuVirtualScenePreset.widescreen
+        MenuVirtualScenePreset.virtualSize(for: menuContainerSize)
     }
 
     var body: some View {
@@ -1401,6 +1390,7 @@ extension MenuView {
                     ).allowsHitTesting(false),
                 )
                 .onAppear {
+                    menuContainerSize = geometry.size
                     beginStartupMusicLibraryPreloadIfNeeded()
                     syncRootLabelWithSelection()
                     SoundEffectPlayer.shared.warmUp(soundNames: [
@@ -1417,6 +1407,8 @@ extension MenuView {
                         "MainPhotosSelection",
                         "MainVideosSelection",
                     ])
+                }.onChange(of: geometry.size) {
+                    menuContainerSize = $0
                 }.onReceive(NotificationCenter.default.publisher(for: .firstRowIntroBegin)) { _ in
                     startRootIntroIfNeeded()
                 }.onReceive(NotificationCenter.default.publisher(for: .firstRowCommandEscapeRequested)) { _ in
@@ -1439,9 +1431,10 @@ extension MenuView {
 
     @ViewBuilder
     func menuLayoutContainer(in geometry: GeometryProxy) -> some View {
+        let virtualSize = MenuVirtualScenePreset.virtualSize(for: geometry.size)
         let layout = MenuVirtualSceneLayout(
             containerSize: geometry.size,
-            virtualSize: MenuVirtualScenePreset.widescreen,
+            virtualSize: virtualSize,
         )
         ZStack {
             GeometryReader { virtualGeometry in
@@ -1524,6 +1517,18 @@ extension MenuView {
                 startPoint: .top,
                 endPoint: .bottom,
             )
+            if let backdropImage = movieResumePromptBackdropImage, movieResumeBackdropOpacity > 0 {
+                Image(nsImage: backdropImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                    .blur(radius: 28)
+                    .saturation(0.92)
+                    .overlay(Color.black.opacity(0.33))
+                    .opacity(movieResumeBackdropOpacity)
+                    .animation(.easeInOut(duration: 0.2), value: movieResumeBackdropOpacity)
+            }
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
         .ignoresSafeArea()
@@ -1999,16 +2004,21 @@ extension MenuView {
         selectedIndex: Int,
         geometry: GeometryProxy,
         showsEmbeddedHeader: Bool,
+        isMoviesFolderPage: Bool = false,
     ) -> some View {
         let pageIdentity =
             "\(rootID ?? "none")::\(headerText)::\(items.count)::\(items.first?.id ?? "nil")::\(items.last?.id ?? "nil")"
         return ZStack(alignment: .topLeading) {
+            if isMoviesFolderPage {
+                moviesFolderGapContentView(geometry: geometry)
+            }
             menuColumnView(
                 rootID: rootID,
                 headerText: headerText,
                 items: items,
                 selectedIndex: selectedIndex,
                 geometry: geometry,
+                isMoviesFolderPage: isMoviesFolderPage,
             )
             if showsEmbeddedHeader {
                 submenuPageHeaderView(
@@ -2022,15 +2032,81 @@ extension MenuView {
         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
     }
 
+    @ViewBuilder
+    func moviesFolderGapContentView(geometry: GeometryProxy) -> some View {
+        let hasContent = moviesFolderGapPlayer != nil || moviePreviewImage != nil
+        if hasContent {
+            let w = geometry.size.width
+            let h = geometry.size.height
+            let previewW: CGFloat = 548
+            let previewH = previewW / (16.0 / 9.0)
+            let reflectionH: CGFloat = 168
+            let perspective: CGFloat = 0.75
+            let yawDegrees: Double = 23.8
+            let contentTopY = submenuDividerTopInset + submenuDividerThickness
+            let contentH = h - contentTopY
+            let imageCenterX: CGFloat = 390
+            let imageCenterY = contentTopY + contentH / 2
+            let reflectionGradient = LinearGradient(
+                stops: [
+                    .init(color: .white, location: 0),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            ZStack {
+                VStack(spacing: 0) {
+                    // Main preview
+                    Group {
+                        if let gapPlayer = moviesFolderGapPlayer {
+                            MovieGapPlayerView(player: gapPlayer)
+                                .frame(width: previewW, height: previewH)
+                        } else if let previewImage = moviePreviewImage {
+                            Image(nsImage: previewImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: previewW, height: previewH)
+                        }
+                    }
+                    .clipped()
+                    Group {
+                        if let gapPlayer = moviesFolderGapPlayer {
+                            MovieGapPlayerView(player: gapPlayer)
+                                .frame(width: previewW, height: previewH)
+                        } else if let previewImage = moviePreviewImage {
+                            Image(nsImage: previewImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: previewW, height: previewH)
+                        }
+                    }
+                    .clipped()
+                    .scaleEffect(x: 1, y: -1)
+                    .frame(width: previewW, height: reflectionH, alignment: .top)
+                    .clipped()
+                    .mask(reflectionGradient)
+                    .opacity(0.5)
+                }
+                .rotation3DEffect(.degrees(yawDegrees), axis: (x: 0, y: 1, z: 0), perspective: perspective)
+                .position(x: imageCenterX, y: imageCenterY + reflectionH / 2)
+            }
+            .frame(width: w, height: h)
+        }
+    }
+
     func menuColumnView(
         rootID: String?,
         headerText: String,
         items: [MenuListItemConfig],
         selectedIndex: Int,
         geometry: GeometryProxy,
+        isMoviesFolderPage: Bool = false,
     ) -> some View {
         _ = rootID
         _ = headerText
+        let columnWidth: CGFloat = isMoviesFolderPage ? 1225 : submenuSelectionVisualWidth
+        let columnLeading: CGFloat = isMoviesFolderPage ? 628 : submenuSelectionBoxLeading
         let clampedSelectedIndex = min(max(0, selectedIndex), max(0, items.count - 1))
         let visibleRowCount = submenuVisibleMenuRowCount
         let transitionProgress = smoothStep(submenuTransitionProgress)
@@ -2061,8 +2137,8 @@ extension MenuView {
             showsTopOverflowFade: false,
             visibleRowCount: visibleRowCount,
             selectionBoxHeightScale: submenuSelectionBoxHeightScale,
-            contentWidthOverride: submenuSelectionVisualWidth,
-            selectionVisualWidthOverride: submenuSelectionVisualWidth,
+            contentWidthOverride: columnWidth,
+            selectionVisualWidthOverride: columnWidth,
             selectionVisualHeightOverride: submenuSelectionVisualHeight,
             selectionAnchorY: selectionAnchorY,
             viewportHeightOverride: viewportHeight,
@@ -2071,9 +2147,9 @@ extension MenuView {
             scaledRowVerticalOffsetOverride: submenuSelectedRowContentYOffset,
             contentVerticalOffsetOverride: submenuRowContentVerticalOffset,
         )
-        .frame(width: submenuSelectionVisualWidth, height: viewportHeight, alignment: .topLeading)
+        .frame(width: columnWidth, height: viewportHeight, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.leading, submenuSelectionBoxLeading)
+        .padding(.leading, columnLeading)
         .padding(.top, listTopInset)
     }
 
@@ -2105,6 +2181,7 @@ extension MenuView {
         let isLiveNowPlaying = isInThirdMenu && thirdMenuMode == .musicNowPlaying
         let isLiveErrorPage = isInThirdMenu && thirdMenuMode == .errorPage
         let isLiveSubmenuErrorPage = !isInThirdMenu && isSubmenuErrorPage
+        let isLiveMoviesFolder = isInThirdMenu && thirdMenuMode == .moviesFolder
         ZStack {
             settledSubmenuDividerView(geometry: geometry)
             if let snapshot = menuTransitionSnapshot {
@@ -2142,6 +2219,7 @@ extension MenuView {
                         selectedIndex: snapshot.selectedIndex,
                         geometry: geometry,
                         showsEmbeddedHeader: showsEmbeddedHeader,
+                        isMoviesFolderPage: snapshot.isMoviesFolderPage,
                     )
                     .offset(x: snapshotOffsetX)
                 }
@@ -2190,6 +2268,7 @@ extension MenuView {
                     selectedIndex: liveSelectedIndex,
                     geometry: geometry,
                     showsEmbeddedHeader: showsEmbeddedHeader,
+                    isMoviesFolderPage: isLiveMoviesFolder,
                 )
                 .offset(x: menuTransitionSnapshot == nil ? 0 : liveOffsetX)
                 .opacity(
@@ -2213,9 +2292,6 @@ extension MenuView {
             }
             headerTransitionOverlayView(geometry: geometry)
             rootLabelView(geometry: geometry)
-            if isMovieResumePromptVisible {
-                movieResumePromptOverlay(geometry: geometry).frame(width: geometry.size.width, height: geometry.size.height).opacity(movieResumePromptOpacity).zIndex(4200)
-            }
         }
         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
         .coordinateSpace(name: "menuSceneSpace")
