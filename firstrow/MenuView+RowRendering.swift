@@ -1013,6 +1013,7 @@ extension MenuView {
     ) -> some View {
         let showsLoadingSpinner = (itemID == "movies_theatrical_trailers" && isTheatricalTrailersLoading && isSelected)
             || (thirdMenuMode == .moviesFolder && isMoviePlaybackLoading && isSelected)
+            || (thirdMenuMode == .photosDateAlbums && isPhotosAlbumSelectionLoading && isSelected)
         let trailingBaseFontSize = submenuRowTrailingFontSize
         let arrowFontSize = submenuArrowFontSize
         let trailingTextOpacity: Double = (isSelected && isSelectionSettled) ? 1.0 : 0.5
@@ -1477,6 +1478,7 @@ extension MenuView {
         if isMoviePlaybackVisible, let moviePlayer {
             VideoPlayerView(player: moviePlayer)
                 .frame(width: containerSize.width, height: containerSize.height)
+                .opacity(moviePlaybackEntryOpacity)
                 .ignoresSafeArea()
                 .zIndex(4300)
         }
@@ -2005,6 +2007,7 @@ extension MenuView {
         geometry: GeometryProxy,
         showsEmbeddedHeader: Bool,
         isMoviesFolderPage: Bool = false,
+        isPhotosDateAlbumsPage: Bool = false,
     ) -> some View {
         let pageIdentity =
             "\(rootID ?? "none")::\(headerText)::\(items.count)::\(items.first?.id ?? "nil")::\(items.last?.id ?? "nil")"
@@ -2019,6 +2022,7 @@ extension MenuView {
                 selectedIndex: selectedIndex,
                 geometry: geometry,
                 isMoviesFolderPage: isMoviesFolderPage,
+                isPhotosDateAlbumsPage: isPhotosDateAlbumsPage,
             )
             if showsEmbeddedHeader {
                 submenuPageHeaderView(
@@ -2043,10 +2047,8 @@ extension MenuView {
             let reflectionH: CGFloat = 168
             let perspective: CGFloat = 0.75
             let yawDegrees: Double = 23.8
-            let contentTopY = submenuDividerTopInset + submenuDividerThickness
-            let contentH = h - contentTopY
             let imageCenterX: CGFloat = 390
-            let imageCenterY = contentTopY + contentH / 2
+            let imageCenterY = h / 2
             let reflectionGradient = LinearGradient(
                 stops: [
                     .init(color: .white, location: 0),
@@ -2095,6 +2097,56 @@ extension MenuView {
         }
     }
 
+    @ViewBuilder
+    func photosDateAlbumsGapContentView(image: NSImage?, geometry: GeometryProxy) -> some View {
+        let w = geometry.size.width
+        let h = geometry.size.height
+        let imageCenterX: CGFloat = 390
+        let imageCenterY = h / 2
+        let reflectionH: CGFloat = 168
+        ZStack {
+            if let image {
+                let previewW: CGFloat = 548
+                let previewH: CGFloat = previewW * 3.0 / 4.0
+                let perspective: CGFloat = 0.75
+                let yawDegrees: Double = 23.8
+                let reflectionGradient = LinearGradient(
+                    stops: [
+                        .init(color: .white, location: 0),
+                        .init(color: .clear, location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                VStack(spacing: 0) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: previewW, height: previewH)
+                        .clipped()
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: previewW, height: previewH)
+                        .clipped()
+                        .scaleEffect(x: 1, y: -1)
+                        .frame(width: previewW, height: reflectionH, alignment: .top)
+                        .clipped()
+                        .mask(reflectionGradient)
+                        .opacity(0.5)
+                }
+                .rotation3DEffect(.degrees(yawDegrees), axis: (x: 0, y: 1, z: 0), perspective: perspective)
+                .position(x: imageCenterX, y: imageCenterY + reflectionH / 2)
+            } else if let placeholder = NSImage(named: "PhotosSharedPreview") {
+                Image(nsImage: placeholder)
+                    .resizable()
+                    .frame(width: 495, height: 685)
+                    .position(x: imageCenterX - 30, y: imageCenterY + reflectionH / 2)
+            }
+        }
+        .frame(width: w, height: h)
+    }
+
     func menuColumnView(
         rootID: String?,
         headerText: String,
@@ -2102,11 +2154,12 @@ extension MenuView {
         selectedIndex: Int,
         geometry: GeometryProxy,
         isMoviesFolderPage: Bool = false,
+        isPhotosDateAlbumsPage: Bool = false,
     ) -> some View {
         _ = rootID
         _ = headerText
-        let columnWidth: CGFloat = isMoviesFolderPage ? 1225 : submenuSelectionVisualWidth
-        let columnLeading: CGFloat = isMoviesFolderPage ? 628 : submenuSelectionBoxLeading
+        let columnWidth: CGFloat = (isMoviesFolderPage || isPhotosDateAlbumsPage) ? 1225 : submenuSelectionVisualWidth
+        let columnLeading: CGFloat = (isMoviesFolderPage || isPhotosDateAlbumsPage) ? 628 : submenuSelectionBoxLeading
         let clampedSelectedIndex = min(max(0, selectedIndex), max(0, items.count - 1))
         let visibleRowCount = submenuVisibleMenuRowCount
         let transitionProgress = smoothStep(submenuTransitionProgress)
@@ -2220,6 +2273,7 @@ extension MenuView {
                         geometry: geometry,
                         showsEmbeddedHeader: showsEmbeddedHeader,
                         isMoviesFolderPage: snapshot.isMoviesFolderPage,
+                        isPhotosDateAlbumsPage: snapshot.isPhotosDateAlbumsPage,
                     )
                     .offset(x: snapshotOffsetX)
                 }
@@ -2269,6 +2323,7 @@ extension MenuView {
                     geometry: geometry,
                     showsEmbeddedHeader: showsEmbeddedHeader,
                     isMoviesFolderPage: isLiveMoviesFolder,
+                    isPhotosDateAlbumsPage: activeRootItemID == "photos",
                 )
                 .offset(x: menuTransitionSnapshot == nil ? 0 : liveOffsetX)
                 .opacity(
@@ -2279,6 +2334,35 @@ extension MenuView {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: liveOpacity)
+    }
+
+    @ViewBuilder
+    func photosGapPreviewOverlayView(geometry: GeometryProxy) -> some View {
+        if isInSubmenu || isEnteringSubmenu || isReturningToRoot {
+            let swapTransitionProgress = smoothStep(menuTransitionProgress)
+            let travelDistance = geometry.size.width
+            let snapshotOffsetX: CGFloat = menuTransitionDirection == .forward
+                ? -travelDistance * swapTransitionProgress
+                : travelDistance * swapTransitionProgress
+            let liveOffsetX: CGFloat = menuTransitionDirection == .forward
+                ? travelDistance * (1 - swapTransitionProgress)
+                : -travelDistance * (1 - swapTransitionProgress)
+            if let snapshot = menuTransitionSnapshot, snapshot.isPhotosDateAlbumsPage,
+               !snapshot.isSubmenuErrorPage, !snapshot.isErrorPage {
+                photosDateAlbumsGapContentView(image: snapshot.photosGapPreviewImage, geometry: geometry)
+                    .offset(x: snapshotOffsetX)
+            }
+            if activeRootItemID == "photos", !isSubmenuErrorPage, !(isInThirdMenu && thirdMenuMode == .errorPage) {
+                if menuTransitionSnapshot != nil {
+                    photosDateAlbumsGapContentView(image: photosGapPreviewImage, geometry: geometry)
+                        .offset(x: liveOffsetX)
+                } else {
+                    photosDateAlbumsGapContentView(image: photosGapPreviewImage, geometry: geometry)
+                        .offset(x: isPhotosGapPreviewSlid ? 0 : -(390 + 548))
+                        .animation(.easeInOut(duration: 1.0), value: isPhotosGapPreviewSlid)
+                }
+            }
+        }
     }
 
     func menuScene(geometry: GeometryProxy) -> some View {
@@ -2292,6 +2376,8 @@ extension MenuView {
             }
             headerTransitionOverlayView(geometry: geometry)
             rootLabelView(geometry: geometry)
+            photosGapPreviewOverlayView(geometry: geometry)
+                .opacity(menuSceneOpacity)
         }
         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
         .coordinateSpace(name: "menuSceneSpace")

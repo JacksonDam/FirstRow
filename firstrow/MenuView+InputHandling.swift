@@ -41,7 +41,7 @@ extension MenuView {
             return
         }
         if thirdMenuMode == .errorPage {
-            if key == .delete || key == .escape {
+            if key == .delete || key == .escape, menuTransitionSnapshot == nil {
                 exitErrorPage()
                 playSound(named: "Exit")
             }
@@ -140,6 +140,7 @@ extension MenuView {
         isTheatricalTrailersLoading = false
         _ = incrementRequestID(&moviePlaybackLoadingRequestID)
         isMoviePlaybackLoading = false
+        isPhotosAlbumSelectionLoading = false
         stopMoviesFolderGapPlayer()
         resetThirdMenuDirectoryState()
         resetAllITunesTopMenusForNonITunesContext()
@@ -192,6 +193,12 @@ extension MenuView {
         isEnteringSubmenu = true
         isIconAnimated = true
         submenuTransitionProgress = 0
+        if chosenRootItem.id == "photos" {
+            isPhotosGapPreviewSlid = false
+            withAnimation(.easeInOut(duration: 1.0)) {
+                isPhotosGapPreviewSlid = true
+            }
+        }
         submenuTitleOpacity = 0
         submenuOpacity = 0
         detailContentOpacity = 0
@@ -257,6 +264,17 @@ extension MenuView {
         if shouldHoldNowPlayingDuringExitFade {
             holdNowPlayingMenuItemDuringExitFade = true
         }
+        if activeRootItemID == "photos" {
+            withAnimation(.easeInOut(duration: 0.85)) {
+                isPhotosGapPreviewSlid = false
+            }
+            Task { @MainActor in
+                try? await firstRowSleep(0.85)
+                _ = incrementRequestID(&photosGapPreviewRequestID)
+                photosGapPreviewAlbumID = nil
+                photosGapPreviewImage = nil
+            }
+        }
         var instantStateChange = Transaction()
         instantStateChange.disablesAnimations = true
         withTransaction(instantStateChange) {
@@ -287,6 +305,7 @@ extension MenuView {
         isTheatricalTrailersLoading = false
         _ = incrementRequestID(&moviePlaybackLoadingRequestID)
         isMoviePlaybackLoading = false
+        isPhotosAlbumSelectionLoading = false
 
         DispatchQueue.main.async {
             isIconAnimated = false
@@ -345,6 +364,7 @@ extension MenuView {
                 activeRootItemID = nil
                 submenuTransitionProgress = 0
                 isReturningToRoot = false
+                isPhotosGapPreviewSlid = false
                 rootLabelSwapWorkItem?.cancel()
                 if menuItems.indices.contains(selectedIndex) {
                     rootLabelText = menuItems[selectedIndex].title
@@ -538,7 +558,15 @@ extension MenuView {
             guard photosDateAlbums.indices.contains(selectedThirdIndex) else { return }
             let album = photosDateAlbums[selectedThirdIndex]
             guard album.isPlayable else { return }
-            startPhotoAlbumSlideshow(for: album)
+            isPhotosAlbumSelectionLoading = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                var instant = Transaction()
+                instant.disablesAnimations = true
+                withTransaction(instant) {
+                    self.isPhotosAlbumSelectionLoading = false
+                }
+                self.startPhotoAlbumSlideshow(for: album)
+            }
         case .none:
             return
         }
@@ -1174,6 +1202,8 @@ extension MenuView {
             isSubmenuErrorPage: !isInThirdMenu && isSubmenuErrorPage,
             isMoviesFolderPage: isInThirdMenu && thirdMenuMode == .moviesFolder,
             isMovieResumePromptPage: isInThirdMenu && thirdMenuMode == .movieResumePrompt,
+            isPhotosDateAlbumsPage: activeRootItemID == "photos",
+            photosGapPreviewImage: activeRootItemID == "photos" ? photosGapPreviewImage : nil,
         )
     }
 

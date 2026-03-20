@@ -168,6 +168,7 @@ extension MenuView {
     }
 
     func navigateUpInThirdMenuOrExit() {
+        guard menuTransitionSnapshot == nil else { return }
         if thirdMenuMode == .musicSongs, isMusicSongsCategoryScoped {
             playSound(named: "Exit")
             transitionMenuForFolderSwap(direction: .backward) {

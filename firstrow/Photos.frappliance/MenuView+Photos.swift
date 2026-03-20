@@ -120,6 +120,7 @@ extension MenuView {
             requestPhotoAlbumCoverImageIfNeeded(for: album)
         }
         refreshPhotosCarouselForCurrentContext()
+        refreshPhotosGapPreviewForCurrentContext()
     }
 
     func prioritizedPhotosAlbumsForCoverPrefetch() -> [PhotoLibraryAlbumEntry] {
@@ -414,10 +415,51 @@ extension MenuView {
         presentNoPhotosLibraryFeatureErrorScreen(afterMenuSwap: true)
     }
 
+    func refreshPhotosGapPreviewForCurrentContext() {
+        guard activeRootItemID == "photos", isInSubmenu else {
+            _ = incrementRequestID(&photosGapPreviewRequestID)
+            photosGapPreviewAlbumID = nil
+            photosGapPreviewImage = nil
+            return
+        }
+        let album: PhotoLibraryAlbumEntry?
+        if isInThirdMenu, thirdMenuMode == .photosDateAlbums {
+            album = photosDateAlbums.indices.contains(selectedThirdIndex)
+                ? photosDateAlbums[selectedThirdIndex]
+                : nil
+        } else if !isInThirdMenu {
+            album = selectedPhotoAlbumForCarousel
+        } else {
+            album = nil
+        }
+        guard let album else {
+            _ = incrementRequestID(&photosGapPreviewRequestID)
+            photosGapPreviewAlbumID = nil
+            photosGapPreviewImage = nil
+            return
+        }
+        guard album.id != photosGapPreviewAlbumID else { return }
+        let requestID = incrementRequestID(&photosGapPreviewRequestID)
+        photosGapPreviewAlbumID = album.id
+        photosGapPreviewImage = nil
+        guard let coverID = album.coverAssetLocalIdentifier else { return }
+        requestPhotoImage(
+            localIdentifier: coverID,
+            targetSize: CGSize(width: 800, height: 800),
+            contentMode: .aspectFill,
+            deliveryMode: .highQualityFormat,
+        ) { image in
+            guard self.photosGapPreviewRequestID == requestID else { return }
+            guard let image else { return }
+            self.photosGapPreviewImage = image
+        }
+    }
+
     func startPhotoAlbumSlideshow(for album: PhotoLibraryAlbumEntry) {
         guard album.isPlayable else { return }
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
         guard !isFullscreenSceneTransitioning else { return }
+        isPhotosAlbumSelectionLoading = false
         let requestID = incrementRequestID(&photoSlideshowRequestID)
         stopMusicPlaybackSession(clearDisplayState: false)
         stopPhotoSlideshowMusic()

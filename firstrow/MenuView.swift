@@ -12,6 +12,8 @@ struct MenuTransitionSnapshot: Identifiable {
     var isSubmenuErrorPage: Bool = false
     var isMoviesFolderPage: Bool = false
     var isMovieResumePromptPage: Bool = false
+    var isPhotosDateAlbumsPage: Bool = false
+    var photosGapPreviewImage: NSImage? = nil
 }
 
 enum MenuTransitionDirection {
@@ -272,6 +274,7 @@ struct MenuView: View {
     @State var isMoviePlaybackVisible = false
     @State var isMovieTransitioning = false
     @State var movieTransitionOverlayOpacity: Double = 0
+    @State var moviePlaybackEntryOpacity: Double = 1
     @State var movieResumePromptTargetURL: URL?
     @State var movieResumePromptResumeSeconds: Double = 0
     @State var movieResumePromptBackdropImage: NSImage?
@@ -349,6 +352,12 @@ struct MenuView: View {
     @State var photosCarouselIdentity: String = ""
     @State var photosCarouselRequestID = 0
     @State var photosCarouselLoadOverlayOpacity: Double = 0
+    @State var photosGapPreviewImage: NSImage?
+    @State var photosGapPreviewAlbumID: String?
+    @State var photosGapPreviewRequestID: Int = 0
+    @State var isPhotosGapPreviewSlid: Bool = false
+
+    @State var isPhotosAlbumSelectionLoading: Bool = false
     @State var photoSlideshowRequestID = 0
     @State var photoSlideshowAssetLocalIdentifiers: [String] = []
     @State var photoSlideshowImageCache: [Int: NSImage] = [:]

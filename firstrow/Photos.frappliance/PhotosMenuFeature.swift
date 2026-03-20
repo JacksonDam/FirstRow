@@ -9,9 +9,9 @@ struct PhotosMenuFeature: MenuFeatureConfiguration {
     )
     let submenuItems: [SubmenuItemConfig] = [
         .init(id: "photos_shared", title: "Shared Photos", leadsToMenu: true),
-        .init(id: "photos_library", title: "Photos", leadsToMenu: true),
+        .init(id: "photos_library", title: "Library", leadsToMenu: true),
         .init(id: "photos_last_12_months", title: "Last 12 Months", leadsToMenu: true),
         .init(id: "photos_last_import", title: "Last Import", leadsToMenu: true),
     ]
-    let defaultSubmenuSelectedIndex = 1
+    let defaultSubmenuSelectedIndex = 0
 }

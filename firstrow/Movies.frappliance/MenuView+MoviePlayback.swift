@@ -169,42 +169,45 @@ extension MenuView {
         let resumeFromSavedPosition = (selectedThirdIndex == 0)
         let startSeconds = resumeFromSavedPosition ? movieResumePromptResumeSeconds : 0
 
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
-            movieResumeBackdropOpacity = 0
-            _ = incrementRequestID(&movieResumePromptBackdropRequestID)
-            let returnMode = movieResumeReturnThirdMenuMode
-            thirdMenuMode = returnMode == .none ? .moviesFolder : returnMode
-            if !isInThirdMenu { isInThirdMenu = true }
-            headerText = movieResumeReturnHeaderText
-            movieResumePromptTargetURL = nil
-            movieResumePromptResumeSeconds = 0
-            movieResumePromptBackdropImage = nil
-        }
-
         clearMoviePlaybackControlState()
         isCurrentMoviePlaybackEphemeralPreview = false
         removeCurrentMoviePlaybackTemporaryFileIfNeeded()
         isMovieTransitioning = true
 
-        withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
-            movieTransitionOverlayOpacity = 1
+        var instant = Transaction()
+        instant.animation = nil
+        withTransaction(instant) {
+            moviePlaybackEntryOpacity = 0
+        }
+
+        activateMoviePlayback(
+            from: targetURL,
+            startSeconds: startSeconds,
+            showsPlayGlyphOnStart: startSeconds > 0.01,
+        )
+
+        withAnimation(.easeInOut(duration: 1.0)) {
+            moviePlaybackEntryOpacity = 1
             menuSceneOpacity = 0
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieEntryFadeDuration + movieEntryBlackHoldDuration) {
-            self.activateMoviePlayback(
-                from: targetURL,
-                startSeconds: startSeconds,
-                showsPlayGlyphOnStart: startSeconds > 0.01,
-            )
+        Task { @MainActor in
+            try? await firstRowSleep(1.0)
             var instant = Transaction()
-            instant.animation = nil
+            instant.disablesAnimations = true
             withTransaction(instant) {
-                self.movieTransitionOverlayOpacity = 0
+                movieResumeBackdropOpacity = 0
+                _ = incrementRequestID(&movieResumePromptBackdropRequestID)
+                let returnMode = movieResumeReturnThirdMenuMode
+                thirdMenuMode = returnMode == .none ? .moviesFolder : returnMode
+                if !isInThirdMenu { isInThirdMenu = true }
+                headerText = movieResumeReturnHeaderText
+                selectedThirdIndex = movieResumeReturnSelectedThirdIndex
+                movieResumePromptTargetURL = nil
+                movieResumePromptResumeSeconds = 0
+                movieResumePromptBackdropImage = nil
             }
-            self.isMovieTransitioning = false
+            isMovieTransitioning = false
         }
     }
 
@@ -297,11 +300,42 @@ extension MenuView {
         }
     }
 
+    func exitMoviePlaybackForUser() {
+        guard !isMovieTransitioning, isMoviePlaybackVisible else { return }
+        isMovieTransitioning = true
+        stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
+        clearMovieControlsVisibilityInstantly()
+        if !isCurrentMoviePlaybackEphemeralPreview {
+            captureLastClosedMoviePlaybackPosition()
+        } else {
+            lastClosedMovieURL = nil
+            lastClosedMovieTimestamp = 0
+        }
+        withAnimation(.easeInOut(duration: 1.0)) {
+            movieTransitionOverlayOpacity = 1
+        }
+        Task { @MainActor in
+            try? await firstRowSleep(1.0)
+            removeMoviePlaybackObservation()
+            moviePlayer = nil
+            isMoviePlaybackVisible = false
+            clearMoviePlaybackControlState()
+            isCurrentMoviePlaybackEphemeralPreview = false
+            removeCurrentMoviePlaybackTemporaryFileIfNeeded()
+            withAnimation(.easeInOut(duration: 1.0)) {
+                menuSceneOpacity = 1
+                movieTransitionOverlayOpacity = 0
+            }
+            try? await firstRowSleep(1.0)
+            isMovieTransitioning = false
+        }
+    }
+
     func handleMoviePlaybackInput(_ key: KeyCode, isRepeat: Bool) {
         switch key {
         case .delete:
             playSound(named: "Exit")
-            stopMoviePlaybackAndReturnToMenu()
+            exitMoviePlaybackForUser()
         case .space:
             handleMovieSpacebarPressed()
         case .leftArrow:
@@ -562,5 +596,6 @@ extension MenuView {
         moviePlaybackCurrentSeconds = 0
         moviePlaybackDurationSeconds = 0
         pendingMovieControlsRevealOnDurationReady = false
+        moviePlaybackEntryOpacity = 1
     }
 }
