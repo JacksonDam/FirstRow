@@ -14,6 +14,10 @@
 		<string>com.apple.fpsd</string>
 		<string>com.apple.tccd.system</string>
 	</array>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+	<array>
+		<string>/Volumes/</string>
+	</array>
 	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
 	<array>
 		<string>/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/</string>

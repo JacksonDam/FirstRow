@@ -137,15 +137,63 @@ extension MenuView {
     #endif
 
     nonisolated func realUserHomeDirectoryURL() -> URL? {
-        guard let passwdEntry = getpwuid(getuid()),
-              let rawHome = passwdEntry.pointee.pw_dir
-        else {
-            return nil
-        }
-        let homePath = String(cString: rawHome)
-        guard !homePath.isEmpty else { return nil }
-        return URL(fileURLWithPath: homePath, isDirectory: true)
+        let username = NSUserName()
+        guard !username.isEmpty else { return nil }
+        return URL(fileURLWithPath: "/Users/\(username)", isDirectory: true)
     }
+
+    #if os(macOS)
+        nonisolated func externalVolumeRootURLs() -> [URL] {
+            guard let volumes = FileManager.default.mountedVolumeURLs(
+                includingResourceValuesForKeys: [],
+                options: [.skipHiddenVolumes]
+            ) else { return [] }
+            return volumes.filter { url in
+                let path = url.standardizedFileURL.path
+                return path != "/" && path.hasPrefix("/Volumes/")
+            }
+        }
+
+        nonisolated func externalMoviesRootURLs() -> [URL] {
+            externalVolumeRootURLs().compactMap { volumeURL in
+                let moviesURL = volumeURL.appendingPathComponent("Movies", isDirectory: true)
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: moviesURL.path, isDirectory: &isDir),
+                      isDir.boolValue else { return nil }
+                return moviesURL
+            }
+        }
+
+        func allMoviesRootURLs() -> [URL] {
+            [moviesRootDirectoryURL()] + externalMoviesRootURLs()
+        }
+
+        nonisolated func moviesRootDisplayTitle(for url: URL) -> String {
+            let internalPath = realUserHomeDirectoryURL()?
+                .appendingPathComponent("Movies").standardizedFileURL.path
+            if url.standardizedFileURL.path == internalPath {
+                return "My Mac"
+            }
+            return (try? url.resourceValues(forKeys: [.volumeNameKey]))?.volumeName
+                ?? url.lastPathComponent
+        }
+
+        func loadMoviesRootSelectorEntries(resetSelection: Bool) {
+            isLoadingMoviesFolderEntries = false
+            thirdMenuCurrentURL = nil
+            thirdMenuRootURL = nil
+            thirdMenuItems = movieLibraryRootURLs.map { url in
+                MoviesFolderEntry(
+                    id: url.standardizedFileURL.path,
+                    title: moviesRootDisplayTitle(for: url),
+                    url: url,
+                    isDirectory: true,
+                )
+            }
+            if resetSelection { selectedThirdIndex = 0 }
+            refreshDetailPreviewForCurrentContext()
+        }
+    #endif
 
     func moviesDocumentsDirectoryURL() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
@@ -209,14 +257,7 @@ extension MenuView {
             }
             return documentsDirectory
         #else
-            if let homeURL = realUserHomeDirectoryURL() {
-                return homeURL.appendingPathComponent("Movies", isDirectory: true)
-            }
-            let guessedHome = URL(fileURLWithPath: "/Users/\(NSUserName())", isDirectory: true)
-            if FileManager.default.fileExists(atPath: guessedHome.path) {
-                return guessedHome.appendingPathComponent("Movies", isDirectory: true)
-            }
-            return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("Movies", isDirectory: true)
+            return realUserHomeDirectoryURL()!.appendingPathComponent("Movies", isDirectory: true)
         #endif
     }
 
@@ -356,6 +397,7 @@ extension MenuView {
         thirdMenuItems = []
         thirdMenuCurrentURL = nil
         thirdMenuRootURL = nil
+        movieLibraryRootURLs = []
         isLoadingMoviesFolderEntries = false
         _ = incrementRequestID(&moviesFolderEntriesRequestID)
     }
@@ -559,6 +601,9 @@ extension MenuView {
     }
 
     func loadThirdMenuDirectory(_ directoryURL: URL, resetSelection: Bool) {
+        if thirdMenuCurrentURL == nil, !movieLibraryRootURLs.isEmpty {
+            thirdMenuRootURL = directoryURL.standardizedFileURL
+        }
         let standardizedDirectory = directoryURL.standardizedFileURL
         thirdMenuCurrentURL = standardizedDirectory
         isLoadingMoviesFolderEntries = true
@@ -603,21 +648,32 @@ extension MenuView {
 
     func enterMoviesFolderMenu() {
         transitionMenuForFolderSwap(revealWhen: { !isLoadingMoviesFolderEntries }) {
-            let rootURL = moviesRootDirectoryURL()
             thirdMenuMode = .moviesFolder
             resetAllITunesTopMenusForNonITunesContext()
             resetMusicCategoryStateForNonMusicITunesTop()
             activeMusicLibraryMediaType = .songs
             musicSongsShowsShuffleAction = false
             moviesFolderSelectionIndexByDirectoryPath = [:]
-            thirdMenuRootURL = rootURL
-            loadThirdMenuDirectory(rootURL, resetSelection: true)
             isInThirdMenu = true
+            submenuOpacity = 0
+            thirdMenuOpacity = 1
             #if os(iOS)
                 promptForMoviesFolderPickerIfNeeded()
             #endif
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
+            #if os(macOS)
+                let roots = allMoviesRootURLs()
+                movieLibraryRootURLs = roots.count > 1 ? roots : []
+                if roots.count > 1 {
+                    loadMoviesRootSelectorEntries(resetSelection: true)
+                } else {
+                    thirdMenuRootURL = roots[0]
+                    loadThirdMenuDirectory(roots[0], resetSelection: true)
+                }
+            #else
+                let rootURL = moviesRootDirectoryURL()
+                thirdMenuRootURL = rootURL
+                loadThirdMenuDirectory(rootURL, resetSelection: true)
+            #endif
         }
     }
 }

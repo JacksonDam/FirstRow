@@ -146,6 +146,7 @@ struct MenuView: View {
     @State var thirdMenuItems: [MoviesFolderEntry] = []
     @State var thirdMenuRootURL: URL?
     @State var thirdMenuCurrentURL: URL?
+    @State var movieLibraryRootURLs: [URL] = []
 
     // MARK: - iTunes Top state
 

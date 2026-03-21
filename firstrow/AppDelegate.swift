@@ -3,11 +3,11 @@
     import ObjectiveC.runtime
     import SwiftUI
 
+    private let _alwaysTrue: @convention(c) (AnyObject, Selector) -> Bool = { _, _ in true }
+
     class AppDelegate: NSObject, NSApplicationDelegate {
         private static let commandEscapeHotKeySignature: OSType = 0x4652_5154 // 'FRQT'
         private static let commandEscapeHotKeyIdentifier: UInt32 = 1
-        private static var originalCanBecomeKeyIMP: IMP?
-        private static var originalCanBecomeMainIMP: IMP?
         private static var didInstallBorderlessKeySwizzle = false
         private var commandEscapeMonitor: Any?
         private var windowLockObservers: [Any] = []
@@ -126,47 +126,13 @@
         private func installBorderlessKeyabilitySwizzleIfNeeded() {
             guard !Self.didInstallBorderlessKeySwizzle else { return }
             Self.didInstallBorderlessKeySwizzle = true
-
-            let windowClass: AnyClass = NSWindow.self
-            let keySelector = #selector(getter: NSWindow.canBecomeKey)
-            let mainSelector = #selector(getter: NSWindow.canBecomeMain)
-
-            guard
-                let keyMethod = class_getInstanceMethod(windowClass, keySelector),
-                let mainMethod = class_getInstanceMethod(windowClass, mainSelector)
-            else {
-                return
+            let imp = unsafeBitCast(_alwaysTrue, to: IMP.self)
+            if let m = class_getInstanceMethod(NSWindow.self, #selector(getter: NSWindow.canBecomeKey)) {
+                method_setImplementation(m, imp)
             }
-
-            Self.originalCanBecomeKeyIMP = method_getImplementation(keyMethod)
-            Self.originalCanBecomeMainIMP = method_getImplementation(mainMethod)
-
-            let keyBlock: @convention(block) (NSWindow) -> Bool = { window in
-                if window.styleMask.contains(.borderless) {
-                    return true
-                }
-                if let original = Self.originalCanBecomeKeyIMP {
-                    typealias OriginalFn = @convention(c) (AnyObject, Selector) -> Bool
-                    let fn = unsafeBitCast(original, to: OriginalFn.self)
-                    return fn(window, keySelector)
-                }
-                return true
+            if let m = class_getInstanceMethod(NSWindow.self, #selector(getter: NSWindow.canBecomeMain)) {
+                method_setImplementation(m, imp)
             }
-
-            let mainBlock: @convention(block) (NSWindow) -> Bool = { window in
-                if window.styleMask.contains(.borderless) {
-                    return true
-                }
-                if let original = Self.originalCanBecomeMainIMP {
-                    typealias OriginalFn = @convention(c) (AnyObject, Selector) -> Bool
-                    let fn = unsafeBitCast(original, to: OriginalFn.self)
-                    return fn(window, mainSelector)
-                }
-                return true
-            }
-
-            method_setImplementation(keyMethod, imp_implementationWithBlock(keyBlock))
-            method_setImplementation(mainMethod, imp_implementationWithBlock(mainBlock))
         }
 
         private func applyImmersivePresentationOptions() {

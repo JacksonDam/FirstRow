@@ -157,6 +157,11 @@ extension MenuView {
                 transitionMenuForFolderSwap {
                     loadThirdMenuDirectory(parentURL, resetSelection: true)
                 }
+            } else if !movieLibraryRootURLs.isEmpty {
+                rememberCurrentMoviesFolderSelectionIndex()
+                transitionMenuForFolderSwap {
+                    loadMoviesRootSelectorEntries(resetSelection: false)
+                }
             } else {
                 rememberCurrentMoviesFolderSelectionIndex()
                 exitMoviesThirdMenuToSecondLevelWithSwap()
@@ -189,7 +194,7 @@ extension MenuView {
             }
         }
         let swapUpdateDelay = menuFolderSwapFadeDuration + menuOverlayBlackoutSafetyDuration
-        Task {
+        Task { @MainActor in
             try? await firstRowSleep(swapUpdateDelay)
             guard !Task.isCancelled else { return }
             guard isMenuFolderSwapTransitioning else { return }
@@ -209,7 +214,7 @@ extension MenuView {
             let revealDeadline = Date().addingTimeInterval(max(0, maxRevealWait))
             try? await firstRowSleep(menuFolderSwapHoldDuration)
             guard !Task.isCancelled else { return }
-            func revealWhenReady() async {
+            @MainActor func revealWhenReady() async {
                 guard isMenuFolderSwapTransitioning else { return }
                 let canRevealNow = revealWhen() || Date() >= revealDeadline
                 guard canRevealNow else {

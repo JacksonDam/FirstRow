@@ -546,7 +546,7 @@ extension MenuView {
                     artworkDataByAlbumKey: [String: Data],
                 )?
                 do {
-                    let loadedSnapshot = try loadStartupMusicLibrarySnapshot()
+                    let loadedSnapshot = try await loadStartupMusicLibrarySnapshot()
                     snapshot = loadedSnapshot
                     resolvedSong = loadedSnapshot.shuffleSongs.randomElement()
                 } catch {
@@ -571,11 +571,11 @@ extension MenuView {
         }
     }
 
-    func fetchRandomPhotoSlideshowMusicSong() throws -> MusicLibrarySongEntry? {
+    func fetchRandomPhotoSlideshowMusicSong() async throws -> MusicLibrarySongEntry? {
         if let cachedSong = randomCachedMusicLibrarySong() {
             return cachedSong
         }
-        let snapshot = try loadStartupMusicLibrarySnapshot()
+        let snapshot = try await loadStartupMusicLibrarySnapshot()
         return snapshot.shuffleSongs.randomElement()
     }
 

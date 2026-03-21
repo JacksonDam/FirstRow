@@ -169,7 +169,7 @@ extension MenuView {
         musicPlaybackPool().randomElement()
     }
 
-    func loadStartupMusicLibrarySnapshot() throws -> (
+    func loadStartupMusicLibrarySnapshot() async throws -> (
         sortedSongs: [MusicLibrarySongEntry],
         shuffleSongs: [MusicLibrarySongEntry],
         itemIndices: [String: Int],
@@ -181,7 +181,7 @@ extension MenuView {
             )
         #endif
         #if canImport(iTunesLibrary)
-            let result = try fetchMusicLibrarySongsForShuffleWithItemIndices()
+            let result = try await fetchMusicLibrarySongsForShuffleWithItemIndices()
             return (
                 sortedSongs: sortedMusicLibraryEntries(result.songs),
                 shuffleSongs: result.songs,
@@ -215,7 +215,7 @@ extension MenuView {
             }
             Task(priority: .userInitiated) {
                 do {
-                    let snapshot = try loadStartupMusicLibrarySnapshot()
+                    let snapshot = try await loadStartupMusicLibrarySnapshot()
                     await MainActor.run {
                         guard musicStartupPreloadRequestID == requestID else { return }
                         musicAllSongsCache = snapshot.sortedSongs
@@ -966,8 +966,17 @@ extension MenuView {
         var categoryEntries: [MusicCategoryEntry] = []
         categoryEntries.reserveCapacity(groupedSongs.count)
         for (categoryTitle, groupedCategorySongs) in groupedSongs {
-            let sortedCategorySongs = groupedCategorySongs.sorted {
-                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            let sortedCategorySongs: [MusicLibrarySongEntry]
+            if kind == .albums {
+                sortedCategorySongs = groupedCategorySongs.sorted {
+                    if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
+                    if $0.trackNumber != $1.trackNumber { return $0.trackNumber < $1.trackNumber }
+                    return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                }
+            } else {
+                sortedCategorySongs = groupedCategorySongs.sorted {
+                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                }
             }
             categoryEntries.append(
                 MusicCategoryEntry(
@@ -1150,15 +1159,130 @@ extension MenuView {
     }
 
     #if canImport(iTunesLibrary)
+        nonisolated var supportedExternalMusicFileExtensions: Set<String> {
+            ["mp3", "m4a", "aiff", "aif", "wav", "flac", "caf", "m4b"]
+        }
+
+        nonisolated func externalMusicRootURLs() -> [URL] {
+            externalVolumeRootURLs().compactMap { volumeURL in
+                let musicURL = volumeURL.appendingPathComponent("Music", isDirectory: true)
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: musicURL.path, isDirectory: &isDir),
+                      isDir.boolValue else { return nil }
+                return musicURL
+            }
+        }
+
+        nonisolated func scanExternalMusicFiles(in directoryURL: URL) -> [URL] {
+            guard let contents = try? FileManager.default.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else { return [] }
+            var results: [URL] = []
+            for url in contents {
+                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+                if values?.isDirectory == true {
+                    results.append(contentsOf: scanExternalMusicFiles(in: url))
+                } else if values?.isRegularFile == true,
+                          supportedExternalMusicFileExtensions.contains(url.pathExtension.lowercased()) {
+                    results.append(url)
+                }
+            }
+            return results
+        }
+
+        nonisolated func makeMusicLibrarySongEntryFromAudioFile(_ url: URL) async -> MusicLibrarySongEntry? {
+            let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
+            let commonMetadata: [AVMetadataItem]
+            let metadata: [AVMetadataItem]
+            let duration: CMTime
+            if #available(macOS 12.0, *) {
+                commonMetadata = (try? await asset.load(.commonMetadata)) ?? []
+                metadata = (try? await asset.load(.metadata)) ?? []
+                duration = (try? await asset.load(.duration)) ?? .zero
+            } else {
+                (commonMetadata, metadata, duration) = await withCheckedContinuation { continuation in
+                    DispatchQueue.global(qos: .utility).async {
+                        continuation.resume(returning: (asset.commonMetadata, asset.metadata, asset.duration))
+                    }
+                }
+            }
+            func firstCommonString(_ key: AVMetadataKey) -> String? {
+                AVMetadataItem.metadataItems(from: commonMetadata, withKey: key, keySpace: .common)
+                    .first?.stringValue.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .flatMap { $0.isEmpty ? nil : $0 }
+            }
+            let title = firstCommonString(.commonKeyTitle)
+            let artist = firstCommonString(.commonKeyArtist)
+            let albumName = firstCommonString(.commonKeyAlbumName)
+            let artworkData = AVMetadataItem.metadataItems(
+                from: commonMetadata, withKey: AVMetadataKey.commonKeyArtwork, keySpace: .common
+            ).first?.dataValue
+            var genre = "Unknown Genre"
+            var composer = "Unknown Composer"
+            var trackNumber = 0
+            var discNumber = 1
+            for item in metadata {
+                switch item.identifier {
+                case .id3MetadataContentType:
+                    genre = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? genre
+                case .id3MetadataComposer:
+                    composer = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? composer
+                case .id3MetadataTrackNumber:
+                    if let s = item.stringValue?.components(separatedBy: "/").first, let n = Int(s) {
+                        trackNumber = n
+                    }
+                case .id3MetadataPartOfASet:
+                    if let s = item.stringValue?.components(separatedBy: "/").first, let n = Int(s) {
+                        discNumber = n
+                    }
+                default:
+                    break
+                }
+            }
+            let resolvedTitle = title ?? url.deletingPathExtension().lastPathComponent
+            let resolvedArtist = artist ?? "Unknown Artist"
+            let resolvedAlbum = albumName ?? "Unknown Album"
+            let durationSeconds = max(0, CMTimeGetSeconds(duration))
+            let artwork = artworkData.flatMap { NSImage(data: $0) }
+            return MusicLibrarySongEntry(
+                id: "ext::\(url.standardizedFileURL.path)",
+                title: resolvedTitle,
+                artist: resolvedArtist,
+                album: resolvedAlbum,
+                genre: genre,
+                composer: composer,
+                durationSeconds: durationSeconds,
+                trackNumber: trackNumber,
+                discNumber: discNumber,
+                artworkAlbumKey: artwork != nil ? "\(resolvedArtist):::\(resolvedAlbum)" : nil,
+                url: url,
+                artwork: artwork,
+            )
+        }
+
+        nonisolated func fetchExternalMusicSongEntries() async -> [MusicLibrarySongEntry] {
+            var results: [MusicLibrarySongEntry] = []
+            for root in externalMusicRootURLs() {
+                for url in scanExternalMusicFiles(in: root) {
+                    if let entry = await makeMusicLibrarySongEntryFromAudioFile(url) {
+                        results.append(entry)
+                    }
+                }
+            }
+            return results
+        }
+
         func fetchMusicLibrarySongsWithItemIndices(
             includeArtwork: Bool = false,
             shouldSort: Bool = true,
-        ) throws -> (
+        ) async throws -> (
             songs: [MusicLibrarySongEntry],
             itemIndices: [String: Int],
             artworkDataByAlbumKey: [String: Data],
         ) {
-            try withITLibrary { library in
+            var (songs, itemIndices, artworkDataByAlbumKey) = try withITLibrary { library in
                 var songs: [MusicLibrarySongEntry] = []
                 var itemIndices: [String: Int] = [:]
                 var artworkDataByAlbumKey: [String: Data] = [:]
@@ -1175,20 +1299,22 @@ extension MenuView {
                         }
                     }
                 }
-                return (
-                    songs: shouldSort ? sortedMusicLibraryEntries(songs) : songs,
-                    itemIndices: itemIndices,
-                    artworkDataByAlbumKey: artworkDataByAlbumKey,
-                )
+                return (songs: songs, itemIndices: itemIndices, artworkDataByAlbumKey: artworkDataByAlbumKey)
             }
+            songs.append(contentsOf: await fetchExternalMusicSongEntries())
+            return (
+                songs: shouldSort ? sortedMusicLibraryEntries(songs) : songs,
+                itemIndices: itemIndices,
+                artworkDataByAlbumKey: artworkDataByAlbumKey,
+            )
         }
 
-        func fetchMusicLibrarySongsForShuffleWithItemIndices() throws -> (
+        func fetchMusicLibrarySongsForShuffleWithItemIndices() async throws -> (
             songs: [MusicLibrarySongEntry],
             itemIndices: [String: Int],
             artworkDataByAlbumKey: [String: Data],
         ) {
-            try fetchMusicLibrarySongsWithItemIndices(
+            try await fetchMusicLibrarySongsWithItemIndices(
                 includeArtwork: false,
                 shouldSort: false,
             )
@@ -1337,6 +1463,8 @@ extension MenuView {
                 genre: genre,
                 composer: composer,
                 durationSeconds: max(0, item.playbackDuration),
+                trackNumber: item.albumTrackNumber,
+                discNumber: item.discNumber,
                 artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: item),
                 url: locationURL,
                 artwork: includeArtwork ? item.artwork?.image(at: CGSize(width: 800, height: 800)) : nil,
@@ -1439,6 +1567,8 @@ extension MenuView {
                 genre: genre,
                 composer: composer,
                 durationSeconds: max(0, Double(item.totalTime) / 1000.0),
+                trackNumber: item.trackNumber,
+                discNumber: item.album.discNumber,
                 artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: item),
                 url: locationURL,
                 artwork: includeArtwork ? resolvedMusicLibraryEmbeddedArtworkImage(for: item) : nil,
@@ -1506,6 +1636,8 @@ extension MenuView {
                 genre: genre.isEmpty ? "Unknown Genre" : genre,
                 composer: composer.isEmpty ? "Unknown Composer" : composer,
                 durationSeconds: max(0, song.duration ?? 0),
+                trackNumber: song.trackNumber ?? 0,
+                discNumber: song.discNumber ?? 1,
                 artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: song),
                 url: playbackURL,
                 artwork: includeArtwork ? loadMusicKitArtworkImage(song.artwork) : nil,
@@ -1603,7 +1735,7 @@ extension MenuView {
                         let itemIndices: [String: Int]
                         let artworkDataByAlbumKey: [String: Data]
                         if requestedMediaType == .songs {
-                            let result = try fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
+                            let result = try await fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
                             songs = result.songs
                             itemIndices = result.itemIndices
                             artworkDataByAlbumKey = result.artworkDataByAlbumKey
@@ -1691,7 +1823,7 @@ extension MenuView {
                             #endif
                         } else {
                             #if canImport(iTunesLibrary)
-                                let result = try fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
+                                let result = try await fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
                                 songs = result.songs
                                 itemIndices = result.itemIndices
                                 artworkDataByAlbumKey = result.artworkDataByAlbumKey
@@ -1849,7 +1981,7 @@ extension MenuView {
                                 usingExistingBlackout: usingExistingBlackout,
                             )
                         }
-                        let result = try fetchMusicLibrarySongsForShuffleWithItemIndices()
+                        let result = try await fetchMusicLibrarySongsForShuffleWithItemIndices()
                         await MainActor.run {
                             guard musicSongsRequestID == requestID else { return }
                             musicLibraryItemIndexBySongID = result.itemIndices
@@ -2027,6 +2159,8 @@ extension MenuView {
         let genre: String
         let composer: String
         let durationSeconds: Double
+        let trackNumber: Int
+        let discNumber: Int
         let artworkAlbumKey: String?
         let url: URL?
         let artwork: NSImage?
