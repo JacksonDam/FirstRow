@@ -17,9 +17,11 @@
         private var commandEscapeHotKeyHandlerRef: EventHandlerRef?
         func applicationDidFinishLaunching(_: Notification) {
             installBorderlessKeyabilitySwizzleIfNeeded()
+            for window in NSApplication.shared.windows { window.alphaValue = 0 }
             Task { @MainActor [weak self] in
                 self?.installWindowLockObservers()
                 self?.lockAllWindowsToScreenFrame()
+                for window in NSApplication.shared.windows { window.alphaValue = 1 }
                 self?.activateAndFocusAppWindow()
             }
             applyImmersivePresentationOptions()
