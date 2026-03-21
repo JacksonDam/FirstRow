@@ -149,7 +149,10 @@
             guard let screenFrame = (window.screen ?? NSScreen.main)?.frame else { return }
 
             if window.styleMask != [.borderless] {
-                window.styleMask = [.borderless]
+                if #available(macOS 13.0, *) {
+                    window.styleMask = [.borderless]
+                }
+                // macOS 12 and earlier does not appear to like setStyleMask: (crashes...)
             }
             window.collectionBehavior = [.fullScreenNone]
             window.level = .normal
