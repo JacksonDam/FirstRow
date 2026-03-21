@@ -18,7 +18,6 @@
         func applicationDidFinishLaunching(_: Notification) {
             installBorderlessKeyabilitySwizzleIfNeeded()
             installWindowLockObservers()
-            lockAllWindowsToScreenFrame()
             Task { @MainActor [weak self] in
                 self?.lockAllWindowsToScreenFrame()
                 self?.activateAndFocusAppWindow()
