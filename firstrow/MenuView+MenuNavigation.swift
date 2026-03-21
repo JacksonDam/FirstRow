@@ -159,9 +159,13 @@ extension MenuView {
                 }
             } else if !movieLibraryRootURLs.isEmpty {
                 rememberCurrentMoviesFolderSelectionIndex()
-                transitionMenuForFolderSwap {
-                    loadMoviesRootSelectorEntries(resetSelection: false)
-                }
+                #if os(macOS)
+                    transitionMenuForFolderSwap {
+                        loadMoviesRootSelectorEntries(resetSelection: false)
+                    }
+                #else
+                    exitMoviesThirdMenuToSecondLevelWithSwap()
+                #endif
             } else {
                 rememberCurrentMoviesFolderSelectionIndex()
                 exitMoviesThirdMenuToSecondLevelWithSwap()
