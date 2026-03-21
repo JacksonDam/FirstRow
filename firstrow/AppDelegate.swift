@@ -17,8 +17,8 @@
         private var commandEscapeHotKeyHandlerRef: EventHandlerRef?
         func applicationDidFinishLaunching(_: Notification) {
             installBorderlessKeyabilitySwizzleIfNeeded()
-            installWindowLockObservers()
             Task { @MainActor [weak self] in
+                self?.installWindowLockObservers()
                 self?.lockAllWindowsToScreenFrame()
                 self?.activateAndFocusAppWindow()
             }
