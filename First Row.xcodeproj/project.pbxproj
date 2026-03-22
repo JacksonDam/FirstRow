@@ -391,7 +391,7 @@
 		7A73DE812F5776A20021C281 /* firstrow */ = {
 			isa = PBXGroup;
 			children = (
-					7A73DE282F5776A20021C281 /* FRSettings.frappliance */,
+				7A73DE282F5776A20021C281 /* FRSettings.frappliance */,
 				7A73DE2B2F5776A20021C281 /* FRSources.frappliance */,
 				7A73DE342F5776A20021C281 /* Movies.frappliance */,
 				7A73DE3B2F5776A20021C281 /* Music.frappliance */,
@@ -923,7 +923,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.5;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -993,7 +993,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.5;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.1.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-weak_framework",

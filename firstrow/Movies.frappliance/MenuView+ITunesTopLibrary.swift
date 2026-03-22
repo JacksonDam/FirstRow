@@ -246,7 +246,7 @@ extension MenuView {
             "ae", "ug", "ua", "gb", "us", "uy", "uz", "vu", "ve", "vn", "ye", "zm", "zw",
         ]
         let region: String
-        if #available(macOS 13, *) {
+        if #available(macOS 13, iOS 16, tvOS 16, *) {
             region = Locale.current.region?.identifier.lowercased() ?? "us"
         } else {
             region = Locale.current.regionCode?.lowercased() ?? "us"
