@@ -4,6 +4,8 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
 	<key>com.apple.security.assets.movies.read-only</key>
 	<true/>
 	<key>com.apple.security.assets.music.read-only</key>
@@ -13,6 +15,21 @@
 		<string>com.apple.cmio.registerassistantservice.system-extensions</string>
 		<string>com.apple.fpsd</string>
 		<string>com.apple.tccd.system</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+	<array>
+		<string>/Volumes/</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
+	<array>
+		<string>/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/</string>
+		<string>/Library/Group Containers/243LU875E5.groups.com.apple.podcasts</string>
+		<string>/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents/</string>
+		<string>/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Library/</string>
+		<string>Library/Group Containers/243LU875E5.groups.com.apple.podcasts/</string>
+		<string>Library/Group Containers/243LU875E5.groups.com.apple.podcasts</string>
+		<string>Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents/</string>
+		<string>Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Library/</string>
 	</array>
 	<key>com.apple.security.personal-information.photos-library</key>
 	<true/>

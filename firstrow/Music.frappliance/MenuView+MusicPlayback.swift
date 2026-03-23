@@ -81,6 +81,8 @@ extension MenuView {
             genre: "Audio",
             composer: "",
             durationSeconds: 0,
+            trackNumber: 0,
+            discNumber: 1,
             artworkAlbumKey: nil,
             url: mediaURL,
             artwork: artwork,
@@ -232,6 +234,7 @@ extension MenuView {
     ) {
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
         stopMusicPlaybackSession(clearDisplayState: false)
+        clearActivePodcastAudioPlaybackContext()
         if let playbackQueue {
             activeMusicPlaybackQueue = playbackQueue
         }
@@ -283,7 +286,7 @@ extension MenuView {
                 end if
             end tell
             """
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 var error: NSDictionary?
                 NSAppleScript(source: source)?.executeAndReturnError(&error)
                 if let error { print("[AppleScript] playback error: \(error)") }
@@ -298,7 +301,7 @@ extension MenuView {
                 end if
             end tell
             """
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task(priority: .userInitiated) {
                 var error: NSDictionary?
                 NSAppleScript(source: source)?.executeAndReturnError(&error)
                 if let error { print("[AppleScript] pause error: \(error)") }
@@ -383,6 +386,7 @@ extension MenuView {
         removeCurrentMusicPlaybackTemporaryFileIfNeeded()
         activeMusicPlaybackQueue = []
         activeMusicPlaybackSongID = nil
+        clearActivePodcastAudioPlaybackContext()
         if clearDisplayState {
             clearMusicNowPlayingDisplayState()
         }
@@ -467,6 +471,31 @@ extension MenuView {
 
     func switchMusicNowPlayingTrack(direction: Int) {
         guard direction != 0 else { return }
+        if activePodcastPlaybackEpisodeID != nil {
+            let episodes = activePodcastPlaybackEpisodes()
+            guard !episodes.isEmpty else { return }
+            guard let currentEpisodeID = activePodcastPlaybackEpisodeID,
+                  let currentIndex = episodes.firstIndex(where: { $0.id == currentEpisodeID })
+            else {
+                return
+            }
+            let targetIndex = max(0, min(episodes.count - 1, currentIndex + direction))
+            guard targetIndex != currentIndex else { return }
+            let targetEpisode = episodes[targetIndex]
+            if isInThirdMenu,
+               isPodcastEpisodesThirdMenuMode,
+               activePodcastSeriesID == targetEpisode.seriesID
+            {
+                selectedThirdIndex = targetIndex
+            }
+            startPodcastEpisodeAudioPlayback(
+                targetEpisode,
+                trackIndex: targetIndex,
+                trackCount: episodes.count,
+                presentsFullscreen: false,
+            )
+            return
+        }
         if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == "iTunes Top Songs" {
             return
         }
@@ -611,4 +640,3 @@ extension MenuView {
         }
     }
 }
-

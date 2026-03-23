@@ -31,6 +31,18 @@ extension MenuView {
             isLoadingITunesTop(.movies) &&
                 iTunesTopMovies.isEmpty &&
                 currentITunesTopLoadError(.movies) == nil
+        case .tvEpisodesITunesTop:
+            isLoadingITunesTop(.tvEpisodes) &&
+                iTunesTopTVEpisodes.isEmpty &&
+                currentITunesTopLoadError(.tvEpisodes) == nil
+        case .videoPodcastSeries:
+            isLoadingPodcasts &&
+                filteredPodcastSeriesItems(for: .video).isEmpty &&
+                podcastsLoadError == nil
+        case .videoPodcastEpisodes:
+            isLoadingPodcasts &&
+                podcastEpisodesThirdMenuItems.isEmpty &&
+                podcastsLoadError == nil
         case .musicITunesTopSongs:
             isLoadingITunesTop(.songs) &&
                 iTunesTopSongs.isEmpty &&
@@ -39,6 +51,14 @@ extension MenuView {
             isLoadingITunesTop(.musicVideos) &&
                 iTunesTopMusicVideos.isEmpty &&
                 currentITunesTopLoadError(.musicVideos) == nil
+        case .audioPodcastSeries:
+            isLoadingPodcasts &&
+                filteredPodcastSeriesItems(for: .audio).isEmpty &&
+                podcastsLoadError == nil
+        case .audioPodcastEpisodes:
+            isLoadingPodcasts &&
+                podcastEpisodesThirdMenuItems.isEmpty &&
+                podcastsLoadError == nil
         case .musicCategories:
             isLoadingMusicSongs &&
                 musicCategoryThirdMenuItems.isEmpty &&
@@ -111,10 +131,90 @@ extension MenuView {
             }
         case .moviesITunesTop:
             return iTunesTopThirdMenuListItems(for: .movies)
+        case .tvEpisodesITunesTop:
+            return iTunesTopThirdMenuListItems(for: .tvEpisodes)
+        case .videoPodcastSeries:
+            let seriesItems = filteredPodcastSeriesItems(for: .video)
+            if isLoadingPodcasts, seriesItems.isEmpty {
+                return []
+            }
+            if let podcastsLoadError, seriesItems.isEmpty {
+                return [menuMessageItem(id: "video_podcasts_error", title: podcastsLoadError)]
+            }
+            if seriesItems.isEmpty {
+                return [menuMessageItem(id: "video_podcasts_empty", title: "No Video Podcasts")]
+            }
+            return seriesItems.map { series in
+                plainMenuListItem(
+                    id: series.id,
+                    title: series.title,
+                    leadsToMenu: true,
+                    showsBlueDot: podcastSeriesHasRecentEpisode(series),
+                )
+            }
+        case .videoPodcastEpisodes:
+            if isLoadingPodcasts, podcastEpisodesThirdMenuItems.isEmpty {
+                return []
+            }
+            if let podcastsLoadError, podcastEpisodesThirdMenuItems.isEmpty {
+                return [menuMessageItem(id: "video_podcast_episodes_error", title: podcastsLoadError)]
+            }
+            if podcastEpisodesThirdMenuItems.isEmpty {
+                return [menuMessageItem(id: "video_podcast_episodes_empty", title: "No Downloaded Episodes")]
+            }
+            return podcastEpisodesThirdMenuItems.enumerated().map { index, episode in
+                let trailingText = isPodcastAudioNowPlaying && activePodcastPlaybackEpisodeID == episode.id
+                    ? podcastTrackPositionText(trackIndex: index, trackCount: podcastEpisodesThirdMenuItems.count)
+                    : podcastEpisodeAiredText(for: episode.airedDate)
+                return plainMenuListItem(
+                    id: episode.id,
+                    title: episode.title,
+                    trailingText: trailingText,
+                )
+            }
         case .musicITunesTopSongs:
             return iTunesTopThirdMenuListItems(for: .songs)
         case .musicITunesTopMusicVideos:
             return iTunesTopThirdMenuListItems(for: .musicVideos)
+        case .audioPodcastSeries:
+            let seriesItems = filteredPodcastSeriesItems(for: .audio)
+            if isLoadingPodcasts, seriesItems.isEmpty {
+                return []
+            }
+            if let podcastsLoadError, seriesItems.isEmpty {
+                return [menuMessageItem(id: "podcasts_error", title: podcastsLoadError)]
+            }
+            if seriesItems.isEmpty {
+                return [menuMessageItem(id: "podcasts_empty", title: "No Podcasts")]
+            }
+            return seriesItems.map { series in
+                plainMenuListItem(
+                    id: series.id,
+                    title: series.title,
+                    leadsToMenu: true,
+                    showsBlueDot: podcastSeriesHasRecentEpisode(series),
+                )
+            }
+        case .audioPodcastEpisodes:
+            if isLoadingPodcasts, podcastEpisodesThirdMenuItems.isEmpty {
+                return []
+            }
+            if let podcastsLoadError, podcastEpisodesThirdMenuItems.isEmpty {
+                return [menuMessageItem(id: "podcast_episodes_error", title: podcastsLoadError)]
+            }
+            if podcastEpisodesThirdMenuItems.isEmpty {
+                return [menuMessageItem(id: "podcast_episodes_empty", title: "No Downloaded Episodes")]
+            }
+            return podcastEpisodesThirdMenuItems.enumerated().map { index, episode in
+                let trailingText = isPodcastAudioNowPlaying && activePodcastPlaybackEpisodeID == episode.id
+                    ? podcastTrackPositionText(trackIndex: index, trackCount: podcastEpisodesThirdMenuItems.count)
+                    : podcastEpisodeAiredText(for: episode.airedDate)
+                return plainMenuListItem(
+                    id: episode.id,
+                    title: episode.title,
+                    trailingText: trailingText,
+                )
+            }
         case .musicCategories:
             if isLoadingMusicSongs, musicCategoryThirdMenuItems.isEmpty {
                 return []
@@ -238,6 +338,8 @@ extension MenuView {
         switch kind {
         case .movies:
             "movies"
+        case .tvEpisodes:
+            "tv_episodes"
         case .songs:
             "songs"
         case .musicVideos:
@@ -253,6 +355,8 @@ extension MenuView {
         switch kind {
         case .movies:
             iTunesTopMovies.map { ($0.id, $0.rank, $0.title) }
+        case .tvEpisodes:
+            iTunesTopTVEpisodes.map { ($0.id, $0.rank, $0.title) }
         case .songs:
             iTunesTopSongs.map { ($0.id, $0.rank, $0.title) }
         case .musicVideos:

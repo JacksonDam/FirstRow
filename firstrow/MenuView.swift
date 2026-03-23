@@ -11,6 +11,8 @@ struct MenuTransitionSnapshot: Identifiable {
     var isErrorPage: Bool = false
     var isSubmenuErrorPage: Bool = false
     var isMoviesFolderPage: Bool = false
+    var isPodcastEpisodesPage: Bool = false
+    var isVideoPodcastEpisodesPage: Bool = false
     var isMovieResumePromptPage: Bool = false
     var isPhotosDateAlbumsPage: Bool = false
     var photosGapPreviewImage: NSImage? = nil
@@ -113,11 +115,14 @@ struct MenuView: View {
 
     let iconFlightAnimationDuration: Double = 1.0
     let submenuBackgroundIconTransitionDuration: Double = 1.0
-    let submenuBackgroundIconReturnDuration: Double = 1.0
+    let submenuBackgroundIconReturnDuration: Double = 1.1
     let movieEntryFadeDuration: Double = 0.48
     let movieEntryBlackHoldDuration: Double = 1.0
     let movieExitFreezeHoldDuration: Double = 0.5
     let movieExitFadeDuration: Double = 0.48
+    let movieResumePromptRevealDelay: Double = 0.12
+    let movieResumePromptFadeDuration: Double = 0.28
+    let movieResumePromptLaunchFadeDuration: Double = 0.32
     let menuFolderSwapFadeDuration: Double = 0.22
     let menuOverlayBlackoutSafetyDuration: Double = 0.1
     let menuFolderSwapHoldDuration: Double = 0.5
@@ -183,18 +188,18 @@ struct MenuView: View {
     @State var isReturningToRoot = false
     @State var isMenuOverflowScrollingUp = false
     @State var isMenuOverflowScrollingDown = false
-    @State var submenuEntryWorkItem: DispatchWorkItem?
-    @State var overflowFadeWorkItem: DispatchWorkItem?
+    @State var submenuEntryWorkItem: Task<Void, Never>?
+    @State var overflowFadeWorkItem: Task<Void, Never>?
     @State var rootLabelText = MenuConfiguration.rootItems.first(where: { $0.id == "music" })?.title
         ?? MenuConfiguration.rootItems.first?.title
         ?? ""
     @State var rootLabelOpacity: Double = 0
     @State var isRootLabelVisible = false
-    @State var rootLabelSwapWorkItem: DispatchWorkItem?
-    @State var rootIntroStartWorkItem: DispatchWorkItem?
-    @State var rootLabelRevealWorkItem: DispatchWorkItem?
-    @State var rootIntroCompletionWorkItem: DispatchWorkItem?
-    @State var rootExitWorkItem: DispatchWorkItem?
+    @State var rootLabelSwapWorkItem: Task<Void, Never>?
+    @State var rootIntroStartWorkItem: Task<Void, Never>?
+    @State var rootLabelRevealWorkItem: Task<Void, Never>?
+    @State var rootIntroCompletionWorkItem: Task<Void, Never>?
+    @State var rootExitWorkItem: Task<Void, Never>?
     @State var introBackdropImage: NSImage?
     @State var introBackdropProgress: CGFloat = 0
     @State var introProgress: CGFloat = 0
@@ -207,6 +212,7 @@ struct MenuView: View {
     @State var menuTransitionProgress: CGFloat = 1
     @State var menuTransitionDirection: MenuTransitionDirection = .forward
     @State var submenuTransitionProgress: CGFloat = 0
+    @State var selectedOverlayTransitionProgress: CGFloat = 0
 
     // MARK: - Input handling state
 
@@ -216,12 +222,12 @@ struct MenuView: View {
     @State var selectionAnimationDuration: Double = 0.30
     @State var useLinearSelectionSweepAnimation = false
     @State var isSelectionSettled = true
-    @State var settleWorkItem: DispatchWorkItem?
+    @State var settleWorkItem: Task<Void, Never>?
     @State var didPlayLimitForCurrentHold = false
     @State var activeDirectionalHoldKey: KeyCode = .none
     @State var directionalHoldPressStartTime: Date?
-    @State var directionalHoldStartWorkItem: DispatchWorkItem?
-    @State var directionalHoldTickWorkItem: DispatchWorkItem?
+    @State var directionalHoldStartWorkItem: Task<Void, Never>?
+    @State var directionalHoldTickWorkItem: Task<Void, Never>?
     @State var directionalHoldRepeatPhaseStartTime: Date?
     @State var lastHoldNavigationTime: Date?
     @State var lastArrowNavigationInputTime: Date?
@@ -237,6 +243,7 @@ struct MenuView: View {
     // MARK: - iTunes Top state
 
     @State var iTunesTopMovies: [ITunesTopMovieEntry] = []
+    @State var iTunesTopTVEpisodes: [ITunesTopTVEpisodeEntry] = []
     @State var iTunesTopSongs: [ITunesTopSongEntry] = []
     @State var iTunesTopMusicVideos: [ITunesTopMusicVideoEntry] = []
     @State var iTunesTopStateByKind: [ITunesTopCarouselKind: ITunesTopKindState] = ITunesTopCarouselKind.defaultStateMap
@@ -281,11 +288,17 @@ struct MenuView: View {
     @State var movieResumePromptBackdropRequestID = 0
     @State var movieResumePromptBackdropCache: [String: NSImage] = [:]
     @State var movieResumeBackdropOpacity: Double = 0
+    @State var isMovieResumePromptVisible = false
+    @State var isMovieResumePromptConfirming = false
+    @State var movieResumePromptSelectedIndex = 0
+    @State var movieResumePromptHideUnselected = false
+    @State var movieResumePromptSolidBlackSelected = false
+    @State var movieResumePromptOpacity: Double = 0
     @State var isMoviePlaybackLoading = false
     @State var moviePlaybackLoadingRequestID = 0
     @State var areMovieControlsVisible = false
     @State var movieControlsOpacity: Double = 0
-    @State var movieControlsHideWorkItem: DispatchWorkItem?
+    @State var movieControlsHideWorkItem: Task<Void, Never>?
     @State var movieControlsGlyphState: MoviePlaybackGlyphState = .pause
     @State var isMoviePreviewDownloadLoading = false
     @State var moviePreviewDownloadProgress: Double = 0
@@ -313,13 +326,14 @@ struct MenuView: View {
     @State var moviesFolderGapPlayer: AVQueuePlayer?
     @State var moviesFolderGapPlayerLooper: AVPlayerLooper?
     @State var moviesFolderGapPlayerURL: URL?
-    @State var moviesFolderGapPlayerDebounceWork: DispatchWorkItem?
+    @State var moviesFolderGapPlayerDebounceWork: Task<Void, Never>?
     @State var moviesFolderSelectionIndexByDirectoryPath: [String: Int] = [:]
     @State var moviesFolderSubmenuPreviewDescriptors: [MovieGapPreviewDescriptor] = []
     @State var moviesFolderSubmenuPreviewIdentity: String = ""
     @State var moviesFolderSubmenuPreviewRequestID = 0
     @State var isLoadingMoviesFolderEntries = false
     @State var moviesFolderEntriesRequestID = 0
+    @State var movieLibraryRootURLs: [URL] = []
 
     // MARK: - Music preview/carousel state
 
@@ -336,6 +350,19 @@ struct MenuView: View {
     @State var musicTopLevelCarouselRequestID = 0
     @State var isLoadingMusicTopLevelCarousel = false
     @State var musicTopLevelCarouselLoadOverlayOpacity: Double = 0
+
+    // MARK: - Podcasts state
+
+    @State var podcastSeriesItems: [PodcastSeriesEntry] = []
+    @State var podcastEpisodesThirdMenuItems: [PodcastEpisodeEntry] = []
+    @State var activePodcastSeriesID: String?
+    @State var activePodcastPlaybackSeriesID: String?
+    @State var activePodcastPlaybackEpisodeID: String?
+    @State var isLoadingPodcasts = false
+    @State var podcastsLoadError: String?
+    @State var podcastsRequestID = 0
+    @State var podcastsHasLoadedAtLeastOnce = false
+    @State var podcastSeriesSelectionIndexByKind: [PodcastBrowserKind: Int] = [.audio: 0, .video: 0]
 
     // MARK: - Photos state
 
@@ -377,9 +404,12 @@ struct MenuView: View {
     @State var photoSlideshowMusicPlayer: AVPlayer?
     @State var observedPhotoSlideshowMusicPlayer: AVPlayer?
     @State var photoSlideshowMusicDidEndObserver: NSObjectProtocol?
-    @State var photoSlideshowMusicFallbackWorkItem: DispatchWorkItem?
+    @State var photoSlideshowMusicFallbackWorkItem: Task<Void, Never>?
     @State var photoSlideshowMusicHasStarted = false
     @State var photoSlideshowUsesAppleScriptMusic = false
+    @State var photoSlideshowMusicShuffleQueue: [MusicLibrarySongEntry] = []
+    @State var photoSlideshowMusicShuffleCursor = 0
+    @State var photoSlideshowLastResolvedMusicSongID: String?
 
     // MARK: - Music now-playing page state
 

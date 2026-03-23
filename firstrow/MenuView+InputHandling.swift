@@ -11,6 +11,18 @@ import SwiftUI
 import Darwin
 
 extension MenuView {
+    func refreshDetailPreviewAfterSubmenuEntry(for rootItemID: String) {
+        guard rootItemID == "music" else {
+            refreshDetailPreviewForCurrentContext()
+            return
+        }
+        Task { @MainActor in
+            await Task.yield()
+            guard activeRootItemID == rootItemID, isInSubmenu, !isInThirdMenu, !isReturningToRoot else { return }
+            refreshDetailPreviewForCurrentContext()
+        }
+    }
+
     func handleKeyInput(_ key: KeyCode, isRepeat: Bool, modifiers: NSEvent.ModifierFlags = []) {
         let commandPressed = modifiers.contains(.command)
         if key == .escape, commandPressed {
@@ -18,7 +30,6 @@ extension MenuView {
             return
         }
         guard !isRootExitRunning else { return }
-        guard !blocksMenuForStartupMusicLibraryPreload else { return }
         if isFullscreenSceneTransitioning {
             return
         }
@@ -172,6 +183,8 @@ extension MenuView {
             musicSongsShowsShuffleAction = false
         }
         selectedThirdIndex = 0
+        activePodcastSeriesID = nil
+        podcastEpisodesThirdMenuItems = []
         activeRootItemID = chosenRootItem.id
         
         if chosenRootItem.id == "dvd" {
@@ -193,6 +206,7 @@ extension MenuView {
         isEnteringSubmenu = true
         isIconAnimated = true
         submenuTransitionProgress = 0
+        selectedOverlayTransitionProgress = 0
         if chosenRootItem.id == "photos" {
             isPhotosGapPreviewSlid = false
             withAnimation(.easeInOut(duration: 1.0)) {
@@ -204,6 +218,7 @@ extension MenuView {
         detailContentOpacity = 0
         withAnimation(.easeInOut(duration: iconFlightAnimationDuration)) {
             submenuTransitionProgress = 1
+            selectedOverlayTransitionProgress = 1
         }
         withAnimation(.easeInOut(duration: 0.32)) {
             rootMenuOpacity = 0
@@ -212,12 +227,14 @@ extension MenuView {
         if playSelectionSound {
             playSound(named: chosenRootItem.mainMenuSelectionSoundName ?? "Selection")
         }
-        let entryWorkItem = DispatchWorkItem {
+        submenuEntryWorkItem = Task {
+            try? await firstRowSleep(iconFlightAnimationDuration)
+            guard !Task.isCancelled else { return }
             guard isEnteringSubmenu, isIconAnimated, !isReturningToRoot else { return }
             headerText = chosenRootItem.title
             isInSubmenu = true
             isEnteringSubmenu = false
-            refreshDetailPreviewForCurrentContext()
+            refreshDetailPreviewAfterSubmenuEntry(for: chosenRootItem.id)
             withAnimation(.easeInOut(duration: 0.26)) {
                 submenuTitleOpacity = 1
                 submenuOpacity = 1
@@ -225,11 +242,6 @@ extension MenuView {
             }
             submenuEntryWorkItem = nil
         }
-        submenuEntryWorkItem = entryWorkItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + iconFlightAnimationDuration,
-            execute: entryWorkItem,
-        )
     }
 
     func returnToRootMenu(playExitSound: Bool = true) {
@@ -307,9 +319,7 @@ extension MenuView {
         isMoviePlaybackLoading = false
         isPhotosAlbumSelectionLoading = false
 
-        DispatchQueue.main.async {
-            isIconAnimated = false
-        }
+        isIconAnimated = false
         withAnimation(.easeInOut(duration: submenuExitFadeDuration)) {
             submenuTitleOpacity = 0
             submenuOpacity = 0
@@ -320,10 +330,15 @@ extension MenuView {
             isEnteringSubmenu = false
             submenuTransitionProgress = 0
         }
+        withAnimation(.easeInOut(duration: iconFlightAnimationDuration)) {
+            selectedOverlayTransitionProgress = 0
+        }
         if playExitSound {
             playSound(named: "MainTransitionFrom")
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + rootRevealDelay) {
+        Task {
+            try? await firstRowSleep(rootRevealDelay)
+            guard !Task.isCancelled else { return }
             holdNowPlayingMenuItemDuringExitFade = false
             var instantRootLabelState = Transaction()
             instantRootLabelState.disablesAnimations = true
@@ -359,10 +374,13 @@ extension MenuView {
                     musicSongsShowsShuffleAction = false
                 }
                 selectedThirdIndex = 0
+                activePodcastSeriesID = nil
+                podcastEpisodesThirdMenuItems = []
                 headerText = "First Row"
                 isInSubmenu = false
                 activeRootItemID = nil
                 submenuTransitionProgress = 0
+                selectedOverlayTransitionProgress = 0
                 isReturningToRoot = false
                 isPhotosGapPreviewSlid = false
                 rootLabelSwapWorkItem?.cancel()
@@ -398,6 +416,21 @@ extension MenuView {
             enterMoviesFolderMenu()
             return
         }
+        if activeRootItemID == "movies", item.id == PodcastBrowserKind.video.submenuItemID {
+            playSound(named: "Selection")
+            enterPodcastSeriesMenu(kind: .video, title: item.title)
+            return
+        }
+        if activeRootItemID == "movies", item.id == "movies_itunes_top_music_videos" {
+            playSound(named: "Selection")
+            enterITunesTopMenu(.musicVideos, title: item.title)
+            return
+        }
+        if activeRootItemID == "movies", item.id == "movies_itunes_top_tv_episodes" {
+            playSound(named: "Selection")
+            enterITunesTopMenu(.tvEpisodes, title: item.title)
+            return
+        }
         if activeRootItemID == "movies", item.id == "movies_itunes_top" {
             playSound(named: "Selection")
             enterITunesTopMenu(.movies, title: item.title)
@@ -413,11 +446,6 @@ extension MenuView {
             enterITunesTopMenu(.songs, title: item.title)
             return
         }
-        if activeRootItemID == "music", item.id == "music_itunes_top_music_videos" {
-            playSound(named: "Selection")
-            enterITunesTopMenu(.musicVideos, title: item.title)
-            return
-        }
         if activeRootItemID == "music", item.id == "music_songs" {
             playSound(named: "Selection")
             enterMusicSongsMenu(
@@ -425,16 +453,6 @@ extension MenuView {
                 shuffleMode: false,
                 libraryMediaType: .songs,
                 showsShuffleAction: true,
-            )
-            return
-        }
-        if activeRootItemID == "music", item.id == "music_music_videos" {
-            playSound(named: "Selection")
-            enterMusicSongsMenu(
-                title: item.title,
-                shuffleMode: false,
-                libraryMediaType: .musicVideos,
-                showsShuffleAction: false,
             )
             return
         }
@@ -446,6 +464,11 @@ extension MenuView {
                 libraryMediaType: .audiobooks,
                 showsShuffleAction: false,
             )
+            return
+        }
+        if activeRootItemID == "music", item.id == PodcastBrowserKind.audio.submenuItemID {
+            playSound(named: "Selection")
+            enterPodcastSeriesMenu(kind: .audio, title: item.title)
             return
         }
         if activeRootItemID == "music", item.id == "music_shuffle_songs" {
@@ -468,17 +491,13 @@ extension MenuView {
             enterPhotosDateAlbumsMenu(title: item.title)
             return
         }
-        if activeRootItemID == "photos", item.id == "photos_last_12_months" {
+        if activeRootItemID == "photos", (item.id == "photos_last_12_months" || item.id == "photos_last_roll") {
             guard let album = photoAlbumForSubmenuItemID(item.id), album.isPlayable else {
                 playLimitSoundOnceForCurrentHold()
                 return
             }
             playSound(named: "Selection")
             startPhotoAlbumSlideshow(for: album)
-            return
-        }
-        if activeRootItemID == "photos", item.id == "photos_last_import" {
-            playSound(named: "Selection")
             return
         }
         playSound(named: "Selection")
@@ -518,14 +537,60 @@ extension MenuView {
                     startMoviePlayback(from: item.url)
                 }
             }
-        case .moviesITunesTop:
-            startSelectedITunesTopThirdMenuItemPlayback(for: .movies)
+        case .moviesITunesTop, .tvEpisodesITunesTop:
+            let kind: ITunesTopCarouselKind = thirdMenuMode == .moviesITunesTop ? .movies : .tvEpisodes
+            startSelectedITunesTopThirdMenuItemPlayback(for: kind)
+            return
+        case .videoPodcastSeries:
+            if podcastsLoadError != nil {
+                requestPodcastsLibraryLoadIfNeeded(force: true)
+                return
+            }
+            guard let series = selectedPodcastSeriesFromThirdMenuSelection() else { return }
+            enterPodcastEpisodesMenu(for: series, kind: .video)
+            return
+        case .videoPodcastEpisodes:
+            guard podcastEpisodesThirdMenuItems.indices.contains(selectedThirdIndex) else { return }
+            guard !isMoviePlaybackLoading else { return }
+            let episode = podcastEpisodesThirdMenuItems[selectedThirdIndex]
+            guard episode.mediaURL != nil else {
+                playLimitSoundOnceForCurrentHold()
+                return
+            }
+            showMoviePlaybackLoadingThen {
+                startPodcastEpisodePlayback(episode)
+            }
             return
         case .musicITunesTopSongs:
             startSelectedITunesTopThirdMenuItemPlayback(for: .songs)
             return
         case .musicITunesTopMusicVideos:
             startSelectedITunesTopThirdMenuItemPlayback(for: .musicVideos)
+            return
+        case .audioPodcastSeries:
+            if podcastsLoadError != nil {
+                requestPodcastsLibraryLoadIfNeeded(force: true)
+                return
+            }
+            guard let series = selectedPodcastSeriesFromThirdMenuSelection() else { return }
+            enterPodcastEpisodesMenu(for: series, kind: .audio)
+            return
+        case .audioPodcastEpisodes:
+            guard podcastEpisodesThirdMenuItems.indices.contains(selectedThirdIndex) else { return }
+            let episode = podcastEpisodesThirdMenuItems[selectedThirdIndex]
+            guard episode.mediaURL != nil else {
+                playLimitSoundOnceForCurrentHold()
+                return
+            }
+            if isPodcastAudioNowPlaying, activePodcastPlaybackEpisodeID == episode.id {
+                musicNowPlayingTrackPositionText = podcastTrackPositionText(
+                    forEpisodeID: episode.id,
+                    inSeriesID: episode.seriesID,
+                )
+                enterMusicNowPlayingPage()
+                return
+            }
+            startPodcastEpisodePlayback(episode)
             return
         case .musicCategories:
             enterSongsForSelectedMusicCategory()
@@ -559,13 +624,15 @@ extension MenuView {
             let album = photosDateAlbums[selectedThirdIndex]
             guard album.isPlayable else { return }
             isPhotosAlbumSelectionLoading = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            Task {
+                try? await firstRowSleep(0.1)
+                guard !Task.isCancelled else { return }
                 var instant = Transaction()
                 instant.disablesAnimations = true
                 withTransaction(instant) {
-                    self.isPhotosAlbumSelectionLoading = false
+                    isPhotosAlbumSelectionLoading = false
                 }
-                self.startPhotoAlbumSlideshow(for: album)
+                startPhotoAlbumSlideshow(for: album)
             }
         case .none:
             return
@@ -576,22 +643,22 @@ extension MenuView {
         guard directoryEntry.isDirectory else { return }
         let selectedDirectory = directoryEntry.url.standardizedFileURL
         let parentDirectory = thirdMenuCurrentURL?.standardizedFileURL
-        DispatchQueue.global(qos: .userInitiated).async {
-            let hasNavigableContent = self.moviesFolderContainsNavigableContent(in: selectedDirectory)
-            DispatchQueue.main.async {
-                guard self.thirdMenuMode == .moviesFolder else { return }
-                guard self.thirdMenuCurrentURL?.standardizedFileURL == parentDirectory else { return }
-                guard self.thirdMenuItems.indices.contains(self.selectedThirdIndex) else { return }
-                let currentSelection = self.thirdMenuItems[self.selectedThirdIndex]
+        Task(priority: .userInitiated) {
+            let hasNavigableContent = moviesFolderContainsNavigableContent(in: selectedDirectory)
+            await MainActor.run {
+                guard thirdMenuMode == .moviesFolder else { return }
+                guard thirdMenuCurrentURL?.standardizedFileURL == parentDirectory else { return }
+                guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return }
+                let currentSelection = thirdMenuItems[selectedThirdIndex]
                 guard currentSelection.isDirectory else { return }
                 guard currentSelection.url.standardizedFileURL == selectedDirectory else { return }
                 if hasNavigableContent {
-                    self.rememberCurrentMoviesFolderSelectionIndex()
-                    self.transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
-                        self.loadThirdMenuDirectory(selectedDirectory, resetSelection: true)
+                    rememberCurrentMoviesFolderSelectionIndex()
+                    transitionMenuForFolderSwap(revealWhen: { !isLoadingMoviesFolderEntries }) {
+                        loadThirdMenuDirectory(selectedDirectory, resetSelection: true)
                     }
                 } else {
-                    self.presentFeatureErrorScreen(.noContentFound)
+                    presentFeatureErrorScreen(.noContentFound)
                 }
             }
         }
@@ -602,6 +669,9 @@ extension MenuView {
         case .movies:
             guard iTunesTopMovies.indices.contains(selectedThirdIndex) else { return }
             startITunesTopMoviePreviewPlayback(for: iTunesTopMovies[selectedThirdIndex])
+        case .tvEpisodes:
+            guard iTunesTopTVEpisodes.indices.contains(selectedThirdIndex) else { return }
+            startITunesTopTVEpisodePreviewPlayback(for: iTunesTopTVEpisodes[selectedThirdIndex])
         case .songs:
             guard iTunesTopSongs.indices.contains(selectedThirdIndex) else { return }
             let selectedSong = iTunesTopSongs[selectedThirdIndex]
@@ -650,6 +720,8 @@ extension MenuView {
             isInThirdMenu = false
             thirdMenuMode = .none
             thirdMenuOpacity = 0
+            activePodcastSeriesID = nil
+            podcastEpisodesThirdMenuItems = []
             resetThirdMenuDirectoryState()
             resetAllITunesTopMenusForNonITunesContext()
             resetMusicCategoryStateForNonMusicITunesTop()
@@ -664,7 +736,7 @@ extension MenuView {
             submenuTransitionProgress = 1
             rootMenuOpacity = 0
             headerOpacity = 0
-            refreshDetailPreviewForCurrentContext()
+            refreshDetailPreviewAfterSubmenuEntry(for: rootID)
         }
     }
 
@@ -715,11 +787,9 @@ extension MenuView {
         markSelectionAsMoving()
         playSound(named: "MainLeft")
         transitionRootLabel(to: menuItems[nextIndex].title)
-        DispatchQueue.main.async {
-            selectedIndex = nextIndex
-            withAnimation(.easeInOut(duration: selectionAnimationDuration * rootNavigationDurationMultiplier)) {
-                rootCarouselSelectionValue += Double(direction)
-            }
+        selectedIndex = nextIndex
+        withAnimation(.easeInOut(duration: selectionAnimationDuration * rootNavigationDurationMultiplier)) {
+            rootCarouselSelectionValue += Double(direction)
         }
     }
 
@@ -739,9 +809,7 @@ extension MenuView {
             viewportHeight: viewportHeight,
         ) else { return }
 
-        DispatchQueue.main.async {
-            selectedIndex = nextIndex
-        }
+        selectedIndex = nextIndex
     }
 
     func navigateSubmenuSelection(direction: Int, isRepeat: Bool) {
@@ -772,7 +840,10 @@ extension MenuView {
             selectionAnchorY: selectionAnchorY,
         ) else { return }
 
-        DispatchQueue.main.async {
+        let expectedRootItemID = activeRootItemID
+        Task { @MainActor in
+            await Task.yield()
+            guard activeRootItemID == expectedRootItemID, isInSubmenu, !isInThirdMenu else { return }
             selectedSubIndex = nextIndex
             refreshDetailPreviewForCurrentContext()
         }
@@ -793,10 +864,8 @@ extension MenuView {
             markSelectionAsMoving()
             playSound(named: "SelectionChange")
 
-            DispatchQueue.main.async {
-                selectedThirdIndex = nextIndex
-                rememberCurrentMoviesFolderSelectionIndex()
-            }
+            selectedThirdIndex = nextIndex
+            rememberCurrentMoviesFolderSelectionIndex()
             return
         }
         let listItems = thirdMenuListItems()
@@ -822,12 +891,13 @@ extension MenuView {
             selectionAnchorY: selectionAnchorY,
         ) else { return }
 
-        DispatchQueue.main.async {
-            selectedThirdIndex = nextIndex
-            rememberCurrentMoviesFolderSelectionIndex()
-            if !(activeRootItemID == "photos" && thirdMenuMode == .photosDateAlbums) {
-                refreshDetailPreviewForCurrentContext()
-            }
+        selectedThirdIndex = nextIndex
+        if let podcastKind = activePodcastThirdMenuKind, isPodcastSeriesThirdMenuMode {
+            storePodcastSeriesSelectionIndex(nextIndex, for: podcastKind)
+        }
+        rememberCurrentMoviesFolderSelectionIndex()
+        if !(activeRootItemID == "photos" && thirdMenuMode == .photosDateAlbums) {
+            refreshDetailPreviewForCurrentContext()
         }
     }
 
@@ -843,15 +913,13 @@ extension MenuView {
 
         isMenuOverflowScrollingUp = true
         isMenuOverflowScrollingDown = true
-        let workItem = DispatchWorkItem {
+        let delay = selectionAnimationDuration + 0.02
+        overflowFadeWorkItem = Task {
+            try? await firstRowSleep(delay)
+            guard !Task.isCancelled else { return }
             isMenuOverflowScrollingUp = false
             isMenuOverflowScrollingDown = false
         }
-        overflowFadeWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + selectionAnimationDuration + 0.02,
-            execute: workItem,
-        )
     }
 
     func isDirectionalNavigationKey(_ key: KeyCode) -> Bool {
@@ -862,7 +930,6 @@ extension MenuView {
         _ key: KeyCode,
         modifiers: NSEvent.ModifierFlags = [],
     ) {
-        guard !blocksMenuForStartupMusicLibraryPreload else { return }
         guard isDirectionalNavigationKey(key) else {
             handleKeyInput(key, isRepeat: false, modifiers: modifiers)
             return
@@ -874,16 +941,13 @@ extension MenuView {
         activeDirectionalHoldKey = key
         directionalHoldPressStartTime = Date()
         handleKeyInput(key, isRepeat: false, modifiers: modifiers)
-        let startWorkItem = DispatchWorkItem {
+        directionalHoldStartWorkItem = Task {
+            try? await firstRowSleep(directionalHoldInitialDelay)
+            guard !Task.isCancelled else { return }
             guard activeDirectionalHoldKey == key else { return }
             directionalHoldRepeatPhaseStartTime = Date()
             scheduleDirectionalHoldTick(for: key, modifiers: modifiers)
         }
-        directionalHoldStartWorkItem = startWorkItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + directionalHoldInitialDelay,
-            execute: startWorkItem,
-        )
     }
 
     func scheduleDirectionalHoldTick(
@@ -895,13 +959,13 @@ extension MenuView {
         let elapsedInScrollingState = Date().timeIntervalSince(phaseStart)
         let totalHoldDuration = directionalHoldInitialDelay + elapsedInScrollingState
         let interval = minimumHoldRepeatInterval(for: totalHoldDuration)
-        let tickWorkItem = DispatchWorkItem {
+        directionalHoldTickWorkItem = Task {
+            try? await firstRowSleep(interval)
+            guard !Task.isCancelled else { return }
             guard activeDirectionalHoldKey == key else { return }
             handleKeyInput(key, isRepeat: true, modifiers: modifiers)
             scheduleDirectionalHoldTick(for: key, modifiers: modifiers)
         }
-        directionalHoldTickWorkItem = tickWorkItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + interval, execute: tickWorkItem)
     }
 
     func handleDirectionalPressEnded(_ key: KeyCode) {
@@ -1028,17 +1092,15 @@ extension MenuView {
             isSelectionSettled = false
         }
         settleWorkItem?.cancel()
-        let workItem = DispatchWorkItem {
+        let settleDelay = selectionAnimationDuration + 0.02
+        settleWorkItem = Task {
+            try? await firstRowSleep(settleDelay)
+            guard !Task.isCancelled else { return }
             isSelectionSettled = true
             if activeRootItemID == "photos", isInSubmenu {
                 refreshPhotosForCurrentContext()
             }
         }
-        settleWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + selectionAnimationDuration + 0.02,
-            execute: workItem,
-        )
     }
 
     func resetNavigationAccelerationState() {
@@ -1072,17 +1134,14 @@ extension MenuView {
         withAnimation(.easeOut(duration: rootLabelFadeOutDuration)) {
             rootLabelOpacity = 0
         }
-        let workItem = DispatchWorkItem {
+        rootLabelSwapWorkItem = Task {
+            try? await firstRowSleep(rootLabelFadeOutDuration)
+            guard !Task.isCancelled else { return }
             rootLabelText = title
             withAnimation(.easeIn(duration: rootLabelFadeInDuration)) {
                 rootLabelOpacity = 1
             }
         }
-        rootLabelSwapWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + rootLabelFadeOutDuration,
-            execute: workItem,
-        )
     }
 
     func startRootIntroIfNeeded() {
@@ -1097,51 +1156,40 @@ extension MenuView {
         isRootIntroRunning = true
         isRootLabelVisible = false
         rootLabelOpacity = 0
-        DispatchQueue.main.async {
-            if introBackdropImage == nil {
-                introBackdropImage = captureBackdropImage()
-            }
-            let introCompletionTime = max(rootIntroDuration, rootIntroBackdropDuration)
-            let labelRevealWorkItem = DispatchWorkItem {
-                rootLabelRevealWorkItem = nil
-                isRootLabelVisible = true
-                withAnimation(.easeInOut(duration: rootIntroLabelFadeDuration)) {
-                    rootLabelOpacity = 1
-                }
-            }
-            rootLabelRevealWorkItem = labelRevealWorkItem
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + rootIntroAnimationStartDelay + rootIntroLabelStartDelay,
-                execute: labelRevealWorkItem,
-            )
-            let introStartWorkItem = DispatchWorkItem {
-                rootIntroStartWorkItem = nil
-                playSound(named: "Begin")
-                withAnimation(.timingCurve(0.45, 0.0, 0.34, 1.0, duration: rootIntroBackdropDuration)) {
-                    introBackdropProgress = 1
-                }
-                withAnimation(.timingCurve(0.45, 0.0, 0.34, 1.0, duration: rootIntroDuration)) {
-                    rootCarouselSelectionValue = Double(selectedIndex)
-                    introProgress = 1
-                }
-            }
-            rootIntroStartWorkItem = introStartWorkItem
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + rootIntroAnimationStartDelay,
-                execute: introStartWorkItem,
-            )
-            let introCompletionWorkItem = DispatchWorkItem {
-                rootIntroCompletionWorkItem = nil
-                isRootExitRunning = false
-                isRootIntroRunning = false
-                isRootLabelVisible = true
+        if introBackdropImage == nil {
+            introBackdropImage = captureBackdropImage()
+        }
+        let introCompletionTime = max(rootIntroDuration, rootIntroBackdropDuration)
+        rootLabelRevealWorkItem = Task {
+            try? await firstRowSleep(rootIntroAnimationStartDelay + rootIntroLabelStartDelay)
+            guard !Task.isCancelled else { return }
+            rootLabelRevealWorkItem = nil
+            isRootLabelVisible = true
+            withAnimation(.easeInOut(duration: rootIntroLabelFadeDuration)) {
                 rootLabelOpacity = 1
             }
-            rootIntroCompletionWorkItem = introCompletionWorkItem
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + rootIntroAnimationStartDelay + introCompletionTime,
-                execute: introCompletionWorkItem,
-            )
+        }
+        rootIntroStartWorkItem = Task {
+            try? await firstRowSleep(rootIntroAnimationStartDelay)
+            guard !Task.isCancelled else { return }
+            rootIntroStartWorkItem = nil
+            playSound(named: "Begin")
+            withAnimation(.timingCurve(0.45, 0.0, 0.34, 1.0, duration: rootIntroBackdropDuration)) {
+                introBackdropProgress = 1
+            }
+            withAnimation(.timingCurve(0.45, 0.0, 0.34, 1.0, duration: rootIntroDuration)) {
+                rootCarouselSelectionValue = Double(selectedIndex)
+                introProgress = 1
+            }
+        }
+        rootIntroCompletionWorkItem = Task {
+            try? await firstRowSleep(rootIntroAnimationStartDelay + introCompletionTime)
+            guard !Task.isCancelled else { return }
+            rootIntroCompletionWorkItem = nil
+            isRootExitRunning = false
+            isRootIntroRunning = false
+            isRootLabelVisible = true
+            rootLabelOpacity = 1
         }
     }
 
@@ -1180,12 +1228,12 @@ extension MenuView {
         }
 
         let exitDuration = max(rootIntroDuration, rootIntroBackdropDuration)
-        let exitWorkItem = DispatchWorkItem {
+        rootExitWorkItem = Task {
+            try? await firstRowSleep(exitDuration)
+            guard !Task.isCancelled else { return }
             rootExitWorkItem = nil
             NotificationCenter.default.post(name: .firstRowTerminateRequested, object: nil)
         }
-        rootExitWorkItem = exitWorkItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + exitDuration, execute: exitWorkItem)
     }
 
     func currentMenuTransitionSnapshot() -> MenuTransitionSnapshot? {
@@ -1201,6 +1249,9 @@ extension MenuView {
             isErrorPage: isInThirdMenu && thirdMenuMode == .errorPage,
             isSubmenuErrorPage: !isInThirdMenu && isSubmenuErrorPage,
             isMoviesFolderPage: isInThirdMenu && thirdMenuMode == .moviesFolder,
+            isPodcastEpisodesPage: isInThirdMenu &&
+                (thirdMenuMode == .audioPodcastEpisodes || thirdMenuMode == .videoPodcastEpisodes),
+            isVideoPodcastEpisodesPage: isInThirdMenu && thirdMenuMode == .videoPodcastEpisodes,
             isMovieResumePromptPage: isInThirdMenu && thirdMenuMode == .movieResumePrompt,
             isPhotosDateAlbumsPage: activeRootItemID == "photos",
             photosGapPreviewImage: activeRootItemID == "photos" ? photosGapPreviewImage : nil,
@@ -1222,12 +1273,14 @@ extension MenuView {
     func showMoviePlaybackLoadingThen(_ action: @escaping () -> Void) {
         let requestID = incrementRequestID(&moviePlaybackLoadingRequestID)
         isMoviePlaybackLoading = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            guard self.moviePlaybackLoadingRequestID == requestID else { return }
+        Task {
+            try? await firstRowSleep(0.1)
+            guard !Task.isCancelled else { return }
+            guard moviePlaybackLoadingRequestID == requestID else { return }
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
-                self.isMoviePlaybackLoading = false
+                isMoviePlaybackLoading = false
             }
             action()
         }

@@ -230,16 +230,44 @@ extension MenuView {
         return data
     }
 
+    private nonisolated var iTunesStoreRegion: String {
+        let supported: Set<String> = [
+            "dz", "ao", "ai", "ag", "ar", "am", "au", "at", "az", "bs", "bh", "bb", "by", "be",
+            "bz", "bj", "bm", "bt", "bo", "ba", "bw", "br", "vg", "bg", "kh", "cm", "ca", "cv",
+            "ky", "td", "cl", "cn", "co", "cr", "hr", "cy", "cz", "ci", "cd", "dk", "dm", "do",
+            "ec", "eg", "sv", "ee", "sz", "fj", "fi", "fr", "ga", "gm", "ge", "de", "gh", "gr",
+            "gd", "gt", "gw", "gy", "hn", "hk", "hu", "is", "in", "id", "iq", "ie", "il", "it",
+            "jm", "jp", "jo", "kz", "ke", "kr", "xk", "kw", "kg", "la", "lv", "lb", "lr", "ly",
+            "lt", "lu", "mo", "mg", "mw", "my", "mv", "ml", "mt", "mr", "mu", "mx", "fm", "md",
+            "mn", "me", "ms", "ma", "mz", "mm", "na", "np", "nl", "nz", "ni", "ne", "ng", "mk",
+            "no", "om", "pa", "pg", "py", "pe", "ph", "pl", "pt", "qa", "cg", "ro", "ru", "rw",
+            "sa", "sn", "rs", "sc", "sl", "sg", "sk", "si", "sb", "za", "es", "lk", "kn", "lc",
+            "vc", "sr", "se", "ch", "tw", "tj", "tz", "th", "to", "tt", "tn", "tm", "tc", "tr",
+            "ae", "ug", "ua", "gb", "us", "uy", "uz", "vu", "ve", "vn", "ye", "zm", "zw",
+        ]
+        let region: String
+        if #available(macOS 13, iOS 16, tvOS 16, *) {
+            region = Locale.current.region?.identifier.lowercased() ?? "us"
+        } else {
+            region = Locale.current.regionCode?.lowercased() ?? "us"
+        }
+        return supported.contains(region) ? region : "us"
+    }
+
     private nonisolated var iTunesTopMoviesFeedURLString: String {
-        "https://itunes.apple.com/us/rss/topmovies/limit=10/xml"
+        "https://itunes.apple.com/\(iTunesStoreRegion)/rss/topmovies/limit=10/xml"
+    }
+
+    private nonisolated var iTunesTopTVEpisodesFeedURLString: String {
+        "https://itunes.apple.com/\(iTunesStoreRegion)/rss/toptvepisodes/limit=10/xml"
     }
 
     private nonisolated var iTunesTopSongsFeedURLString: String {
-        "https://itunes.apple.com/us/rss/topsongs/limit=10/xml"
+        "https://itunes.apple.com/\(iTunesStoreRegion)/rss/topsongs/limit=10/xml"
     }
 
     private nonisolated var iTunesTopMusicVideosFeedURLString: String {
-        "https://itunes.apple.com/us/rss/topmusicvideos/limit=10/xml"
+        "https://itunes.apple.com/\(iTunesStoreRegion)/rss/topmusicvideos/limit=10/xml"
     }
 
     @MainActor
@@ -263,6 +291,15 @@ extension MenuView {
             for: .movies,
             id: movie.id,
             fallbackURL: movie.previewVideoURL,
+        )
+    }
+
+    @MainActor
+    func resolveITunesTopTVEpisodePreviewVideoURL(for episode: ITunesTopTVEpisodeEntry) async -> URL? {
+        resolveCachedITunesTopPreviewMediaURL(
+            for: .tvEpisodes,
+            id: episode.id,
+            fallbackURL: episode.previewVideoURL,
         )
     }
 
@@ -307,6 +344,23 @@ extension MenuView {
                 ?? "No description available."
             return ITunesTopMovieEntry(
                 id: "itunes_top_movie_\(entry.lookupID)",
+                rank: entry.rank,
+                title: entry.title,
+                summary: normalizedSummary,
+                lookupID: entry.lookupID,
+                artworkURL: entry.artworkURL,
+                storeURL: entry.storeURL,
+                previewVideoURL: entry.previewVideoURL,
+            )
+        }
+    }
+
+    nonisolated func fetchITunesTopTVEpisodes() async throws -> [ITunesTopTVEpisodeEntry] {
+        try await mapITunesTopFeedEntries(from: iTunesTopTVEpisodesFeedURLString) { entry in
+            let normalizedSummary = normalizedITunesTopMovieSummary(entry.summary)
+                ?? "No description available."
+            return ITunesTopTVEpisodeEntry(
+                id: "itunes_top_tv_episode_\(entry.lookupID)",
                 rank: entry.rank,
                 title: entry.title,
                 summary: normalizedSummary,
@@ -429,13 +483,30 @@ extension MenuView {
         return iTunesTopMovies[index]
     }
 
+    func resolveITunesTopTVEpisodePreviewTarget() -> ITunesTopTVEpisodeEntry? {
+        guard let index = selectedITunesTopPreviewIndex(.tvEpisodes, entryCount: iTunesTopTVEpisodes.count) else {
+            return nil
+        }
+        return iTunesTopTVEpisodes[index]
+    }
+
+    func resolveITunesTopMusicVideoPreviewTarget() -> ITunesTopMusicVideoEntry? {
+        guard let index = selectedITunesTopPreviewIndex(.musicVideos, entryCount: iTunesTopMusicVideos.count) else {
+            return nil
+        }
+        return iTunesTopMusicVideos[index]
+    }
+
     enum ITunesTopLoadEntries {
         case movies([ITunesTopMovieEntry])
+        case tvEpisodes([ITunesTopTVEpisodeEntry])
         case songs([ITunesTopSongEntry])
         case musicVideos([ITunesTopMusicVideoEntry])
         var count: Int {
             switch self {
             case let .movies(entries):
+                entries.count
+            case let .tvEpisodes(entries):
                 entries.count
             case let .songs(entries):
                 entries.count
@@ -489,6 +560,8 @@ extension MenuView {
         switch (kind, entries) {
         case let (.movies, .movies(resolvedEntries)):
             iTunesTopMovies = resolvedEntries
+        case let (.tvEpisodes, .tvEpisodes(resolvedEntries)):
+            iTunesTopTVEpisodes = resolvedEntries
         case let (.songs, .songs(resolvedEntries)):
             iTunesTopSongs = resolvedEntries
         case let (.musicVideos, .musicVideos(resolvedEntries)):
@@ -502,6 +575,8 @@ extension MenuView {
         switch kind {
         case .movies:
             iTunesTopMovies = []
+        case .tvEpisodes:
+            iTunesTopTVEpisodes = []
         case .songs:
             iTunesTopSongs = []
         case .musicVideos:
@@ -513,6 +588,8 @@ extension MenuView {
         switch kind {
         case .movies:
             try await .movies(fetchITunesTopMovies())
+        case .tvEpisodes:
+            try await .tvEpisodes(fetchITunesTopTVEpisodes())
         case .songs:
             try await .songs(fetchITunesTopSongs())
         case .musicVideos:
@@ -542,26 +619,26 @@ extension MenuView {
                 await MainActor.run {
                     guard self.currentITunesTopRequestID(kind) == requestID else { return }
                     guard self.shouldAcceptITunesTopLoadResult(kind) else { return }
-                    self.setITunesTopLoading(false, for: kind)
                     self.setITunesTopEntries(loadedEntries, for: kind)
                     self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, loadedEntries.count - 1))
                     self.setITunesTopLoadError(
                         loadedEntries.count == 0 ? kind.emptyLoadMessage : nil,
                         for: kind,
                     )
+                    self.setITunesTopLoading(false, for: kind)
                     self.refreshDetailPreviewForCurrentContext()
                 }
             } catch {
                 await MainActor.run {
                     guard self.currentITunesTopRequestID(kind) == requestID else { return }
                     guard self.shouldAcceptITunesTopLoadResult(kind) else { return }
-                    self.setITunesTopLoading(false, for: kind)
                     self.clearITunesTopEntries(for: kind)
                     self.selectedThirdIndex = 0
                     self.setITunesTopLoadError(self.iTunesTopErrorMessage(for: kind, error: error), for: kind)
                     self.setCurrentITunesTopCarouselArtworks([], for: kind)
                     self.setCurrentITunesTopCarouselIdentity("", for: kind)
                     _ = self.nextITunesTopCarouselRequestID(kind)
+                    self.setITunesTopLoading(false, for: kind)
                     self.refreshDetailPreviewForCurrentContext()
                 }
             }
@@ -626,7 +703,7 @@ extension MenuView {
     }
 
     func resetAllITunesTopMenusForNonITunesContext() {
-        resetITunesTopMenuStates([.init(kind: .movies, isLoading: false, invalidateLoadRequest: true, resetPlaybackRequestID: false), .init(kind: .songs, isLoading: false, invalidateLoadRequest: true, resetPlaybackRequestID: true), .init(kind: .musicVideos, isLoading: false, invalidateLoadRequest: true, resetPlaybackRequestID: true)])
+        resetITunesTopMenuStates([.init(kind: .movies, isLoading: false, invalidateLoadRequest: true, resetPlaybackRequestID: false), .init(kind: .tvEpisodes, isLoading: false, invalidateLoadRequest: true, resetPlaybackRequestID: false), .init(kind: .songs, isLoading: false, invalidateLoadRequest: true, resetPlaybackRequestID: true), .init(kind: .musicVideos, isLoading: false, invalidateLoadRequest: true, resetPlaybackRequestID: true)])
     }
 
     func resetMusicITunesTopMenusForLibraryContext() {
@@ -635,7 +712,7 @@ extension MenuView {
 
     func enterITunesTopMenu(_ kind: ITunesTopCarouselKind, title: String) {
         transitionMenuForFolderSwap(
-            revealWhen: { !isLoadingITunesTopCarousel(kind) },
+            revealWhen: { !shouldHideThirdMenuListUntilLoadCompletes },
         ) {
             thirdMenuMode = kind.thirdMenuMode
             isInThirdMenu = true
@@ -653,6 +730,14 @@ extension MenuView {
                 resetMusicCategoryStateForNonMusicITunesTop()
                 activeMusicLibraryMediaType = .songs
                 musicSongsShowsShuffleAction = false
+            case .tvEpisodes:
+                resetITunesTopMenuState(
+                    for: .tvEpisodes,
+                    isLoading: true,
+                    invalidateLoadRequest: false,
+                    resetPlaybackRequestID: false,
+                )
+                resetMusicCategoryStateForNonMusicITunesTop()
             case .songs:
                 resetMusicCategoryAndSongStateForMusicITunesTop()
                 resetITunesTopMenuState(
@@ -725,6 +810,9 @@ extension MenuView {
         case .movies:
             guard let selectedMovie = resolveITunesTopMoviePreviewTarget() else { return nil }
             return (selectedMovie.id, selectedMovie.artworkURL)
+        case .tvEpisodes:
+            guard let selectedEpisode = resolveITunesTopTVEpisodePreviewTarget() else { return nil }
+            return (selectedEpisode.id, selectedEpisode.artworkURL)
         case .songs:
             guard let index = selectedITunesTopPreviewIndex(.songs, entryCount: iTunesTopSongs.count) else { return nil }
             let selectedSong = iTunesTopSongs[index]
@@ -780,25 +868,28 @@ extension MenuView {
     }
 
     func refreshITunesTopCarouselForCurrentContext(_ kind: ITunesTopCarouselKind) {
-        guard shouldUseITunesTopCarouselSlot(kind) else {
-            _ = nextITunesTopCarouselRequestID(kind)
-            return
-        }
-        let items = iTunesTopCarouselArtworkItems(kind)
-        guard !items.isEmpty else {
-            _ = nextITunesTopCarouselRequestID(kind)
-            if !isLoadingITunesTopCarousel(kind) {
-                requestITunesTopCarouselLoad(kind)
+        if shouldUseITunesTopCarouselSlot(kind) {
+            let items = iTunesTopCarouselArtworkItems(kind)
+            guard !items.isEmpty else {
+                _ = nextITunesTopCarouselRequestID(kind)
+                if !isLoadingITunesTopCarousel(kind) {
+                    requestITunesTopCarouselLoad(kind)
+                }
+                return
             }
-            return
+            let identity = iTunesTopCarouselIdentityKey(items)
+            if currentITunesTopCarouselIdentity(kind) == identity,
+               !currentITunesTopCarouselArtworks(kind).isEmpty
+            {
+                return
+            }
+            requestITunesTopCarouselArtworks(for: kind, items: items, identity: identity)
+        } else {
+            if isLoadingITunesTopCarousel(kind) || !currentITunesTopCarouselArtworks(kind).isEmpty || !currentITunesTopCarouselIdentity(kind).isEmpty {
+                resetITunesTopCarouselAndPreviewState(for: [kind])
+                setITunesTopLoading(false, for: kind)
+            }
         }
-        let identity = iTunesTopCarouselIdentityKey(items)
-        if currentITunesTopCarouselIdentity(kind) == identity,
-           !currentITunesTopCarouselArtworks(kind).isEmpty
-        {
-            return
-        }
-        requestITunesTopCarouselArtworks(for: kind, items: items, identity: identity)
     }
 
     func requestITunesTopCarouselArtworks(
@@ -887,6 +978,8 @@ extension MenuView {
         switch kind {
         case .movies:
             iTunesTopMovies.map { .init(id: $0.id, artworkURL: $0.artworkURL) }
+        case .tvEpisodes:
+            iTunesTopTVEpisodes.map { .init(id: $0.id, artworkURL: $0.artworkURL) }
         case .songs:
             iTunesTopSongs.map { .init(id: $0.id, artworkURL: $0.artworkURL) }
         case .musicVideos:
@@ -898,6 +991,8 @@ extension MenuView {
         switch kind {
         case .movies:
             shouldUseITunesTopMoviesCarouselSlot
+        case .tvEpisodes:
+            shouldUseITunesTopTVEpisodesCarouselSlot
         case .songs:
             shouldUseITunesTopSongsCarouselSlot
         case .musicVideos:
@@ -973,6 +1068,17 @@ extension MenuView {
         let previewVideoURL: URL?
     }
 
+    struct ITunesTopTVEpisodeEntry: Identifiable {
+        let id: String
+        let rank: Int
+        let title: String
+        let summary: String
+        let lookupID: String
+        let artworkURL: URL?
+        let storeURL: URL?
+        let previewVideoURL: URL?
+    }
+
     struct ITunesTopSongEntry: Identifiable {
         let id: String
         let rank: Int
@@ -996,18 +1102,20 @@ extension MenuView {
 
     enum ITunesTopCarouselKind: CaseIterable, Hashable {
         case movies
+        case tvEpisodes
         case songs
         case musicVideos
         var rootItemID: String {
             switch self {
-            case .movies: "movies"
-            case .songs, .musicVideos: "music"
+            case .movies, .tvEpisodes, .musicVideos: "movies"
+            case .songs: "music"
             }
         }
 
         var thirdMenuMode: ThirdMenuMode {
             switch self {
             case .movies: .moviesITunesTop
+            case .tvEpisodes: .tvEpisodesITunesTop
             case .songs: .musicITunesTopSongs
             case .musicVideos: .musicITunesTopMusicVideos
             }
@@ -1016,6 +1124,7 @@ extension MenuView {
         var emptyLoadMessage: String {
             switch self {
             case .movies: "No iTunes Top Movies Available"
+            case .tvEpisodes: "No iTunes Top TV Episodes Available"
             case .songs: "No iTunes Top Songs Available"
             case .musicVideos: "No iTunes Top Music Videos Available"
             }
@@ -1024,6 +1133,7 @@ extension MenuView {
         var errorLabel: String {
             switch self {
             case .movies: "iTunes Top Movies"
+            case .tvEpisodes: "iTunes Top TV Episodes"
             case .songs: "iTunes Top Songs"
             case .musicVideos: "iTunes Top Music Videos"
             }
@@ -1047,5 +1157,10 @@ extension MenuView {
         var previewImage: NSImage?
         var previewRequestID = 0
         var playbackRequestID = 0
+    }
+
+    enum TVShowsSortMode {
+        case date
+        case show
     }
 }

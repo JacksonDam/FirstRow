@@ -19,9 +19,17 @@ extension MenuView {
 
     var shouldShowMoviePreviewContent: Bool {
         if activeRootItemID == "movies" {
-            if isInThirdMenu, thirdMenuMode == .moviesITunesTop {
-                return currentITunesTopPreviewTargetID(.movies) != nil &&
-                    currentITunesTopPreviewImage(.movies) != nil
+            if isInThirdMenu {
+                let kind: ITunesTopCarouselKind? = switch thirdMenuMode {
+                case .moviesITunesTop: .movies
+                case .tvEpisodesITunesTop: .tvEpisodes
+                case .musicITunesTopMusicVideos: .musicVideos
+                default: nil
+                }
+                if let kind {
+                    return currentITunesTopPreviewTargetID(kind) != nil &&
+                        currentITunesTopPreviewImage(kind) != nil
+                }
             }
             return moviePreviewTargetURL != nil && moviePreviewImage != nil
         }
@@ -60,17 +68,23 @@ extension MenuView {
     var movieGapPreviewDescriptor: MovieGapPreviewDescriptor? {
         if activeRootItemID == "movies",
            isInThirdMenu,
-           thirdMenuMode == .moviesITunesTop,
-           shouldShowMoviePreviewContent,
-           let iTunesTopMoviePreviewImage = currentITunesTopPreviewImage(.movies)
+           shouldShowMoviePreviewContent
         {
-            let previewID = currentITunesTopPreviewTargetID(.movies) ?? "itunes_movie_preview"
-            return MovieGapPreviewDescriptor(
-                id: "itunes:\(previewID)",
-                image: iTunesTopMoviePreviewImage,
-                aspectRatio: aspectRatio(for: iTunesTopMoviePreviewImage, fallback: 2.0 / 3.0),
-                sizeScale: 0.75,
-            )
+            let kind: ITunesTopCarouselKind? = switch thirdMenuMode {
+            case .moviesITunesTop: .movies
+            case .tvEpisodesITunesTop: .tvEpisodes
+            case .musicITunesTopMusicVideos: .musicVideos
+            default: nil
+            }
+            if let kind, let iTunesTopPreviewImage = currentITunesTopPreviewImage(kind) {
+                let previewID = currentITunesTopPreviewTargetID(kind) ?? "itunes_preview"
+                return MovieGapPreviewDescriptor(
+                    id: "itunes:\(previewID)",
+                    image: iTunesTopPreviewImage,
+                    aspectRatio: aspectRatio(for: iTunesTopPreviewImage, fallback: 2.0 / 3.0),
+                    sizeScale: 0.75,
+                )
+            }
         }
         if shouldShowMoviePreviewContent,
            let moviePreviewImage
@@ -233,6 +247,14 @@ extension MenuView {
         selectedMoviesSubmenuItemID == "movies_itunes_top"
     }
 
+    var shouldUseITunesTopMusicVideosCarouselSlot: Bool {
+        selectedMoviesSubmenuItemID == "movies_itunes_top_music_videos"
+    }
+
+    var shouldUseITunesTopTVEpisodesCarouselSlot: Bool {
+        selectedMoviesSubmenuItemID == "movies_itunes_top_tv_episodes"
+    }
+
     var selectedMusicSubmenuItemID: String? {
         selectedSubmenuItemID(for: "music")
     }
@@ -245,10 +267,6 @@ extension MenuView {
 
     var shouldUseITunesTopSongsCarouselSlot: Bool {
         selectedMusicSubmenuItemID == "music_itunes_top_songs"
-    }
-
-    var shouldUseITunesTopMusicVideosCarouselSlot: Bool {
-        selectedMusicSubmenuItemID == "music_itunes_top_music_videos"
     }
 
     var shouldShowMusicTopLevelCarouselContent: Bool {
@@ -366,17 +384,33 @@ extension MenuView {
             if let image {
                 if activeRootItemID == "movies" {
                     let activeMoviePreviewDescriptor = movieGapPreviewDescriptor
-                    let selectedITunesTopMovie = resolveITunesTopMoviePreviewTarget()
+                    let selectedITunesTopTarget: (title: String, summary: String, id: String)? = {
+                        if let movie = resolveITunesTopMoviePreviewTarget() {
+                            return (movie.title, movie.summary, movie.id)
+                        }
+                        if let episode = resolveITunesTopTVEpisodePreviewTarget() {
+                            return (episode.title, episode.summary, episode.id)
+                        }
+                        if let video = resolveITunesTopMusicVideoPreviewTarget() {
+                            return (video.title, video.summary, video.id)
+                        }
+                        return nil
+                    }()
                     let shouldShowMoviesFolderSlideshow = shouldShowMoviesFolderSubmenuPreviewSlideshow
                     let shouldShowMovieGapPreviewContent =
                         activeMoviePreviewDescriptor != nil || shouldShowMoviesFolderSlideshow
                     let shouldShowITunesTopMoviesCarousel = shouldShowITunesTopCarouselContent(.movies)
-                    let shouldReserveITunesTopMoviesCarouselSlot = shouldUseITunesTopMoviesCarouselSlot
+                    let shouldShowITunesTopMusicVideosCarousel = shouldShowITunesTopCarouselContent(.musicVideos)
+                    let shouldShowITunesTopTVEpisodesCarousel = shouldShowITunesTopCarouselContent(.tvEpisodes)
+                    let shouldReserveITunesTopMoviesCarouselSlot =
+                        shouldUseITunesTopMoviesCarouselSlot ||
+                        shouldUseITunesTopMusicVideosCarouselSlot ||
+                        shouldUseITunesTopTVEpisodesCarouselSlot
                     let shouldUseITunesTopMovieMetadataPreview =
                         isInThirdMenu &&
-                        thirdMenuMode == .moviesITunesTop &&
+                        (thirdMenuMode == .moviesITunesTop || thirdMenuMode == .tvEpisodesITunesTop || thirdMenuMode == .musicITunesTopMusicVideos) &&
                         shouldShowMoviePreviewContent &&
-                        selectedITunesTopMovie != nil
+                        selectedITunesTopTarget != nil
                     let moviePreviewAnimationKey: String = {
                         if shouldShowMoviesFolderSlideshow {
                             let descriptorIDs = moviesFolderSubmenuPreviewDescriptors.map(\.id).joined(separator: "|")
@@ -388,8 +422,16 @@ extension MenuView {
                         defaultGapIcon(image, opacity: (shouldShowMovieGapPreviewContent || shouldReserveITunesTopMoviesCarouselSlot) ? 0 : 1)
                         if shouldShowITunesTopMoviesCarousel {
                             gapCarousel(artworks: currentITunesTopCarouselArtworks(.movies), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
+                        } else if shouldShowITunesTopMusicVideosCarousel {
+                            gapCarousel(artworks: currentITunesTopCarouselArtworks(.musicVideos), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
+                        } else if shouldShowITunesTopTVEpisodesCarousel {
+                            gapCarousel(artworks: currentITunesTopCarouselArtworks(.tvEpisodes), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
                         }
-                        if shouldShowMoviesFolderSlideshow, !shouldShowITunesTopMoviesCarousel {
+                        if shouldShowMoviesFolderSlideshow,
+                           !shouldShowITunesTopMoviesCarousel,
+                           !shouldShowITunesTopMusicVideosCarousel,
+                           !shouldShowITunesTopTVEpisodesCarousel
+                        {
                             MoviePreviewSlideshowGapContentView(
                                 descriptors: moviesFolderSubmenuPreviewDescriptors,
                                 baseIconSize: iconSize,
@@ -400,23 +442,29 @@ extension MenuView {
                                 cycleDuration: 3.0,
                             ).transition(.opacity).opacity(shouldShowMovieGapPreviewContent ? 1 : 0)
                         } else if shouldUseITunesTopMovieMetadataPreview,
-                                  let selectedITunesTopMovie,
+                                  let selectedITunesTopTarget,
                                   let activeMoviePreviewDescriptor,
-                                  !shouldShowITunesTopMoviesCarousel
+                                  !shouldShowITunesTopMoviesCarousel,
+                                  !shouldShowITunesTopMusicVideosCarousel,
+                                  !shouldShowITunesTopTVEpisodesCarousel
                         {
                             AnimatedMetadataGapContentView(
                                 image: activeMoviePreviewDescriptor.image,
                                 aspectRatio: activeMoviePreviewDescriptor.aspectRatio,
                                 sizeScale: activeMoviePreviewDescriptor.sizeScale,
-                                titleText: selectedITunesTopMovie.title,
-                                descriptionText: selectedITunesTopMovie.summary,
+                                titleText: selectedITunesTopTarget.title,
+                                descriptionText: selectedITunesTopTarget.summary,
                                 baseIconSize: iconSize,
                                 horizontalOffset: movieGapPreviewHorizontalOffset,
                                 verticalOffset: gapContentVerticalOffset + 8,
-                                transitionIdentity: selectedITunesTopMovie.id,
+                                transitionIdentity: selectedITunesTopTarget.id,
                                 sceneSize: sceneSize,
-                            ).id("itunes_movie_metadata:\(selectedITunesTopMovie.id)").transition(.opacity).opacity(shouldShowMovieGapPreviewContent ? 1 : 0)
-                        } else if let activeMoviePreviewDescriptor, !shouldShowITunesTopMoviesCarousel {
+                            ).id("itunes_movie_metadata:\(selectedITunesTopTarget.id)").transition(.opacity).opacity(shouldShowMovieGapPreviewContent ? 1 : 0)
+                        } else if let activeMoviePreviewDescriptor,
+                                  !shouldShowITunesTopMoviesCarousel,
+                                  !shouldShowITunesTopMusicVideosCarousel,
+                                  !shouldShowITunesTopTVEpisodesCarousel
+                        {
                             MoviePreviewGapContentView(
                                 image: activeMoviePreviewDescriptor.image,
                                 aspectRatio: activeMoviePreviewDescriptor.aspectRatio,
@@ -425,20 +473,19 @@ extension MenuView {
                                 horizontalOffset: movieGapPreviewHorizontalOffset,
                                 verticalOffset: gapContentVerticalOffset + 8,
                                 previewYawDegrees:
-                                isInThirdMenu && thirdMenuMode == .moviesITunesTop
-                                    ? 10
-                                    : 36,
+                                    isInThirdMenu && (thirdMenuMode == .moviesITunesTop || thirdMenuMode == .tvEpisodesITunesTop || thirdMenuMode == .musicITunesTopMusicVideos)
+                                        ? 10
+                                        : 36,
                                 reflectionYawDegrees:
-                                isInThirdMenu && thirdMenuMode == .moviesITunesTop
-                                    ? 9.8
-                                    : 35.8,
+                                    isInThirdMenu && (thirdMenuMode == .moviesITunesTop || thirdMenuMode == .tvEpisodesITunesTop || thirdMenuMode == .musicITunesTopMusicVideos)
+                                        ? 9.8
+                                        : 35.8,
                             ).id(activeMoviePreviewDescriptor.id).transition(.opacity).opacity(shouldShowMovieGapPreviewContent ? 1 : 0)
                         }
                     }.animation(.easeInOut(duration: 0.22), value: moviePreviewAnimationKey)
                 } else if activeRootItemID == "music" {
                     let shouldShowMusicTopLevelCarousel = shouldShowMusicTopLevelCarouselContent
                     let shouldShowITunesTopSongsCarousel = shouldShowITunesTopCarouselContent(.songs)
-                    let shouldShowITunesTopMusicVideosCarousel = shouldShowITunesTopCarouselContent(.musicVideos)
                     let selectedMusicSong = selectedMusicSongForPreview
                     let shouldShowMusicSongMetadataPreview =
                         shouldUseMusicSongMetadataPreview &&
@@ -448,15 +495,14 @@ extension MenuView {
                         shouldShowMusicNowPlayingGapPreview ||
                         (shouldShowMusicPreviewContent && !shouldShowMusicSongMetadataPreview)
                     let shouldShowAnyMusicITunesTopPreview =
-                        shouldShowITunesTopSongPreviewContent || shouldShowITunesTopMusicVideoPreviewContent
+                        shouldShowITunesTopSongPreviewContent
                     let shouldHideMusicRootIcon =
                         shouldShowMusicPreviewContent ||
                         shouldShowMusicNowPlayingGapPreview ||
                         shouldShowAnyMusicITunesTopPreview ||
                         shouldShowMusicTopLevelCarousel ||
                         shouldUseMusicTopLevelCarouselSlot ||
-                        shouldUseITunesTopSongsCarouselSlot ||
-                        shouldUseITunesTopMusicVideosCarouselSlot
+                        shouldUseITunesTopSongsCarouselSlot
                     ZStack {
                         ReflectedGapContentIconView(
                             image: image,
@@ -502,27 +548,10 @@ extension MenuView {
                                 verticalOffset: gapContentVerticalOffset + 8,
                             ).opacity(shouldShowClassicMusicPreview ? 1 : 0)
                         }
-                        if shouldShowITunesTopMusicVideoPreviewContent,
-                           !shouldShowITunesTopMusicVideosCarousel,
-                           let previewImage = currentITunesTopPreviewImage(.musicVideos) ?? moviesFallbackImage ?? musicFallbackImage
-                        {
-                            MoviePreviewGapContentView(
-                                image: previewImage,
-                                aspectRatio: aspectRatio(for: previewImage, fallback: 2.0 / 3.0),
-                                sizeScale: 0.75,
-                                baseIconSize: iconSize,
-                                horizontalOffset: movieGapPreviewHorizontalOffset,
-                                verticalOffset: gapContentVerticalOffset + 8,
-                                previewYawDegrees: 10,
-                                reflectionYawDegrees: 9.8,
-                            ).id(currentITunesTopPreviewTargetID(.musicVideos) ?? "itunes_top_music_video_preview").transition(.opacity.animation(.easeInOut(duration: 0.22))).opacity(1)
-                        }
                         if shouldShowMusicTopLevelCarousel {
                             musicGapCarousel(exitOpacity: musicTopLevelCarouselExitOverlayOpacity)
                         } else if shouldShowITunesTopSongsCarousel {
                             gapCarousel(artworks: currentITunesTopCarouselArtworks(.songs), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
-                        } else if shouldShowITunesTopMusicVideosCarousel {
-                            gapCarousel(artworks: currentITunesTopCarouselArtworks(.musicVideos), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
                         }
                     }
                 } else if activeRootItemID == "photos" {
@@ -548,14 +577,17 @@ extension MenuView {
     var shouldKeepDetailContentFullyOpaqueForCarousel: Bool {
         switch activeRootItemID {
         case "movies":
-            shouldUseITunesTopMoviesCarouselSlot || shouldShowITunesTopCarouselContent(.movies)
+            shouldUseITunesTopMoviesCarouselSlot ||
+                shouldUseITunesTopMusicVideosCarouselSlot ||
+                shouldUseITunesTopTVEpisodesCarouselSlot ||
+                shouldShowITunesTopCarouselContent(.movies) ||
+                shouldShowITunesTopCarouselContent(.musicVideos) ||
+                shouldShowITunesTopCarouselContent(.tvEpisodes)
         case "music":
             shouldUseMusicTopLevelCarouselSlot ||
                 shouldUseITunesTopSongsCarouselSlot ||
-                shouldUseITunesTopMusicVideosCarouselSlot ||
                 shouldShowMusicTopLevelCarouselContent ||
-                shouldShowITunesTopCarouselContent(.songs) ||
-                shouldShowITunesTopCarouselContent(.musicVideos)
+                shouldShowITunesTopCarouselContent(.songs)
         case "photos":
             shouldUsePhotosCarouselSlot || shouldShowPhotosCarouselContent
         default:

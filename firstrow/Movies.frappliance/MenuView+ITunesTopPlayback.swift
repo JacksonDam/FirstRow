@@ -123,11 +123,14 @@ extension MenuView {
 
     enum ITunesTopVideoPreviewPlaybackSource {
         case movie(ITunesTopMovieEntry)
+        case tvEpisode(ITunesTopTVEpisodeEntry)
         case musicVideo(ITunesTopMusicVideoEntry)
         var kind: ITunesTopCarouselKind {
             switch self {
             case .movie:
                 .movies
+            case .tvEpisode:
+                .tvEpisodes
             case .musicVideo:
                 .musicVideos
             }
@@ -136,6 +139,8 @@ extension MenuView {
         var itemID: String {
             switch self {
             case let .movie(entry):
+                entry.id
+            case let .tvEpisode(entry):
                 entry.id
             case let .musicVideo(entry):
                 entry.id
@@ -175,9 +180,11 @@ extension MenuView {
         withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
             menuSceneOpacity = 1
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + movieEntryFadeDuration) {
-            guard self.currentITunesTopVideoPreviewPlaybackRequestID(for: source) == requestID else { return }
-            self.isMovieTransitioning = false
+        Task {
+            try? await firstRowSleep(movieEntryFadeDuration)
+            guard !Task.isCancelled else { return }
+            guard currentITunesTopVideoPreviewPlaybackRequestID(for: source) == requestID else { return }
+            isMovieTransitioning = false
         }
     }
 
@@ -203,6 +210,8 @@ extension MenuView {
         switch source {
         case let .movie(entry):
             await resolveITunesTopMoviePreviewVideoURL(for: entry)
+        case let .tvEpisode(entry):
+            await resolveITunesTopTVEpisodePreviewVideoURL(for: entry)
         case let .musicVideo(entry):
             await resolveITunesTopMusicVideoPreviewVideoURL(for: entry)
         }
@@ -270,6 +279,10 @@ extension MenuView {
         startITunesTopVideoPreviewPlayback(from: .movie(movie))
     }
 
+    func startITunesTopTVEpisodePreviewPlayback(for episode: ITunesTopTVEpisodeEntry) {
+        startITunesTopVideoPreviewPlayback(from: .tvEpisode(episode))
+    }
+
     func startITunesTopSongPreviewPlayback(
         for song: ITunesTopSongEntry,
         trackIndex _: Int? = nil,
@@ -308,6 +321,8 @@ extension MenuView {
                 genre: "",
                 composer: "",
                 durationSeconds: 0,
+                trackNumber: 0,
+                discNumber: 1,
                 artworkAlbumKey: nil,
                 url: temporaryAudioURL,
                 artwork: resolvedArtwork,

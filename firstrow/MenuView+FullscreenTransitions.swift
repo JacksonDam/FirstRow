@@ -5,14 +5,16 @@ extension MenuView {
         guard !isTheatricalTrailersLoading else { return }
         let requestID = incrementRequestID(&theatricalTrailersLoadingRequestID)
         isTheatricalTrailersLoading = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            guard self.theatricalTrailersLoadingRequestID == requestID else { return }
+        Task {
+            try? await firstRowSleep(0.5)
+            guard !Task.isCancelled else { return }
+            guard theatricalTrailersLoadingRequestID == requestID else { return }
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
-                self.isTheatricalTrailersLoading = false
+                isTheatricalTrailersLoading = false
             }
-            self.presentFeatureErrorScreen(.genericOperationFailed)
+            presentFeatureErrorScreen(.genericOperationFailed)
         }
     }
 
@@ -33,20 +35,22 @@ extension MenuView {
         if usingExistingBlackout {
             isMenuFolderSwapTransitioning = false
             let totalRevealDelay = max(0, revealDelay)
-            DispatchQueue.main.asyncAfter(deadline: .now() + totalRevealDelay) {
-                guard self.isFullscreenSceneTransitioning else { return }
+            Task {
+                try? await firstRowSleep(totalRevealDelay)
+                guard !Task.isCancelled else { return }
+                guard isFullscreenSceneTransitioning else { return }
                 var instant = Transaction()
                 instant.disablesAnimations = true
                 withTransaction(instant) {
-                    self.menuSceneOpacity = 0
+                    menuSceneOpacity = 0
                 }
                 withAnimation(.easeInOut(duration: fadeInDuration)) {
-                    self.menuFolderSwapOverlayOpacity = 0
-                    self.fullscreenSceneOpacity = 1
+                    menuFolderSwapOverlayOpacity = 0
+                    fullscreenSceneOpacity = 1
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + fadeInDuration) {
-                    self.isFullscreenSceneTransitioning = false
-                }
+                try? await firstRowSleep(fadeInDuration)
+                guard !Task.isCancelled else { return }
+                isFullscreenSceneTransitioning = false
             }
             return
         }
@@ -54,13 +58,15 @@ extension MenuView {
             menuSceneOpacity = 0
         }
         let totalRevealDelay = fadeOutDuration + max(0, revealDelay)
-        DispatchQueue.main.asyncAfter(deadline: .now() + totalRevealDelay) {
+        Task {
+            try? await firstRowSleep(totalRevealDelay)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: fadeInDuration)) {
                 fullscreenSceneOpacity = 1
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + fadeInDuration) {
-                isFullscreenSceneTransitioning = false
-            }
+            try? await firstRowSleep(fadeInDuration)
+            guard !Task.isCancelled else { return }
+            isFullscreenSceneTransitioning = false
         }
     }
 
@@ -74,16 +80,18 @@ extension MenuView {
         withAnimation(.easeInOut(duration: fadeOutDuration)) {
             fullscreenSceneOpacity = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + fadeOutDuration) {
+        Task {
+            try? await firstRowSleep(fadeOutDuration)
+            guard !Task.isCancelled else { return }
             activeFullscreenScene = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration) {
-                withAnimation(.easeInOut(duration: fadeInDuration)) {
-                    menuSceneOpacity = 1
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + fadeInDuration) {
-                    isFullscreenSceneTransitioning = false
-                }
+            try? await firstRowSleep(holdDuration)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: fadeInDuration)) {
+                menuSceneOpacity = 1
             }
+            try? await firstRowSleep(fadeInDuration)
+            guard !Task.isCancelled else { return }
+            isFullscreenSceneTransitioning = false
         }
     }
 }

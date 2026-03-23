@@ -11,7 +11,7 @@ struct PhotosMenuFeature: MenuFeatureConfiguration {
         .init(id: "photos_shared", title: "Shared Photos", leadsToMenu: true),
         .init(id: "photos_library", title: "Library", leadsToMenu: true),
         .init(id: "photos_last_12_months", title: "Last 12 Months", leadsToMenu: true),
-        .init(id: "photos_last_import", title: "Last Import", leadsToMenu: true),
+        .init(id: "photos_last_roll", title: "Last Roll", leadsToMenu: true),
     ]
     let defaultSubmenuSelectedIndex = 0
 }

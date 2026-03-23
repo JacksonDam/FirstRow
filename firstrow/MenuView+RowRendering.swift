@@ -44,7 +44,6 @@ private struct MovieGapPlayerView: NSViewRepresentable {
 }
 
 private enum MenuRowRenderingCache {
-    static var titleWidthByTitle: [String: CGFloat] = [:]
     static var trailingWidthByTextAndFont: [String: CGFloat] = [:]
     static var imageByAssetName: [String: NSImage] = [:]
 }
@@ -294,9 +293,9 @@ extension MenuView {
     @ViewBuilder
     func headerView(geometry: GeometryProxy) -> some View {
         if isInSubmenu, activeRootItemID != nil {
-            Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).opacity(submenuTitleOpacity).offset(x: firstRowHeaderOffsetX(geometry: geometry) + (landedIconWidth * 0.6)).offset(y: menuHeaderVerticalOffset).animation(.easeInOut(duration: 0.25), value: submenuTitleOpacity)
+            Text(headerText).font(.firstRowBold(size: 60)).foregroundStyleCompat(.white).opacity(submenuTitleOpacity).offset(x: firstRowHeaderOffsetX(geometry: geometry) + (landedIconWidth * 0.6)).offset(y: menuHeaderVerticalOffset).animation(.easeInOut(duration: 0.25), value: submenuTitleOpacity)
         } else {
-            Text(headerText).font(.firstRowBold(size: 60)).foregroundColor(.white).offset(x: rootMenuHeaderOffsetX(geometry: geometry)).offset(y: menuHeaderVerticalOffset).opacity(headerOpacity).animation(.easeInOut(duration: 0.25), value: headerOpacity)
+            Text(headerText).font(.firstRowBold(size: 60)).foregroundStyleCompat(.white).offset(x: rootMenuHeaderOffsetX(geometry: geometry)).offset(y: menuHeaderVerticalOffset).opacity(headerOpacity).animation(.easeInOut(duration: 0.25), value: headerOpacity)
         }
     }
 
@@ -365,6 +364,7 @@ extension MenuView {
         rowPitchOverride: CGFloat? = nil,
         scaledRowVerticalOffsetOverride: CGFloat? = nil,
         contentVerticalOffsetOverride: CGFloat = 0,
+        isPodcastEpisodesPage: Bool = false,
     ) -> some View {
         let rowSelectionAnimation: Animation? = isMenuFolderSwapTransitioning ? nil : selectionMovementAnimation
         let menuWidth = contentWidthOverride ?? menuWidthConstrained(geometry: geometry)
@@ -406,7 +406,7 @@ extension MenuView {
         let rowContentWidth = selectionWidth
         let rowContentXOffset = selectionXOffset
         let rowLeadingCompensation = max(0, -rowContentXOffset)
-        let dividerGap: CGFloat = 0
+        let dividerGap = effectiveDividerSectionGap(forSelectionBoxHeightScale: selectionBoxHeightScale)
         let rowPitch = rowPitchOverride ?? effectiveRowPitch(forSelectionBoxHeightScale: selectionBoxHeightScale)
         let normalHeightIndices: Set<Int> = []
         let rowOffsets = menuRowOffsets(for: items, dividerGap: dividerGap, rowPitch: rowPitch, normalHeightIndices: normalHeightIndices)
@@ -453,10 +453,13 @@ extension MenuView {
         )
         return ZStack(alignment: .topLeading) {
             if !items.isEmpty {
-                selectionBox(width: effectiveSelectionVisualWidth, height: effectiveSelectionVisualHeight).offset(
-                    x: effectiveSelectionVisualXOffset,
-                    y: selectedRowOffset + scrollOffset + effectiveSelectionVisualYOffset,
-                ).animation(rowSelectionAnimation, value: selectedIndex)
+                selectionBox(width: effectiveSelectionVisualWidth, height: effectiveSelectionVisualHeight)
+                    .offset(
+                        x: effectiveSelectionVisualXOffset,
+                        y: selectedRowOffset + scrollOffset + effectiveSelectionVisualYOffset,
+                    )
+                    .animation(rowSelectionAnimation, value: selectedRowOffset)
+                    .animation(rowSelectionAnimation, value: scrollOffset)
             }
             ZStack(alignment: .topLeading) {
                 ForEach(visibleRowIndices, id: \.self) { index in
@@ -464,7 +467,16 @@ extension MenuView {
                     let rowIsSelected = index == selectedIndex
                     let rowIsNormalHeight = normalHeightIndices.contains(index)
                     let rowHeight = rowIsNormalHeight ? selectionBoxHeight : selectionHeight
-                    let rowYOffset: CGFloat = 0
+                    let rowYOffset = rowIsNormalHeight ? 0 : selectionYOffset
+                    if item.showsTopDivider {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.34))
+                            .frame(width: max(0, rowContentWidth - (dividerLineInsetHorizontal * 2)), height: 1)
+                            .offset(
+                                x: rowContentXOffset + dividerLineInsetHorizontal,
+                                y: rowOffsets[index] - dividerGap + dividerLineYOffsetInGap,
+                            )
+                    }
                     if item.showsLightRowBackground {
                         Rectangle().fill(Color.white.opacity(0.06)).overlay(
                             Rectangle().stroke(Color.white.opacity(0.02), lineWidth: 1),
@@ -490,12 +502,18 @@ extension MenuView {
                         showsBlueDot: item.showsBlueDot,
                         alignsTextToDividerStart: item.alignsTextToDividerStart,
                         arrowAppearance: arrowAppearance,
+                        isPodcastEpisodesPage: isPodcastEpisodesPage,
                     ).frame(width: rowContentWidth, height: rowHeight, alignment: .leading).offset(
                         x: rowContentXOffset,
                         y: rowOffsets[index] + rowYOffset,
                     )
                 }
-            }.offset(y: scrollOffset + contentVerticalOffsetOverride).animation(rowSelectionAnimation, value: selectedIndex).frame(height: viewportHeight, alignment: .top).mask(
+            }
+            .offset(y: scrollOffset + contentVerticalOffsetOverride)
+            .animation(rowSelectionAnimation, value: selectedIndex)
+            .animation(rowSelectionAnimation, value: scrollOffset)
+            .frame(height: viewportHeight, alignment: .top)
+            .mask(
                 Rectangle().frame(width: 5000, height: viewportHeight),
             )
         }.frame(height: viewportHeight, alignment: .top).frame(width: containerFrameWidth, height: containerHeight, alignment: .topLeading).background(
@@ -702,9 +720,13 @@ extension MenuView {
     ) -> [CGFloat] {
         var offsets: [CGFloat] = []
         var y: CGFloat = 0
+        let resolvedDividerGap = dividerGap > 0 ? dividerGap : dividerSectionGapAfterLine
         let resolvedRowPitch = rowPitch > 0 ? rowPitch : (selectionBoxHeight + menuRowSpacing)
         let normalPitch = selectionBoxHeight + menuRowSpacing
-        for (index, _) in items.enumerated() {
+        for (index, item) in items.enumerated() {
+            if item.showsTopDivider {
+                y += resolvedDividerGap
+            }
             offsets.append(y)
             y += normalHeightIndices.contains(index) ? normalPitch : resolvedRowPitch
         }
@@ -749,7 +771,7 @@ extension MenuView {
         prefersWiderOverscan: Bool = false,
     ) -> [Int] {
         guard !rowOffsets.isEmpty else { return [] }
-        let overscanMultiplier: CGFloat = prefersWiderOverscan ? 4.0 : 2.0
+        let overscanMultiplier: CGFloat = prefersWiderOverscan ? 6.0 : 3.0
         let overscanPadding = max(80, rowHeight * overscanMultiplier)
         let minVisibleY = -scrollOffset - overscanPadding
         let maxVisibleY = -scrollOffset + viewportHeight + overscanPadding
@@ -1010,13 +1032,16 @@ extension MenuView {
         showsBlueDot: Bool,
         alignsTextToDividerStart: Bool,
         arrowAppearance: ArrowAppearance,
+        isPodcastEpisodesPage: Bool = false,
     ) -> some View {
         let showsLoadingSpinner = (itemID == "movies_theatrical_trailers" && isTheatricalTrailersLoading && isSelected)
+            || (activeRootItemID == "movies" && itemID == PodcastBrowserKind.video.submenuItemID && isLoadingPodcasts && isSelected)
+            || (activeRootItemID == "music" && itemID == PodcastBrowserKind.audio.submenuItemID && isLoadingPodcasts && isSelected)
             || (thirdMenuMode == .moviesFolder && isMoviePlaybackLoading && isSelected)
+            || (thirdMenuMode == .videoPodcastEpisodes && isMoviePlaybackLoading && isSelected)
             || (thirdMenuMode == .photosDateAlbums && isPhotosAlbumSelectionLoading && isSelected)
         let trailingBaseFontSize = submenuRowTrailingFontSize
         let arrowFontSize = submenuArrowFontSize
-        let trailingTextOpacity: Double = (isSelected && isSelectionSettled) ? 1.0 : 0.5
         let hasLeadingImage = (leadingImage != nil) || (leadingImageAssetName != nil)
         let isPhotoAlbumRow = activeRootItemID == "photos" && hasLeadingImage
         let rowHorizontalPadding: CGFloat = isPhotoAlbumRow ? 9 : 20
@@ -1034,15 +1059,24 @@ extension MenuView {
         let dynamicPhotosLeadingImage = (activeRootItemID == "photos" && isInThirdMenu && thirdMenuMode == .photosDateAlbums)
             ? photosAlbumCoverImageCache[itemID]
             : nil
+        let isPodcastEpisodeRow = isPodcastEpisodesPage || (
+            isInThirdMenu &&
+                (thirdMenuMode == .audioPodcastEpisodes || thirdMenuMode == .videoPodcastEpisodes)
+        )
+        let trailingTextOpacity: Double = isPodcastEpisodeRow ? 1.0 : ((isSelected && isSelectionSettled) ? 1.0 : 0.5)
         let resolvedLeadingImage =
             dynamicPhotosLeadingImage ??
             leadingImage ??
             leadingImageAssetName.flatMap { cachedMenuRowLeadingImage(named: $0) }
         let effectiveArrowXOffset = arrowAppearance.xOffset
         let submenuTrailingSymbolXOffset = -(submenuTrailingSymbolRightInset - rowHorizontalPadding)
-        let trailingFontSize: CGFloat = trailingBaseFontSize
+        let trailingFontSize: CGFloat = isPodcastEpisodeRow ? max(30, trailingBaseFontSize - 2) : trailingBaseFontSize
         let trailingVerticalOffset: CGFloat = 0
         let trailingToArrowSpacing: CGFloat = 6
+        let trailingTextXOffset =
+            isPodcastEpisodeRow && trailingSymbolName == nil && !showsArrow
+            ? (arrowAppearance.xOffset - 60)
+            : arrowAppearance.xOffset
         let trailingMeasuredTextWidth: CGFloat = {
             guard let resolvedTrailingText else { return 0 }
             return measuredMenuRowTrailingTextWidth(
@@ -1110,15 +1144,6 @@ extension MenuView {
             1,
             leftColumnWidth - leadingTextPadding - leadingImageDimension - leadingToTitleSpacing,
         )
-        let titleMeasuredWidth = measuredMenuRowTitleWidth(title)
-        let marqueeCharacterThreshold = 30
-        let normalizedTitleLength = title.trimmingCharacters(in: .whitespacesAndNewlines).count
-        let effectiveTitleAvailableWidth = max(1, titleAvailableWidth)
-        let shouldScrollTitle =
-            isSelected &&
-            isSelectionSettled &&
-            normalizedTitleLength > marqueeCharacterThreshold &&
-            titleMeasuredWidth > effectiveTitleAvailableWidth + 1
         return HStack(spacing: 0) {
             HStack(spacing: hasLeadingImage ? leadingToTitleSpacing : 0) {
                 if let resolvedLeadingImage {
@@ -1131,41 +1156,28 @@ extension MenuView {
                 menuRowTitleView(
                     title: title,
                     availableWidth: titleAvailableWidth,
-                    shouldScroll: shouldScrollTitle,
                 )
             }.frame(width: leftColumnWidth > 0 ? leftColumnWidth : nil, alignment: .leading).padding(.leading, leadingTextPadding)
             if let trailingSymbolName {
-                Image(systemName: trailingSymbolName).foregroundColor(.white).font(.system(size: trailingBaseFontSize, weight: .semibold)).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: trailingSymbolXOffset)
+                Image(systemName: trailingSymbolName).foregroundStyleCompat(.white).font(.system(size: trailingBaseFontSize, weight: .semibold)).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: trailingSymbolXOffset)
             } else if let resolvedTrailingText, showsArrow {
                 HStack(spacing: trailingToArrowSpacing) {
-                    Text(resolvedTrailingText).font(.firstRowRegular(size: trailingFontSize)).foregroundColor(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).offset(y: trailingVerticalOffset)
-                    Image(systemName: arrowAppearance.symbolName).foregroundColor(arrowAppearance.color).font(.system(size: arrowFontSize, weight: arrowAppearance.fontWeight)).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).offset(x: inlineArrowAdditionalXOffset)
+                    Text(resolvedTrailingText).font(.firstRowRegular(size: trailingFontSize)).foregroundStyleCompat(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).offset(y: trailingVerticalOffset)
+                    Image(systemName: arrowAppearance.symbolName).foregroundStyleCompat(arrowAppearance.color).font(.system(size: arrowFontSize, weight: arrowAppearance.fontWeight)).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).offset(x: inlineArrowAdditionalXOffset)
                 }.frame(width: trailingColumnWidth, alignment: .trailing).offset(x: symmetricArrowXOffset)
             } else if let resolvedTrailingText {
-                Text(resolvedTrailingText).font(.firstRowRegular(size: trailingBaseFontSize)).foregroundColor(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: arrowAppearance.xOffset)
+                Text(resolvedTrailingText).font(.firstRowRegular(size: trailingFontSize)).foregroundStyleCompat(.white).opacity(trailingTextOpacity).lineLimit(1).minimumScaleFactor(0.65).allowsTightening(true).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: trailingTextXOffset)
             } else if showsArrow {
-                Image(systemName: arrowAppearance.symbolName).foregroundColor(arrowAppearance.color).font(.system(size: arrowFontSize, weight: arrowAppearance.fontWeight)).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: standaloneArrowXOffset)
+                Image(systemName: arrowAppearance.symbolName).foregroundStyleCompat(arrowAppearance.color).font(.system(size: arrowFontSize, weight: arrowAppearance.fontWeight)).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).frame(width: trailingColumnWidth, alignment: .trailing).offset(x: standaloneArrowXOffset)
             }
         }.frame(width: rowInnerWidth, alignment: .leading).padding(.horizontal, rowHorizontalPadding).overlay(Group {
             if showsBlueDot {
-                let dotDiameter: CGFloat = 16.5
-                let dotRadius = dotDiameter * 0.5
-                let dotCenterX = max(dotRadius + 1, textStartX * 0.5)
-                Circle().fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.56, green: 0.83, blue: 1.0),
-                            Color(red: 0.08, green: 0.33, blue: 0.76),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing,
-                    ),
-                ).frame(width: dotDiameter, height: dotDiameter).shadow(
-                    color: Color(red: 0.14, green: 0.48, blue: 0.94).opacity(0.55),
-                    radius: 2.2,
-                    x: 0,
-                    y: 0,
-                ).offset(x: dotCenterX - 6)
+                let badgeSize: CGFloat = 56
+                let badgeCenterX = max(15, textStartX * 0.5) + 27
+                Image("PodcastRecentBadge")
+                    .resizable()
+                    .frame(width: badgeSize, height: badgeSize)
+                    .offset(x: badgeCenterX - (badgeSize * 0.5))
             }
         }, alignment: .leading)
         .overlay(Group {
@@ -1177,17 +1189,6 @@ extension MenuView {
                     .offset(x: -50)
             }
         }, alignment: .trailing)
-    }
-
-    func measuredMenuRowTitleWidth(_ title: String) -> CGFloat {
-        if let cached = MenuRowRenderingCache.titleWidthByTitle[title] {
-            return cached
-        }
-        let font = NSFont(name: firstRowBoldFontName, size: submenuRowTitleFontSize)
-            ?? NSFont.boldSystemFont(ofSize: submenuRowTitleFontSize)
-        let measured = ceil((title as NSString).size(withAttributes: [.font: font]).width)
-        MenuRowRenderingCache.titleWidthByTitle[title] = measured
-        return measured
     }
 
     func measuredMenuRowTrailingTextWidth(_ text: String, fontSize: CGFloat) -> CGFloat {
@@ -1213,79 +1214,16 @@ extension MenuView {
         return image
     }
 
-    func menuRowTitleView(title: String, availableWidth: CGFloat, shouldScroll: Bool) -> some View {
-        ZStack(alignment: .leading) {
-            Text(title)
-                .font(.firstRowBold(size: submenuRowTitleFontSize))
-                .foregroundColor(.white)
-                .shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .allowsTightening(true)
-                .opacity(shouldScroll ? 0 : 1)
-            if shouldScroll {
-                MenuRowMarqueeText(
-                    title: title,
-                    viewportWidth: max(1, availableWidth.rounded(.towardZero)),
-                    fontSize: submenuRowTitleFontSize,
-                ).transition(.identity)
-            }
-        }
+    func menuRowTitleView(title: String, availableWidth: CGFloat) -> some View {
+        Text(title)
+            .font(.firstRowBold(size: submenuRowTitleFontSize))
+            .foregroundStyleCompat(.white)
+            .shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .allowsTightening(true)
         .frame(width: max(1, availableWidth), alignment: .leading)
         .clipped()
-        .animation(nil, value: shouldScroll)
-    }
-}
-
-private struct MenuRowMarqueeText: View {
-    let title: String
-    let viewportWidth: CGFloat
-    let fontSize: CGFloat
-    private let gap: CGFloat = 72
-    private let scrollSpeed: CGFloat = 52
-    private let edgeFadeWidth: CGFloat = 34
-    @State private var xOffset: CGFloat = 0
-    @State private var animationGeneration = 0
-    private var measuredWidth: CGFloat {
-        let font = NSFont(name: firstRowBoldFontName, size: fontSize) ?? NSFont.boldSystemFont(ofSize: fontSize)
-        return ceil((title as NSString).size(withAttributes: [.font: font]).width)
-    }
-
-    var body: some View {
-        let safeViewportWidth = max(1, viewportWidth)
-        let edgeFadeFraction = min(0.5, max(0, edgeFadeWidth / safeViewportWidth))
-        HStack(spacing: gap) {
-            Text(title).font(.firstRowBold(size: fontSize)).foregroundColor(.white).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
-            Text(title).font(.firstRowBold(size: fontSize)).foregroundColor(.white).shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4).lineLimit(1).allowsTightening(true).fixedSize(horizontal: true, vertical: false)
-        }.offset(x: xOffset).frame(width: safeViewportWidth, alignment: .leading).clipped().mask(LinearGradient(
-            gradient: Gradient(stops: [.init(color: .clear, location: 0.0), .init(color: .white, location: edgeFadeFraction), .init(color: .white, location: 1.0 - edgeFadeFraction), .init(color: .clear, location: 1.0)]),
-            startPoint: .leading,
-            endPoint: .trailing,
-        )).onAppear {
-            restartMarqueeAnimation()
-        }.onChange(of: title, perform: { _ in
-            restartMarqueeAnimation()
-        }).onChange(of: viewportWidth, perform: { _ in
-            restartMarqueeAnimation()
-        })
-    }
-
-    private func restartMarqueeAnimation() {
-        let cycleDistance = max(CGFloat(1), measuredWidth + gap)
-        let duration = Double(cycleDistance / max(CGFloat(1), scrollSpeed))
-        animationGeneration &+= 1
-        let generation = animationGeneration
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
-            xOffset = 0
-        }
-        DispatchQueue.main.async {
-            guard generation == animationGeneration else { return }
-            withAnimation(.linear(duration: duration).repeatForever(autoreverses: false)) {
-                xOffset = -cycleDistance
-            }
-        }
     }
 }
 
@@ -1425,7 +1363,7 @@ extension MenuView {
                 Color.black
                     .opacity(startupMusicLibraryPreloadOverlayOpacity)
                     .ignoresSafeArea()
-                    .allowsHitTesting(true)
+                    .allowsHitTesting(false)
             }
         }.ignoresSafeArea()
     }
@@ -1475,6 +1413,13 @@ extension MenuView {
 
     @ViewBuilder
     func fullscreenPresentationLayers(containerSize: CGSize) -> some View {
+        if isMoviePlaybackVisible {
+            Color.black
+                .frame(width: containerSize.width, height: containerSize.height)
+                .opacity(moviePlaybackEntryOpacity)
+                .ignoresSafeArea()
+                .zIndex(4299)
+        }
         if isMoviePlaybackVisible, let moviePlayer {
             VideoPlayerView(player: moviePlayer)
                 .frame(width: containerSize.width, height: containerSize.height)
@@ -1529,7 +1474,7 @@ extension MenuView {
                     .saturation(0.92)
                     .overlay(Color.black.opacity(0.33))
                     .opacity(movieResumeBackdropOpacity)
-                    .animation(.easeInOut(duration: 0.2), value: movieResumeBackdropOpacity)
+                    .animation(.easeInOut(duration: 0.5), value: movieResumeBackdropOpacity)
             }
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
@@ -1602,7 +1547,9 @@ extension MenuView {
             .onAppear {
                 guard !hasAnnouncedIntroBackdropAppearance else { return }
                 hasAnnouncedIntroBackdropAppearance = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                Task {
+                    try? await firstRowSleep(0.03)
+                    guard !Task.isCancelled else { return }
                     NotificationCenter.default.post(name: .firstRowIntroReady, object: nil)
                 }
             }
@@ -1675,7 +1622,7 @@ extension MenuView {
             let startCenterY = geometry.size.height - 40 - (titleHeight * 0.5)
             Text(rootLabelText)
                 .font(.firstRowBold(size: 92))
-                .foregroundColor(.white)
+                .foregroundStyleCompat(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4)
@@ -1734,13 +1681,13 @@ extension MenuView {
             progress: progress,
         )
         let opticalYOffset = selectedCarouselIconOpticalYOffset(for: activeRootItemID ?? menuItems[selectedIndex].id)
-        let localVerticalOffset = interpolatedCGFloat(
-            from: 0,
-            to: landedSelectedVerticalOffset +
-                (opticalYOffset * landedIconScale) +
-                (submenuHeaderIconOpticalYOffset * progress),
-            progress: progress,
-        )
+        let localVerticalOffset =
+            interpolatedCGFloat(
+                from: 0,
+                to: landedSelectedVerticalOffset + (opticalYOffset * landedIconScale),
+                progress: progress,
+            ) +
+            (submenuHeaderIconOpticalYOffset * progress)
         let baseCenter = selectedOverlayBaseCenter(geometry: geometry)
         return CGPoint(
             x: baseCenter.x + orbitHorizontalOffset + localHorizontalOffset,
@@ -1774,7 +1721,8 @@ extension MenuView {
            let image = menuImage(forRootID: activeRootItemID),
            menuItems.indices.contains(selectedIndex)
         {
-            let progress = smoothStep(submenuTransitionProgress)
+            let progress = smoothStep(selectedOverlayTransitionProgress)
+            let labelProgress = smoothStep(submenuTransitionProgress)
             let placement = rootStagePlacement(for: selectedIndex)
             let overlayIconSize = iconSize * selectedCarouselAdjustedSizeMultiplier
             let orbitScale = interpolatedCGFloat(
@@ -1806,13 +1754,13 @@ extension MenuView {
                 progress: progress,
             )
             let opticalYOffset = selectedCarouselIconOpticalYOffset(for: activeRootItemID)
-            let localVerticalOffset = interpolatedCGFloat(
-                from: 0,
-                to: landedSelectedVerticalOffset +
-                    (opticalYOffset * landedIconScale) +
-                    (submenuHeaderIconOpticalYOffset * progress),
-                progress: progress,
-            )
+            let localVerticalOffset =
+                interpolatedCGFloat(
+                    from: 0,
+                    to: landedSelectedVerticalOffset + (opticalYOffset * landedIconScale),
+                    progress: progress,
+                ) +
+                (submenuHeaderIconOpticalYOffset * progress)
             let iconHorizontalOffset = orbitHorizontalOffset + localHorizontalOffset
             let iconVerticalOffset = orbitVerticalOffset + localVerticalOffset
             let reflectionHorizontalOffset = interpolatedCGFloat(
@@ -1836,12 +1784,12 @@ extension MenuView {
                 x: interpolatedCGFloat(
                     from: rootLabelCenter.x,
                     to: headerLabelCenter.x,
-                    progress: progress,
+                    progress: labelProgress,
                 ),
                 y: interpolatedCGFloat(
                     from: rootLabelCenter.y,
                     to: headerLabelCenter.y,
-                    progress: progress,
+                    progress: labelProgress,
                 ),
             )
             let reflectionOpacity = max(0, 1 - (progress * 1.2))
@@ -1873,6 +1821,7 @@ extension MenuView {
                     animateReflection: false,
                     reflectionYOffsetOverride: reflectionYOffsetOverride,
                 )
+                .animation(nil, value: isIconAnimated)
                 .padding(.bottom, 100)
                 .offset(y: rootStageYOffset)
                 .opacity(reflectionOpacity)
@@ -1894,13 +1843,14 @@ extension MenuView {
                     animateReflection: false,
                     reflectionYOffsetOverride: reflectionYOffsetOverride,
                 )
+                .animation(nil, value: isIconAnimated)
                 .padding(.bottom, 100)
                 .offset(y: rootStageYOffset)
                 .zIndex(3100)
 
                 Text(rootLabelText)
                     .font(.firstRowBold(size: 92))
-                    .foregroundColor(.white)
+                    .foregroundStyleCompat(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4)
@@ -1985,7 +1935,7 @@ extension MenuView {
 
                 Text(title)
                     .font(.firstRowBold(size: 92))
-                    .foregroundColor(.white)
+                    .foregroundStyleCompat(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4)
@@ -2007,12 +1957,14 @@ extension MenuView {
         geometry: GeometryProxy,
         showsEmbeddedHeader: Bool,
         isMoviesFolderPage: Bool = false,
+        isPodcastEpisodesPage: Bool = false,
+        isVideoPodcastEpisodesPage: Bool = false,
         isPhotosDateAlbumsPage: Bool = false,
     ) -> some View {
         let pageIdentity =
             "\(rootID ?? "none")::\(headerText)::\(items.count)::\(items.first?.id ?? "nil")::\(items.last?.id ?? "nil")"
         return ZStack(alignment: .topLeading) {
-            if isMoviesFolderPage {
+            if isMoviesFolderPage || isVideoPodcastEpisodesPage {
                 moviesFolderGapContentView(geometry: geometry)
             }
             menuColumnView(
@@ -2022,6 +1974,8 @@ extension MenuView {
                 selectedIndex: selectedIndex,
                 geometry: geometry,
                 isMoviesFolderPage: isMoviesFolderPage,
+                isPodcastEpisodesPage: isPodcastEpisodesPage,
+                isVideoPodcastEpisodesPage: isVideoPodcastEpisodesPage,
                 isPhotosDateAlbumsPage: isPhotosDateAlbumsPage,
             )
             if showsEmbeddedHeader {
@@ -2038,7 +1992,7 @@ extension MenuView {
 
     @ViewBuilder
     func moviesFolderGapContentView(geometry: GeometryProxy) -> some View {
-        let hasContent = moviesFolderGapPlayer != nil || moviePreviewImage != nil
+        let hasContent = moviesFolderGapPlayer != nil
         if hasContent {
             let w = geometry.size.width
             let h = geometry.size.height
@@ -2059,27 +2013,22 @@ extension MenuView {
             )
             ZStack {
                 VStack(spacing: 0) {
-                    // Main preview
                     Group {
-                        if let gapPlayer = moviesFolderGapPlayer {
+                        if let gapPlayer = moviesFolderGapPlayer,
+                           let gapPlayerURL = moviesFolderGapPlayerURL
+                        {
                             MovieGapPlayerView(player: gapPlayer)
-                                .frame(width: previewW, height: previewH)
-                        } else if let previewImage = moviePreviewImage {
-                            Image(nsImage: previewImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
+                                .id("movies_gap_main:\(gapPlayerURL.path)")
                                 .frame(width: previewW, height: previewH)
                         }
                     }
                     .clipped()
                     Group {
-                        if let gapPlayer = moviesFolderGapPlayer {
+                        if let gapPlayer = moviesFolderGapPlayer,
+                           let gapPlayerURL = moviesFolderGapPlayerURL
+                        {
                             MovieGapPlayerView(player: gapPlayer)
-                                .frame(width: previewW, height: previewH)
-                        } else if let previewImage = moviePreviewImage {
-                            Image(nsImage: previewImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
+                                .id("movies_gap_reflection:\(gapPlayerURL.path)")
                                 .frame(width: previewW, height: previewH)
                         }
                     }
@@ -2154,12 +2103,15 @@ extension MenuView {
         selectedIndex: Int,
         geometry: GeometryProxy,
         isMoviesFolderPage: Bool = false,
+        isPodcastEpisodesPage: Bool = false,
+        isVideoPodcastEpisodesPage: Bool = false,
         isPhotosDateAlbumsPage: Bool = false,
     ) -> some View {
         _ = rootID
         _ = headerText
-        let columnWidth: CGFloat = (isMoviesFolderPage || isPhotosDateAlbumsPage) ? 1225 : submenuSelectionVisualWidth
-        let columnLeading: CGFloat = (isMoviesFolderPage || isPhotosDateAlbumsPage) ? 628 : submenuSelectionBoxLeading
+        let usesCompactSelectionWidth = isMoviesFolderPage || isVideoPodcastEpisodesPage || isPhotosDateAlbumsPage
+        let columnWidth: CGFloat = usesCompactSelectionWidth ? 1225 : submenuSelectionVisualWidth
+        let columnLeading: CGFloat = usesCompactSelectionWidth ? 628 : submenuSelectionBoxLeading
         let clampedSelectedIndex = min(max(0, selectedIndex), max(0, items.count - 1))
         let visibleRowCount = submenuVisibleMenuRowCount
         let transitionProgress = smoothStep(submenuTransitionProgress)
@@ -2199,6 +2151,7 @@ extension MenuView {
             rowPitchOverride: submenuSelectionRowPitch,
             scaledRowVerticalOffsetOverride: submenuSelectedRowContentYOffset,
             contentVerticalOffsetOverride: submenuRowContentVerticalOffset,
+            isPodcastEpisodesPage: isPodcastEpisodesPage,
         )
         .frame(width: columnWidth, height: viewportHeight, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -2235,6 +2188,7 @@ extension MenuView {
         let isLiveErrorPage = isInThirdMenu && thirdMenuMode == .errorPage
         let isLiveSubmenuErrorPage = !isInThirdMenu && isSubmenuErrorPage
         let isLiveMoviesFolder = isInThirdMenu && thirdMenuMode == .moviesFolder
+        let isLiveVideoPodcastEpisodes = isInThirdMenu && thirdMenuMode == .videoPodcastEpisodes
         ZStack {
             settledSubmenuDividerView(geometry: geometry)
             if let snapshot = menuTransitionSnapshot {
@@ -2273,6 +2227,8 @@ extension MenuView {
                         geometry: geometry,
                         showsEmbeddedHeader: showsEmbeddedHeader,
                         isMoviesFolderPage: snapshot.isMoviesFolderPage,
+                        isPodcastEpisodesPage: snapshot.isPodcastEpisodesPage,
+                        isVideoPodcastEpisodesPage: snapshot.isVideoPodcastEpisodesPage,
                         isPhotosDateAlbumsPage: snapshot.isPhotosDateAlbumsPage,
                     )
                     .offset(x: snapshotOffsetX)
@@ -2323,6 +2279,9 @@ extension MenuView {
                     geometry: geometry,
                     showsEmbeddedHeader: showsEmbeddedHeader,
                     isMoviesFolderPage: isLiveMoviesFolder,
+                    isPodcastEpisodesPage: isInThirdMenu &&
+                        (thirdMenuMode == .audioPodcastEpisodes || thirdMenuMode == .videoPodcastEpisodes),
+                    isVideoPodcastEpisodesPage: isLiveVideoPodcastEpisodes,
                     isPhotosDateAlbumsPage: activeRootItemID == "photos",
                 )
                 .offset(x: menuTransitionSnapshot == nil ? 0 : liveOffsetX)

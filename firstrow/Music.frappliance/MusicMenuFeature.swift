@@ -16,12 +16,10 @@ struct MusicMenuFeature: MenuFeatureConfiguration {
         .init(id: "music_albums", title: "Albums", leadsToMenu: true),
         .init(id: "music_songs", title: "Songs", leadsToMenu: true),
         .init(id: "music_podcasts", title: "Podcasts", leadsToMenu: true),
-        .init(id: "music_music_videos", title: "Music Videos", leadsToMenu: true),
         .init(id: "music_genres", title: "Genres", leadsToMenu: true),
         .init(id: "music_composers", title: "Composers", leadsToMenu: true),
         .init(id: "music_audiobooks", title: "Audiobooks", leadsToMenu: true),
         .init(id: "music_itunes_top_songs", title: "iTunes Top Songs", leadsToMenu: true),
-        .init(id: "music_itunes_top_music_videos", title: "iTunes Top Music Videos", leadsToMenu: true),
     ]
     let defaultSubmenuSelectedIndex = 0
 }

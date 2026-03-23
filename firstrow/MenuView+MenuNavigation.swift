@@ -5,8 +5,13 @@ extension MenuView {
         case none
         case moviesFolder
         case moviesITunesTop
+        case tvEpisodesITunesTop
+        case videoPodcastSeries
+        case videoPodcastEpisodes
         case musicITunesTopSongs
         case musicITunesTopMusicVideos
+        case audioPodcastSeries
+        case audioPodcastEpisodes
         case musicCategories
         case musicSongs
         case musicNowPlaying
@@ -43,7 +48,9 @@ extension MenuView {
             menuTransitionProgress = 1
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + menuSlideDuration) {
+        Task { @MainActor in
+            try? await firstRowSleep(menuSlideDuration)
+            guard !Task.isCancelled else { return }
             self.menuTransitionSnapshot = nil
         }
     }
@@ -68,28 +75,9 @@ extension MenuView {
     func exitMovieResumePromptPage() {
         guard thirdMenuMode == .movieResumePrompt else { return }
 
-        let returnMode = movieResumeReturnThirdMenuMode
-        let returnHeader = movieResumeReturnHeaderText
-
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
-            movieResumeBackdropOpacity = 0
-            movieResumePromptBackdropImage = nil
-            _ = incrementRequestID(&movieResumePromptBackdropRequestID)
-        }
-
         transitionMenuForFolderSwap(direction: .backward) {
-            movieResumePromptTargetURL = nil
-            movieResumePromptResumeSeconds = 0
-            selectedThirdIndex = movieResumeReturnSelectedThirdIndex
-            if returnMode == .none {
-                isInThirdMenu = false
-                thirdMenuMode = .none
-            } else {
-                thirdMenuMode = returnMode
-            }
-            headerText = returnHeader
+            dismissMovieResumePrompt()
+            restoreMovieResumePromptReturnContext()
         }
     }
 
@@ -107,15 +95,19 @@ extension MenuView {
         switch activeRootItemID {
         case "movies":
             refreshMoviePreviewForCurrentContext()
+            refreshPodcastsForCurrentContext()
             refreshITunesTopPreviewForCurrentContext(.movies)
             refreshITunesTopCarouselForCurrentContext(.movies)
+            refreshITunesTopPreviewForCurrentContext(.tvEpisodes)
+            refreshITunesTopCarouselForCurrentContext(.tvEpisodes)
+            refreshITunesTopPreviewForCurrentContext(.musicVideos)
+            refreshITunesTopCarouselForCurrentContext(.musicVideos)
         case "music":
+            refreshPodcastsForCurrentContext()
             refreshMusicPreviewForCurrentContext()
             refreshMusicTopLevelCarouselForCurrentContext()
             refreshITunesTopPreviewForCurrentContext(.songs)
             refreshITunesTopCarouselForCurrentContext(.songs)
-            refreshITunesTopPreviewForCurrentContext(.musicVideos)
-            refreshITunesTopCarouselForCurrentContext(.musicVideos)
         case "photos":
             refreshPhotosForCurrentContext()
         default:
@@ -127,7 +119,7 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos:
             true
-        case .moviesFolder, .moviesITunesTop, .photosDateAlbums, .musicNowPlaying, .errorPage, .movieResumePrompt, .none:
+        case .moviesFolder, .moviesITunesTop, .tvEpisodesITunesTop, .videoPodcastSeries, .videoPodcastEpisodes, .audioPodcastSeries, .audioPodcastEpisodes, .photosDateAlbums, .musicNowPlaying, .errorPage, .movieResumePrompt, .none:
             false
         }
         transitionMenuForFolderSwap(direction: .backward) {
@@ -160,7 +152,7 @@ extension MenuView {
             headerText = rootMenuTitle(for: activeRootItemID)
             resetThirdMenuDirectoryState()
             moviesFolderSelectionIndexByDirectoryPath = [:]
-            resetITunesTopCarouselAndPreviewState(for: [.movies])
+            resetITunesTopCarouselAndPreviewState(for: [.movies, .tvEpisodes])
             _ = incrementRequestID(&moviePlaybackLoadingRequestID)
             isMoviePlaybackLoading = false
             refreshDetailPreviewForCurrentContext()
@@ -200,9 +192,18 @@ extension MenuView {
         case .movieResumePrompt:
             playSound(named: "Exit")
             exitMovieResumePromptPage()
-        case .moviesITunesTop:
+        case .moviesITunesTop, .tvEpisodesITunesTop:
             playSound(named: "Exit")
             exitMoviesThirdMenuToSecondLevelWithSwap()
+        case .videoPodcastEpisodes:
+            playSound(named: "Exit")
+            exitPodcastEpisodesMenuToSeriesMenu(kind: .video)
+        case .audioPodcastEpisodes:
+            playSound(named: "Exit")
+            exitPodcastEpisodesMenuToSeriesMenu(kind: .audio)
+        case .videoPodcastSeries, .audioPodcastSeries:
+            playSound(named: "Exit")
+            exitPodcastSeriesMenuToSecondLevelWithSwap()
         case .moviesFolder:
             guard let currentURL = thirdMenuCurrentURL else {
                 exitMoviesThirdMenuToSecondLevelWithSwap()
@@ -214,9 +215,18 @@ extension MenuView {
             if let standardizedRoot, standardizedCurrent != standardizedRoot {
                 let parentURL = standardizedCurrent.deletingLastPathComponent()
                 rememberCurrentMoviesFolderSelectionIndex()
-                transitionMenuForFolderSwap(direction: .backward) {
+                transitionMenuForFolderSwap {
                     loadThirdMenuDirectory(parentURL, resetSelection: true)
                 }
+            } else if !movieLibraryRootURLs.isEmpty {
+                rememberCurrentMoviesFolderSelectionIndex()
+                #if os(macOS)
+                    transitionMenuForFolderSwap {
+                        loadMoviesRootSelectorEntries(resetSelection: false)
+                    }
+                #else
+                    exitMoviesThirdMenuToSecondLevelWithSwap()
+                #endif
             } else {
                 rememberCurrentMoviesFolderSelectionIndex()
                 exitMoviesThirdMenuToSecondLevelWithSwap()
@@ -248,30 +258,30 @@ extension MenuView {
                 update()
             }
             let revealDeadline = Date().addingTimeInterval(max(0, maxRevealWait))
-            func revealWhenReady() {
-                guard isMenuFolderSwapTransitioning else { return }
-                let canRevealNow = revealWhen() || Date() >= revealDeadline
-                guard canRevealNow else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        revealWhenReady()
+            Task { @MainActor in
+                await Task.yield()
+                try? await firstRowSleep(0.02)
+                guard !Task.isCancelled else { return }
+                while isMenuFolderSwapTransitioning {
+                    let canRevealNow = revealWhen() || Date() >= revealDeadline
+                    guard canRevealNow else {
+                        try? await firstRowSleep(0.05)
+                        continue
                     }
-                    return
-                }
-                guard menuTransitionSnapshot != nil else {
-                    menuTransitionProgress = 1
-                    isMenuFolderSwapTransitioning = false
-                    return
-                }
-                withAnimation(.easeInOut(duration: menuSlideDuration)) {
-                    menuTransitionProgress = 1
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + menuSlideDuration) {
+                    guard menuTransitionSnapshot != nil else {
+                        menuTransitionProgress = 1
+                        isMenuFolderSwapTransitioning = false
+                        return
+                    }
+                    withAnimation(.easeInOut(duration: menuSlideDuration)) {
+                        menuTransitionProgress = 1
+                    }
+                    try? await firstRowSleep(menuSlideDuration)
+                    guard !Task.isCancelled else { return }
                     menuTransitionSnapshot = nil
                     isMenuFolderSwapTransitioning = false
+                    return
                 }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-                revealWhenReady()
             }
             return
         }
@@ -287,7 +297,9 @@ extension MenuView {
             }
         }
         let swapUpdateDelay = menuFolderSwapFadeDuration + menuOverlayBlackoutSafetyDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + swapUpdateDelay) {
+        Task { @MainActor in
+            try? await firstRowSleep(swapUpdateDelay)
+            guard !Task.isCancelled else { return }
             guard isMenuFolderSwapTransitioning else { return }
             var instant = Transaction()
             instant.animation = nil
@@ -298,39 +310,32 @@ extension MenuView {
                     menuSceneOpacity = 0
                 }
             }
-            DispatchQueue.main.async {
-                guard isMenuFolderSwapTransitioning else { return }
-                var instant = Transaction()
-                instant.animation = nil
-                withTransaction(instant) {
-                    update()
+            guard isMenuFolderSwapTransitioning else { return }
+            withTransaction(instant) {
+                update()
+            }
+            let revealDeadline = Date().addingTimeInterval(max(0, maxRevealWait))
+            try? await firstRowSleep(menuFolderSwapHoldDuration)
+            guard !Task.isCancelled else { return }
+            while isMenuFolderSwapTransitioning {
+                let canRevealNow = revealWhen() || Date() >= revealDeadline
+                guard canRevealNow else {
+                    try? await firstRowSleep(0.05)
+                    continue
                 }
-                let revealDeadline = Date().addingTimeInterval(max(0, maxRevealWait))
-                func revealWhenReady() {
-                    guard isMenuFolderSwapTransitioning else { return }
-                    let canRevealNow = revealWhen() || Date() >= revealDeadline
-                    guard canRevealNow else {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            revealWhenReady()
-                        }
-                        return
+                if useOverlayFade {
+                    withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
+                        menuFolderSwapOverlayOpacity = 0
                     }
-                    if useOverlayFade {
-                        withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
-                            menuFolderSwapOverlayOpacity = 0
-                        }
-                    } else {
-                        withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
-                            menuSceneOpacity = 1
-                        }
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + menuFolderSwapFadeDuration) {
-                        isMenuFolderSwapTransitioning = false
+                } else {
+                    withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
+                        menuSceneOpacity = 1
                     }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + menuFolderSwapHoldDuration) {
-                    revealWhenReady()
-                }
+                try? await firstRowSleep(menuFolderSwapFadeDuration)
+                guard !Task.isCancelled else { return }
+                isMenuFolderSwapTransitioning = false
+                return
             }
         }
     }

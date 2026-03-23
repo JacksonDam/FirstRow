@@ -1,5 +1,4 @@
 import AVFoundation
-import Darwin
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -10,14 +9,9 @@ extension MenuView {
     }
 
     nonisolated func realUserHomeDirectoryURL() -> URL? {
-        guard let passwdEntry = getpwuid(getuid()),
-              let rawHome = passwdEntry.pointee.pw_dir
-        else {
-            return nil
-        }
-        let homePath = String(cString: rawHome)
-        guard !homePath.isEmpty else { return nil }
-        return URL(fileURLWithPath: homePath, isDirectory: true)
+        let username = NSUserName()
+        guard !username.isEmpty else { return nil }
+        return URL(fileURLWithPath: "/Users/\(username)", isDirectory: true)
     }
 
     func moviesDocumentsDirectoryURL() -> URL {
@@ -63,15 +57,59 @@ extension MenuView {
         scanMoviesFolderEntries(in: directoryURL).filter { !$0.isDirectory }
     }
 
+    nonisolated func externalVolumeRootURLs() -> [URL] {
+        guard let volumes = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: [],
+            options: [.skipHiddenVolumes]
+        ) else { return [] }
+        return volumes.filter { url in
+            let path = url.standardizedFileURL.path
+            return path != "/" && path.hasPrefix("/Volumes/")
+        }
+    }
+
+    nonisolated func externalMoviesRootURLs() -> [URL] {
+        externalVolumeRootURLs().compactMap { volumeURL in
+            let moviesURL = volumeURL.appendingPathComponent("Movies", isDirectory: true)
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: moviesURL.path, isDirectory: &isDir),
+                  isDir.boolValue else { return nil }
+            return moviesURL
+        }
+    }
+
+    func allMoviesRootURLs() -> [URL] {
+        [moviesRootDirectoryURL()] + externalMoviesRootURLs()
+    }
+
+    nonisolated func moviesRootDisplayTitle(for url: URL) -> String {
+        let internalPath = realUserHomeDirectoryURL()?
+            .appendingPathComponent("Movies").standardizedFileURL.path
+        if url.standardizedFileURL.path == internalPath {
+            return "My Mac"
+        }
+        return (try? url.resourceValues(forKeys: [.volumeNameKey]))?.volumeName
+            ?? url.lastPathComponent
+    }
+
+    func loadMoviesRootSelectorEntries(resetSelection: Bool) {
+        isLoadingMoviesFolderEntries = false
+        thirdMenuCurrentURL = nil
+        thirdMenuRootURL = nil
+        thirdMenuItems = movieLibraryRootURLs.map { url in
+            MoviesFolderEntry(
+                id: url.standardizedFileURL.path,
+                title: moviesRootDisplayTitle(for: url),
+                url: url,
+                isDirectory: true,
+            )
+        }
+        if resetSelection { selectedThirdIndex = 0 }
+        refreshDetailPreviewForCurrentContext()
+    }
+
     func moviesRootDirectoryURL() -> URL {
-        if let homeURL = realUserHomeDirectoryURL() {
-            return homeURL.appendingPathComponent("Movies", isDirectory: true)
-        }
-        let guessedHome = URL(fileURLWithPath: "/Users/\(NSUserName())", isDirectory: true)
-        if FileManager.default.fileExists(atPath: guessedHome.path) {
-            return guessedHome.appendingPathComponent("Movies", isDirectory: true)
-        }
-        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("Movies", isDirectory: true)
+        realUserHomeDirectoryURL()!.appendingPathComponent("Movies", isDirectory: true)
     }
 
     var supportedMovieFileExtensions: Set<String> {
@@ -206,6 +244,7 @@ extension MenuView {
         thirdMenuItems = []
         thirdMenuCurrentURL = nil
         thirdMenuRootURL = nil
+        movieLibraryRootURLs = []
         isLoadingMoviesFolderEntries = false
         _ = incrementRequestID(&moviesFolderEntriesRequestID)
     }
@@ -213,10 +252,16 @@ extension MenuView {
     func resolveMoviePreviewTargetURL() -> URL? {
         guard activeRootItemID == "movies", isInSubmenu else { return nil }
         if isInThirdMenu {
-            guard thirdMenuMode == .moviesFolder else { return nil }
-            guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
-            let entry = thirdMenuItems[selectedThirdIndex]
-            return entry.isDirectory ? nil : entry.url
+            switch thirdMenuMode {
+            case .moviesFolder:
+                guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
+                let entry = thirdMenuItems[selectedThirdIndex]
+                return entry.isDirectory ? nil : entry.url
+            case .videoPodcastEpisodes:
+                return selectedVideoPodcastEpisodeForPreview?.mediaURL?.standardizedFileURL
+            default:
+                return nil
+            }
         }
         let submenuItems = currentSubmenuItems()
         guard submenuItems.indices.contains(selectedSubIndex) else { return nil }
@@ -225,18 +270,54 @@ extension MenuView {
         return firstMovieFileURL(in: moviesRootDirectoryURL())
     }
 
+    func resolveMovieGapPreviewLoopURL() -> URL? {
+        guard isInThirdMenu else { return nil }
+        switch thirdMenuMode {
+        case .moviesFolder:
+            guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
+            let entry = thirdMenuItems[selectedThirdIndex]
+            return entry.isDirectory ? nil : entry.url.standardizedFileURL
+        case .videoPodcastEpisodes:
+            return selectedVideoPodcastEpisodeForPreview?.mediaURL?.standardizedFileURL
+        default:
+            return nil
+        }
+    }
+
     nonisolated func generateMovieThumbnail(for url: URL, preferredSeconds: Double? = nil) async -> NSImage? {
         let standardizedURL = url.standardizedFileURL
         if shouldSkipMovieThumbnailGeneration(for: standardizedURL) {
             return nil
         }
         let asset = AVURLAsset(url: standardizedURL)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 1100, height: 1100)
-        func generateSync(at time: CMTime) -> CGImage? {
-            try? generator.copyCGImage(at: time, actualTime: nil)
-        }
+        func makeGenerator() -> AVAssetImageGenerator {
+                    let generator = AVAssetImageGenerator(asset: asset)
+                    generator.appliesPreferredTrackTransform = true
+                    generator.maximumSize = CGSize(width: 1100, height: 1100)
+                    return generator
+                }
+                func makeImage(from cgImage: CGImage) -> NSImage {
+                    NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                }
+                func generateSync(at time: CMTime, requestsExactFrame: Bool) -> NSImage? {
+                    let generator = makeGenerator()
+                    if requestsExactFrame {
+                        generator.requestedTimeToleranceBefore = .zero
+                        generator.requestedTimeToleranceAfter = .zero
+                    }
+                    guard let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) else {
+                        return nil
+                    }
+                    return makeImage(from: cgImage)
+                }
+
+                if let preferredSeconds, preferredSeconds > 0 {
+                    let preferredTime = CMTime(seconds: preferredSeconds, preferredTimescale: 600)
+                    if let exactImage = generateSync(at: preferredTime, requestsExactFrame: true) {
+                        return exactImage
+                    }
+                }
+
 
         var candidateTimes: [CMTime] = []
         if let preferredSeconds, preferredSeconds > 0 {
@@ -250,8 +331,8 @@ extension MenuView {
         candidateTimes.append(.zero)
 
         for time in candidateTimes {
-            guard let cgImage = generateSync(at: time) else { continue }
-            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            guard let image = generateSync(at: time, requestsExactFrame: false) else { continue }
+            return image
         }
         return nil
     }
@@ -346,40 +427,34 @@ extension MenuView {
     }
 
     func refreshMoviesFolderGapPlayer() {
-        guard isInThirdMenu,
-              thirdMenuMode == .moviesFolder,
-              thirdMenuItems.indices.contains(selectedThirdIndex),
-              !thirdMenuItems[selectedThirdIndex].isDirectory
-        else {
+        guard let url = resolveMovieGapPreviewLoopURL() else {
             stopMoviesFolderGapPlayer()
             return
         }
-        let url = thirdMenuItems[selectedThirdIndex].url.standardizedFileURL
 
         guard url != moviesFolderGapPlayerURL else { return }
 
         moviesFolderGapPlayerDebounceWork?.cancel()
 
-        let work = DispatchWorkItem {
-            moviesFolderGapPlayer?.pause()
-            moviesFolderGapPlayerLooper = nil
-            moviesFolderGapPlayer = nil
-            moviesFolderGapPlayerURL = url
+        moviesFolderGapPlayerDebounceWork = Task { @MainActor in
+            try? await firstRowSleep(1.0)
+            guard !Task.isCancelled else { return }
             let item = AVPlayerItem(url: url)
             let queuePlayer = AVQueuePlayer()
             queuePlayer.isMuted = true
             let looper = AVPlayerLooper(player: queuePlayer, templateItem: item)
             queuePlayer.play()
+            let previousPlayer = moviesFolderGapPlayer
+            moviesFolderGapPlayerURL = url
             moviesFolderGapPlayer = queuePlayer
             moviesFolderGapPlayerLooper = looper
+            previousPlayer?.pause()
+            moviesFolderGapPlayerDebounceWork = nil
         }
-        moviesFolderGapPlayerDebounceWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
     }
 
     func stopMoviesFolderGapPlayer() {
         moviesFolderGapPlayerDebounceWork?.cancel()
-        moviesFolderGapPlayerDebounceWork = nil
         moviesFolderGapPlayer?.pause()
         moviesFolderGapPlayerLooper = nil
         moviesFolderGapPlayer = nil
@@ -451,43 +526,46 @@ extension MenuView {
     }
 
     func loadThirdMenuDirectory(_ directoryURL: URL, resetSelection: Bool) {
+        if thirdMenuCurrentURL == nil, !movieLibraryRootURLs.isEmpty {
+            thirdMenuRootURL = directoryURL.standardizedFileURL
+        }
         let standardizedDirectory = directoryURL.standardizedFileURL
         thirdMenuCurrentURL = standardizedDirectory
         isLoadingMoviesFolderEntries = true
         let requestID = incrementRequestID(&moviesFolderEntriesRequestID)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let scannedEntries = self.scanMoviesFolderEntries(in: standardizedDirectory)
-            DispatchQueue.main.async {
-                guard self.moviesFolderEntriesRequestID == requestID else { return }
-                guard self.thirdMenuMode == .moviesFolder else { return }
-                guard self.thirdMenuCurrentURL?.standardizedFileURL == standardizedDirectory else { return }
-                self.isLoadingMoviesFolderEntries = false
-                self.thirdMenuItems = scannedEntries
+        Task(priority: .userInitiated) {
+            let scannedEntries = scanMoviesFolderEntries(in: standardizedDirectory)
+            await MainActor.run {
+                guard moviesFolderEntriesRequestID == requestID else { return }
+                guard thirdMenuMode == .moviesFolder else { return }
+                guard thirdMenuCurrentURL?.standardizedFileURL == standardizedDirectory else { return }
+                isLoadingMoviesFolderEntries = false
+                thirdMenuItems = scannedEntries
                 let maxIndex = max(0, scannedEntries.count - 1)
-                if let remembered = self.rememberedMoviesFolderSelectionIndex(for: standardizedDirectory) {
-                    self.selectedThirdIndex = min(max(0, remembered), maxIndex)
+                if let remembered = rememberedMoviesFolderSelectionIndex(for: standardizedDirectory) {
+                    selectedThirdIndex = min(max(0, remembered), maxIndex)
                 } else if resetSelection {
-                    self.selectedThirdIndex = 0
+                    selectedThirdIndex = 0
                 } else {
-                    self.selectedThirdIndex = min(max(0, self.selectedThirdIndex), maxIndex)
+                    selectedThirdIndex = min(max(0, selectedThirdIndex), maxIndex)
                 }
                 if !scannedEntries.isEmpty {
-                    let key = self.moviesFolderDirectorySelectionKey(for: standardizedDirectory)
-                    self.moviesFolderSelectionIndexByDirectoryPath[key] = self.selectedThirdIndex
+                    let key = moviesFolderDirectorySelectionKey(for: standardizedDirectory)
+                    moviesFolderSelectionIndexByDirectoryPath[key] = selectedThirdIndex
                 }
-                self.refreshDetailPreviewForCurrentContext()
+                refreshDetailPreviewForCurrentContext()
                 let isShowingRootDirectory =
-                    self.thirdMenuRootURL?.standardizedFileURL == standardizedDirectory
+                    thirdMenuRootURL?.standardizedFileURL == standardizedDirectory
                 if isShowingRootDirectory, scannedEntries.isEmpty {
-                    self.isInThirdMenu = false
-                    self.thirdMenuMode = .none
-                    self.thirdMenuOpacity = 0
-                    self.submenuOpacity = 1
-                    self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
-                    self.resetThirdMenuDirectoryState()
-                    self.moviesFolderSelectionIndexByDirectoryPath = [:]
-                    self.refreshDetailPreviewForCurrentContext()
-                    self.presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: true)
+                    isInThirdMenu = false
+                    thirdMenuMode = .none
+                    thirdMenuOpacity = 0
+                    submenuOpacity = 1
+                    headerText = rootMenuTitle(for: activeRootItemID)
+                    resetThirdMenuDirectoryState()
+                    moviesFolderSelectionIndexByDirectoryPath = [:]
+                    refreshDetailPreviewForCurrentContext()
+                    presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: true)
                 }
             }
         }
@@ -495,18 +573,23 @@ extension MenuView {
 
     func enterMoviesFolderMenu() {
         transitionMenuForFolderSwap(revealWhen: { !isLoadingMoviesFolderEntries }) {
-            let rootURL = moviesRootDirectoryURL()
             thirdMenuMode = .moviesFolder
             resetAllITunesTopMenusForNonITunesContext()
             resetMusicCategoryStateForNonMusicITunesTop()
             activeMusicLibraryMediaType = .songs
             musicSongsShowsShuffleAction = false
             moviesFolderSelectionIndexByDirectoryPath = [:]
-            thirdMenuRootURL = rootURL
-            loadThirdMenuDirectory(rootURL, resetSelection: true)
             isInThirdMenu = true
             submenuOpacity = 0
             thirdMenuOpacity = 1
+            let roots = allMoviesRootURLs()
+            movieLibraryRootURLs = roots.count > 1 ? roots : []
+            if roots.count > 1 {
+                loadMoviesRootSelectorEntries(resetSelection: true)
+            } else {
+                thirdMenuRootURL = roots[0]
+                loadThirdMenuDirectory(roots[0], resetSelection: true)
+            }
         }
     }
 }

@@ -61,12 +61,15 @@ struct MoviePlaybackControlsOverlay: View {
                     Color.clear.frame(width: 18)
                     Text(formatPaddedTime(displayElapsed))
                         .font(.firstRowBold(size: timeFontSize))
-                        .foregroundColor(.white.opacity(0.95))
+                        .foregroundStyleCompat(.white.opacity(0.95))
                         .lineLimit(1)
                         .shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4)
                         .frame(width: leadingTimeWidth, height: barHeight, alignment: .leading)
                     Color.clear.frame(width: 18)
                     ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: barHeight / 2, style: .continuous)
+                            .fill(Color.black.opacity(0.25))
+                            .frame(height: barHeight)
                         RoundedRectangle(cornerRadius: barHeight / 2, style: .continuous)
                             .stroke(Color.white.opacity(0.82), lineWidth: 6)
                             .frame(height: barHeight)
@@ -83,7 +86,7 @@ struct MoviePlaybackControlsOverlay: View {
                     Color.clear.frame(width: 24)
                     Text(hasValidDuration ? "-\(formatPaddedTime(displayRemaining))" : "")
                         .font(.firstRowBold(size: timeFontSize))
-                        .foregroundColor(.white.opacity(0.95))
+                        .foregroundStyleCompat(.white.opacity(0.95))
                         .lineLimit(1)
                         .shadow(color: Color.black.opacity(0.55), radius: 5, x: 0, y: 4)
                         .frame(width: trailingTimeWidth, height: barHeight, alignment: .trailing)
@@ -118,23 +121,27 @@ private struct MoviePlaybackGlyphView: View {
     private var glyphContent: some View {
         switch state {
         case .pause:
-            Image(systemName: "pause.fill").font(.system(size: 23, weight: .bold)).foregroundColor(.white)
+            Image(systemName: "pause.fill").font(.system(size: 23, weight: .bold)).foregroundStyleCompat(.white)
         case .play:
-            Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundColor(.white).offset(x: 1)
+            Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundStyleCompat(.white).offset(x: 1)
         case .loading:
-            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.05)
+            if #available(macOS 12.0, iOS 15.0, tvOS 15.0, *) {
+                ProgressView().progressViewStyle(.circular).tint(.white).scaleEffect(1.05)
+            } else {
+                ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.05)
+            }
         case let .rewind(requestedCount):
             let count = max(1, min(3, requestedCount))
-            LazyHStack(spacing: -7) {
+            HStack(spacing: -7) {
                 ForEach(0 ..< count, id: \.self) { _ in
-                    Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundColor(.white).rotationEffect(.degrees(180))
+                    Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundStyleCompat(.white).rotationEffect(.degrees(180))
                 }
             }.offset(x: 4)
         case let .fastForward(requestedCount):
             let count = max(1, min(3, requestedCount))
-            LazyHStack(spacing: -7) {
+            HStack(spacing: -7) {
                 ForEach(0 ..< count, id: \.self) { _ in
-                    Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundColor(.white)
+                    Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundStyleCompat(.white)
                 }
             }.offset(x: -4)
         }

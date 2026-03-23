@@ -52,7 +52,6 @@
 		7A73DEC92F5776A20021C281 /* Selection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE612F5776A20021C281 /* Selection.aif */; };
 		7A73DECD2F5776A20021C281 /* Exit.aif in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE5F2F5776A20021C281 /* Exit.aif */; };
 		7A73DECE2F5776A20021C281 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE692F5776A20021C281 /* Assets.xcassets */; };
-		7A73DECF2F5776A20021C281 /* settings.local.json in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE222F5776A20021C281 /* settings.local.json */; };
 		7A73DED02F5776A20021C281 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE432F5776A20021C281 /* Preview Assets.xcassets */; };
 		7A73DED52F5776A20021C281 /* Limit.aif in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE602F5776A20021C281 /* Limit.aif */; };
 		7A73DEDA2F5776A20021C281 /* default.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 7A73DE5E2F5776A20021C281 /* default.mp3 */; };
@@ -67,6 +66,12 @@
 		8AF900001234567890ABCDE6 /* MainPhotosSelection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 8AF900001234567890ABCDF6 /* MainPhotosSelection.aif */; };
 		8AF900001234567890ABCDE7 /* MainVideosSelection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 8AF900001234567890ABCDF7 /* MainVideosSelection.aif */; };
 		8AF900001234567890ABCDE8 /* End.aif in Resources */ = {isa = PBXBuildFile; fileRef = 8AF900001234567890ABCDF8 /* End.aif */; };
+		AA000002AAAAAAAAAAAA0001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0001 /* AppDelegate.swift */; };
+		AA000002AAAAAAAAAAAA0002 /* ArrowAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0002 /* ArrowAppearance.swift */; };
+		AA000002AAAAAAAAAAAA0003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0003 /* ContentView.swift */; };
+		AA000002AAAAAAAAAAAA0008 /* MenuListItemConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0008 /* MenuListItemConfig.swift */; };
+		AA000002AAAAAAAAAAAA0009 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0009 /* VideoPlayerView.swift */; };
+		AA000002AAAAAAAAAAAA0010 /* MenuView+Podcasts.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0010 /* MenuView+Podcasts.swift */; };
 		AABB00022F5776A20021C281 /* MusicNowPlayingMenuPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */; };
 /* End PBXBuildFile section */
 
@@ -88,7 +93,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		7A73DE222F5776A20021C281 /* settings.local.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = settings.local.json; sourceTree = "<group>"; };
 		7A73DE272F5776A20021C281 /* DVDMenuFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVDMenuFeature.swift; sourceTree = "<group>"; };
 		7A73DE2D2F5776A20021C281 /* MenuView+ITunesTopLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+ITunesTopLibrary.swift"; sourceTree = "<group>"; };
 		7A73DE2E2F5776A20021C281 /* MenuView+ITunesTopPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+ITunesTopPlayback.swift"; sourceTree = "<group>"; };
@@ -150,6 +154,12 @@
 		8AF900001234567890ABCDF6 /* MainPhotosSelection.aif */ = {isa = PBXFileReference; lastKnownFileType = file; path = MainPhotosSelection.aif; sourceTree = "<group>"; };
 		8AF900001234567890ABCDF7 /* MainVideosSelection.aif */ = {isa = PBXFileReference; lastKnownFileType = file; path = MainVideosSelection.aif; sourceTree = "<group>"; };
 		8AF900001234567890ABCDF8 /* End.aif */ = {isa = PBXFileReference; lastKnownFileType = file; path = End.aif; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0002 /* ArrowAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArrowAppearance.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0003 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0008 /* MenuListItemConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuListItemConfig.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0009 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
+		AA000001AAAAAAAAAAAA0010 /* MenuView+Podcasts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Podcasts.swift"; sourceTree = "<group>"; };
 		AABB00012F5776A20021C281 /* MusicNowPlayingMenuPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingMenuPageView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -186,14 +196,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		7A73DE232F5776A20021C281 /* .claude */ = {
-			isa = PBXGroup;
-			children = (
-				7A73DE222F5776A20021C281 /* settings.local.json */,
-			);
-			path = .claude;
-			sourceTree = "<group>";
-		};
 		7A73DE282F5776A20021C281 /* DVD.frappliance */ = {
 			isa = PBXGroup;
 			children = (
@@ -239,6 +241,14 @@
 			path = Photos.frappliance;
 			sourceTree = "<group>";
 		};
+		AA000003AAAAAAAAAAAA0010 /* Podcasts.frappliance */ = {
+			isa = PBXGroup;
+			children = (
+				AA000001AAAAAAAAAAAA0010 /* MenuView+Podcasts.swift */,
+			);
+			path = Podcasts.frappliance;
+			sourceTree = "<group>";
+		};
 		7A73DE442F5776A20021C281 /* Preview Content */ = {
 			isa = PBXGroup;
 			children = (
@@ -277,14 +287,19 @@
 		7A73DE812F5776A20021C281 /* firstrow */ = {
 			isa = PBXGroup;
 			children = (
-				7A73DE232F5776A20021C281 /* .claude */,
 				7A73DE282F5776A20021C281 /* DVD.frappliance */,
 				7A73DE342F5776A20021C281 /* Movies.frappliance */,
 				7A73DE3B2F5776A20021C281 /* Music.frappliance */,
+				AA000003AAAAAAAAAAAA0010 /* Podcasts.frappliance */,
 				7A73DE3F2F5776A20021C281 /* Photos.frappliance */,
 				7A73DE442F5776A20021C281 /* Preview Content */,
 				7A73DE632F5776A20021C281 /* Sounds */,
 				7A73DE672F5776A20021C281 /* Videos */,
+				AA000001AAAAAAAAAAAA0001 /* AppDelegate.swift */,
+				AA000001AAAAAAAAAAAA0002 /* ArrowAppearance.swift */,
+				AA000001AAAAAAAAAAAA0003 /* ContentView.swift */,
+				AA000001AAAAAAAAAAAA0008 /* MenuListItemConfig.swift */,
+				AA000001AAAAAAAAAAAA0009 /* VideoPlayerView.swift */,
 				7A73DE682F5776A20021C281 /* AppShell.swift */,
 				7A73DE692F5776A20021C281 /* Assets.xcassets */,
 				7A73DE6A2F5776A20021C281 /* FeatureErrorFullscreenView.swift */,
@@ -470,7 +485,6 @@
 				7A73DEC92F5776A20021C281 /* Selection.aif in Resources */,
 				7A73DECD2F5776A20021C281 /* Exit.aif in Resources */,
 				7A73DECE2F5776A20021C281 /* Assets.xcassets in Resources */,
-				7A73DECF2F5776A20021C281 /* settings.local.json in Resources */,
 				7A73DED02F5776A20021C281 /* Preview Assets.xcassets in Resources */,
 				7A73DED52F5776A20021C281 /* Limit.aif in Resources */,
 				7A73DEDA2F5776A20021C281 /* default.mp3 in Resources */,
@@ -509,10 +523,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				7A73DE872F5776A20021C281 /* AppShell.swift in Sources */,
+				AA000002AAAAAAAAAAAA0001 /* AppDelegate.swift in Sources */,
+				AA000002AAAAAAAAAAAA0002 /* ArrowAppearance.swift in Sources */,
+				AA000002AAAAAAAAAAAA0003 /* ContentView.swift in Sources */,
 				7A73DE882F5776A20021C281 /* PlaybackTimeFormatting.swift in Sources */,
 				7A73DE892F5776A20021C281 /* MusicTopLevelCarouselGapContentView.swift in Sources */,
 				7A73DE8A2F5776A20021C281 /* MoviePreviewGapContentView.swift in Sources */,
 				7A73DE8B2F5776A20021C281 /* MenuView+MusicLibrary.swift in Sources */,
+				AA000002AAAAAAAAAAAA0008 /* MenuListItemConfig.swift in Sources */,
+				AA000002AAAAAAAAAAAA0010 /* MenuView+Podcasts.swift in Sources */,
 				7A73DE8D2F5776A20021C281 /* MenuModels.swift in Sources */,
 				7A73DE8E2F5776A20021C281 /* ReflectedGapContentIconView.swift in Sources */,
 				7A73DE8F2F5776A20021C281 /* PlatformCompatibility.swift in Sources */,
@@ -544,6 +563,7 @@
 				7A73DEAF2F5776A20021C281 /* MusicMenuFeature.swift in Sources */,
 				7A73DEB02F5776A20021C281 /* MenuCatalog.swift in Sources */,
 				7A73DEB32F5776A20021C281 /* MenuView.swift in Sources */,
+				AA000002AAAAAAAAAAAA0009 /* VideoPlayerView.swift in Sources */,
 				7A73DEB52F5776A20021C281 /* PhotoSlideshowFullscreenView.swift in Sources */,
 				7A73DEB62F5776A20021C281 /* MenuView+MenuListItems.swift in Sources */,
 				7A73DEB82F5776A20021C281 /* MoviesMenuFeature.swift in Sources */,

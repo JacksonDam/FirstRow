@@ -108,6 +108,9 @@ extension MenuView {
                 Color.clear.frame(width: 18)
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: barHeight / 2, style: .continuous)
+                        .fill(Color.black.opacity(0.25))
+                        .frame(height: barHeight)
+                    RoundedRectangle(cornerRadius: barHeight / 2, style: .continuous)
                         .stroke(Color.white.opacity(0.82), lineWidth: 6)
                         .frame(height: barHeight)
                     let diamondInset: CGFloat = 16

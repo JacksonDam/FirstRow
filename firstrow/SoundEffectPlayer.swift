@@ -15,7 +15,7 @@ final class SoundEffectPlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     func warmUp(soundNames: [String], fileExtension: String = "aif") {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             for name in soundNames {
                 guard self.preparedPlayers[name] == nil else { continue }
                 guard let url = Bundle.main.url(forResource: name, withExtension: fileExtension) else { continue }
@@ -28,7 +28,7 @@ final class SoundEffectPlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     func play(named fileName: String, fileExtension: String = "aif") {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             let now = Date()
             if let lastPlayed = self.lastPlayedAt[fileName],
                now.timeIntervalSince(lastPlayed) < self.minimumReplayInterval

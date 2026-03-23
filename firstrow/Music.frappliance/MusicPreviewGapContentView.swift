@@ -90,7 +90,7 @@ struct MusicPreviewGapContentView: View {
                     endPoint: .bottomTrailing,
                 ),
             ).frame(width: size.width, height: size.height).overlay(
-                Image(systemName: "music.note").font(.system(size: side * 0.26, weight: .regular)).foregroundColor(.white.opacity(0.72)),
+                Image(systemName: "music.note").font(.system(size: side * 0.26, weight: .regular)).foregroundStyleCompat(.white.opacity(0.72)),
             ).clipped()
         }
     }
