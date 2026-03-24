@@ -17,7 +17,7 @@ Here, the Leopard/Snow Leopard version of the interface is used as a reference.
 - Highly accurate recreations of key components like 3D artwork carousels that characterised the beauty of the original UI
 - Music playback (Apple Music + local library) with a fantastic view of cover art and small details (like the player flipping around for burn-in protection)
 - Photo slideshows (Apple Photos library) with background music from your library and a Ken Burns Effect
-- Local movie playback from macOS Movies folder (or iOS/iPadOS/visionOS file system) via AVKit
+- Local movie playback from macOS Movies folder `Users/<username>/Movies` (or iOS/iPadOS/visionOS file system) via AVFoundation
 - Basic support for music and movies on external volumes / network shares (under a `Movies` or `Music` folder in the root of any volumes)
 - Podcast viewing/listening on macOS if podcasts are downloaded on the device via Apple Podcasts
 - iTunes Top Charts and playable previews (movies, TV episodes, songs, music videos) via the iTunes RSS feeds
