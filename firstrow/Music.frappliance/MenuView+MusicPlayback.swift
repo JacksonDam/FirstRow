@@ -302,8 +302,20 @@ extension MenuView {
         if resetTransitionState {
             clearMusicSongSwitchTransitionState()
         }
+        #if os(macOS)
+            let willUseAppleScriptPlayback = song.prefersSystemMusicPlayerPlayback || song.url == nil
+        #endif
         let hadActiveSession = hasActiveMusicPlaybackSession()
-        stopMusicPlaybackSession(clearDisplayState: false)
+        stopMusicPlaybackSession(
+            clearDisplayState: false,
+            pauseSystemMusicPlayback: {
+                #if os(macOS)
+                    !(isCurrentMusicPlaybackUsingAppleScript && willUseAppleScriptPlayback)
+                #else
+                    true
+                #endif
+            }(),
+        )
         if !hadActiveSession {
             resetMusicNowPlayingFlipState()
         }
@@ -1442,6 +1454,7 @@ extension MenuView {
     func stopMusicPlaybackSession(
         clearDisplayState: Bool = true,
         preserveSystemMusicPlayback: Bool = false,
+        pauseSystemMusicPlayback: Bool = true,
     ) {
         stopMusicScrubbing(showPauseGlyph: false)
         cancelScreenSaverMusicTrackSwitchQueue()
@@ -1450,7 +1463,10 @@ extension MenuView {
         musicAudioPlayer?.pause()
         #if os(macOS)
             stopMusicAppleScriptProgressTimer()
-            if isCurrentMusicPlaybackUsingAppleScript, !preserveSystemMusicPlayback {
+            if isCurrentMusicPlaybackUsingAppleScript,
+               !preserveSystemMusicPlayback,
+               pauseSystemMusicPlayback
+            {
                 Task(priority: .utility) {
                     _ = await musicAppleScriptExecutor.run {
                         self.pauseMusicPlaybackViaAppleScript()
