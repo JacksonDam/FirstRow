@@ -4,6 +4,11 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<key>com.apple.security.automation.apple-events</key>
+	<dict>
+		<key>com.apple.Music</key>
+		<true/>
+	</dict>
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<key>com.apple.security.assets.movies.read-only</key>
@@ -35,10 +40,17 @@
 	<true/>
 	<key>com.apple.security.personal-information.music-library</key>
 	<true/>
-	<key>com.apple.security.automation.apple-events</key>
+	<key>com.apple.security.scripting-targets</key>
 	<dict>
 		<key>com.apple.Music</key>
-		<true/>
+		<array>
+			<string>com.apple.Music.library.read</string>
+			<string>com.apple.Music.playback</string>
+		</array>
 	</dict>
+	<key>com.apple.security.temporary-exception.apple-events</key>
+	<array>
+		<string>com.apple.Music</string>
+	</array>
 </dict>
 </plist>

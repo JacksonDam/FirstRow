@@ -1,6 +1,45 @@
 import SwiftUI
 
+private let musicSongsMenuListItemsCache = BoundedCache<String, [MenuListItemConfig]>(maxEntryCount: 24)
+
 extension MenuView {
+    var shouldExposeMusicNowPlayingMenuItem: Bool {
+        ((hasActiveMusicPlaybackSession() && !isPodcastAudioNowPlaying) ||
+            holdNowPlayingMenuItemDuringExitFade ||
+            hasPendingExternalMusicRestore) &&
+            !deferNowPlayingMenuItemUntilAfterFadeOut
+    }
+
+    func musicSongsMenuListItemsCacheKey() -> String {
+        let storageAddress = musicSongsThirdMenuItems.withUnsafeBufferPointer { buffer -> UInt in
+            guard let baseAddress = buffer.baseAddress else { return 0 }
+            return UInt(bitPattern: baseAddress)
+        }
+        return "\(storageAddress)|\(musicSongsThirdMenuItems.count)|\(musicSongsShowsShuffleAction)"
+    }
+
+    func cachedMusicSongsThirdMenuListItems() -> [MenuListItemConfig] {
+        let cacheKey = musicSongsMenuListItemsCacheKey()
+        if let cached = musicSongsMenuListItemsCache.value(for: cacheKey) {
+            return cached
+        }
+        var songsItems: [MenuListItemConfig] = musicSongsThirdMenuItems.map {
+            plainMenuListItem(id: $0.id, title: $0.title)
+        }
+        if shouldShowMusicSongsShuffleActionItem() {
+            songsItems.insert(
+                plainMenuListItem(
+                    id: musicSongsShuffleActionItemID,
+                    title: "Shuffle Songs",
+                    trailingSymbolName: "shuffle",
+                ),
+                at: 0,
+            )
+        }
+        musicSongsMenuListItemsCache.store(songsItems, for: cacheKey)
+        return songsItems
+    }
+
     func currentSubmenuItems() -> [SubmenuItemConfig] {
         guard let activeRootItemID else { return [] }
         if activeRootItemID == "podcasts" {
@@ -8,8 +47,7 @@ extension MenuView {
         }
         var items = MenuConfiguration.submenuItems(forRootID: activeRootItemID)
         if activeRootItemID == "music",
-           isMusicActivelyPlaying || holdNowPlayingMenuItemDuringExitFade,
-           !deferNowPlayingMenuItemUntilAfterFadeOut
+           shouldExposeMusicNowPlayingMenuItem
         {
             items.insert(
                 SubmenuItemConfig(
@@ -182,20 +220,7 @@ extension MenuView {
             if musicSongsThirdMenuItems.isEmpty {
                 return []
             }
-            var songsItems: [MenuListItemConfig] = musicSongsThirdMenuItems.map {
-                plainMenuListItem(id: $0.id, title: $0.title)
-            }
-            if shouldShowMusicSongsShuffleActionItem() {
-                songsItems.insert(
-                    plainMenuListItem(
-                        id: musicSongsShuffleActionItemID,
-                        title: "Shuffle Songs",
-                        trailingSymbolName: "shuffle",
-                    ),
-                    at: 0,
-                )
-            }
-            return songsItems
+            return cachedMusicSongsThirdMenuListItems()
         case .photosDateAlbums:
             if isLoadingPhotoLibrary, photosDateAlbums.isEmpty {
                 return []

@@ -5,82 +5,183 @@ import SwiftUI
     import MediaPlayer
     import UIKit
 #endif
-#if os(tvOS) || os(macOS)
+#if os(tvOS)
     import MusicKit
-#endif
-#if os(macOS)
-    import StoreKit
 #endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
 
 #if os(macOS)
-    final class AppleMusicCatalogPlaybackCapabilityCache {
-        static let shared = AppleMusicCatalogPlaybackCapabilityCache()
+    let musicApplicationName = "Music"
 
-        private let lock = NSLock()
-        private var cachedValue: Bool?
-        private var hasAttemptedResolution = false
+    actor MusicAppleScriptExecutor {
+        func run<T: Sendable>(_ operation: () -> T) -> T {
+            operation()
+        }
+    }
 
-        func canPlayCatalogContent(requestPermissionIfNeeded: Bool) -> Bool {
-            lock.lock()
-            if let cachedValue {
-                lock.unlock()
-                return cachedValue
-            }
-            let shouldResolve = !hasAttemptedResolution || requestPermissionIfNeeded
-            if shouldResolve {
-                hasAttemptedResolution = true
-            }
-            lock.unlock()
+    let musicAppleScriptExecutor = MusicAppleScriptExecutor()
 
-            guard shouldResolve else { return false }
-            let resolvedValue = resolve(requestPermissionIfNeeded: requestPermissionIfNeeded)
+    struct AppleScriptExecutionResult: Sendable {
+        let standardOutput: String
+        let standardError: String
+        let exitCode: Int32
+        let processErrorDescription: String?
 
-            lock.lock()
-            cachedValue = resolvedValue
-            lock.unlock()
-            return resolvedValue
+        var succeeded: Bool {
+            exitCode == 0 && processErrorDescription == nil
         }
 
-        private func resolve(requestPermissionIfNeeded: Bool) -> Bool {
-            if #available(macOS 12.0, *) {
-                var authorizationStatus = MusicAuthorization.currentStatus
-                if requestPermissionIfNeeded, authorizationStatus == .notDetermined {
-                    let semaphore = DispatchSemaphore(value: 0)
-                    Task.detached(priority: .userInitiated) {
-                        authorizationStatus = await MusicAuthorization.request()
-                        semaphore.signal()
-                    }
-                    semaphore.wait()
-                }
-                guard authorizationStatus == .authorized else { return false }
-                let semaphore = DispatchSemaphore(value: 0)
-                var canPlayCatalogContent = false
-                Task.detached(priority: .userInitiated) {
-                    defer { semaphore.signal() }
-                    do {
-                        canPlayCatalogContent = try await MusicSubscription.current.canPlayCatalogContent
-                    } catch {
-                        canPlayCatalogContent = false
-                    }
-                }
-                semaphore.wait()
-                return canPlayCatalogContent
-            } else {
-                let authorizationStatus = SKCloudServiceController.authorizationStatus()
-                guard authorizationStatus == .authorized else { return false }
-                let semaphore = DispatchSemaphore(value: 0)
-                var canPlayCatalogContent = false
-                SKCloudServiceController().requestCapabilities { capabilities, _ in
-                    canPlayCatalogContent = capabilities.contains(.musicCatalogPlayback)
-                    semaphore.signal()
-                }
-                semaphore.wait()
-                return canPlayCatalogContent
+        var trimmedStandardOutput: String {
+            standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        var combinedFailureDescription: String {
+            [
+                processErrorDescription,
+                standardError.trimmingCharacters(in: .whitespacesAndNewlines),
+            ]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " | ")
+        }
+    }
+
+    func appleScriptFailureDescription(from errorInfo: NSDictionary) -> String {
+        let briefMessage = (errorInfo[NSAppleScript.errorBriefMessage] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fullMessage = (errorInfo[NSAppleScript.errorMessage] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let errorNumber = (errorInfo[NSAppleScript.errorNumber] as? NSNumber)?.intValue
+
+        var components: [String] = []
+        if let briefMessage, !briefMessage.isEmpty {
+            components.append(briefMessage)
+        }
+        if let fullMessage, !fullMessage.isEmpty, fullMessage != briefMessage {
+            components.append(fullMessage)
+        }
+        if let errorNumber {
+            components.append("(\(errorNumber))")
+        }
+        return components.joined(separator: " ")
+    }
+
+    private func executeAppleScriptInProcess(_ source: String) -> AppleScriptExecutionResult {
+        guard let script = NSAppleScript(source: source) else {
+            return AppleScriptExecutionResult(
+                standardOutput: "",
+                standardError: "",
+                exitCode: 1,
+                processErrorDescription: "Unable to create NSAppleScript",
+            )
+        }
+        var errorInfo: NSDictionary?
+        let descriptor = autoreleasepool {
+            script.executeAndReturnError(&errorInfo)
+        }
+        if let errorInfo {
+            return AppleScriptExecutionResult(
+                standardOutput: descriptor.stringValue ?? "",
+                standardError: appleScriptFailureDescription(from: errorInfo),
+                exitCode: 1,
+                processErrorDescription: nil,
+            )
+        }
+        return AppleScriptExecutionResult(
+            standardOutput: descriptor.stringValue ?? "",
+            standardError: "",
+            exitCode: 0,
+            processErrorDescription: nil,
+        )
+    }
+
+    func executeAppleScript(_ source: String) -> AppleScriptExecutionResult {
+        executeAppleScriptInProcess(source)
+    }
+
+    func appleScriptFailedBecauseApplicationIsNotRunning(_ result: AppleScriptExecutionResult) -> Bool {
+        let combined = result.combinedFailureDescription.lowercased()
+        return combined.contains("application isn't running") ||
+            combined.contains("application isn’t running") ||
+            combined.contains("(-600)")
+    }
+
+    func isMusicApplicationRunning() -> Bool {
+        let result = executeAppleScript(
+            """
+            tell application "\(musicApplicationName)"
+                return running
+            end tell
+            """
+        )
+        return result.succeeded && result.trimmedStandardOutput == "true"
+    }
+
+    func waitForMusicApplicationToBecomeReady(
+        timeout: TimeInterval,
+        pollInterval: TimeInterval = 0.1,
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if isMusicApplicationRunning() {
+                return true
+            }
+            Thread.sleep(forTimeInterval: pollInterval)
+        }
+        return isMusicApplicationRunning()
+    }
+
+    func launchMusicApplicationIfNeeded(timeout: TimeInterval) -> Bool {
+        if waitForMusicApplicationToBecomeReady(timeout: 0.05, pollInterval: 0.05) {
+            return true
+        }
+        let launchResult = executeAppleScript(
+            """
+            tell application "\(musicApplicationName)"
+                launch
+            end tell
+            """
+        )
+        if !launchResult.succeeded, !appleScriptFailedBecauseApplicationIsNotRunning(launchResult) {
+            return false
+        }
+        return waitForMusicApplicationToBecomeReady(timeout: timeout)
+    }
+
+    func executeMusicApplicationAppleScript(
+        _ source: String,
+        launchIfNeeded: Bool = false,
+        retryCount: Int = 0,
+        retryDelay: TimeInterval = 0.1,
+    ) -> AppleScriptExecutionResult {
+        if launchIfNeeded {
+            let launchTimeout = max(2.5, Double(retryCount + 1) * retryDelay)
+            guard launchMusicApplicationIfNeeded(timeout: launchTimeout) else {
+                return AppleScriptExecutionResult(
+                    standardOutput: "",
+                    standardError: "Unable to launch Music.app",
+                    exitCode: 1,
+                    processErrorDescription: nil,
+                )
             }
         }
+
+        var remainingRetries = max(0, retryCount)
+        var result = executeAppleScript(source)
+        while remainingRetries > 0,
+              !result.succeeded,
+              appleScriptFailedBecauseApplicationIsNotRunning(result)
+        {
+            _ = waitForMusicApplicationToBecomeReady(
+                timeout: retryDelay,
+                pollInterval: min(retryDelay, 0.05),
+            )
+            result = executeAppleScript(source)
+            remainingRetries -= 1
+        }
+        return result
     }
 
     final class UnavailableAppleMusicTrackCache {
@@ -109,27 +210,38 @@ import SwiftUI
         }
 
         private func fetchPersistentIDHexes() -> Set<String> {
-            // Music.app exposes catalog availability through AppleScript cloud status.
+            // Query track-by-track because bulk `whose cloud status is ...` filters fail
+            // against some Apple Music libraries, especially with playlist-only tracks.
             let source = """
-            tell application "Music"
+            tell application "\(musicApplicationName)"
+                if not running then
+                    return ""
+                end if
                 set unavailableTrackIDs to {}
-                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is error)
-                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is ineligible)
-                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is no longer available)
-                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is prerelease)
-                set unavailableTrackIDs to unavailableTrackIDs & (get persistent ID of every track of library playlist 1 whose cloud status is removed)
+                set unavailableStatuses to {"error", "ineligible", "no longer available", "prerelease", "removed"}
+                repeat with libraryTrack in every track of library playlist 1
+                    try
+                        set cloudStatusText to (cloud status of libraryTrack as text)
+                        if unavailableStatuses contains cloudStatusText then
+                            set end of unavailableTrackIDs to (persistent ID of libraryTrack)
+                        end if
+                    end try
+                end repeat
+                if (count of unavailableTrackIDs) is 0 then
+                    return ""
+                end if
                 set AppleScript's text item delimiters to linefeed
                 set unavailableTrackIDsText to unavailableTrackIDs as text
                 set AppleScript's text item delimiters to ""
                 return unavailableTrackIDsText
             end tell
             """
-            var executionError: NSDictionary?
-            let resultDescriptor = NSAppleScript(source: source)?.executeAndReturnError(&executionError)
-            if let executionError {
-                print("[Music] unavailable track lookup error: \(executionError)")
+            let result = executeAppleScript(source)
+            if !result.succeeded, !appleScriptFailedBecauseApplicationIsNotRunning(result) {
+                print("[Music] unavailable track lookup error: \(result.combinedFailureDescription)")
             }
-            guard let rawPersistentIDText = resultDescriptor?.stringValue else {
+            let rawPersistentIDText = result.trimmedStandardOutput
+            guard !rawPersistentIDText.isEmpty else {
                 return []
             }
             let separators = CharacterSet.newlines.union(.whitespacesAndNewlines)
@@ -153,6 +265,10 @@ extension MenuView {
         withAnimation(.easeInOut(duration: 0.28)) {
             startupMusicLibraryPreloadOverlayOpacity = 0
         }
+        #if os(macOS)
+            installMusicSystemPlayerObserversIfNeeded()
+            requestMusicSystemPlayerSnapshotForRestoreIfNeeded(force: false)
+        #endif
     }
 
     func musicPlaybackPool() -> [MusicLibrarySongEntry] {
@@ -175,11 +291,6 @@ extension MenuView {
         itemIndices: [String: Int],
         artworkDataByAlbumKey: [String: Data],
     ) {
-        #if os(macOS)
-            _ = AppleMusicCatalogPlaybackCapabilityCache.shared.canPlayCatalogContent(
-                requestPermissionIfNeeded: true,
-            )
-        #endif
         #if canImport(iTunesLibrary)
             let result = try await fetchMusicLibrarySongsForShuffleWithItemIndices()
             return (
@@ -261,12 +372,14 @@ extension MenuView {
         _ = incrementRequestID(&musicSongsRequestID)
         musicPreviewTargetSongID = nil
         musicPreviewImage = nil
+        musicPreviewDisplayedSong = nil
         _ = incrementRequestID(&musicPreviewRequestID)
     }
 
     func resetMusicPreviewState() {
         musicPreviewTargetSongID = nil
         musicPreviewImage = nil
+        musicPreviewDisplayedSong = nil
         _ = incrementRequestID(&musicPreviewRequestID)
     }
 
@@ -408,6 +521,81 @@ extension MenuView {
         #endif
     }
 
+    #if canImport(iTunesLibrary)
+        func resolvedMusicLibraryArtworkDataFromITLibrary(
+            for song: MusicLibrarySongEntry
+        ) -> Data? {
+            func normalizedComparisonText(_ value: String) -> String {
+                value
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            }
+
+            let normalizedSongTitle = normalizedComparisonText(song.title)
+            let normalizedSongArtist = normalizedComparisonText(song.artist)
+            let normalizedSongAlbum = normalizedComparisonText(song.album)
+            let cachedIndex = musicLibraryItemIndexBySongID[song.id]
+
+            func cachedArtworkData(for item: ITLibMediaItem) -> Data? {
+                guard let artworkData = item.artwork?.imageData as Data? else { return nil }
+                for artworkAlbumKey in musicTopLevelCarouselAlbumKeyAliases(for: item)
+                    where musicLibraryArtworkDataByAlbumKey[artworkAlbumKey] == nil
+                {
+                    musicLibraryArtworkDataByAlbumKey[artworkAlbumKey] = artworkData
+                }
+                return artworkData
+            }
+
+            func itemMatchesRequestedSong(_ item: ITLibMediaItem) -> Bool {
+                if "\(item.persistentID)" == song.id {
+                    return true
+                }
+                guard
+                    !normalizedSongTitle.isEmpty,
+                    !normalizedSongArtist.isEmpty,
+                    !normalizedSongAlbum.isEmpty
+                else {
+                    return false
+                }
+                let normalizedItemTitle = normalizedComparisonText(item.title)
+                let normalizedItemArtist = normalizedComparisonText(item.artist?.name ?? "")
+                let normalizedItemAlbum = normalizedComparisonText(item.album.title ?? "")
+                return normalizedItemTitle == normalizedSongTitle &&
+                    normalizedItemArtist == normalizedSongArtist &&
+                    normalizedItemAlbum == normalizedSongAlbum
+            }
+
+            return try? withITLibrary { library in
+                if let cachedIndex,
+                   library.allMediaItems.indices.contains(cachedIndex)
+                {
+                    let indexedItem = library.allMediaItems[cachedIndex]
+                    if itemMatchesRequestedSong(indexedItem),
+                       let artworkData = cachedArtworkData(for: indexedItem)
+                    {
+                        return artworkData
+                    }
+                }
+
+                if let directLibraryMatch = library.allMediaItems.first(where: itemMatchesRequestedSong),
+                   let artworkData = cachedArtworkData(for: directLibraryMatch)
+                {
+                    return artworkData
+                }
+
+                for playlist in library.allPlaylists {
+                    if let playlistMatch = playlist.items.first(where: itemMatchesRequestedSong),
+                       let artworkData = cachedArtworkData(for: playlistMatch)
+                    {
+                        return artworkData
+                    }
+                }
+
+                return nil
+            }
+        }
+    #endif
+
     func resolveMusicArtworkImage(
         for song: MusicLibrarySongEntry,
         cacheKey: String,
@@ -459,6 +647,12 @@ extension MenuView {
     ) {
         guard activeRootItemID == "music", isInSubmenu else { return }
         guard isInThirdMenu, thirdMenuMode == .musicSongs else { return }
+        guard activeDirectionalHoldKey == .none else { return }
+        if let lastArrowNavigationInputTime,
+           Date().timeIntervalSince(lastArrowNavigationInputTime) < 0.08
+        {
+            return
+        }
         guard let currentIndex = currentMusicPreviewSongIndex() else { return }
         guard musicSongsThirdMenuItems.indices.contains(currentIndex) else { return }
         let lowerBound = max(0, currentIndex - max(0, lookbehindCount))
@@ -523,48 +717,68 @@ extension MenuView {
         }
         musicPreviewTargetSongID = resolvedSongID
         let requestID = incrementRequestID(&musicPreviewRequestID)
+        musicPreviewRefreshWorkItem?.cancel()
         guard let selectedSong else {
             withAnimation(.easeInOut(duration: 0.18)) {
                 musicPreviewImage = nil
             }
+            musicPreviewDisplayedSong = nil
             return
         }
-        prefetchMusicPreviewArtworkAroundCurrentSelection()
-        if let embeddedArtwork = selectedSong.artwork {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                musicPreviewImage = embeddedArtwork
+        let shouldDeferPreviewRefresh =
+            activeRootItemID == "music" &&
+            isInThirdMenu &&
+            thirdMenuMode == .musicSongs &&
+            (activeDirectionalHoldKey != .none ||
+                (lastArrowNavigationInputTime.map { Date().timeIntervalSince($0) < 0.08 } ?? false))
+        let refreshDelay = shouldDeferPreviewRefresh ? 0.08 : 0.0
+        musicPreviewRefreshWorkItem = Task {
+            if refreshDelay > 0 {
+                try? await firstRowSleep(refreshDelay)
             }
-            return
-        }
-        guard let cacheKey = musicArtworkCacheKey(for: selectedSong) else {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                musicPreviewImage = nil
-            }
-            return
-        }
-        if let cached = musicPreviewCache[cacheKey] {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                musicPreviewImage = cached
-            }
-            return
-        }
-        let targetSongID = selectedSong.id
-        Task.detached(priority: .userInitiated) {
-            let resolvedArtwork = await self.resolveMusicArtworkImage(
-                for: selectedSong,
-                cacheKey: cacheKey,
-            )
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard self.musicPreviewRequestID == requestID else { return }
-                guard self.musicPreviewTargetSongID == targetSongID else { return }
-                if let resolvedArtwork {
-                    self.musicPreviewCache[cacheKey] = resolvedArtwork
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        self.musicPreviewImage = resolvedArtwork
+                guard self.musicPreviewTargetSongID == selectedSong.id else { return }
+                self.musicPreviewDisplayedSong = selectedSong
+                self.prefetchMusicPreviewArtworkAroundCurrentSelection()
+                if let embeddedArtwork = selectedSong.artwork {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        self.musicPreviewImage = embeddedArtwork
                     }
-                } else {
+                    return
+                }
+                guard let cacheKey = self.musicArtworkCacheKey(for: selectedSong) else {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         self.musicPreviewImage = nil
+                    }
+                    return
+                }
+                if let cached = self.musicPreviewCache[cacheKey] {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        self.musicPreviewImage = cached
+                    }
+                    return
+                }
+                let targetSongID = selectedSong.id
+                Task.detached(priority: .userInitiated) {
+                    let resolvedArtwork = await self.resolveMusicArtworkImage(
+                        for: selectedSong,
+                        cacheKey: cacheKey,
+                    )
+                    await MainActor.run {
+                        guard self.musicPreviewRequestID == requestID else { return }
+                        guard self.musicPreviewTargetSongID == targetSongID else { return }
+                        if let resolvedArtwork {
+                            self.musicPreviewCache[cacheKey] = resolvedArtwork
+                            withAnimation(.easeInOut(duration: 0.22)) {
+                                self.musicPreviewImage = resolvedArtwork
+                            }
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                self.musicPreviewImage = nil
+                            }
+                        }
                     }
                 }
             }
@@ -1202,11 +1416,9 @@ extension MenuView {
                 metadata = (try? await asset.load(.metadata)) ?? []
                 duration = (try? await asset.load(.duration)) ?? .zero
             } else {
-                (commonMetadata, metadata, duration) = await withCheckedContinuation { continuation in
-                    DispatchQueue.global(qos: .utility).async {
-                        continuation.resume(returning: (asset.commonMetadata, asset.metadata, asset.duration))
-                    }
-                }
+                (commonMetadata, metadata, duration) = await Task.detached(priority: .utility) {
+                    (asset.commonMetadata, asset.metadata, asset.duration)
+                }.value
             }
             func firstCommonString(_ key: AVMetadataKey) -> String? {
                 AVMetadataItem.metadataItems(from: commonMetadata, withKey: key, keySpace: .common)
@@ -1412,10 +1624,14 @@ extension MenuView {
                         guard !playlist.isPrimary else { return nil }
                     }
                     let title = normalizedMusicLibraryText(playlist.name, fallback: "Untitled Playlist")
+                    let playlistPersistentIDHex = musicPersistentIDHexString(for: playlist.persistentID)
                     let songs = sortedMusicLibraryEntries(
                         playlist.items.compactMap { item -> MusicLibrarySongEntry? in
                             guard musicLibraryMediaKindMatches(item.mediaKind, requested: .songs) else { return nil }
-                            return makeMusicLibrarySongEntry(from: item)
+                            return makeMusicLibrarySongEntry(
+                                from: item,
+                                sourcePlaylistPersistentIDHex: playlistPersistentIDHex,
+                            )
                         },
                     )
                     guard !songs.isEmpty else { return nil }
@@ -1485,11 +1701,7 @@ extension MenuView {
         func isMusicLibraryItemAuthorizedForPlayback(_ item: ITLibMediaItem) -> Bool {
             guard !item.isUserDisabled else { return false }
             #if os(macOS)
-                if isAppleMusicCatalogLibraryItem(item) {
-                    let canPlayCatalogContent = AppleMusicCatalogPlaybackCapabilityCache.shared
-                        .canPlayCatalogContent(requestPermissionIfNeeded: false)
-                    guard canPlayCatalogContent else { return false }
-                }
+                guard isAppleMusicCatalogLibraryItem(item) else { return true }
                 let unavailablePersistentIDHexes = UnavailableAppleMusicTrackCache.shared.persistentIDHexes()
                 guard !unavailablePersistentIDHexes.isEmpty else { return true }
                 return !unavailablePersistentIDHexes.contains(
@@ -1510,18 +1722,8 @@ extension MenuView {
         /// ITLibrary uses XPC to talk to amplibraryd — both init and all property
         /// access must happen on the main thread or the connection is invalidated.
         func withITLibrary<T>(_ work: (ITLibrary) throws -> T) throws -> T {
-            if Thread.isMainThread {
-                let lib = try ITLibrary(apiVersion: "1.0")
-                return try work(lib)
-            }
-            var result: Result<T, Error>?
-            DispatchQueue.main.sync {
-                result = Result {
-                    let lib = try ITLibrary(apiVersion: "1.0")
-                    return try work(lib)
-                }
-            }
-            return try result!.get()
+            let lib = try ITLibrary(apiVersion: "1.0")
+            return try work(lib)
         }
 
         func musicLibraryMediaKindMatches(
@@ -1548,7 +1750,19 @@ extension MenuView {
             )
         }
 
-        func makeMusicLibrarySongEntry(from item: ITLibMediaItem, includeArtwork: Bool = true) -> MusicLibrarySongEntry? {
+    func makeMusicLibrarySongEntry(from item: ITLibMediaItem, includeArtwork: Bool = true) -> MusicLibrarySongEntry? {
+        makeMusicLibrarySongEntry(
+            from: item,
+            includeArtwork: includeArtwork,
+            sourcePlaylistPersistentIDHex: nil,
+            )
+        }
+
+        func makeMusicLibrarySongEntry(
+            from item: ITLibMediaItem,
+            includeArtwork: Bool = true,
+            sourcePlaylistPersistentIDHex: String?,
+        ) -> MusicLibrarySongEntry? {
             guard isMusicLibraryItemAuthorizedForPlayback(item) else { return nil }
             let locationURL = resolvedMusicLibraryPlaybackURL(for: item)
             let title = normalizedMusicLibraryText(
@@ -1572,6 +1786,8 @@ extension MenuView {
                 artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: item),
                 url: locationURL,
                 artwork: includeArtwork ? resolvedMusicLibraryEmbeddedArtworkImage(for: item) : nil,
+                prefersSystemMusicPlayerPlayback: isAppleMusicCatalogLibraryItem(item) || item.isDRMProtected,
+                sourcePlaylistPersistentIDHex: sourcePlaylistPersistentIDHex,
             )
         }
     #endif
@@ -1803,7 +2019,6 @@ extension MenuView {
                 self.refreshMusicPreviewForCurrentContext()
                 return
             }
-            let cachedSongs = self.musicAllSongsCache
             Task(priority: .userInitiated) {
                 do {
                     let categories: [MusicCategoryEntry]
@@ -1814,23 +2029,18 @@ extension MenuView {
                         #if canImport(iTunesLibrary)
                             let itemIndices: [String: Int]
                             let artworkDataByAlbumKey: [String: Data]
-                        #endif
-                        if let cachedSongs {
-                            songs = cachedSongs
-                            #if canImport(iTunesLibrary)
-                                itemIndices = musicLibraryItemIndexBySongID
-                                artworkDataByAlbumKey = musicLibraryArtworkDataByAlbumKey
-                            #endif
-                        } else {
-                            #if canImport(iTunesLibrary)
-                                let result = try await fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
-                                songs = result.songs
-                                itemIndices = result.itemIndices
-                                artworkDataByAlbumKey = result.artworkDataByAlbumKey
-                            #else
+                            let result = try await fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
+                            songs = result.songs
+                            itemIndices = result.itemIndices
+                            artworkDataByAlbumKey = result.artworkDataByAlbumKey
+                        #else
+                            let cachedSongs = self.musicAllSongsCache
+                            if let cachedSongs {
+                                songs = cachedSongs
+                            } else {
                                 songs = try fetchMusicLibrarySongs()
-                            #endif
-                        }
+                            }
+                        #endif
                         categories = buildMusicCategoryEntries(from: songs, kind: kind)
                         await MainActor.run {
                             musicAllSongsCache = songs
@@ -2164,8 +2374,78 @@ extension MenuView {
         let artworkAlbumKey: String?
         let url: URL?
         let artwork: NSImage?
+        let prefersSystemMusicPlayerPlayback: Bool
+        let sourcePlaylistPersistentIDHex: String?
         #if os(tvOS)
             let musicKitSong: Song?
+        #endif
+
+        #if os(tvOS)
+            init(
+                id: String,
+                title: String,
+                artist: String,
+                album: String,
+                genre: String,
+                composer: String,
+                durationSeconds: Double,
+                trackNumber: Int,
+                discNumber: Int,
+                artworkAlbumKey: String?,
+                url: URL?,
+                artwork: NSImage?,
+                prefersSystemMusicPlayerPlayback: Bool = false,
+                sourcePlaylistPersistentIDHex: String? = nil,
+                musicKitSong: Song? = nil,
+            ) {
+                self.id = id
+                self.title = title
+                self.artist = artist
+                self.album = album
+                self.genre = genre
+                self.composer = composer
+                self.durationSeconds = durationSeconds
+                self.trackNumber = trackNumber
+                self.discNumber = discNumber
+                self.artworkAlbumKey = artworkAlbumKey
+                self.url = url
+                self.artwork = artwork
+                self.prefersSystemMusicPlayerPlayback = prefersSystemMusicPlayerPlayback
+                self.sourcePlaylistPersistentIDHex = sourcePlaylistPersistentIDHex
+                self.musicKitSong = musicKitSong
+            }
+        #else
+            init(
+                id: String,
+                title: String,
+                artist: String,
+                album: String,
+                genre: String,
+                composer: String,
+                durationSeconds: Double,
+                trackNumber: Int,
+                discNumber: Int,
+                artworkAlbumKey: String?,
+                url: URL?,
+                artwork: NSImage?,
+                prefersSystemMusicPlayerPlayback: Bool = false,
+                sourcePlaylistPersistentIDHex: String? = nil,
+            ) {
+                self.id = id
+                self.title = title
+                self.artist = artist
+                self.album = album
+                self.genre = genre
+                self.composer = composer
+                self.durationSeconds = durationSeconds
+                self.trackNumber = trackNumber
+                self.discNumber = discNumber
+                self.artworkAlbumKey = artworkAlbumKey
+                self.url = url
+                self.artwork = artwork
+                self.prefersSystemMusicPlayerPlayback = prefersSystemMusicPlayerPlayback
+                self.sourcePlaylistPersistentIDHex = sourcePlaylistPersistentIDHex
+            }
         #endif
     }
 

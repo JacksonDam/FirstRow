@@ -214,6 +214,7 @@ extension MenuView {
                     visibleRowCount: thirdLevelVisibleMenuRowCount,
                     selectionBoxWidthScale: isPhotosThirdMenu ? photosSelectionBoxWidthScale : 1.0,
                     selectionBoxHeightScale: isPhotosThirdMenu ? photosSelectionBoxHeightScale : 1.0,
+                    usesUniformRowLayout: thirdMenuMode == .musicSongs,
                 ).opacity(effectiveThirdMenuOpacity).animation(.easeInOut(duration: 0.18), value: shouldHideThirdMenuListUntilLoadCompletes)
             }
             if shouldShowTVShowsSortPill {
@@ -291,6 +292,7 @@ extension MenuView {
         selectionBoxWidthScale: CGFloat = 1.0,
         selectionBoxHeightScale: CGFloat = 1.0,
         reportsSelectionCenterX: Bool = false,
+        usesUniformRowLayout: Bool = false,
     ) -> some View {
         let menuWidth = menuWidthConstrained(geometry: geometry)
         let selectionWidth = menuWidth * selectionBoxWidthScale
@@ -332,20 +334,43 @@ extension MenuView {
         let normalHeightIndices: Set<Int> = selectionBoxHeightScale > 1.001
             ? Set(items.indices.filter { items[$0].alignsTextToDividerStart })
             : []
-        let rowOffsets = menuRowOffsets(for: items, dividerGap: dividerGap, rowPitch: rowPitch, normalHeightIndices: normalHeightIndices)
-        let contentHeight = menuContentHeight(
-            for: items,
-            rowOffsets: rowOffsets,
-            rowHeight: selectionHeight,
-        )
+        let rowOffsets: [CGFloat]
+        let contentHeight: CGFloat
         let viewportHeight = menuViewportHeight(for: visibleRowCount)
-        let scrollOffset = menuScrollOffset(
-            contentHeight: contentHeight,
-            selectedIndex: selectedIndex,
-            rowOffsets: rowOffsets,
-            viewportHeight: viewportHeight,
-        )
-        let selectedRowOffset = rowOffsets.indices.contains(selectedIndex) ? rowOffsets[selectedIndex] : 0
+        let scrollOffset: CGFloat
+        let selectedRowOffset: CGFloat
+        if usesUniformRowLayout {
+            rowOffsets = []
+            let n = items.count
+            contentHeight = n > 0 ? CGFloat(n - 1) * rowPitch + selectionHeight : 0
+            if contentHeight > viewportHeight, n > 0 {
+                let clampedAnchor = min(max(0, stickySelectionRowIndex), n - 1)
+                let anchorY = CGFloat(clampedAnchor) * rowPitch
+                let selectedY = CGFloat(max(0, min(selectedIndex, n - 1))) * rowPitch
+                let rawOffset = anchorY - selectedY
+                let minOffset = viewportHeight - contentHeight
+                scrollOffset = max(minOffset, min(0, rawOffset))
+            } else {
+                scrollOffset = 0
+            }
+            selectedRowOffset = CGFloat(max(0, min(selectedIndex, items.count - 1))) * rowPitch
+        } else {
+            rowOffsets = menuRowOffsets(for: items, dividerGap: dividerGap, rowPitch: rowPitch, normalHeightIndices: normalHeightIndices)
+            contentHeight = menuContentHeight(for: items, rowOffsets: rowOffsets, rowHeight: selectionHeight)
+            scrollOffset = menuScrollOffset(contentHeight: contentHeight, selectedIndex: selectedIndex, rowOffsets: rowOffsets, viewportHeight: viewportHeight)
+            selectedRowOffset = rowOffsets.indices.contains(selectedIndex) ? rowOffsets[selectedIndex] : 0
+        }
+        let renderRange: Range<Int>
+        if usesUniformRowLayout, !items.isEmpty {
+            let overscanPadding = max(80, rowPitch * (activeDirectionalHoldKey != .none ? 6.0 : 2.5))
+            let minVisibleY = -scrollOffset - overscanPadding
+            let maxVisibleY = -scrollOffset + viewportHeight + overscanPadding
+            let minIdx = max(0, Int(floor(minVisibleY / rowPitch)))
+            let maxIdx = min(items.count - 1, Int(ceil(maxVisibleY / rowPitch)))
+            renderRange = minIdx..<(maxIdx + 1)
+        } else {
+            renderRange = 0..<items.count
+        }
         let selectedIsNormalHeight = normalHeightIndices.contains(selectedIndex)
         let shouldUseCompactPhotosSelectionWidth =
             selectedIsNormalHeight &&
@@ -372,12 +397,13 @@ extension MenuView {
                 ).animation(selectionMovementAnimation, value: selectedRowOffset).animation(selectionMovementAnimation, value: scrollOffset)
             }
             ZStack(alignment: .topLeading) {
-                ForEach(items.indices, id: \.self) { index in
+                ForEach(renderRange, id: \.self) { index in
                     let item = items[index]
                     let rowIsSelected = index == selectedIndex
                     let rowIsNormalHeight = normalHeightIndices.contains(index)
                     let rowHeight = rowIsNormalHeight ? selectionBoxHeight : selectionHeight
                     let rowYOffset = rowIsNormalHeight ? 0 : selectionYOffset
+                    let rowYBase = usesUniformRowLayout ? CGFloat(index) * rowPitch : rowOffsets[index]
 
                     if item.showsTopDivider {
                         Rectangle()
@@ -385,7 +411,7 @@ extension MenuView {
                             .frame(width: max(0, rowContentWidth - (dividerLineInsetHorizontal * 2)), height: 1)
                             .offset(
                                 x: rowContentXOffset + dividerLineInsetHorizontal,
-                                y: rowOffsets[index] - dividerGap + dividerLineYOffsetInGap,
+                                y: rowYBase - dividerGap + dividerLineYOffsetInGap,
                             )
                     }
 
@@ -401,7 +427,7 @@ extension MenuView {
                             )
                             .offset(
                                 x: selectionXOffset,
-                                y: rowOffsets[index] + rowYOffset,
+                                y: rowYBase + rowYOffset,
                             )
                     }
 
@@ -430,7 +456,7 @@ extension MenuView {
                     .frame(width: rowContentWidth, height: rowHeight, alignment: .leading)
                     .offset(
                         x: rowContentXOffset,
-                        y: rowOffsets[index] + rowYOffset,
+                        y: rowYBase + rowYOffset,
                     )
                 }
             }
@@ -1135,6 +1161,7 @@ private struct MenuRowMarqueeText: View {
     private let edgeFadeWidth: CGFloat = 34
     @State private var xOffset: CGFloat = 0
     @State private var animationGeneration = 0
+    @State private var marqueeRestartWorkItem: Task<Void, Never>?
     private var measuredWidth: CGFloat {
         let font = NSFont(name: firstRowBoldFontName, size: 40) ?? NSFont.boldSystemFont(ofSize: 40)
         return ceil((title as NSString).size(withAttributes: [.font: font]).width)
@@ -1156,7 +1183,10 @@ private struct MenuRowMarqueeText: View {
             restartMarqueeAnimation()
         }).onChange(of: viewportWidth, perform: { _ in
             restartMarqueeAnimation()
-        })
+        }).onDisappear {
+            marqueeRestartWorkItem?.cancel()
+            marqueeRestartWorkItem = nil
+        }
     }
 
     private func restartMarqueeAnimation() {
@@ -1169,7 +1199,10 @@ private struct MenuRowMarqueeText: View {
         withTransaction(instant) {
             xOffset = 0
         }
-        DispatchQueue.main.async {
+        marqueeRestartWorkItem?.cancel()
+        marqueeRestartWorkItem = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             guard generation == animationGeneration else { return }
             withAnimation(.linear(duration: duration).repeatForever(autoreverses: false)) {
                 xOffset = -cycleDistance
@@ -1374,8 +1407,15 @@ extension MenuView {
                     beginStartupMusicLibraryPreloadIfNeeded()
                     registerUserInteractionForScreenSaver()
                     startScreenSaverIdleMonitor()
-                    SoundEffectPlayer.shared.warmUp(soundNames: ["Selection", "SelectionChange", "Exit", "Limit"])
+                    startupSoundWarmUpWorkItem?.cancel()
+                    startupSoundWarmUpWorkItem = Task {
+                        try? await firstRowSleep(0.75)
+                        guard !Task.isCancelled else { return }
+                        SoundEffectPlayer.shared.warmUp(soundNames: ["Selection", "SelectionChange", "Exit", "Limit"])
+                    }
                 }.onDisappear {
+                    startupSoundWarmUpWorkItem?.cancel()
+                    startupSoundWarmUpWorkItem = nil
                     endDirectionalHoldSession()
                     stopScreenSaverIdleMonitor()
                 }

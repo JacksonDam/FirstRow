@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var didToggleIntroMovieInLaunchWindow = false
     @State private var launchToggleWindowWorkItem: Task<Void, Never>?
     @State private var launchBackHoldWorkItem: Task<Void, Never>?
+    @State private var launchMenuRevealWorkItem: Task<Void, Never>?
     #if os(macOS)
         @State private var launchBackKeyDownMonitor: Any?
         @State private var launchBackKeyUpMonitor: Any?
@@ -27,30 +28,38 @@ struct ContentView: View {
     private let launchMenuRevealDuration: Double = 1.0
     var body: some View {
         GeometryReader { geometry in
-            let renderSize = geometry.size
-            let center = CGPoint(x: geometry.size.width * 0.5, y: geometry.size.height * 0.5)
             ZStack {
                 Group {
                     if showMenu {
                         MenuView().opacity(didSkipIntroAtLaunch ? launchMenuOpacity : 1)
                     } else if let player {
-                        VideoPlayerView(player: player, videoGravity: .resizeAspect).onAppear { player.play() }.ignoresSafeArea()
+                        VideoPlayerView(player: player, videoGravity: .resizeAspect)
+                            .onAppear { player.play() }
+                            .ignoresSafeArea()
                     } else {
                         Color.black.ignoresSafeArea()
                     }
                 }
                 Color.black.opacity(appQuitOverlayOpacity).ignoresSafeArea().allowsHitTesting(false).zIndex(10000)
-            }.frame(width: renderSize.width, height: renderSize.height).position(x: center.x, y: center.y).background(Color.black).onKeyEvents(
-                onKeyDown: { key, isRepeat, _ in
-                    guard key == .delete, !isRepeat else { return }
-                    handleLaunchBackPressBegan()
-                },
-                onKeyUp: { key, _ in
-                    guard key == .delete else { return }
-                    handleLaunchBackPressEnded()
-                },
+            }
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                alignment: .center,
             )
-            #if os(iOS)
+            .background(Color.black)
+        }
+        .onKeyEvents(
+            onKeyDown: { key, isRepeat, _ in
+                guard key == .delete, !isRepeat else { return }
+                handleLaunchBackPressBegan()
+            },
+            onKeyUp: { key, _ in
+                guard key == .delete else { return }
+                handleLaunchBackPressEnded()
+            },
+        )
+        #if os(iOS)
             .overlay {
                 if isLaunchToggleWindowActive {
                     LaunchBackTouchHoldOverlay(
@@ -70,15 +79,23 @@ struct ContentView: View {
                 }
             }
             #endif
-            .onAppear {
-                initializeLaunchFlowIfNeeded()
-            }.onReceive(NotificationCenter.default.publisher(for: .firstRowQuitRequested)) { _ in
-                triggerAppQuitTransition()
-            }.onDisappear {
-                removeVideoCompletionObserver()
-                endLaunchToggleWindow()
-            }
-        }.ignoresSafeArea().background(Color.black)
+        .onAppear {
+            initializeLaunchFlowIfNeeded()
+            scheduleLaunchMenuRevealIfNeeded()
+        }.onChange(of: showMenu) { _ in
+            scheduleLaunchMenuRevealIfNeeded()
+        }.onChange(of: didSkipIntroAtLaunch) { _ in
+            scheduleLaunchMenuRevealIfNeeded()
+        }.onReceive(NotificationCenter.default.publisher(for: .firstRowQuitRequested)) { _ in
+            triggerAppQuitTransition()
+        }.onDisappear {
+            launchMenuRevealWorkItem?.cancel()
+            launchMenuRevealWorkItem = nil
+            removeVideoCompletionObserver()
+            endLaunchToggleWindow()
+        }
+        .ignoresSafeArea()
+        .background(Color.black)
     }
 
     private func initializeLaunchFlowIfNeeded() {
@@ -139,11 +156,23 @@ struct ContentView: View {
 
     private func startWithoutIntroMovie() {
         didSkipIntroAtLaunch = true
+        launchMenuRevealWorkItem?.cancel()
+        launchMenuRevealWorkItem = nil
         launchMenuOpacity = 0
         player = nil
         removeVideoCompletionObserver()
         showMenu = true
-        withAnimation(.easeInOut(duration: launchMenuRevealDuration)) { launchMenuOpacity = 1 }
+    }
+
+    private func scheduleLaunchMenuRevealIfNeeded() {
+        guard showMenu, didSkipIntroAtLaunch, launchMenuOpacity < 0.999 else { return }
+        launchMenuRevealWorkItem = Task { @MainActor in
+            try? await firstRowSleep(0.01)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: launchMenuRevealDuration)) {
+                launchMenuOpacity = 1
+            }
+        }
     }
 
     private func loadVideo() {

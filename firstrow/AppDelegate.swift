@@ -11,6 +11,7 @@
         private static var didInstallBorderlessKeySwizzle = false
         private var commandEscapeMonitor: Any?
         private var windowLockObservers: [Any] = []
+        private var pendingWindowLockIDs: Set<ObjectIdentifier> = []
         private var isCommandKeyDown = false
         private var isAdjustingWindowFrame = false
         private var commandEscapeHotKeyRef: EventHotKeyRef?
@@ -19,10 +20,12 @@
             installBorderlessKeyabilitySwizzleIfNeeded()
             for window in NSApplication.shared.windows { window.alphaValue = 0 }
             Task { @MainActor [weak self] in
-                self?.installWindowLockObservers()
-                self?.lockAllWindowsToScreenFrame()
+                guard let self else { return }
+                self.installWindowLockObservers()
+                self.scheduleLockForAllWindows()
+                await Task.yield()
                 for window in NSApplication.shared.windows { window.alphaValue = 1 }
-                self?.activateAndFocusAppWindow()
+                self.activateAndFocusAppWindow()
             }
             applyImmersivePresentationOptions()
             activateAndFocusAppWindow()
@@ -74,27 +77,7 @@
                     queue: .main,
                 ) { [weak self] notification in
                     guard let window = notification.object as? NSWindow else { return }
-                    self?.lockWindowToScreenFrame(window)
-                },
-            )
-            windowLockObservers.append(
-                NotificationCenter.default.addObserver(
-                    forName: NSWindow.didResizeNotification,
-                    object: nil,
-                    queue: .main,
-                ) { [weak self] notification in
-                    guard let window = notification.object as? NSWindow else { return }
-                    self?.lockWindowToScreenFrame(window)
-                },
-            )
-            windowLockObservers.append(
-                NotificationCenter.default.addObserver(
-                    forName: NSWindow.didMoveNotification,
-                    object: nil,
-                    queue: .main,
-                ) { [weak self] notification in
-                    guard let window = notification.object as? NSWindow else { return }
-                    self?.lockWindowToScreenFrame(window)
+                    self?.scheduleWindowLock(for: window)
                 },
             )
             windowLockObservers.append(
@@ -104,7 +87,7 @@
                     queue: .main,
                 ) { [weak self] notification in
                     guard let window = notification.object as? NSWindow else { return }
-                    self?.lockWindowToScreenFrame(window)
+                    self?.scheduleWindowLock(for: window)
                 },
             )
             windowLockObservers.append(
@@ -113,7 +96,7 @@
                     object: nil,
                     queue: .main,
                 ) { [weak self] _ in
-                    self?.lockAllWindowsToScreenFrame()
+                    self?.scheduleLockForAllWindows()
                 },
             )
         }
@@ -121,6 +104,24 @@
         private func lockAllWindowsToScreenFrame() {
             for window in NSApplication.shared.windows {
                 lockWindowToScreenFrame(window)
+            }
+        }
+
+        private func scheduleLockForAllWindows() {
+            for window in NSApplication.shared.windows {
+                scheduleWindowLock(for: window)
+            }
+        }
+
+        private func scheduleWindowLock(for window: NSWindow) {
+            let windowID = ObjectIdentifier(window)
+            guard pendingWindowLockIDs.insert(windowID).inserted else { return }
+            Task { @MainActor [weak self, weak window] in
+                guard let self else { return }
+                defer { self.pendingWindowLockIDs.remove(windowID) }
+                await Task.yield()
+                guard let window else { return }
+                self.lockWindowToScreenFrame(window)
             }
         }
 
@@ -169,15 +170,23 @@
             window.standardWindowButton(.closeButton)?.isHidden = true
             window.standardWindowButton(.miniaturizeButton)?.isHidden = true
             window.standardWindowButton(.zoomButton)?.isHidden = true
-            window.minSize = screenFrame.size
-            window.maxSize = screenFrame.size
-            window.contentMinSize = screenFrame.size
-            window.contentMaxSize = screenFrame.size
+            if window.minSize != screenFrame.size {
+                window.minSize = screenFrame.size
+            }
+            if window.maxSize != screenFrame.size {
+                window.maxSize = screenFrame.size
+            }
+            if window.contentMinSize != screenFrame.size {
+                window.contentMinSize = screenFrame.size
+            }
+            if window.contentMaxSize != screenFrame.size {
+                window.contentMaxSize = screenFrame.size
+            }
 
             guard !isAdjustingWindowFrame else { return }
             if window.frame.equalTo(screenFrame) { return }
             isAdjustingWindowFrame = true
-            window.setFrame(screenFrame, display: true, animate: false)
+            window.setFrame(screenFrame, display: false, animate: false)
             isAdjustingWindowFrame = false
         }
 

@@ -4,7 +4,6 @@ import SwiftUI
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
-import Darwin
 
 extension MenuView {
     func handleKeyInput(_ key: KeyCode, isRepeat: Bool, modifiers: NSEvent.ModifierFlags = []) {
@@ -185,12 +184,17 @@ extension MenuView {
         let submenuItems = MenuConfiguration.submenuItems(forRootID: chosenRootItem.id)
         let shouldDefaultToNowPlayingInMusic =
             chosenRootItem.id == "music" &&
-            (isMusicActivelyPlaying || holdNowPlayingMenuItemDuringExitFade || deferNowPlayingMenuItemUntilAfterFadeOut)
+            (shouldExposeMusicNowPlayingMenuItem || deferNowPlayingMenuItemUntilAfterFadeOut)
         let preferredSubmenuIndex = shouldDefaultToNowPlayingInMusic
             ? 0
             : MenuConfiguration.defaultSubmenuSelectedIndex(forRootID: chosenRootItem.id)
         let maxSubmenuIndex = max(0, submenuItems.count - 1)
         selectedSubIndex = max(0, min(preferredSubmenuIndex, maxSubmenuIndex))
+        #if os(macOS)
+            if chosenRootItem.id == "music", hasPendingExternalMusicRestore {
+                requestMusicSystemPlayerSnapshotForRestoreIfNeeded(force: true)
+            }
+        #endif
         isEnteringSubmenu = true
         isIconAnimated = true
         submenuTitleOpacity = 0
@@ -315,6 +319,7 @@ extension MenuView {
             moviesFolderSubmenuPreviewIdentity = ""
             musicPreviewTargetSongID = nil
             musicPreviewImage = nil
+            musicPreviewDisplayedSong = nil
             resetMusicCategoryStateForNonMusicITunesTop()
             if shouldPreserveMusicPlaybackStateOnRootExit {
                 musicSongsThirdMenuItems = preservedMusicSongsThirdMenuItems
@@ -349,8 +354,9 @@ extension MenuView {
         }
         let item = submenuItems[clampedSubIndex]
         if activeRootItemID == "music", item.id == "music_now_playing" {
-            guard isMusicActivelyPlaying else { return }
+            guard hasActiveMusicPlaybackSession(), !isPodcastAudioNowPlaying else { return }
             clearMusicSongSwitchTransitionState()
+            isCurrentMusicPlaybackManagedByFirstRow = true
             playSound(named: "Selection")
             presentFullscreenScene(key: musicNowPlayingFullscreenKey)
             return
@@ -751,7 +757,9 @@ extension MenuView {
 
         selectedThirdIndex = nextIndex
         rememberCurrentMoviesFolderSelectionIndex()
-        if !(activeRootItemID == "photos" && thirdMenuMode == .photosDateAlbums) {
+        if activeRootItemID == "music", thirdMenuMode == .musicSongs {
+            refreshMusicPreviewForCurrentContext()
+        } else if !(activeRootItemID == "photos" && thirdMenuMode == .photosDateAlbums) {
             refreshDetailPreviewForCurrentContext()
         }
     }

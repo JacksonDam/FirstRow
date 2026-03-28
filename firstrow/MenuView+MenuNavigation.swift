@@ -111,6 +111,17 @@ extension MenuView {
         }
     }
 
+    func exitPhotosThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
+        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
+            isInThirdMenu = false
+            thirdMenuMode = .none
+            thirdMenuOpacity = 0
+            submenuOpacity = 1
+            headerText = rootMenuTitle(for: activeRootItemID)
+            refreshDetailPreviewForCurrentContext()
+        }
+    }
+
     func navigateUpInThirdMenuOrExit() {
         if thirdMenuMode == .musicSongs, isMusicSongsCategoryScoped {
             playSound(named: "Exit")
@@ -143,6 +154,9 @@ extension MenuView {
         case .podcastsEpisodes:
             playSound(named: "Exit")
             exitPodcastsThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
+        case .photosDateAlbums:
+            playSound(named: "Exit")
+            exitPhotosThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
         case .moviesFolder:
             guard let currentURL = thirdMenuCurrentURL else {
                 exitMoviesThirdMenuToSecondLevelWithSwap()

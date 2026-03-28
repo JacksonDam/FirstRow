@@ -8,17 +8,6 @@ import SwiftUI
     import iTunesLibrary
 #endif
 
-private let photosImageRequestQueue = DispatchQueue(
-    label: "firstrow.photos.image-requests",
-    qos: .userInitiated,
-    attributes: .concurrent,
-)
-
-private let photosCarouselArtworkLoadQueue = DispatchQueue(
-    label: "firstrow.photos.carousel-artworks",
-    qos: .userInitiated,
-)
-
 extension MenuView {
     var photosCarouselArtworkLoadLimit: Int {
         #if os(iOS)
@@ -286,23 +275,23 @@ extension MenuView {
         withTransaction(instant) {
             photosCarouselLoadOverlayOpacity = 1
         }
-        photosCarouselArtworkLoadQueue.async {
-            let images = self.loadPhotoImages(
+        Task(priority: .userInitiated) {
+            let images = await self.loadPhotoImages(
                 localIdentifiers: localIdentifiers,
                 targetSize: self.photosCarouselArtworkTargetSize,
                 contentMode: .aspectFit,
                 deliveryMode: self.photosCarouselArtworkDeliveryMode,
                 shouldAbort: {
-                    self.shouldAbortPhotosCarouselArtworkLoad(
+                    await self.shouldAbortPhotosCarouselArtworkLoad(
                         requestID: requestID,
                         identity: identity,
                     )
                 },
             )
-            if self.shouldAbortPhotosCarouselArtworkLoad(requestID: requestID, identity: identity) {
+            if await self.shouldAbortPhotosCarouselArtworkLoad(requestID: requestID, identity: identity) {
                 return
             }
-            Task { @MainActor in
+            await MainActor.run {
                 guard photosCarouselRequestID == requestID else { return }
                 guard photosCarouselIdentity == identity else { return }
                 guard shouldUsePhotosCarouselSlot else { return }
@@ -318,16 +307,11 @@ extension MenuView {
         }
     }
 
+    @MainActor
     func shouldAbortPhotosCarouselArtworkLoad(requestID: Int, identity: String) -> Bool {
-        let shouldAbort = {
-            self.photosCarouselRequestID != requestID ||
-                self.photosCarouselIdentity != identity ||
-                !self.shouldUsePhotosCarouselSlot
-        }
-        if Thread.isMainThread {
-            return shouldAbort()
-        }
-        return DispatchQueue.main.sync(execute: shouldAbort)
+        self.photosCarouselRequestID != requestID ||
+            self.photosCarouselIdentity != identity ||
+            !self.shouldUsePhotosCarouselSlot
     }
 
     func requestPhotoAlbumCoverImageIfNeeded(for album: PhotoLibraryAlbumEntry) {
@@ -1164,7 +1148,9 @@ extension MenuView {
         if isSynchronous || !Thread.isMainThread {
             performRequest()
         } else {
-            photosImageRequestQueue.async(execute: performRequest)
+            Task(priority: .userInitiated) {
+                performRequest()
+            }
         }
     }
 
@@ -1173,10 +1159,10 @@ extension MenuView {
         targetSize: CGSize,
         contentMode: PHImageContentMode,
         deliveryMode: PHImageRequestOptionsDeliveryMode,
-        shouldAbort: (() -> Bool)? = nil,
-    ) -> [NSImage?] {
+        shouldAbort: (() async -> Bool)? = nil,
+    ) async -> [NSImage?] {
         guard !localIdentifiers.isEmpty else { return [] }
-        if shouldAbort?() == true {
+        if await shouldAbort?() == true {
             return []
         }
         let resolvedTargetSize = normalizedPhotoTargetSize(targetSize, deliveryMode: deliveryMode)
@@ -1194,7 +1180,7 @@ extension MenuView {
         var images: [NSImage?] = []
         images.reserveCapacity(localIdentifiers.count)
         for localIdentifier in localIdentifiers {
-            if shouldAbort?() == true {
+            if await shouldAbort?() == true {
                 break
             }
             autoreleasepool {

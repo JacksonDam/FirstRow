@@ -909,6 +909,7 @@
 				INFOPLIST_KEY_GCSupportsMultipleMicroGamepads = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "First Row controls Music for Apple Music playback.";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "First Row uses your Music library to browse and play songs.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "First Row uses your Photos library to browse and play photo slideshows.";
@@ -923,7 +924,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.5;
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -979,6 +980,7 @@
 				INFOPLIST_KEY_GCSupportsMultipleMicroGamepads = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "First Row controls Music for Apple Music playback.";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "First Row uses your Music library to browse and play songs.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "First Row uses your Photos library to browse and play photo slideshows.";
@@ -993,7 +995,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 11.5;
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-weak_framework",
