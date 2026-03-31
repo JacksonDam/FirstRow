@@ -25,6 +25,7 @@ Here, the Leopard/Snow Leopard version of the interface is used as a reference.
 - Keyboard, touch, and game controller driven navigation (Siri Remotes are supported on tvOS)
 
 Playback of movies and TV shows originating from the Apple TV app is not supported due to DRM-protection, but local video content from elsewhere can be played.
+Theatrical Trailers does not work as the original servers for this are gone and I haven't made a substitute yet (contributions welcome).
 
 ## Images
 
