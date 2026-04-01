@@ -478,7 +478,7 @@ extension MenuView {
                             : nil
                         self.updateMusicAppleScriptProgressAnchor(
                             elapsedSeconds: 0,
-                            isPlaying: false,
+                            isPlaying: trackStartResult.didBeginPlayback,
                         )
                         self.startMusicAppleScriptProgressTimerIfNeeded()
                     } else {
@@ -915,13 +915,11 @@ extension MenuView {
                 musicAppleScriptIsPlaying = effectiveIsPlaying
                 musicAppleScriptStartupDeadline = isGraceActive ? musicAppleScriptStartupDeadline : nil
                 let snapshotElapsed = max(0, snapshot.elapsedSeconds)
-                if snapshotElapsed >= musicNowPlayingElapsedSeconds {
-                    musicNowPlayingElapsedSeconds = snapshotElapsed
-                    updateMusicAppleScriptProgressAnchor(
-                        elapsedSeconds: snapshotElapsed,
-                        isPlaying: isGraceActive ? false : effectiveIsPlaying,
-                    )
-                }
+                musicNowPlayingElapsedSeconds = snapshotElapsed
+                updateMusicAppleScriptProgressAnchor(
+                    elapsedSeconds: snapshotElapsed,
+                    isPlaying: isGraceActive ? false : effectiveIsPlaying,
+                )
                 musicNowPlayingLeadingGlyphState = effectiveIsPlaying ? nil : .pause
             }
             if snapshot.durationSeconds > 0 {
