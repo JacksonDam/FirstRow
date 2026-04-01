@@ -340,6 +340,7 @@ extension MenuView {
                     visibleRowCount: thirdLevelVisibleMenuRowCount,
                     selectionBoxWidthScale: isPhotosThirdMenu ? photosSelectionBoxWidthScale : 1.0,
                     selectionBoxHeightScale: isPhotosThirdMenu ? photosSelectionBoxHeightScale : 1.0,
+                    usesUniformRowLayout: thirdMenuMode == .musicSongs,
                 ).opacity(thirdMenuOpacity)
             }
         }.frame(height: stableMenuListLayoutHeight, alignment: .top)
@@ -365,6 +366,7 @@ extension MenuView {
         scaledRowVerticalOffsetOverride: CGFloat? = nil,
         contentVerticalOffsetOverride: CGFloat = 0,
         isPodcastEpisodesPage: Bool = false,
+        usesUniformRowLayout: Bool = false,
     ) -> some View {
         let rowSelectionAnimation: Animation? = isMenuFolderSwapTransitioning ? nil : selectionMovementAnimation
         let menuWidth = contentWidthOverride ?? menuWidthConstrained(geometry: geometry)
@@ -409,22 +411,45 @@ extension MenuView {
         let dividerGap = effectiveDividerSectionGap(forSelectionBoxHeightScale: selectionBoxHeightScale)
         let rowPitch = rowPitchOverride ?? effectiveRowPitch(forSelectionBoxHeightScale: selectionBoxHeightScale)
         let normalHeightIndices: Set<Int> = []
-        let rowOffsets = menuRowOffsets(for: items, dividerGap: dividerGap, rowPitch: rowPitch, normalHeightIndices: normalHeightIndices)
-        let contentHeight = menuContentHeight(
-            for: items,
-            rowOffsets: rowOffsets,
-            rowHeight: selectionHeight,
-        )
+        let rowOffsets: [CGFloat]
+        let contentHeight: CGFloat
         let viewportHeight = viewportHeightOverride ?? menuViewportHeight(for: visibleRowCount)
         let containerHeight = containerHeightOverride ?? menuListLayoutHeight(for: visibleRowCount)
-        let scrollOffset = menuScrollOffset(
-            contentHeight: contentHeight,
-            selectedIndex: selectedIndex,
-            rowOffsets: rowOffsets,
-            viewportHeight: viewportHeight,
-            selectionAnchorY: selectionAnchorY,
-        )
-        let selectedRowOffset = rowOffsets.indices.contains(selectedIndex) ? rowOffsets[selectedIndex] : 0
+        let scrollOffset: CGFloat
+        let selectedRowOffset: CGFloat
+        if usesUniformRowLayout {
+            rowOffsets = []
+            let count = items.count
+            contentHeight = count > 0 ? CGFloat(count) * rowPitch - menuRowSpacing + selectionHeight : 0
+            let selectedY = CGFloat(selectedIndex) * rowPitch
+            if let selectionAnchorY {
+                scrollOffset = selectionAnchorY - selectedY
+            } else if contentHeight > viewportHeight {
+                let anchorIndex = min(max(0, stickySelectionRowIndex), max(0, count - 1))
+                let anchorY = CGFloat(anchorIndex) * rowPitch
+                let offset = anchorY - selectedY
+                let minOffset = viewportHeight - contentHeight
+                scrollOffset = max(minOffset, min(0, offset))
+            } else {
+                scrollOffset = 0
+            }
+            selectedRowOffset = selectedY
+        } else {
+            rowOffsets = menuRowOffsets(for: items, dividerGap: dividerGap, rowPitch: rowPitch, normalHeightIndices: normalHeightIndices)
+            contentHeight = menuContentHeight(
+                for: items,
+                rowOffsets: rowOffsets,
+                rowHeight: selectionHeight,
+            )
+            scrollOffset = menuScrollOffset(
+                contentHeight: contentHeight,
+                selectedIndex: selectedIndex,
+                rowOffsets: rowOffsets,
+                viewportHeight: viewportHeight,
+                selectionAnchorY: selectionAnchorY,
+            )
+            selectedRowOffset = rowOffsets.indices.contains(selectedIndex) ? rowOffsets[selectedIndex] : 0
+        }
         let selectedIsNormalHeight = normalHeightIndices.contains(selectedIndex)
         let shouldUseCompactPhotosSelectionWidth =
             selectedIsNormalHeight &&
@@ -444,13 +469,29 @@ extension MenuView {
         let selectionVisualCenterXInContainer =
             effectiveSelectionVisualXOffset + (effectiveSelectionVisualWidth * 0.5)
         let containerFrameWidth = max(menuWidth, effectiveSelectionVisualWidth)
-        let visibleRowIndices = visibleMenuRowIndices(
-            rowOffsets: rowOffsets,
-            rowHeight: selectionHeight,
-            scrollOffset: scrollOffset,
-            viewportHeight: viewportHeight,
-            prefersWiderOverscan: !isSelectionSettled,
-        )
+        let renderRange: Range<Int>
+        if usesUniformRowLayout {
+            let overscanMultiplier: CGFloat = !isSelectionSettled ? 6.0 : 3.0
+            let overscanPadding = max(80, selectionHeight * overscanMultiplier)
+            let minVisibleY = -scrollOffset - overscanPadding
+            let maxVisibleY = -scrollOffset + viewportHeight + overscanPadding
+            let lo = max(0, Int(floor(minVisibleY / rowPitch)))
+            let hi = min(items.count, Int(ceil(maxVisibleY / rowPitch)) + 1)
+            renderRange = lo ..< max(lo, hi)
+        } else {
+            let visibleRowIndices = visibleMenuRowIndices(
+                rowOffsets: rowOffsets,
+                rowHeight: selectionHeight,
+                scrollOffset: scrollOffset,
+                viewportHeight: viewportHeight,
+                prefersWiderOverscan: !isSelectionSettled,
+            )
+            if let lo = visibleRowIndices.first, let hi = visibleRowIndices.last {
+                renderRange = lo ..< (hi + 1)
+            } else {
+                renderRange = 0 ..< 0
+            }
+        }
         return ZStack(alignment: .topLeading) {
             if !items.isEmpty {
                 selectionBox(width: effectiveSelectionVisualWidth, height: effectiveSelectionVisualHeight)
@@ -462,19 +503,20 @@ extension MenuView {
                     .animation(rowSelectionAnimation, value: scrollOffset)
             }
             ZStack(alignment: .topLeading) {
-                ForEach(visibleRowIndices, id: \.self) { index in
+                ForEach(renderRange, id: \.self) { index in
                     let item = items[index]
                     let rowIsSelected = index == selectedIndex
                     let rowIsNormalHeight = normalHeightIndices.contains(index)
                     let rowHeight = rowIsNormalHeight ? selectionBoxHeight : selectionHeight
                     let rowYOffset = rowIsNormalHeight ? 0 : selectionYOffset
+                    let rowYBase = usesUniformRowLayout ? CGFloat(index) * rowPitch : rowOffsets[index]
                     if item.showsTopDivider {
                         Rectangle()
                             .fill(Color.white.opacity(0.34))
                             .frame(width: max(0, rowContentWidth - (dividerLineInsetHorizontal * 2)), height: 1)
                             .offset(
                                 x: rowContentXOffset + dividerLineInsetHorizontal,
-                                y: rowOffsets[index] - dividerGap + dividerLineYOffsetInGap,
+                                y: rowYBase - dividerGap + dividerLineYOffsetInGap,
                             )
                     }
                     if item.showsLightRowBackground {
@@ -485,7 +527,7 @@ extension MenuView {
                             height: rowHeight,
                         ).offset(
                             x: selectionXOffset,
-                            y: rowOffsets[index] + rowYOffset,
+                            y: rowYBase + rowYOffset,
                         )
                     }
                     menuItemView(
@@ -505,7 +547,7 @@ extension MenuView {
                         isPodcastEpisodesPage: isPodcastEpisodesPage,
                     ).frame(width: rowContentWidth, height: rowHeight, alignment: .leading).offset(
                         x: rowContentXOffset,
-                        y: rowOffsets[index] + rowYOffset,
+                        y: rowYBase + rowYOffset,
                     )
                 }
             }
@@ -1332,20 +1374,24 @@ extension MenuView {
                     menuContainerSize = geometry.size
                     beginStartupMusicLibraryPreloadIfNeeded()
                     syncRootLabelWithSelection()
-                    SoundEffectPlayer.shared.warmUp(soundNames: [
-                        "Selection",
-                        "SelectionChange",
-                        "Exit",
-                        "Limit",
-                        "Begin",
-                        "End",
-                        "MainLeft",
-                        "MainTransitionFrom",
-                        "MainDVDSelection",
-                        "MainMusicSelection",
-                        "MainPhotosSelection",
-                        "MainVideosSelection",
-                    ])
+                    startupSoundWarmUpWorkItem = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 150_000_000)
+                        guard !Task.isCancelled else { return }
+                        SoundEffectPlayer.shared.warmUp(soundNames: [
+                            "Selection",
+                            "SelectionChange",
+                            "Exit",
+                            "Limit",
+                            "Begin",
+                            "End",
+                            "MainLeft",
+                            "MainTransitionFrom",
+                            "MainDVDSelection",
+                            "MainMusicSelection",
+                            "MainPhotosSelection",
+                            "MainVideosSelection",
+                        ])
+                    }
                 }.onChange(of: geometry.size) {
                     menuContainerSize = $0
                 }.onReceive(NotificationCenter.default.publisher(for: .firstRowIntroBegin)) { _ in
@@ -1357,6 +1403,7 @@ extension MenuView {
                     rootLabelSwapWorkItem?.cancel()
                     cancelRootIntroWorkItems()
                     rootExitWorkItem?.cancel()
+                    startupSoundWarmUpWorkItem?.cancel()
                 }
             }
             if startupMusicLibraryPreloadOverlayOpacity > 0.001 {

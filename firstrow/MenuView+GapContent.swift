@@ -164,12 +164,13 @@ extension MenuView {
             isInSubmenu &&
             !isInThirdMenu &&
             selectedMusicSubmenuItemID == "music_now_playing" &&
-            isMusicActivelyPlaying
+            hasActiveMusicPlaybackSession() &&
+            !isPodcastAudioNowPlaying
     }
 
     var selectedMusicSongForPreview: MusicLibrarySongEntry? {
         guard shouldShowMusicPreviewContent else { return nil }
-        return resolveMusicPreviewTargetSong()
+        return musicPreviewDisplayedSong
     }
 
     var shouldUseMusicSongMetadataPreview: Bool {

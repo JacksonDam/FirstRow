@@ -166,6 +166,7 @@ struct MenuView: View {
 
     // MARK: - Fullscreen scene keys
 
+    let musicNowPlayingFullscreenKey = "music_now_playing"
     let photoSlideshowFullscreenKey = "photo_slideshow"
 
     // MARK: - Navigation state
@@ -268,7 +269,8 @@ struct MenuView: View {
     @State var musicLibraryItemIndexBySongID: [String: Int] = [:]
     @State var hasStartedStartupMusicLibraryPreload = false
     @State var isStartupMusicLibraryPreloadComplete = false
-    @State var startupMusicLibraryPreloadOverlayOpacity: Double = 1
+    @State var startupMusicLibraryPreloadOverlayOpacity: Double = 0
+    @State var startupSoundWarmUpWorkItem: Task<Void, Never>?
 
     // MARK: - Movie playback state
 
@@ -339,7 +341,9 @@ struct MenuView: View {
 
     @State var musicPreviewTargetSongID: String?
     @State var musicPreviewImage: NSImage?
+    @State var musicPreviewDisplayedSong: MusicLibrarySongEntry?
     @State var musicPreviewRequestID = 0
+    @State var musicPreviewRefreshWorkItem: Task<Void, Never>?
     @State var musicPreviewCache: [String: NSImage] = [:]
     @State var musicLibraryArtworkDataByAlbumKey: [String: Data] = [:]
     @State var musicTopLevelCarouselActiveSubmenuID: String?
@@ -430,8 +434,10 @@ struct MenuView: View {
 
     // MARK: - Music playback state
 
+    @State var isMusicSongTransitioning = false
     @State var deferNowPlayingMenuItemUntilAfterFadeOut = false
     @State var holdNowPlayingMenuItemDuringExitFade = false
+    @State var hasPendingExternalMusicRestore = false
     @State var isMusicSongsShuffleMode = false
     @State var activeMusicPlaybackQueue: [MusicLibrarySongEntry] = []
     @State var activeMusicPlaybackSongID: String?
@@ -456,6 +462,20 @@ struct MenuView: View {
     @State var musicLastScrubInputDate: Date?
     @State var musicLastScrubTickDate: Date?
     @State var musicScrubTimer: Timer?
+    @State var musicArtworkPrefetchInFlightKeys: Set<String> = []
+    @State var musicPlaybackRequestID = 0
+    @State var musicKitScrubGlyphResetWorkItem: Task<Void, Never>?
+    @State var isCurrentMusicPlaybackManagedByFirstRow = false
+    @State var musicAppleScriptCurrentTrackPersistentIDHex: String?
+    @State var musicAppleScriptIsPlaying = false
+    @State var musicAppleScriptStartupDeadline: Date?
+    @State var musicAppleScriptDidHandleTrackBoundary = false
+    @State var musicAppleScriptProgressAnchorElapsedSeconds: Double = 0
+    @State var musicAppleScriptProgressAnchorDate: Date?
+    @State var musicAppleScriptProgressTimer: Timer?
+    @State var musicAppleScriptProgressRequestInFlight = false
+    @State var musicAppleScriptLastSyncDate: Date?
+    @State var musicSystemPlayerObserverTokens: [NSObjectProtocol] = []
 
     // MARK: - Fullscreen / transitions state
 

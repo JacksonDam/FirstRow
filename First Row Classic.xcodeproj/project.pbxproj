@@ -760,6 +760,7 @@
 				INFOPLIST_KEY_GCSupportsMultipleMicroGamepads = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "First Row Classic controls Music for Apple Music playback.";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "First Row uses your Music library to browse and play songs.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "First Row uses your Photos library to browse and play photo slideshows.";
@@ -817,6 +818,7 @@
 				INFOPLIST_KEY_GCSupportsMultipleMicroGamepads = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "First Row Classic controls Music for Apple Music playback.";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "First Row uses your Music library to browse and play songs.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "First Row uses your Photos library to browse and play photo slideshows.";
