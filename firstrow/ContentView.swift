@@ -49,16 +49,6 @@ struct ContentView: View {
             )
             .background(Color.black)
         }
-        .onKeyEvents(
-            onKeyDown: { key, isRepeat, _ in
-                guard key == .delete, !isRepeat else { return }
-                handleLaunchBackPressBegan()
-            },
-            onKeyUp: { key, _ in
-                guard key == .delete else { return }
-                handleLaunchBackPressEnded()
-            },
-        )
         #if os(iOS)
             .overlay {
                 if isLaunchToggleWindowActive {
