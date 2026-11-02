@@ -143,9 +143,18 @@
 
         private func activateAndFocusAppWindow() {
             NSApplication.shared.activate(ignoringOtherApps: true)
-            if let keyWindow = NSApplication.shared.windows.first {
-                keyWindow.makeKeyAndOrderFront(nil)
+            guard let contentWindow = primaryContentWindow() else { return }
+            contentWindow.makeKeyAndOrderFront(nil)
+            contentWindow.makeMain()
+        }
+
+        /// The full-screen window that shows First Row. `windows.first` can be one of AppKit's
+        /// own helper windows on newer macOS, which left the keyboard going nowhere.
+        private func primaryContentWindow() -> NSWindow? {
+            let windows = NSApplication.shared.windows.filter { window in
+                !(window is NSPanel) && window.contentView != nil && window.className != "NSStatusBarWindow"
             }
+            return windows.first { $0.isVisible } ?? windows.first
         }
 
         private func lockWindowToScreenFrame(_ window: NSWindow) {
