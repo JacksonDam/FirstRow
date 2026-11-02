@@ -184,78 +184,175 @@ import SwiftUI
         return result
     }
 
+    /// Apple Music catalog tracks that can no longer be played (removed, ineligible, ...),
+    /// looked up through AppleScript. The lookup runs in the background and never on the
+    /// main thread: a big library, or the "control Music" permission prompt, used to freeze
+    /// the app on a black screen at launch.
     final class UnavailableAppleMusicTrackCache {
         static let shared = UnavailableAppleMusicTrackCache()
 
         private let lock = NSLock()
         private var cachedPersistentIDHexes: Set<String>?
+        private var fetchTask: Task<Set<String>, Never>?
 
+        /// Never blocks. Returns what is known so far (empty until the lookup finishes)
+        /// and starts the lookup if it hasn't started yet.
         func persistentIDHexes() -> Set<String> {
-            lock.lock()
-            if let cachedPersistentIDHexes {
-                lock.unlock()
-                return cachedPersistentIDHexes
+            if let cached = cachedValue() {
+                return cached
             }
-            lock.unlock()
-
-            let fetchedPersistentIDHexes = fetchPersistentIDHexes()
-
-            lock.lock()
-            if cachedPersistentIDHexes == nil {
-                cachedPersistentIDHexes = fetchedPersistentIDHexes
-            }
-            let resolvedPersistentIDHexes = cachedPersistentIDHexes ?? fetchedPersistentIDHexes
-            lock.unlock()
-            return resolvedPersistentIDHexes
+            _ = startFetchIfNeeded()
+            return []
         }
 
-        private func fetchPersistentIDHexes() -> Set<String> {
-            // Query track-by-track because bulk `whose cloud status is ...` filters fail
-            // against some Apple Music libraries, especially with playlist-only tracks.
-            let source = """
-            tell application "\(musicApplicationName)"
-                if not running then
-                    return ""
-                end if
-                set unavailableTrackIDs to {}
-                set unavailableStatuses to {"error", "ineligible", "no longer available", "prerelease", "removed"}
-                repeat with libraryTrack in every track of library playlist 1
-                    try
-                        set cloudStatusText to (cloud status of libraryTrack as text)
-                        if unavailableStatuses contains cloudStatusText then
-                            set end of unavailableTrackIDs to (persistent ID of libraryTrack)
-                        end if
-                    end try
-                end repeat
-                if (count of unavailableTrackIDs) is 0 then
-                    return ""
-                end if
-                set AppleScript's text item delimiters to linefeed
-                set unavailableTrackIDsText to unavailableTrackIDs as text
-                set AppleScript's text item delimiters to ""
-                return unavailableTrackIDsText
-            end tell
-            """
-            let result = executeAppleScript(source)
-            if !result.succeeded, !appleScriptFailedBecauseApplicationIsNotRunning(result) {
-                print("[Music] unavailable track lookup error: \(result.combinedFailureDescription)")
+        /// Starts the lookup and waits for it, but never longer than `timeout` seconds.
+        func prefetch(timeout: TimeInterval) async {
+            guard cachedValue() == nil, let task = startFetchIfNeeded() else { return }
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let gate = ResumeOnceGate()
+                Task {
+                    _ = await task.value
+                    if gate.claim() { continuation.resume() }
+                }
+                Task {
+                    try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
+                    if gate.claim() { continuation.resume() }
+                }
             }
-            let rawPersistentIDText = result.trimmedStandardOutput
-            guard !rawPersistentIDText.isEmpty else {
+        }
+
+        private func cachedValue() -> Set<String>? {
+            lock.lock()
+            defer { lock.unlock() }
+            return cachedPersistentIDHexes
+        }
+
+        private func startFetchIfNeeded() -> Task<Set<String>, Never>? {
+            lock.lock()
+            defer { lock.unlock() }
+            if cachedPersistentIDHexes != nil { return nil }
+            if let fetchTask { return fetchTask }
+            let task = Task.detached(priority: .utility) { () -> Set<String> in
+                let fetched = await musicAppleScriptExecutor.run {
+                    UnavailableAppleMusicTrackCache.fetchPersistentIDHexes()
+                }
+                UnavailableAppleMusicTrackCache.shared.store(fetched)
+                return fetched
+            }
+            fetchTask = task
+            return task
+        }
+
+        private func store(_ persistentIDHexes: Set<String>) {
+            lock.lock()
+            defer { lock.unlock() }
+            cachedPersistentIDHexes = persistentIDHexes
+            fetchTask = nil
+        }
+
+        private static let unavailableStatusesSource =
+            #"{"error", "ineligible", "no longer available", "prerelease", "removed"}"#
+
+        private static func fetchPersistentIDHexes() -> Set<String> {
+            // Two bulk requests (every ID, every status) instead of two Apple Events per track.
+            let bulkResult = executeAppleScript(bulkSource)
+            if bulkResult.succeeded {
+                return parsePersistentIDHexes(bulkResult.trimmedStandardOutput)
+            }
+            if appleScriptFailedBecauseApplicationIsNotRunning(bulkResult) {
                 return []
             }
-            let separators = CharacterSet.newlines.union(.whitespacesAndNewlines)
+            // Bulk requests and `whose` filters fail against some Apple Music libraries,
+            // especially with playlist-only tracks, so fall back to asking track by track.
+            let perTrackResult = executeAppleScript(perTrackSource)
+            if !perTrackResult.succeeded, !appleScriptFailedBecauseApplicationIsNotRunning(perTrackResult) {
+                print("[Music] unavailable track lookup error: \(perTrackResult.combinedFailureDescription)")
+            }
+            return parsePersistentIDHexes(perTrackResult.trimmedStandardOutput)
+        }
+
+        private static func parsePersistentIDHexes(_ rawText: String) -> Set<String> {
+            guard !rawText.isEmpty else { return [] }
             return Set(
-                rawPersistentIDText
-                    .components(separatedBy: separators)
+                rawText
+                    .components(separatedBy: .whitespacesAndNewlines)
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
                     .filter { !$0.isEmpty },
             )
+        }
+
+        private static let bulkSource = """
+        tell application "\(musicApplicationName)"
+            if not running then
+                return ""
+            end if
+            set unavailableStatuses to \(unavailableStatusesSource)
+            with timeout of 30 seconds
+                set trackIDs to persistent ID of every track of library playlist 1
+                set trackStatuses to cloud status of every track of library playlist 1
+            end timeout
+            if (count of trackIDs) is not (count of trackStatuses) then
+                error "Track ID and status counts differ"
+            end if
+            set unavailableTrackIDs to {}
+            repeat with trackIndex from 1 to count of trackIDs
+                if unavailableStatuses contains ((item trackIndex of trackStatuses) as text) then
+                    set end of unavailableTrackIDs to (item trackIndex of trackIDs)
+                end if
+            end repeat
+            set AppleScript's text item delimiters to linefeed
+            set unavailableTrackIDsText to unavailableTrackIDs as text
+            set AppleScript's text item delimiters to ""
+            return unavailableTrackIDsText
+        end tell
+        """
+
+        private static let perTrackSource = """
+        tell application "\(musicApplicationName)"
+            if not running then
+                return ""
+            end if
+            set unavailableTrackIDs to {}
+            set unavailableStatuses to \(unavailableStatusesSource)
+            repeat with libraryTrack in every track of library playlist 1
+                try
+                    set cloudStatusText to (cloud status of libraryTrack as text)
+                    if unavailableStatuses contains cloudStatusText then
+                        set end of unavailableTrackIDs to (persistent ID of libraryTrack)
+                    end if
+                end try
+            end repeat
+            if (count of unavailableTrackIDs) is 0 then
+                return ""
+            end if
+            set AppleScript's text item delimiters to linefeed
+            set unavailableTrackIDsText to unavailableTrackIDs as text
+            set AppleScript's text item delimiters to ""
+            return unavailableTrackIDsText
+        end tell
+        """
+    }
+
+    /// Lets exactly one of several racing callbacks resume a continuation.
+    final class ResumeOnceGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var claimed = false
+
+        func claim() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !claimed else { return false }
+            claimed = true
+            return true
         }
     }
 #endif
 
 extension MenuView {
+    var startupMusicLibraryPreloadTimeout: Double {
+        12
+    }
+
     var blocksMenuForStartupMusicLibraryPreload: Bool {
         !isStartupMusicLibraryPreloadComplete || startupMusicLibraryPreloadOverlayOpacity > 0.001
     }
@@ -318,6 +415,13 @@ extension MenuView {
             return
         }
         let requestID = incrementRequestID(&musicStartupPreloadRequestID)
+        // Never leave the menu locked behind the preload: a slow or stuck library read
+        // (or an unanswered permission prompt) used to leave the app black and ignoring keys.
+        Task {
+            try? await firstRowSleep(startupMusicLibraryPreloadTimeout)
+            guard self.musicStartupPreloadRequestID == requestID, !self.isStartupMusicLibraryPreloadComplete else { return }
+            self.finishStartupMusicLibraryPreload()
+        }
         requestMusicLibraryAuthorization { isAuthorized in
             guard self.musicStartupPreloadRequestID == requestID else { return }
             guard isAuthorized else {
@@ -325,6 +429,11 @@ extension MenuView {
                 return
             }
             Task(priority: .userInitiated) {
+                #if os(macOS)
+                    // Look up unplayable Apple Music tracks off the main thread first, so the
+                    // library scan below doesn't stop to wait for Music.app.
+                    await UnavailableAppleMusicTrackCache.shared.prefetch(timeout: 6)
+                #endif
                 do {
                     let snapshot = try await loadStartupMusicLibrarySnapshot()
                     await MainActor.run {
