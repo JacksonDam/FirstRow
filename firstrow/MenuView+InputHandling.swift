@@ -91,7 +91,7 @@ extension MenuView {
             } else if !isEnteringSubmenu {
                 startSubmenuTransition()
             }
-        case .delete:
+        case .delete, .escape:
             resetNavigationAccelerationState()
             if isInThirdMenu {
                 navigateUpInThirdMenuOrExit()

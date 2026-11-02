@@ -349,7 +349,7 @@ extension MenuView {
 
     func handleMoviePlaybackInput(_ key: KeyCode, isRepeat: Bool) {
         switch key {
-        case .delete:
+        case .delete, .escape:
             playSound(named: "Exit")
             stopMoviePlaybackAndReturnToMenu()
         case .space:
