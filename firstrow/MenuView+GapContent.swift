@@ -176,7 +176,7 @@ extension MenuView {
     var shouldShowMusicPreviewContent: Bool {
         activeRootItemID == "music" &&
             isInThirdMenu &&
-            thirdMenuMode == .musicSongs &&
+            (thirdMenuMode == .musicSongs || isShowingMusicAlbumsList) &&
             musicPreviewTargetSongID != nil
     }
 
@@ -196,6 +196,8 @@ extension MenuView {
 
     var shouldUseMusicSongMetadataPreview: Bool {
         guard shouldShowMusicPreviewContent else { return false }
+        // The Albums list shows just the cover, like the original.
+        guard thirdMenuMode == .musicSongs else { return false }
         guard activeMusicLibraryMediaType == .songs else { return false }
         if !isMusicSongsCategoryScoped {
             // Songs submenu

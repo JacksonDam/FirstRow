@@ -428,9 +428,18 @@ extension MenuView {
         _ = incrementRequestID(&musicSongsRequestID)
     }
 
+    var isShowingMusicAlbumsList: Bool {
+        thirdMenuMode == .musicCategories && activeMusicCategoryKind == .albums
+    }
+
     func resolveMusicPreviewTargetSong() -> MusicLibrarySongEntry? {
-        guard activeRootItemID == "music", isInSubmenu else { return nil }
-        guard isInThirdMenu, thirdMenuMode == .musicSongs else { return nil }
+        guard activeRootItemID == "music", isInSubmenu, isInThirdMenu else { return nil }
+        if isShowingMusicAlbumsList {
+            guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
+            let albumSongs = musicCategoryThirdMenuItems[selectedThirdIndex].songs
+            return albumSongs.first { $0.artwork != nil || $0.artworkAlbumKey != nil || $0.url != nil } ?? albumSongs.first
+        }
+        guard thirdMenuMode == .musicSongs else { return nil }
         guard !musicSongsThirdMenuItems.isEmpty else { return nil }
         if shouldShowMusicSongsShuffleActionItem(), selectedThirdIndex == 0 {
             return musicSongsThirdMenuItems[0]
@@ -450,52 +459,12 @@ extension MenuView {
         ) {
             return cached
         }
-        let asset = AVURLAsset(url: standardizedURL)
-        let metadata: [AVMetadataItem]
-        if #available(macOS 12.0, *) {
-            guard let loaded = try? await asset.load(.commonMetadata) else { return nil }
-            metadata = loaded
-        } else {
-            metadata = asset.commonMetadata
-        }
-        let artworkItems = AVMetadataItem.metadataItems(
-            from: metadata,
-            filteredByIdentifier: .commonIdentifierArtwork,
+        guard let data = await loadEmbeddedArtworkData(from: standardizedURL) else { return nil }
+        return cachedDecodedDisplayArtworkImage(
+            from: data,
+            sourceKey: cacheKey,
+            maxPixelSize: 900,
         )
-        for item in artworkItems {
-            let dataValue: Data? = if #available(macOS 12.0, *) {
-                try? await item.load(.dataValue)
-            } else {
-                item.dataValue
-            }
-            if let data = dataValue {
-                return cachedDecodedDisplayArtworkImage(
-                    from: data,
-                    sourceKey: cacheKey,
-                    maxPixelSize: 900,
-                )
-            }
-            let rawValue: (NSCopying & NSObjectProtocol)? = if #available(macOS 12.0, *) {
-                try? await item.load(.value)
-            } else {
-                item.value
-            }
-            if let data = rawValue as? Data {
-                return cachedDecodedDisplayArtworkImage(
-                    from: data,
-                    sourceKey: cacheKey,
-                    maxPixelSize: 900,
-                )
-            }
-            if let data = rawValue as? NSData {
-                return cachedDecodedDisplayArtworkImage(
-                    from: data as Data,
-                    sourceKey: cacheKey,
-                    maxPixelSize: 900,
-                )
-            }
-        }
-        return nil
     }
 
     func musicArtworkCacheKey(for url: URL) -> String {
@@ -728,7 +697,7 @@ extension MenuView {
         let shouldDeferPreviewRefresh =
             activeRootItemID == "music" &&
             isInThirdMenu &&
-            thirdMenuMode == .musicSongs &&
+            (thirdMenuMode == .musicSongs || isShowingMusicAlbumsList) &&
             (activeDirectionalHoldKey != .none ||
                 (lastArrowNavigationInputTime.map { Date().timeIntervalSince($0) < 0.08 } ?? false))
         let refreshDelay = shouldDeferPreviewRefresh ? 0.08 : 0.0
@@ -873,10 +842,21 @@ extension MenuView {
             }
             Task(priority: .userInitiated) {
                 do {
-                    let pageArtworks = try fetchMusicTopLevelCarouselArtworks(
-                        startIndex: resolvedStartIndex,
-                        limit: musicTopLevelCarouselArtworkLimit,
-                    )
+                    #if canImport(iTunesLibrary)
+                        let songCachePage = await fetchMusicTopLevelCarouselArtworksFromSongCache(
+                            startIndex: resolvedStartIndex,
+                            limit: musicTopLevelCarouselArtworkLimit,
+                        )
+                        let pageArtworks = try songCachePage ?? fetchMusicTopLevelCarouselArtworks(
+                            startIndex: resolvedStartIndex,
+                            limit: musicTopLevelCarouselArtworkLimit,
+                        )
+                    #else
+                        let pageArtworks = try fetchMusicTopLevelCarouselArtworks(
+                            startIndex: resolvedStartIndex,
+                            limit: musicTopLevelCarouselArtworkLimit,
+                        )
+                    #endif
                     await MainActor.run {
                         guard musicTopLevelCarouselRequestID == activeRequestID else { return }
                         musicTopLevelCarouselPageStartsInFlight.remove(resolvedStartIndex)
@@ -1056,6 +1036,85 @@ extension MenuView {
             return []
         #endif
     }
+
+    #if canImport(iTunesLibrary)
+        /// Builds a carousel page from the songs loaded at startup: one cover per album,
+        /// never the same picture twice. Returns nil when there is nothing to show, so the
+        /// caller can fall back to reading the library directly.
+        func fetchMusicTopLevelCarouselArtworksFromSongCache(startIndex: Int, limit: Int) async -> [NSImage?]? {
+            guard let songs = musicShuffleSongsCache ?? musicAllSongsCache, !songs.isEmpty else { return nil }
+            let libraryArtworkData = musicLibraryArtworkDataByAlbumKey
+            let resolvedStartIndex = max(0, startIndex)
+            let resolvedLimit = max(1, limit)
+            var seenAlbums: Set<String> = []
+            var seenArtworkDigests: Set<Int> = []
+            var albumIndex = 0
+            var artworks: [NSImage?] = []
+            for song in songs {
+                let albumIdentity = song.album == "Unknown Album"
+                    ? "song::\(song.id)"
+                    : "\(song.album.lowercased())::\(song.artist.lowercased())"
+                guard seenAlbums.insert(albumIdentity).inserted else { continue }
+                guard let artwork = await musicTopLevelCarouselArtwork(
+                    for: song,
+                    libraryArtworkData: libraryArtworkData,
+                    seenArtworkDigests: &seenArtworkDigests,
+                ) else { continue }
+                defer { albumIndex += 1 }
+                guard albumIndex >= resolvedStartIndex else { continue }
+                artworks.append(artwork)
+                if artworks.count >= resolvedLimit {
+                    break
+                }
+            }
+            if resolvedStartIndex == 0, artworks.isEmpty {
+                return nil
+            }
+            return artworks
+        }
+
+        /// The cover for one album: the Music library's copy, or, when the library hands back a
+        /// picture another album already used, the artwork embedded in the song file itself.
+        func musicTopLevelCarouselArtwork(
+            for song: MusicLibrarySongEntry,
+            libraryArtworkData: [String: Data],
+            seenArtworkDigests: inout Set<Int>,
+        ) async -> NSImage? {
+            let digestCache = MusicCarouselArtworkDigestCache.shared
+            if let albumKey = song.artworkAlbumKey, let data = libraryArtworkData[albumKey] {
+                let digestKey = "library::\(albumKey)"
+                let digest = digestCache.digest(for: digestKey) ?? artworkContentDigest(data)
+                digestCache.store(digest, for: digestKey)
+                if seenArtworkDigests.insert(digest).inserted {
+                    return cachedDecodedDisplayArtworkImage(
+                        from: data,
+                        sourceKey: "music_carousel::\(albumKey)",
+                        maxPixelSize: 900,
+                    )
+                }
+            }
+            if let url = song.url?.standardizedFileURL {
+                let digestKey = "file::\(url.path)"
+                let digest: Int?
+                if digestCache.hasEntry(for: digestKey) {
+                    digest = digestCache.digest(for: digestKey)
+                } else if let data = await loadEmbeddedArtworkData(from: url) {
+                    digest = artworkContentDigest(data)
+                    _ = cachedDecodedDisplayArtworkImage(from: data, sourceKey: musicArtworkCacheKey(for: url), maxPixelSize: 900)
+                    digestCache.store(digest, for: digestKey)
+                } else {
+                    digest = nil
+                    digestCache.store(nil, for: digestKey)
+                }
+                if let digest, seenArtworkDigests.insert(digest).inserted {
+                    if let image = await generateMusicArtworkThumbnail(for: url) {
+                        return image
+                    }
+                }
+            }
+            return song.artwork
+        }
+    #endif
 
     func normalizedMusicTopLevelCarouselAlbumKey(
         albumTitle: String?,
@@ -2487,5 +2546,30 @@ extension MenuView {
 
     var musicFallbackImage: NSImage? {
         NSImage(named: "musicfallback")
+    }
+}
+
+/// Remembers artwork fingerprints so carousel pages after the first don't re-read every file.
+final class MusicCarouselArtworkDigestCache {
+    static let shared = MusicCarouselArtworkDigestCache()
+    private let lock = NSLock()
+    private var digests: [String: Int?] = [:]
+
+    func hasEntry(for key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return digests[key] != nil
+    }
+
+    func digest(for key: String) -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        return digests[key] ?? nil
+    }
+
+    func store(_ digest: Int?, for key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        digests[key] = .some(digest)
     }
 }

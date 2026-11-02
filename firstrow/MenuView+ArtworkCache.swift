@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import ImageIO
 import SwiftUI
@@ -163,4 +164,73 @@ func decodedArtworkImageCost(_ image: NSImage) -> Int {
         }
     #endif
     return 4 * 1024 * 1024
+}
+
+/// Reads the picture embedded in a media file: MPEG-4 `covr` (iTunes, Subler),
+/// ID3 `APIC` and QuickTime artwork. Returns nil when the file has none.
+func loadEmbeddedArtworkData(from url: URL) async -> Data? {
+    let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
+    var candidates: [AVMetadataItem] = []
+    if #available(macOS 12.0, iOS 15.0, tvOS 15.0, *) {
+        if let commonMetadata = try? await asset.load(.commonMetadata) {
+            candidates = AVMetadataItem.metadataItems(from: commonMetadata, filteredByIdentifier: .commonIdentifierArtwork)
+        }
+        if candidates.isEmpty, let metadata = try? await asset.load(.metadata) {
+            candidates = embeddedArtworkMetadataItems(in: metadata)
+        }
+    } else {
+        candidates = AVMetadataItem.metadataItems(from: asset.commonMetadata, filteredByIdentifier: .commonIdentifierArtwork)
+        if candidates.isEmpty {
+            candidates = embeddedArtworkMetadataItems(in: asset.metadata)
+        }
+    }
+    for item in candidates {
+        if let data = await embeddedArtworkData(of: item), !data.isEmpty {
+            return data
+        }
+    }
+    return nil
+}
+
+private func embeddedArtworkMetadataItems(in metadata: [AVMetadataItem]) -> [AVMetadataItem] {
+    let artworkIdentifiers: Set<AVMetadataIdentifier> = [
+        .iTunesMetadataCoverArt,
+        .id3MetadataAttachedPicture,
+        .quickTimeMetadataArtwork,
+        .commonIdentifierArtwork,
+    ]
+    return metadata.filter { item in
+        guard let identifier = item.identifier else { return false }
+        return artworkIdentifiers.contains(identifier)
+    }
+}
+
+private func embeddedArtworkData(of item: AVMetadataItem) async -> Data? {
+    let dataValue: Data?
+    let rawValue: (NSCopying & NSObjectProtocol)?
+    if #available(macOS 12.0, iOS 15.0, tvOS 15.0, *) {
+        dataValue = try? await item.load(.dataValue)
+        rawValue = dataValue == nil ? (try? await item.load(.value)) : nil
+    } else {
+        dataValue = item.dataValue
+        rawValue = dataValue == nil ? item.value : nil
+    }
+    if let dataValue {
+        return dataValue
+    }
+    if let data = rawValue as? Data {
+        return data
+    }
+    // Older ID3 tags surface APIC frames as a dictionary with the picture under "data".
+    if let dictionary = rawValue as? NSDictionary, let data = dictionary["data"] as? Data {
+        return data
+    }
+    return nil
+}
+
+/// A cheap content fingerprint, used to spot the same picture showing up for different items.
+func artworkContentDigest(_ data: Data) -> Int {
+    var hasher = Hasher()
+    data.withUnsafeBytes { hasher.combine(bytes: $0) }
+    return hasher.finalize()
 }
