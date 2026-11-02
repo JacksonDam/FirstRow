@@ -98,7 +98,10 @@ import SwiftUI
     }
 
     func executeAppleScript(_ source: String) -> AppleScriptExecutionResult {
-        executeAppleScriptInProcess(source)
+        if FirstRowHarness.isActive {
+            return AppleScriptExecutionResult(standardOutput: "", standardError: "AppleScript is off in the harness", exitCode: 1, processErrorDescription: nil)
+        }
+        return executeAppleScriptInProcess(source)
     }
 
     func appleScriptFailedBecauseApplicationIsNotRunning(_ result: AppleScriptExecutionResult) -> Bool {
@@ -1890,6 +1893,9 @@ extension MenuView {
         /// ITLibrary uses XPC to talk to amplibraryd — both init and all property
         /// access must happen on the main thread or the connection is invalidated.
         func withITLibrary<T>(_ work: (ITLibrary) throws -> T) throws -> T {
+            if FirstRowHarness.isActive {
+                throw NSError(domain: "firstRowHarness", code: 1, userInfo: [NSLocalizedDescriptionKey: "Libraries are off in the harness"])
+            }
             let lib = try ITLibrary(apiVersion: "1.0")
             return try work(lib)
         }
@@ -2043,6 +2049,10 @@ extension MenuView {
     #endif
 
     func requestMusicLibraryAuthorization(completion: @escaping (Bool) -> Void) {
+        if FirstRowHarness.isActive {
+            completion(false)
+            return
+        }
         #if os(iOS)
             let status = MPMediaLibrary.authorizationStatus()
             switch status {

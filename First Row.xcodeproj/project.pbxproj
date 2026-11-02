@@ -102,6 +102,7 @@
 		AA000002AAAAAAAAAAAA0009 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0009 /* VideoPlayerView.swift */; };
 		AA000002AAAAAAAAAAAA0010 /* MusicNowPlayingArtworkPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0010 /* MusicNowPlayingArtworkPreview.swift */; };
 		AA000002AAAAAAAAAAAA0011 /* MusicNowPlayingLeadingGlyphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000001AAAAAAAAAAAA0011 /* MusicNowPlayingLeadingGlyphView.swift */; };
+		53B4A6DEA27C6CA048B10150 /* DebugHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0328D590CE103DDAC0E103E5 /* DebugHarness.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -219,6 +220,7 @@
 		AA000001AAAAAAAAAAAA0009 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
 		AA000001AAAAAAAAAAAA0010 /* MusicNowPlayingArtworkPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingArtworkPreview.swift; sourceTree = "<group>"; };
 		AA000001AAAAAAAAAAAA0011 /* MusicNowPlayingLeadingGlyphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicNowPlayingLeadingGlyphView.swift; sourceTree = "<group>"; };
+		0328D590CE103DDAC0E103E5 /* DebugHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugHarness.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -391,6 +393,7 @@
 		7A73DE812F5776A20021C281 /* firstrow */ = {
 			isa = PBXGroup;
 			children = (
+				0328D590CE103DDAC0E103E5 /* DebugHarness.swift */,
 				7A73DE282F5776A20021C281 /* FRSettings.frappliance */,
 				7A73DE2B2F5776A20021C281 /* FRSources.frappliance */,
 				7A73DE342F5776A20021C281 /* Movies.frappliance */,
@@ -649,6 +652,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53B4A6DEA27C6CA048B10150 /* DebugHarness.swift in Sources */,
 				7A73DE872F5776A20021C281 /* AppShell.swift in Sources */,
 				7A73DE882F5776A20021C281 /* PlaybackTimeFormatting.swift in Sources */,
 				7A73DE892F5776A20021C281 /* MusicTopLevelCarouselGapContentView.swift in Sources */,

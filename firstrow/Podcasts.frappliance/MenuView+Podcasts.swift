@@ -705,6 +705,7 @@ extension MenuView {
     #endif
     #if os(macOS)
         func podcastsAppGroupContainerURL() -> URL? {
+            guard !FirstRowHarness.isActive else { return nil }
             guard let homeURL = realUserHomeDirectoryURL() else { return nil }
             return homeURL.appendingPathComponent("Library", isDirectory: true).appendingPathComponent("Group Containers", isDirectory: true).appendingPathComponent("243LU875E5.groups.com.apple.podcasts", isDirectory: true)
         }

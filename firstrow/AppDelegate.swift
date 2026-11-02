@@ -16,7 +16,15 @@
         private var isAdjustingWindowFrame = false
         private var commandEscapeHotKeyRef: EventHotKeyRef?
         private var commandEscapeHotKeyHandlerRef: EventHandlerRef?
+        func applicationWillFinishLaunching(_: Notification) {
+            FirstRowHarness.applicationWillFinishLaunching()
+        }
+
         func applicationDidFinishLaunching(_: Notification) {
+            if FirstRowHarness.isActive {
+                FirstRowHarness.applicationDidFinishLaunching()
+                return
+            }
             installBorderlessKeyabilitySwizzleIfNeeded()
             for window in NSApplication.shared.windows { window.alphaValue = 0 }
             Task { @MainActor [weak self] in
@@ -50,6 +58,7 @@
         }
 
         func applicationDidBecomeActive(_: Notification) {
+            guard !FirstRowHarness.isActive else { return }
             applyImmersivePresentationOptions()
             activateAndFocusAppWindow()
         }

@@ -372,6 +372,10 @@ extension MenuView {
     }
 
     func requestPhotoLibraryAuthorization(_ completion: @escaping (Bool) -> Void) {
+        if FirstRowHarness.isActive {
+            completion(false)
+            return
+        }
         #if canImport(Photos)
             let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             switch status {

@@ -144,6 +144,7 @@ extension MenuView {
 
     #if os(macOS)
         nonisolated func externalVolumeRootURLs() -> [URL] {
+            guard !FirstRowHarness.isActive else { return [] }
             guard let volumes = FileManager.default.mountedVolumeURLs(
                 includingResourceValuesForKeys: [],
                 options: [.skipHiddenVolumes]
@@ -257,6 +258,9 @@ extension MenuView {
             }
             return documentsDirectory
         #else
+            if let harnessMoviesFolder = FirstRowHarness.moviesFolderOverride {
+                return harnessMoviesFolder
+            }
             return realUserHomeDirectoryURL()!.appendingPathComponent("Movies", isDirectory: true)
         #endif
     }
