@@ -417,6 +417,22 @@ extension MenuView {
         return firstMovieFileURL(in: moviesRootDirectoryURL())
     }
 
+    /// The picture to show for a movie in the menus: its embedded cover art (as set by
+    /// iTunes, Subler and similar tools) when it has one, otherwise a frame from the video.
+    nonisolated func generateMoviePreviewImage(for url: URL) async -> NSImage? {
+        let standardizedURL = url.standardizedFileURL
+        if let artworkData = await loadEmbeddedArtworkData(from: standardizedURL),
+           let artwork = cachedDecodedDisplayArtworkImage(
+               from: artworkData,
+               sourceKey: "movie_artwork::\(standardizedURL.path)",
+               maxPixelSize: 1100,
+           )
+        {
+            return artwork
+        }
+        return await generateMovieThumbnail(for: standardizedURL)
+    }
+
     nonisolated func generateMovieThumbnail(for url: URL, preferredSeconds: Double? = nil) async -> NSImage? {
         let standardizedURL = url.standardizedFileURL
         if shouldSkipMovieThumbnailGeneration(for: standardizedURL) {
@@ -426,8 +442,11 @@ extension MenuView {
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 1100, height: 1100)
-        func generateSync(at time: CMTime) -> CGImage? {
-            try? generator.copyCGImage(at: time, actualTime: nil)
+        func generateSync(at time: CMTime) async -> CGImage? {
+            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+                return try? await generator.image(at: time).image
+            }
+            return try? generator.copyCGImage(at: time, actualTime: nil)
         }
 
         var candidateTimes: [CMTime] = []
@@ -442,7 +461,7 @@ extension MenuView {
         candidateTimes.append(.zero)
 
         for time in candidateTimes {
-            guard let cgImage = generateSync(at: time) else { continue }
+            guard let cgImage = await generateSync(at: time) else { continue }
             return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         }
         return nil
@@ -507,7 +526,7 @@ extension MenuView {
                 if let cached = cacheSnapshot[cacheKey] {
                     image = cached
                 } else {
-                    image = await self.generateMovieThumbnail(for: url)
+                    image = await self.generateMoviePreviewImage(for: url)
                     if let image {
                         generatedCacheEntries[cacheKey] = image
                     }
@@ -567,7 +586,7 @@ extension MenuView {
             return
         }
         Task.detached(priority: .userInitiated) { [resolvedTarget] in
-            let generatedThumbnail = await self.generateMovieThumbnail(for: resolvedTarget)
+            let generatedThumbnail = await self.generateMoviePreviewImage(for: resolvedTarget)
             await MainActor.run {
                 guard self.moviePreviewRequestID == requestID else { return }
                 guard self.moviePreviewTargetURL?.standardizedFileURL == resolvedTarget else { return }
