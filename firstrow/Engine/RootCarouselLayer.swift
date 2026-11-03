@@ -30,6 +30,8 @@ struct RootCarouselConfiguration {
     var landedOffset: CGPoint
     var entryOffset: CGFloat
     var sceneWidth: CGFloat
+    /// Where the carousel's box sits in the scene, so an icon can leave just past the screen's edge.
+    var boxOriginInScene: CGPoint = .zero
     var selectionDuration: Double
     /// Holding an arrow key sweeps at a steady speed rather than easing in and out of every step.
     var usesLinearSweep: Bool
@@ -46,6 +48,12 @@ final class RootCarouselLayerController: LayerController {
         let container = StillLayer()
         let image = StillLayer()
         let reflection = StillLayer()
+        // iOS and tvOS draw layers without filters, so the blur behind the front is a blurred
+        // copy of the picture faded in over it (with room round the edges for the blur).
+        let blurredImage = StillLayer()
+        let blurredReflection = StillLayer()
+        var blurMargin: CGFloat = 0
+        var reflectionBlurMargin: CGFloat = 0
         var state: IconState?
         var imageObject: NSImage?
     }
@@ -142,6 +150,14 @@ final class RootCarouselLayerController: LayerController {
             withoutLayerActions {
                 icon.image.contents = LayerImageCache.cgImage(for: image)
                 icon.reflection.contents = CarouselReflectionCache.reflection(for: image)
+                #if !os(macOS)
+                    let blurred = (icon.image.contents as! CGImage?).flatMap(BlurredPictureCache.blurred)
+                    icon.blurredImage.contents = blurred?.image
+                    icon.blurMargin = blurred?.margin ?? 0
+                    let blurredReflection = (icon.reflection.contents as! CGImage?).flatMap(BlurredPictureCache.blurred)
+                    icon.blurredReflection.contents = blurredReflection?.image
+                    icon.reflectionBlurMargin = blurredReflection?.margin ?? 0
+                #endif
             }
         }
     }
@@ -262,10 +278,20 @@ final class RootCarouselLayerController: LayerController {
             run(icon.image, "bounds", states.map { NSValue.layerRect(CGRect(x: 0, y: 0, width: $0.size, height: $0.size)) })
             run(icon.reflection, "bounds", states.map { NSValue.layerRect(CGRect(x: 0, y: 0, width: $0.reflectionSize, height: $0.reflectionSize)) })
             run(icon.reflection, "position", states.map { NSValue.layerPoint(Self.reflectionPosition($0)) })
-            run(icon.reflection, "opacity", states.map { NSNumber(value: $0.showsReflection ? $0.reflectionOpacity : 0) })
             #if os(macOS)
+                run(icon.reflection, "opacity", states.map { NSNumber(value: $0.showsReflection ? $0.reflectionOpacity : 0) })
                 run(icon.container, "filters.blur.inputRadius", states.map { NSNumber(value: Double($0.blurRadius)) })
                 run(icon.reflection, "filters.blur.inputRadius", states.map { NSNumber(value: Double($0.reflectionBlur)) })
+            #else
+                let blurs = states.map(Self.blurAmount)
+                let reflections = states.map { Float($0.showsReflection ? $0.reflectionOpacity : 0) }
+                run(icon.image, "opacity", blurs.map { NSNumber(value: 1 - $0) })
+                run(icon.blurredImage, "opacity", blurs.map { NSNumber(value: $0) })
+                run(icon.blurredImage, "bounds", states.map { NSValue.layerRect(Self.blurredBounds($0.size, margin: icon.blurMargin)) })
+                run(icon.reflection, "opacity", zip(reflections, blurs).map { NSNumber(value: $0 * (1 - $1)) })
+                run(icon.blurredReflection, "opacity", zip(reflections, blurs).map { NSNumber(value: $0 * $1) })
+                run(icon.blurredReflection, "bounds", states.map { NSValue.layerRect(Self.blurredBounds($0.reflectionSize, margin: icon.reflectionBlurMargin)) })
+                run(icon.blurredReflection, "position", states.map { NSValue.layerPoint(Self.reflectionPosition($0)) })
             #endif
             icon.state = final
         }
@@ -279,6 +305,17 @@ final class RootCarouselLayerController: LayerController {
         #else
             state.reflectionCenter
         #endif
+    }
+
+    /// How far into the blurred copy an icon is (0 sharp, 1 as blurred as the arc's icons).
+    private static func blurAmount(_ state: IconState) -> Float {
+        Float(min(1, max(0, state.blurRadius / 10)))
+    }
+
+    /// The blurred copy's box: the picture's box grown by the blur's margin on every side.
+    private static func blurredBounds(_ side: CGFloat, margin: CGFloat) -> CGRect {
+        let grown = side * (1 + margin * 2)
+        return CGRect(x: 0, y: 0, width: grown, height: grown)
     }
 
     private func makeIcon() -> Icon {
@@ -299,6 +336,13 @@ final class RootCarouselLayerController: LayerController {
                 blur.setValue(0, forKey: kCIInputRadiusKey)
                 icon.reflection.filters = [blur]
             }
+        #else
+            for layer in [icon.blurredImage, icon.blurredReflection] {
+                layer.contentsGravity = .resizeAspect
+                layer.opacity = 0
+            }
+            icon.container.insertSublayer(icon.blurredReflection, above: icon.reflection)
+            icon.container.addSublayer(icon.blurredImage)
         #endif
         return icon
     }
@@ -339,7 +383,12 @@ final class RootCarouselLayerController: LayerController {
     private func slotState(position: Int, configuration c: RootCarouselConfiguration, bounds: CGSize) -> IconState {
         let angle = CGFloat(position) * .pi / 6
         let isLanded = position == 0 && c.isIconAnimated
-        let scale = isLanded ? c.landedIconScale : 1 - CGFloat(abs(position)) * c.scaleReduction
+        // The slot just before the selection is where the front icon goes as the next one comes
+        // forward (and comes back from): just past the left edge of the screen at the front
+        // icon's size, so it slides off in view while the next arrives and the front of the
+        // carousel never stands empty. Further slots wait far off screen.
+        let isExitSlot = position == -1
+        let scale = isLanded ? c.landedIconScale : (isExitSlot ? 1 : 1 - CGFloat(abs(position)) * c.scaleReduction)
         var x: CGFloat
         var y: CGFloat
         if isLanded {
@@ -351,6 +400,12 @@ final class RootCarouselLayerController: LayerController {
         } else if (1 ... 3).contains(position) {
             x = -1.25 * c.arcRadius * sin(angle) * 0.9 - 0.1 * c.iconSize
             y = -c.arcRadius * (1 - cos(angle)) * 0.025 + (position < 2 ? 0.2 * c.iconSize : 0.15 * c.iconSize)
+        } else if isExitSlot {
+            let frontSize = c.iconSize * c.selectedSizeMultiplier
+            let front = CGPoint(x: c.restingOffset.x - c.entryOffset, y: c.restingOffset.y + c.entryOffset)
+            x = -frontSize * 0.5 - 24 - c.boxOriginInScene.x - bounds.width / 2
+            // Down and to the left, in the direction the far slot lies.
+            y = front.y + (front.x - x) * ((1280 - front.y) / (front.x + 1920))
         } else {
             x = -1920
             y = 1280
@@ -363,7 +418,7 @@ final class RootCarouselLayerController: LayerController {
         let isIncoming = position == 0 && !c.isIconAnimated
         let baseX = x + (isIncoming ? -c.entryOffset : 0)
         let baseY = y + (isIncoming ? c.entryOffset : 0)
-        let adjustedSize = abs(position) == 1 || abs(position) == 2 ? c.iconSize : c.iconSize * c.selectedSizeMultiplier
+        let adjustedSize = !isExitSlot && (abs(position) == 1 || abs(position) == 2) ? c.iconSize : c.iconSize * c.selectedSizeMultiplier
         // Hidden while the section's own landed icon stands in, and in sections apart from the selected one.
         if c.showsSettledLandedIcon {
             opacity = 0
@@ -394,7 +449,7 @@ final class RootCarouselLayerController: LayerController {
             center: center,
             size: adjustedSize * scale,
             opacity: Float(opacity),
-            blurRadius: position != 0 ? 10 : 0,
+            blurRadius: position != 0 && !isExitSlot ? 10 : 0,
             position: position,
             reflectionCenter: reflectionCenter,
             reflectionSize: adjustedSize * reflectionScale,
@@ -423,10 +478,21 @@ final class RootCarouselLayerController: LayerController {
         animate(icon.image, "bounds", to: NSValue.layerRect(CGRect(origin: .zero, size: size)), duration: duration)
         animate(icon.reflection, "bounds", to: NSValue.layerRect(CGRect(origin: .zero, size: reflectionSize)), duration: duration)
         animate(icon.reflection, "position", to: NSValue.layerPoint(reflectionPosition), duration: duration)
-        animate(icon.reflection, "opacity", to: NSNumber(value: target.showsReflection ? target.reflectionOpacity : 0), duration: target.showsReflection ? duration : 0)
+        let reflectionDuration = target.showsReflection ? duration : 0
         #if os(macOS)
+            animate(icon.reflection, "opacity", to: NSNumber(value: target.showsReflection ? target.reflectionOpacity : 0), duration: reflectionDuration)
             animate(icon.container, "filters.blur.inputRadius", to: NSNumber(value: Double(target.blurRadius)), duration: duration)
             animate(icon.reflection, "filters.blur.inputRadius", to: NSNumber(value: Double(target.reflectionBlur)), duration: duration)
+        #else
+            let blur = Self.blurAmount(target)
+            let reflectionOpacity = target.showsReflection ? target.reflectionOpacity : 0
+            animate(icon.image, "opacity", to: NSNumber(value: 1 - blur), duration: duration)
+            animate(icon.blurredImage, "opacity", to: NSNumber(value: blur), duration: duration)
+            animate(icon.blurredImage, "bounds", to: NSValue.layerRect(Self.blurredBounds(target.size, margin: icon.blurMargin)), duration: duration)
+            animate(icon.reflection, "opacity", to: NSNumber(value: reflectionOpacity * (1 - blur)), duration: reflectionDuration)
+            animate(icon.blurredReflection, "opacity", to: NSNumber(value: reflectionOpacity * blur), duration: reflectionDuration)
+            animate(icon.blurredReflection, "bounds", to: NSValue.layerRect(Self.blurredBounds(target.reflectionSize, margin: icon.reflectionBlurMargin)), duration: duration)
+            animate(icon.blurredReflection, "position", to: NSValue.layerPoint(reflectionPosition), duration: duration)
         #endif
         CATransaction.commit()
     }
@@ -507,3 +573,55 @@ extension NSValue {
         #endif
     }
 }
+
+#if !os(macOS)
+    import CoreImage
+
+    /// Blurred copies of pictures, for platforms whose layers have no filters. They are drawn
+    /// small (a blur keeps no detail worth the memory) with a clear margin round the picture
+    /// for the blur to spread into, given as a share of the picture's side.
+    @MainActor
+    enum BlurredPictureCache {
+        private final class Box {
+            let image: CGImage
+            let margin: CGFloat
+            init(_ image: CGImage, margin: CGFloat) {
+                self.image = image
+                self.margin = margin
+            }
+        }
+
+        private static let cache: NSCache<AnyObject, Box> = {
+            let cache = NSCache<AnyObject, Box>()
+            cache.countLimit = 40
+            return cache
+        }()
+
+        private static let context = CIContext(options: [.cacheIntermediates: false])
+
+        static func blurred(_ source: CGImage) -> (image: CGImage, margin: CGFloat)? {
+            if let cached = cache.object(forKey: source) {
+                return (cached.image, cached.margin)
+            }
+            let longest = CGFloat(max(source.width, source.height))
+            guard longest > 0 else { return nil }
+            let shrink = min(1, 192 / longest)
+            let input = CIImage(cgImage: source).transformed(by: CGAffineTransform(scaleX: shrink, y: shrink))
+            let side = max(input.extent.width, input.extent.height)
+            // The Mac blurs the arc's icons by 10 points at about 280 points across; the same
+            // share of the picture here.
+            let sigma = Double(side) * 10 / 280
+            let margin = CGFloat(ceil(sigma * 3))
+            let output = input.applyingGaussianBlur(sigma: sigma)
+            guard let image = context.createCGImage(
+                output,
+                from: input.extent.insetBy(dx: -margin, dy: -margin),
+                format: .BGRA8,
+                colorSpace: CGColorSpace(name: CGColorSpace.sRGB),
+            ) else { return nil }
+            let box = Box(image, margin: margin / side)
+            cache.setObject(box, forKey: source)
+            return (box.image, box.margin)
+        }
+    }
+#endif

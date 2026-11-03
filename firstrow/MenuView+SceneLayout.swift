@@ -278,6 +278,7 @@ extension MenuView {
             landedOffset: CGPoint(x: landedSelectedHorizontalOffset(sceneSize: sceneSize), y: landedSelectedVerticalOffset),
             entryOffset: selectedCarouselEntryOffset,
             sceneWidth: sceneSize.width,
+            boxOriginInScene: sceneFrames(sceneSize: sceneSize).carouselFrame.origin,
             selectionDuration: selectionAnimationDuration,
             usesLinearSweep: useLinearSelectionSweepAnimation,
             iconFlightDuration: iconFlightAnimationDuration,
@@ -403,9 +404,16 @@ extension MenuView {
 
     var activeMenuVirtualSceneSize: CGSize {
         #if os(iOS)
-            UIDevice.current.userInterfaceIdiom == .pad
-                ? MenuVirtualScenePreset.iPad
-                : MenuVirtualScenePreset.widescreen
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                return MenuVirtualScenePreset.iPad
+            }
+            // A phone screen nearly as square as an iPad's (a foldable opened out) gets the
+            // iPad's 4:3 layout; the 16:9 one would lose its sides.
+            let screen = activeFullscreenContainerSize
+            if screen.width > 0, screen.height > 0, screen.width / screen.height < 1.6 {
+                return MenuVirtualScenePreset.iPad
+            }
+            return MenuVirtualScenePreset.widescreen
         #else
             MenuVirtualScenePreset.widescreen
         #endif

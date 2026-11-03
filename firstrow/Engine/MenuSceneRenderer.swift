@@ -140,7 +140,8 @@ final class MenuSceneRenderer: TransactionRendering {
             let virtualSize = menu.activeMenuVirtualSceneSize
             canvas.bounds = CGRect(origin: .zero, size: virtualSize)
             #if os(iOS)
-                let scale = containerSize.height / virtualSize.height
+                // The whole scene fits: by height on wide phones, by width on squarer screens.
+                let scale = min(containerSize.height / virtualSize.height, containerSize.width / virtualSize.width)
                 let screenBounds = menu.activeWindowScreen?.bounds ?? .zero
                 let deviceLandscapeWidth = max(screenBounds.width, screenBounds.height)
                 let horizontalCompensation = max(0, (deviceLandscapeWidth - containerSize.width) * 0.5)
@@ -257,7 +258,9 @@ final class MenuSceneRenderer: TransactionRendering {
 
     private func updateCarousel() {
         let sceneSize = menu.activeMenuVirtualSceneSize
-        let configuration = menu.rootCarouselConfiguration(sceneSize: sceneSize)
+        var configuration = menu.rootCarouselConfiguration(sceneSize: sceneSize)
+        // On screens wider than the scene there is room left of it; icons leave past the screen's edge.
+        configuration.boxOriginInScene.x += canvas.position.x / max(canvasScale, 0.0001)
         let bounds = menu.sceneFrames(sceneSize: sceneSize).carouselFrame.size
         if let last = lastCarouselConfiguration, last.isSameState(as: configuration) {
             return
