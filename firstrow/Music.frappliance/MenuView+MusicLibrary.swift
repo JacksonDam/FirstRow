@@ -376,8 +376,27 @@ extension MenuView {
         !isStartupMusicLibraryPreloadComplete || startupMusicLibraryPreloadOverlayOpacity > 0.001
     }
 
+    /// While the music library is still loading at launch, the menus work as usual; only
+    /// opening Music waits, and happens by itself once the library is ready.
+    func deferForStartupMusicLibraryPreload(_ key: KeyCode) -> Bool {
+        guard blocksMenuForStartupMusicLibraryPreload else { return false }
+        guard key == .enter, !isInSubmenu, !isEnteringSubmenu, activeFullscreenScene == nil,
+              menuItems.indices.contains(selectedIndex), menuItems[selectedIndex].id == "music"
+        else { return false }
+        isMusicEntryWaitingForStartupPreload = true
+        return true
+    }
+
     func finishStartupMusicLibraryPreload() {
         isStartupMusicLibraryPreloadComplete = true
+        if isMusicEntryWaitingForStartupPreload {
+            isMusicEntryWaitingForStartupPreload = false
+            if !isInSubmenu, !isEnteringSubmenu, activeFullscreenScene == nil,
+               menuItems.indices.contains(selectedIndex), menuItems[selectedIndex].id == "music"
+            {
+                startSubmenuTransition()
+            }
+        }
         withAnimation(.easeInOut(duration: 0.28)) {
             startupMusicLibraryPreloadOverlayOpacity = 0
         }

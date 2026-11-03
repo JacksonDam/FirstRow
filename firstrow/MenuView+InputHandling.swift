@@ -17,7 +17,7 @@ extension MenuView {
             NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
             return
         }
-        guard !blocksMenuForStartupMusicLibraryPreload else { return }
+        if deferForStartupMusicLibraryPreload(key) { return }
         registerUserInteractionForScreenSaver()
         if isFullscreenSceneTransitioning {
             return
@@ -816,7 +816,6 @@ extension MenuView {
         _ key: KeyCode,
         modifiers: NSEvent.ModifierFlags = [],
     ) {
-        guard !blocksMenuForStartupMusicLibraryPreload else { return }
         guard isDirectionalNavigationKey(key) else {
             handleKeyInput(key, isRepeat: false, modifiers: modifiers)
             return

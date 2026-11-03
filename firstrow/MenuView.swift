@@ -219,6 +219,7 @@ final class MenuView: ObservableObject {
     @Published var musicLibraryItemIndexBySongID: [String: Int] = [:]
     @Published var hasStartedStartupMusicLibraryPreload = false
     @Published var isStartupMusicLibraryPreloadComplete = false
+    var isMusicEntryWaitingForStartupPreload = false
     @Published var startupMusicLibraryPreloadOverlayOpacity: Double = 0
     @Published var startupSoundWarmUpWorkItem: Task<Void, Never>?
 
