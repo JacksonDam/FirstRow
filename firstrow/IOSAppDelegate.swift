@@ -1,16 +1,17 @@
 #if os(iOS) || os(tvOS)
     import UIKit
 
+    /// The app uses the scene life cycle (iOS and tvOS 27 refuse to launch apps that don't):
+    /// the window is made by `FirstRowSceneDelegate` when the system connects the scene.
     final class IOSAppDelegate: UIResponder, UIApplicationDelegate {
-        var window: UIWindow?
-
         func application(_: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-            let window = UIWindow(frame: UIScreen.main.bounds)
-            window.backgroundColor = .black
-            window.rootViewController = FirstRowViewController()
-            window.makeKeyAndVisible()
-            self.window = window
-            return true
+            true
+        }
+
+        func application(_: UIApplication, configurationForConnecting session: UISceneSession, options _: UIScene.ConnectionOptions) -> UISceneConfiguration {
+            let configuration = UISceneConfiguration(name: "Default", sessionRole: session.role)
+            configuration.delegateClass = FirstRowSceneDelegate.self
+            return configuration
         }
 
         #if os(iOS)
@@ -18,6 +19,20 @@
                 .landscape
             }
         #endif
+    }
+
+    /// Puts First Row's window on the scene.
+    final class FirstRowSceneDelegate: UIResponder, UIWindowSceneDelegate {
+        var window: UIWindow?
+
+        func scene(_ scene: UIScene, willConnectTo _: UISceneSession, options _: UIScene.ConnectionOptions) {
+            guard let windowScene = scene as? UIWindowScene else { return }
+            let window = UIWindow(windowScene: windowScene)
+            window.backgroundColor = .black
+            window.rootViewController = FirstRowViewController()
+            window.makeKeyAndVisible()
+            self.window = window
+        }
     }
 
     /// Hosts First Row full screen.
