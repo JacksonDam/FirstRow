@@ -1,7 +1,11 @@
 import AVFoundation
 import SwiftUI
 
-struct MenuView: View {
+/// First Row's menu system: all navigation, library and playback state, plus the logic in
+/// the `MenuView+*` extensions. A class rather than a SwiftUI view, so state lives in one
+/// place and tasks never capture stale copies of it.
+@MainActor
+final class MenuView: ObservableObject {
     let menuItems = MenuConfiguration.rootItems
 
     // MARK: - Layout constants
@@ -98,305 +102,329 @@ struct MenuView: View {
     let theatricalTrailersLoadingFullscreenKey = "movies_theatrical_trailers_loading"
     let photoSlideshowFullscreenKey = "photo_slideshow"
 
+    /// Bumped on every state change. SwiftUI skips re-running content closures that capture
+    /// only this class, so the rendering closures capture the revision as well.
+    var renderRevision = 0
+    private var revisionSubscription: Any?
+
+    init() {
+        revisionSubscription = objectWillChange.sink { [weak self] _ in
+            self?.renderRevision &+= 1
+        }
+    }
+
     // MARK: - Navigation state
 
-    @State var selectedIndex = 0
-    @State var selectedSubIndex = 0
-    @State var activeRootItemID: String?
-    @State var isIconAnimated = false
-    @State var isEnteringSubmenu = false
-    @State var isInSubmenu = false
-    @State var isInThirdMenu = false
-    @State var headerText = "First Row"
-    @State var headerOpacity: Double = 1
-    @State var submenuTitleOpacity: Double = 0
-    @State var rootMenuSelectionCenterSceneX: CGFloat?
-    @State var rootMenuOpacity: Double = 1
-    @State var submenuOpacity: Double = 0
-    @State var thirdMenuOpacity: Double = 0
-    @State var detailContentOpacity: Double = 0
-    @State var isReturningToRoot = false
-    @State var isMenuOverflowScrollingUp = false
-    @State var isMenuOverflowScrollingDown = false
-    @State var submenuEntryWorkItem: Task<Void, Never>?
-    @State var overflowFadeWorkItem: Task<Void, Never>?
+    @Published var selectedIndex = 0
+    @Published var selectedSubIndex = 0
+    @Published var activeRootItemID: String?
+    @Published var isIconAnimated = false
+    @Published var isEnteringSubmenu = false
+    @Published var isInSubmenu = false
+    @Published var isInThirdMenu = false
+    @Published var headerText = "First Row"
+    @Published var headerOpacity: Double = 1
+    @Published var submenuTitleOpacity: Double = 0
+    @Published var rootMenuSelectionCenterSceneX: CGFloat?
+    @Published var rootMenuOpacity: Double = 1
+    @Published var submenuOpacity: Double = 0
+    @Published var thirdMenuOpacity: Double = 0
+    @Published var detailContentOpacity: Double = 0
+    @Published var isReturningToRoot = false
+    @Published var isMenuOverflowScrollingUp = false
+    @Published var isMenuOverflowScrollingDown = false
+    @Published var submenuEntryWorkItem: Task<Void, Never>?
+    @Published var overflowFadeWorkItem: Task<Void, Never>?
 
     // MARK: - Input handling state
 
-    @State var lastNavigationKey: KeyCode = .none
-    @State var navigationHoldStartTime: Date?
-    @State var lastNavigationEventTime: Date?
-    @State var selectionAnimationDuration: Double = 0.30
-    @State var useLinearSelectionSweepAnimation = false
-    @State var isSelectionSettled = true
-    @State var settleWorkItem: Task<Void, Never>?
-    @State var didPlayLimitForCurrentHold = false
-    @State var activeDirectionalHoldKey: KeyCode = .none
-    @State var directionalHoldPressStartTime: Date?
-    @State var directionalHoldStartWorkItem: Task<Void, Never>?
-    @State var directionalHoldTickWorkItem: Task<Void, Never>?
-    @State var directionalHoldRepeatPhaseStartTime: Date?
-    @State var lastHoldNavigationTime: Date?
-    @State var lastArrowNavigationInputTime: Date?
+    @Published var lastNavigationKey: KeyCode = .none
+    @Published var navigationHoldStartTime: Date?
+    @Published var lastNavigationEventTime: Date?
+    @Published var selectionAnimationDuration: Double = 0.30
+    @Published var useLinearSelectionSweepAnimation = false
+    @Published var isSelectionSettled = true
+    @Published var settleWorkItem: Task<Void, Never>?
+    @Published var didPlayLimitForCurrentHold = false
+    @Published var activeDirectionalHoldKey: KeyCode = .none
+    @Published var directionalHoldPressStartTime: Date?
+    @Published var directionalHoldStartWorkItem: Task<Void, Never>?
+    @Published var directionalHoldTickWorkItem: Task<Void, Never>?
+    @Published var directionalHoldRepeatPhaseStartTime: Date?
+    @Published var lastHoldNavigationTime: Date?
+    @Published var lastArrowNavigationInputTime: Date?
 
     // MARK: - Third menu state
 
-    @State var selectedThirdIndex = 0
-    @State var thirdMenuMode: ThirdMenuMode = .none
-    @State var thirdMenuItems: [MoviesFolderEntry] = []
-    @State var thirdMenuRootURL: URL?
-    @State var thirdMenuCurrentURL: URL?
-    @State var movieLibraryRootURLs: [URL] = []
+    @Published var selectedThirdIndex = 0
+    @Published var thirdMenuMode: ThirdMenuMode = .none
+    @Published var thirdMenuItems: [MoviesFolderEntry] = []
+    @Published var thirdMenuRootURL: URL?
+    @Published var thirdMenuCurrentURL: URL?
+    @Published var movieLibraryRootURLs: [URL] = []
 
     // MARK: - iTunes Top state
 
-    @State var iTunesTopMovies: [ITunesTopMovieEntry] = []
-    @State var iTunesTopTVEpisodes: [ITunesTopTVEpisodeEntry] = []
-    @State var iTunesTopSongs: [ITunesTopSongEntry] = []
-    @State var iTunesTopMusicVideos: [ITunesTopMusicVideoEntry] = []
-    @State var iTunesTopStateByKind: [ITunesTopCarouselKind: ITunesTopKindState] = ITunesTopCarouselKind.defaultStateMap
-    @State var tvShowsSortMode: TVShowsSortMode = .show
+    @Published var iTunesTopMovies: [ITunesTopMovieEntry] = []
+    @Published var iTunesTopTVEpisodes: [ITunesTopTVEpisodeEntry] = []
+    @Published var iTunesTopSongs: [ITunesTopSongEntry] = []
+    @Published var iTunesTopMusicVideos: [ITunesTopMusicVideoEntry] = []
+    @Published var iTunesTopStateByKind: [ITunesTopCarouselKind: ITunesTopKindState] = ITunesTopCarouselKind.defaultStateMap
+    @Published var tvShowsSortMode: TVShowsSortMode = .show
 
     // MARK: - Music library state
 
-    @State var musicCategoryThirdMenuItems: [MusicCategoryEntry] = []
-    @State var musicSongsThirdMenuItems: [MusicLibrarySongEntry] = []
-    @State var activeMusicCategoryKind: MusicCategoryKind?
-    @State var activeMusicCategoryMenuTitle: String = ""
-    @State var lastSelectedMusicCategoryIndex: Int = 0
-    @State var isMusicSongsCategoryScoped = false
-    @State var activeMusicLibraryMediaType: MusicLibraryMediaType = .songs
-    @State var musicSongsShowsShuffleAction = false
-    @State var isLoadingMusicSongs = false
-    @State var musicSongsLoadError: String?
-    @State var musicSongsRequestID = 0
-    @State var musicShuffleRequestID = 0
-    @State var musicStartupPreloadRequestID = 0
-    @State var musicAllSongsCache: [MusicLibrarySongEntry]?
-    @State var musicShuffleSongsCache: [MusicLibrarySongEntry]?
-    @State var musicLibraryItemIndexBySongID: [String: Int] = [:]
-    @State var hasStartedStartupMusicLibraryPreload = false
-    @State var isStartupMusicLibraryPreloadComplete = false
-    @State var startupMusicLibraryPreloadOverlayOpacity: Double = 0
-    @State var startupSoundWarmUpWorkItem: Task<Void, Never>?
+    @Published var musicCategoryThirdMenuItems: [MusicCategoryEntry] = []
+    @Published var musicSongsThirdMenuItems: [MusicLibrarySongEntry] = []
+    @Published var activeMusicCategoryKind: MusicCategoryKind?
+    @Published var activeMusicCategoryMenuTitle: String = ""
+    @Published var lastSelectedMusicCategoryIndex: Int = 0
+    @Published var isMusicSongsCategoryScoped = false
+    @Published var activeMusicLibraryMediaType: MusicLibraryMediaType = .songs
+    @Published var musicSongsShowsShuffleAction = false
+    @Published var isLoadingMusicSongs = false
+    @Published var musicSongsLoadError: String?
+    @Published var musicSongsRequestID = 0
+    @Published var musicShuffleRequestID = 0
+    @Published var musicStartupPreloadRequestID = 0
+    @Published var musicAllSongsCache: [MusicLibrarySongEntry]?
+    @Published var musicShuffleSongsCache: [MusicLibrarySongEntry]?
+    @Published var musicLibraryItemIndexBySongID: [String: Int] = [:]
+    @Published var hasStartedStartupMusicLibraryPreload = false
+    @Published var isStartupMusicLibraryPreloadComplete = false
+    @Published var startupMusicLibraryPreloadOverlayOpacity: Double = 0
+    @Published var startupSoundWarmUpWorkItem: Task<Void, Never>?
 
     // MARK: - Movie playback state
 
-    @State var moviePlayer: AVPlayer?
-    @State var currentMoviePlaybackURL: URL?
-    @State var currentMoviePlaybackTemporaryFileURL: URL?
-    @State var isCurrentMoviePlaybackEphemeralPreview = false
-    @State var lastClosedMovieURL: URL?
-    @State var lastClosedMovieTimestamp: Double = 0
-    @State var isMoviePlaybackVisible = false
-    @State var isMovieTransitioning = false
-    @State var movieTransitionOverlayOpacity: Double = 0
-    @State var isMovieResumePromptVisible = false
-    @State var isMovieResumePromptConfirming = false
-    @State var movieResumePromptSelectedIndex = 0
-    @State var movieResumePromptHideUnselected = false
-    @State var movieResumePromptSolidBlackSelected = false
-    @State var movieResumePromptTargetURL: URL?
-    @State var movieResumePromptResumeSeconds: Double = 0
-    @State var movieResumePromptBackdropImage: NSImage?
-    @State var movieResumePromptBackdropRequestID = 0
-    @State var movieResumePromptBackdropCache: [String: NSImage] = [:]
-    @State var movieResumePromptOpacity: Double = 0
-    @State var areMovieControlsVisible = false
-    @State var movieControlsOpacity: Double = 0
-    @State var movieControlsHideWorkItem: Task<Void, Never>?
-    @State var movieControlsGlyphState: MoviePlaybackGlyphState = .pause
-    @State var isMoviePreviewDownloadLoading = false
-    @State var moviePreviewDownloadProgress: Double = 0
-    @State var moviePlaybackCurrentSeconds: Double = 0
-    @State var moviePlaybackDurationSeconds: Double = 0
-    @State var pendingMovieControlsRevealOnDurationReady = false
-    @State var movieTimeObserverToken: Any?
-    @State var moviePlaybackDidEndObserver: NSObjectProtocol?
-    @State var observedMoviePlayer: AVPlayer?
-    @State var movieScrubDirection: Int = 0
-    @State var movieScrubStartDate: Date?
-    @State var movieLastScrubInputDate: Date?
-    @State var movieLastScrubTickDate: Date?
-    @State var movieScrubTimer: Timer?
-    @State var moviePlaybackValidationRequestID = 0
+    @Published var moviePlayer: AVPlayer?
+    @Published var currentMoviePlaybackURL: URL?
+    @Published var currentMoviePlaybackTemporaryFileURL: URL?
+    @Published var isCurrentMoviePlaybackEphemeralPreview = false
+    @Published var lastClosedMovieURL: URL?
+    @Published var lastClosedMovieTimestamp: Double = 0
+    @Published var isMoviePlaybackVisible = false
+    @Published var isMovieTransitioning = false
+    @Published var movieTransitionOverlayOpacity: Double = 0
+    @Published var isMovieResumePromptVisible = false
+    @Published var isMovieResumePromptConfirming = false
+    @Published var movieResumePromptSelectedIndex = 0
+    @Published var movieResumePromptHideUnselected = false
+    @Published var movieResumePromptSolidBlackSelected = false
+    @Published var movieResumePromptTargetURL: URL?
+    @Published var movieResumePromptResumeSeconds: Double = 0
+    @Published var movieResumePromptBackdropImage: NSImage?
+    @Published var movieResumePromptBackdropRequestID = 0
+    @Published var movieResumePromptBackdropCache: [String: NSImage] = [:]
+    @Published var movieResumePromptOpacity: Double = 0
+    @Published var areMovieControlsVisible = false
+    @Published var movieControlsOpacity: Double = 0
+    @Published var movieControlsHideWorkItem: Task<Void, Never>?
+    @Published var movieControlsGlyphState: MoviePlaybackGlyphState = .pause
+    @Published var isMoviePreviewDownloadLoading = false
+    @Published var moviePreviewDownloadProgress: Double = 0
+    @Published var moviePlaybackCurrentSeconds: Double = 0
+    @Published var moviePlaybackDurationSeconds: Double = 0
+    @Published var pendingMovieControlsRevealOnDurationReady = false
+    @Published var movieTimeObserverToken: Any?
+    @Published var moviePlaybackDidEndObserver: NSObjectProtocol?
+    @Published var observedMoviePlayer: AVPlayer?
+    @Published var movieScrubDirection: Int = 0
+    @Published var movieScrubStartDate: Date?
+    @Published var movieLastScrubInputDate: Date?
+    @Published var movieLastScrubTickDate: Date?
+    @Published var movieScrubTimer: Timer?
+    @Published var moviePlaybackValidationRequestID = 0
 
     // MARK: - Movies library state
 
-    @State var menuSceneOpacity: Double = 1
-    @State var menuFolderSwapOverlayOpacity: Double = 0
-    @State var moviePreviewTargetURL: URL?
-    @State var moviePreviewImage: NSImage?
-    @State var moviePreviewRequestID = 0
-    @State var moviePreviewCache: [String: NSImage] = [:]
-    @State var moviesFolderSelectionIndexByDirectoryPath: [String: Int] = [:]
-    @State var moviesFolderSubmenuPreviewDescriptors: [MovieGapPreviewDescriptor] = []
-    @State var moviesFolderSubmenuPreviewIdentity: String = ""
-    @State var moviesFolderSubmenuPreviewRequestID = 0
-    @State var isLoadingMoviesFolderEntries = false
-    @State var moviesFolderEntriesRequestID = 0
+    @Published var menuSceneOpacity: Double = 1
+    @Published var menuFolderSwapOverlayOpacity: Double = 0
+    @Published var moviePreviewTargetURL: URL?
+    @Published var moviePreviewImage: NSImage?
+    @Published var moviePreviewRequestID = 0
+    @Published var moviePreviewCache: [String: NSImage] = [:]
+    @Published var moviesFolderSelectionIndexByDirectoryPath: [String: Int] = [:]
+    @Published var moviesFolderSubmenuPreviewDescriptors: [MovieGapPreviewDescriptor] = []
+    @Published var moviesFolderSubmenuPreviewIdentity: String = ""
+    @Published var moviesFolderSubmenuPreviewRequestID = 0
+    @Published var isLoadingMoviesFolderEntries = false
+    @Published var moviesFolderEntriesRequestID = 0
 
     // MARK: - Music preview/carousel state
 
-    @State var musicPreviewTargetSongID: String?
-    @State var musicPreviewImage: NSImage?
-    @State var musicPreviewDisplayedSong: MusicLibrarySongEntry?
-    @State var musicPreviewRequestID = 0
-    @State var musicPreviewRefreshWorkItem: Task<Void, Never>?
-    @State var musicPreviewCache: [String: NSImage] = [:]
-    @State var musicLibraryArtworkDataByAlbumKey: [String: Data] = [:]
-    @State var musicTopLevelCarouselActiveSubmenuID: String?
-    @State var musicTopLevelCarouselArtworksByIndex: [Int: NSImage?] = [:]
-    @State var musicTopLevelCarouselLoadedArtworkCount = 0
-    @State var musicTopLevelCarouselResolvedArtworkCount: Int?
-    @State var musicTopLevelCarouselPageStartsInFlight: Set<Int> = []
-    @State var musicTopLevelCarouselRequestID = 0
-    @State var isLoadingMusicTopLevelCarousel = false
-    @State var musicTopLevelCarouselLoadOverlayOpacity: Double = 0
+    @Published var musicPreviewTargetSongID: String?
+    @Published var musicPreviewImage: NSImage?
+    @Published var musicPreviewDisplayedSong: MusicLibrarySongEntry?
+    @Published var musicPreviewRequestID = 0
+    @Published var musicPreviewRefreshWorkItem: Task<Void, Never>?
+    @Published var musicPreviewCache: [String: NSImage] = [:]
+    @Published var musicLibraryArtworkDataByAlbumKey: [String: Data] = [:]
+    @Published var musicTopLevelCarouselActiveSubmenuID: String?
+    @Published var musicTopLevelCarouselArtworksByIndex: [Int: NSImage?] = [:]
+    @Published var musicTopLevelCarouselLoadedArtworkCount = 0
+    @Published var musicTopLevelCarouselResolvedArtworkCount: Int?
+    @Published var musicTopLevelCarouselPageStartsInFlight: Set<Int> = []
+    @Published var musicTopLevelCarouselRequestID = 0
+    @Published var isLoadingMusicTopLevelCarousel = false
+    @Published var musicTopLevelCarouselLoadOverlayOpacity: Double = 0
 
     // MARK: - Podcasts state
 
-    @State var podcastSeriesItems: [PodcastSeriesEntry] = []
-    @State var podcastEpisodesThirdMenuItems: [PodcastEpisodeEntry] = []
-    @State var activePodcastSeriesID: String?
-    @State var activePodcastPlaybackSeriesID: String?
-    @State var activePodcastPlaybackEpisodeID: String?
-    @State var isLoadingPodcasts = false
-    @State var podcastsLoadError: String?
-    @State var podcastsRequestID = 0
-    @State var podcastsHasLoadedAtLeastOnce = false
-    @State var hasPresentedNoPodcastsErrorInCurrentSession = false
-    @State var isResolvingPodcastsRootSelection = false
+    @Published var podcastSeriesItems: [PodcastSeriesEntry] = []
+    @Published var podcastEpisodesThirdMenuItems: [PodcastEpisodeEntry] = []
+    @Published var activePodcastSeriesID: String?
+    @Published var activePodcastPlaybackSeriesID: String?
+    @Published var activePodcastPlaybackEpisodeID: String?
+    @Published var isLoadingPodcasts = false
+    @Published var podcastsLoadError: String?
+    @Published var podcastsRequestID = 0
+    @Published var podcastsHasLoadedAtLeastOnce = false
+    @Published var hasPresentedNoPodcastsErrorInCurrentSession = false
+    @Published var isResolvingPodcastsRootSelection = false
 
     // MARK: - Photos state
 
-    @State var photosDateAlbums: [PhotoLibraryAlbumEntry] = []
-    @State var photosDateAlbumMenuItems: [MenuListItemConfig] = []
-    @State var photosLastTwelveMonthsAlbum: PhotoLibraryAlbumEntry?
-    @State var isLoadingPhotoLibrary = false
-    @State var photoLibraryLoadError: String?
-    @State var photoLibraryHasLoadedAtLeastOnce = false
-    @State var photoLibraryRequestID = 0
-    @State var photosAlbumCoverImageCache: [String: NSImage] = [:]
-    @State var photosAlbumCoverRequestsInFlight: Set<String> = []
-    @State var photosCarouselArtworks: [NSImage?] = []
-    @State var photosCarouselIdentity: String = ""
-    @State var photosCarouselRequestID = 0
-    @State var photosCarouselLoadOverlayOpacity: Double = 0
-    @State var photoSlideshowRequestID = 0
-    @State var photoSlideshowAssetLocalIdentifiers: [String] = []
-    @State var photoSlideshowImageCache: [Int: NSImage] = [:]
-    @State var photoSlideshowImageRequestsInFlight: Set<Int> = []
-    @State var photoSlideshowImageFallbackAttempted: Set<Int> = []
-    @State var photoSlideshowVisiblePrimaryIndex = 0
-    @State var photoSlideshowVisibleSecondaryIndex: Int?
-    @State var photoSlideshowAlbumTitle: String = ""
-    @State var photoSlideshowPlaybackStartDate = Date()
-    @State var photoSlideshowPlaybackElapsedOffset: TimeInterval = 0
-    @State var photoSlideshowIsPaused = false
-    @State var photoSlideshowPausedIndex = 0
-    @State var photoSlideshowDidSeekWhilePaused = false
-    @State var photoSlideshowHasFinished = false
-    @State var photoSlideshowResolvedMusicEntry: MusicLibrarySongEntry?
-    @State var photoSlideshowMusicURL: URL?
-    @State var photoSlideshowMusicPlayer: AVPlayer?
-    @State var observedPhotoSlideshowMusicPlayer: AVPlayer?
-    @State var photoSlideshowMusicDidEndObserver: NSObjectProtocol?
-    @State var photoSlideshowMusicFallbackWorkItem: Task<Void, Never>?
-    @State var photoSlideshowMusicHasStarted = false
-    @State var photoSlideshowUsesAppleScriptMusic = false
+    @Published var photosDateAlbums: [PhotoLibraryAlbumEntry] = []
+    @Published var photosDateAlbumMenuItems: [MenuListItemConfig] = []
+    @Published var photosLastTwelveMonthsAlbum: PhotoLibraryAlbumEntry?
+    @Published var isLoadingPhotoLibrary = false
+    @Published var photoLibraryLoadError: String?
+    @Published var photoLibraryHasLoadedAtLeastOnce = false
+    @Published var photoLibraryRequestID = 0
+    @Published var photosAlbumCoverImageCache: [String: NSImage] = [:]
+    @Published var photosAlbumCoverRequestsInFlight: Set<String> = []
+    @Published var photosCarouselArtworks: [NSImage?] = []
+    @Published var photosCarouselIdentity: String = ""
+    @Published var photosCarouselRequestID = 0
+    @Published var photosCarouselLoadOverlayOpacity: Double = 0
+    @Published var photoSlideshowRequestID = 0
+    @Published var photoSlideshowAssetLocalIdentifiers: [String] = []
+    @Published var photoSlideshowImageCache: [Int: NSImage] = [:]
+    @Published var photoSlideshowImageRequestsInFlight: Set<Int> = []
+    @Published var photoSlideshowImageFallbackAttempted: Set<Int> = []
+    @Published var photoSlideshowVisiblePrimaryIndex = 0
+    @Published var photoSlideshowVisibleSecondaryIndex: Int?
+    @Published var photoSlideshowAlbumTitle: String = ""
+    @Published var photoSlideshowPlaybackStartDate = Date()
+    @Published var photoSlideshowPlaybackElapsedOffset: TimeInterval = 0
+    @Published var photoSlideshowIsPaused = false
+    @Published var photoSlideshowPausedIndex = 0
+    @Published var photoSlideshowDidSeekWhilePaused = false
+    @Published var photoSlideshowHasFinished = false
+    @Published var photoSlideshowResolvedMusicEntry: MusicLibrarySongEntry?
+    @Published var photoSlideshowMusicURL: URL?
+    @Published var photoSlideshowMusicPlayer: AVPlayer?
+    @Published var observedPhotoSlideshowMusicPlayer: AVPlayer?
+    @Published var photoSlideshowMusicDidEndObserver: NSObjectProtocol?
+    @Published var photoSlideshowMusicFallbackWorkItem: Task<Void, Never>?
+    @Published var photoSlideshowMusicHasStarted = false
+    @Published var photoSlideshowUsesAppleScriptMusic = false
 
     // MARK: - Music playback state
 
-    @State var deferNowPlayingMenuItemUntilAfterFadeOut = false
-    @State var holdNowPlayingMenuItemDuringExitFade = false
-    @State var hasPendingExternalMusicRestore = false
-    @State var isMusicSongsShuffleMode = false
-    @State var activeMusicPlaybackQueue: [MusicLibrarySongEntry] = []
-    @State var activeMusicPlaybackSongID: String?
-    @State var musicNowPlayingTitle = "Unknown Song"
-    @State var musicNowPlayingArtist = "Unknown Artist"
-    @State var musicNowPlayingAlbum = ""
-    @State var musicNowPlayingTrackPositionText = ""
-    @State var musicNowPlayingArtwork: NSImage?
-    @State var musicNowPlayingArtworkRequestID: Int = 0
-    @State var musicNowPlayingElapsedSeconds: Double = 0
-    @State var musicNowPlayingDurationSeconds: Double = 0
-    @State var musicNowPlayingShowsShuffleGlyph = false
-    @State var musicNowPlayingLeadingGlyphState: MoviePlaybackGlyphState?
-    @State var musicSongTransitionSnapshot: MusicNowPlayingSnapshot?
-    @State var musicSongTransitionOutgoingProgress: CGFloat = 0
-    @State var musicSongTransitionOutgoingOpacityProgress: CGFloat = 0
-    @State var musicSongTransitionIncomingProgress: CGFloat = 0
-    @State var musicSongTransitionDirection: Int = 1
-    @State var musicSongTransitionRequestID: Int = 0
-    @State var musicSongTransitionDeadline: Date?
-    @State var isMusicSongTransitioning = false
-    @State var musicNowPlayingFlipRotationDegrees: Double = 0
-    @State var musicNowPlayingUsesAlternateLayout = false
-    @State var musicNowPlayingFlipTimer: Timer?
-    @State var musicNowPlayingFlipMidpointWorkItem: Task<Void, Never>?
-    @State var musicNowPlayingFlipGeneration: Int = 0
-    @State var isMusicNowPlayingFlipAnimating = false
-    @State var musicAudioPlayer: AVPlayer?
-    @State var isCurrentMusicPlaybackUsingAppleScript = false
-    @State var currentMusicPlaybackTemporaryFileURL: URL?
-    @State var musicTimeObserverToken: Any?
-    @State var musicPlaybackDidEndObserver: NSObjectProtocol?
-    @State var observedMusicAudioPlayer: AVPlayer?
-    @State var musicScrubDirection: Int = 0
-    @State var musicScrubStartDate: Date?
-    @State var musicLastScrubInputDate: Date?
-    @State var musicLastScrubTickDate: Date?
-    @State var musicScrubTimer: Timer?
-    @State var musicArtworkPrefetchInFlightKeys: Set<String> = []
-    @State var musicPlaybackRequestID = 0
+    @Published var deferNowPlayingMenuItemUntilAfterFadeOut = false
+    @Published var holdNowPlayingMenuItemDuringExitFade = false
+    @Published var hasPendingExternalMusicRestore = false
+    @Published var isMusicSongsShuffleMode = false
+    @Published var activeMusicPlaybackQueue: [MusicLibrarySongEntry] = []
+    @Published var activeMusicPlaybackSongID: String?
+    @Published var musicNowPlayingTitle = "Unknown Song"
+    @Published var musicNowPlayingArtist = "Unknown Artist"
+    @Published var musicNowPlayingAlbum = ""
+    @Published var musicNowPlayingTrackPositionText = ""
+    @Published var musicNowPlayingArtwork: NSImage?
+    @Published var musicNowPlayingArtworkRequestID: Int = 0
+    @Published var musicNowPlayingElapsedSeconds: Double = 0
+    @Published var musicNowPlayingDurationSeconds: Double = 0
+    @Published var musicNowPlayingShowsShuffleGlyph = false
+    @Published var musicNowPlayingLeadingGlyphState: MoviePlaybackGlyphState?
+    @Published var musicSongTransitionSnapshot: MusicNowPlayingSnapshot?
+    @Published var musicSongTransitionOutgoingProgress: CGFloat = 0
+    @Published var musicSongTransitionOutgoingOpacityProgress: CGFloat = 0
+    @Published var musicSongTransitionIncomingProgress: CGFloat = 0
+    @Published var musicSongTransitionDirection: Int = 1
+    @Published var musicSongTransitionRequestID: Int = 0
+    @Published var musicSongTransitionDeadline: Date?
+    @Published var isMusicSongTransitioning = false
+    @Published var musicNowPlayingFlipRotationDegrees: Double = 0
+    @Published var musicNowPlayingUsesAlternateLayout = false
+    @Published var musicNowPlayingFlipTimer: Timer?
+    @Published var musicNowPlayingFlipMidpointWorkItem: Task<Void, Never>?
+    @Published var musicNowPlayingFlipGeneration: Int = 0
+    @Published var isMusicNowPlayingFlipAnimating = false
+    @Published var musicAudioPlayer: AVPlayer?
+    @Published var isCurrentMusicPlaybackUsingAppleScript = false
+    @Published var currentMusicPlaybackTemporaryFileURL: URL?
+    @Published var musicTimeObserverToken: Any?
+    @Published var musicPlaybackDidEndObserver: NSObjectProtocol?
+    @Published var observedMusicAudioPlayer: AVPlayer?
+    @Published var musicScrubDirection: Int = 0
+    @Published var musicScrubStartDate: Date?
+    @Published var musicLastScrubInputDate: Date?
+    @Published var musicLastScrubTickDate: Date?
+    @Published var musicScrubTimer: Timer?
+    @Published var musicArtworkPrefetchInFlightKeys: Set<String> = []
+    @Published var musicPlaybackRequestID = 0
     #if os(tvOS) || os(macOS)
-        @State var musicKitScrubGlyphResetWorkItem: Task<Void, Never>?
+        @Published var musicKitScrubGlyphResetWorkItem: Task<Void, Never>?
     #endif
     #if os(tvOS)
-        @State var musicKitProgressTimer: Timer?
-        @State var musicKitDidHandleTrackEnd = false
+        @Published var musicKitProgressTimer: Timer?
+        @Published var musicKitDidHandleTrackEnd = false
     #endif
-    @State var isCurrentMusicPlaybackManagedByFirstRow = false
-    @State var musicAppleScriptCurrentTrackPersistentIDHex: String?
-    @State var musicAppleScriptIsPlaying = false
-    @State var musicAppleScriptStartupDeadline: Date?
-    @State var musicAppleScriptDidHandleTrackBoundary = false
-    @State var musicAppleScriptProgressAnchorElapsedSeconds: Double = 0
-    @State var musicAppleScriptProgressAnchorDate: Date?
-    @State var musicAppleScriptProgressTimer: Timer?
-    @State var musicAppleScriptProgressRequestInFlight = false
-    @State var musicAppleScriptLastSyncDate: Date?
-    @State var musicSystemPlayerObserverTokens: [NSObjectProtocol] = []
+    @Published var isCurrentMusicPlaybackManagedByFirstRow = false
+    @Published var musicAppleScriptCurrentTrackPersistentIDHex: String?
+    @Published var musicAppleScriptIsPlaying = false
+    @Published var musicAppleScriptStartupDeadline: Date?
+    @Published var musicAppleScriptDidHandleTrackBoundary = false
+    @Published var musicAppleScriptProgressAnchorElapsedSeconds: Double = 0
+    @Published var musicAppleScriptProgressAnchorDate: Date?
+    @Published var musicAppleScriptProgressTimer: Timer?
+    @Published var musicAppleScriptProgressRequestInFlight = false
+    @Published var musicAppleScriptLastSyncDate: Date?
+    @Published var musicSystemPlayerObserverTokens: [NSObjectProtocol] = []
 
     // MARK: - Fullscreen / transitions state
 
-    @State var activeFullscreenScene: FullscreenScenePresentation?
-    @State var fullscreenSceneOpacity: Double = 0
-    @State var fullscreenTransitionOverlayOpacity: Double = 0
-    @State var isFullscreenSceneTransitioning = false
-    @State var isMenuFolderSwapTransitioning = false
-    @State var theatricalTrailersLoadingShowsSpinner = false
-    @State var theatricalTrailersLoadingRequestID = 0
+    @Published var activeFullscreenScene: FullscreenScenePresentation?
+    @Published var fullscreenSceneOpacity: Double = 0
+    @Published var fullscreenTransitionOverlayOpacity: Double = 0
+    @Published var isFullscreenSceneTransitioning = false
+    @Published var isMenuFolderSwapTransitioning = false
+    @Published var theatricalTrailersLoadingShowsSpinner = false
+    @Published var theatricalTrailersLoadingRequestID = 0
 
     // MARK: - Screen saver state
 
-    @State var screenSaverNowPlayingToastOpacity: Double = 0
-    @State var screenSaverNowPlayingToastHideWorkItem: Task<Void, Never>?
-    @State var screenSaverPendingMusicTrackSwitchDelta = 0
-    @State var screenSaverPendingMusicTrackSwitchWorkItem: Task<Void, Never>?
-    @State var lastUserInteractionAt = Date()
-    @State var screenSaverIdleMonitorTimer: Timer?
+    @Published var screenSaverNowPlayingToastOpacity: Double = 0
+    @Published var screenSaverNowPlayingToastHideWorkItem: Task<Void, Never>?
+    @Published var screenSaverPendingMusicTrackSwitchDelta = 0
+    @Published var screenSaverPendingMusicTrackSwitchWorkItem: Task<Void, Never>?
+    @Published var lastUserInteractionAt = Date()
+    @Published var screenSaverIdleMonitorTimer: Timer?
 
     // MARK: - Settings
 
-    @AppStorage("isUISoundEffectsEnabled") var isUISoundEffectsEnabled = true
-    @AppStorage("isScreenSaverEnabled") var isScreenSaverEnabled = true
+    var isUISoundEffectsEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "isUISoundEffectsEnabled") as? Bool ?? true }
+        set {
+            objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: "isUISoundEffectsEnabled")
+        }
+    }
+
+    var isScreenSaverEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "isScreenSaverEnabled") as? Bool ?? true }
+        set {
+            objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: "isScreenSaverEnabled")
+        }
+    }
 
     #if os(iOS)
-        @State var isMoviesFolderPickerPresented = false
-        @State var hasPromptedMoviesFolderPickerThisSession = false
+        @Published var isMoviesFolderPickerPresented = false
+        @Published var hasPromptedMoviesFolderPickerThisSession = false
     #endif
 }
 

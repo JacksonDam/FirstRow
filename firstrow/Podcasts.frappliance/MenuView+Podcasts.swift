@@ -105,7 +105,7 @@ extension MenuView {
             ?? "No description available."
     }
 
-    var podcastArtworkRequestSize: CGSize {
+    nonisolated var podcastArtworkRequestSize: CGSize {
         CGSize(width: 1600, height: 1600)
     }
 
@@ -170,7 +170,7 @@ extension MenuView {
                    let image = cachedDecodedDisplayArtworkImage(
                        from: dataValue,
                        sourceKey: "\(cacheKey)::embedded_artwork_data",
-                       maxPixelSize: podcastArtworkRequestSize.width,
+                       maxPixelSize: self.podcastArtworkRequestSize.width,
                    )
                 {
                     artwork = image
@@ -185,7 +185,7 @@ extension MenuView {
                    let image = cachedDecodedDisplayArtworkImage(
                        from: dataValue,
                        sourceKey: "\(cacheKey)::embedded_artwork_value",
-                       maxPixelSize: podcastArtworkRequestSize.width,
+                       maxPixelSize: self.podcastArtworkRequestSize.width,
                    )
                 {
                     artwork = image
@@ -360,36 +360,36 @@ extension MenuView {
             }
             Task(priority: .userInitiated) {
                 do {
-                    let series = try loadDownloadedPodcastSeries()
+                    let series = try self.loadDownloadedPodcastSeries()
                     await MainActor.run {
-                        guard podcastsRequestID == requestID else { return }
-                        isResolvingPodcastsRootSelection = false
-                        isLoadingPodcasts = false
-                        podcastSeriesItems = series
-                        podcastEpisodesThirdMenuItems = []
-                        activePodcastSeriesID = nil
-                        podcastsHasLoadedAtLeastOnce = true
-                        podcastsLoadError = nil
-                        hasPresentedNoPodcastsErrorInCurrentSession = false
-                        guard !isInSubmenu, !isEnteringSubmenu else { return }
+                        guard self.podcastsRequestID == requestID else { return }
+                        self.isResolvingPodcastsRootSelection = false
+                        self.isLoadingPodcasts = false
+                        self.podcastSeriesItems = series
+                        self.podcastEpisodesThirdMenuItems = []
+                        self.activePodcastSeriesID = nil
+                        self.podcastsHasLoadedAtLeastOnce = true
+                        self.podcastsLoadError = nil
+                        self.hasPresentedNoPodcastsErrorInCurrentSession = false
+                        guard !self.isInSubmenu, !self.isEnteringSubmenu else { return }
                         if series.isEmpty {
-                            presentNoPodcastsFeatureErrorScreen()
+                            self.presentNoPodcastsFeatureErrorScreen()
                         } else {
-                            beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
+                            self.beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
                         }
                     }
                 } catch {
                     await MainActor.run {
-                        guard podcastsRequestID == requestID else { return }
-                        isResolvingPodcastsRootSelection = false
-                        isLoadingPodcasts = false
-                        podcastSeriesItems = []
-                        podcastEpisodesThirdMenuItems = []
-                        activePodcastSeriesID = nil
-                        podcastsHasLoadedAtLeastOnce = true
-                        podcastsLoadError = podcastsLibraryErrorMessage(for: error)
-                        guard !isInSubmenu, !isEnteringSubmenu else { return }
-                        beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
+                        guard self.podcastsRequestID == requestID else { return }
+                        self.isResolvingPodcastsRootSelection = false
+                        self.isLoadingPodcasts = false
+                        self.podcastSeriesItems = []
+                        self.podcastEpisodesThirdMenuItems = []
+                        self.activePodcastSeriesID = nil
+                        self.podcastsHasLoadedAtLeastOnce = true
+                        self.podcastsLoadError = self.podcastsLibraryErrorMessage(for: error)
+                        guard !self.isInSubmenu, !self.isEnteringSubmenu else { return }
+                        self.beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
                     }
                 }
             }
@@ -416,35 +416,35 @@ extension MenuView {
             }
             Task(priority: .userInitiated) {
                 do {
-                    let series = try loadDownloadedPodcastSeries()
+                    let series = try self.loadDownloadedPodcastSeries()
                     await MainActor.run {
-                        guard podcastsRequestID == requestID else { return }
-                        guard activeRootItemID == "podcasts", isInSubmenu else { return }
-                        isLoadingPodcasts = false
-                        podcastSeriesItems = series
-                        podcastsHasLoadedAtLeastOnce = true
-                        podcastsLoadError = nil
-                        if isInThirdMenu, thirdMenuMode == .podcastsEpisodes {
-                            syncPodcastEpisodesForActiveSeries()
+                        guard self.podcastsRequestID == requestID else { return }
+                        guard self.activeRootItemID == "podcasts", self.isInSubmenu else { return }
+                        self.isLoadingPodcasts = false
+                        self.podcastSeriesItems = series
+                        self.podcastsHasLoadedAtLeastOnce = true
+                        self.podcastsLoadError = nil
+                        if self.isInThirdMenu, self.thirdMenuMode == .podcastsEpisodes {
+                            self.syncPodcastEpisodesForActiveSeries()
                         } else {
-                            selectedSubIndex = min(
-                                selectedSubIndex,
-                                max(0, podcastSeriesItems.count - 1),
+                            self.selectedSubIndex = min(
+                                self.selectedSubIndex,
+                                max(0, self.podcastSeriesItems.count - 1),
                             )
-                            syncPodcastSubmenuSelectionForActiveSeries()
+                            self.syncPodcastSubmenuSelectionForActiveSeries()
                         }
-                        refreshDetailPreviewForCurrentContext()
+                        self.refreshDetailPreviewForCurrentContext()
                     }
                 } catch {
                     await MainActor.run {
-                        guard podcastsRequestID == requestID else { return }
-                        guard activeRootItemID == "podcasts", isInSubmenu else { return }
-                        isLoadingPodcasts = false
-                        podcastSeriesItems = []
-                        podcastEpisodesThirdMenuItems = []
-                        activePodcastSeriesID = nil
-                        podcastsHasLoadedAtLeastOnce = true
-                        podcastsLoadError = podcastsLibraryErrorMessage(for: error)
+                        guard self.podcastsRequestID == requestID else { return }
+                        guard self.activeRootItemID == "podcasts", self.isInSubmenu else { return }
+                        self.isLoadingPodcasts = false
+                        self.podcastSeriesItems = []
+                        self.podcastEpisodesThirdMenuItems = []
+                        self.activePodcastSeriesID = nil
+                        self.podcastsHasLoadedAtLeastOnce = true
+                        self.podcastsLoadError = self.podcastsLibraryErrorMessage(for: error)
                     }
                 }
             }
@@ -1151,15 +1151,15 @@ extension MenuView {
     #endif
     func enterPodcastEpisodesMenu(for series: PodcastSeriesEntry) {
         transitionMenuForFolderSwap {
-            thirdMenuMode = .podcastsEpisodes
-            isInThirdMenu = true
-            activePodcastSeriesID = series.id
-            podcastEpisodesThirdMenuItems = series.episodes
-            selectedThirdIndex = min(selectedThirdIndex, max(0, podcastEpisodesThirdMenuItems.count - 1))
-            headerText = truncatedPodcastSeriesHeaderTitle(series.title)
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
-            refreshDetailPreviewForCurrentContext()
+            self.thirdMenuMode = .podcastsEpisodes
+            self.isInThirdMenu = true
+            self.activePodcastSeriesID = series.id
+            self.podcastEpisodesThirdMenuItems = series.episodes
+            self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, self.podcastEpisodesThirdMenuItems.count - 1))
+            self.headerText = self.truncatedPodcastSeriesHeaderTitle(series.title)
+            self.submenuOpacity = 0
+            self.thirdMenuOpacity = 1
+            self.refreshDetailPreviewForCurrentContext()
         }
     }
 

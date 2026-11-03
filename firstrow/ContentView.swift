@@ -1,6 +1,15 @@
 import AVKit
 import SwiftUI
 
+/// Hosts the menu system's SwiftUI rendering.
+struct MenuHostView: View {
+    @StateObject private var menu = MenuView()
+
+    var body: some View {
+        menu.body
+    }
+}
+
 struct ContentView: View {
     @AppStorage("introMovieEnabled") private var introMovieEnabled = false
     @State private var player: AVPlayer? = nil
@@ -31,7 +40,7 @@ struct ContentView: View {
             ZStack {
                 Group {
                     if showMenu {
-                        MenuView().opacity(didSkipIntroAtLaunch ? launchMenuOpacity : 1)
+                        MenuHostView().opacity(didSkipIntroAtLaunch ? launchMenuOpacity : 1)
                     } else if let player {
                         VideoPlayerView(player: player, videoGravity: .resizeAspect)
                             .onAppear { player.play() }

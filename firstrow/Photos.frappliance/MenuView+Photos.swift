@@ -351,20 +351,20 @@ extension MenuView {
                 return
             }
             Task(priority: .userInitiated) {
-                let loadedAlbums = loadPhotoLibraryAlbums()
+                let loadedAlbums = self.loadPhotoLibraryAlbums()
                 await MainActor.run {
-                    guard photoLibraryRequestID == requestID else { return }
-                    guard activeRootItemID == "photos", isInSubmenu else { return }
-                    isLoadingPhotoLibrary = false
-                    photosDateAlbums = loadedAlbums.dateAlbums
-                    photosDateAlbumMenuItems = makePhotosDateAlbumMenuItems(from: loadedAlbums.dateAlbums)
-                    photosLastTwelveMonthsAlbum = loadedAlbums.lastTwelveMonths
-                    photoLibraryHasLoadedAtLeastOnce = true
-                    photoLibraryLoadError = nil
-                    selectedThirdIndex = min(selectedThirdIndex, max(0, photosDateAlbums.count - 1))
-                    refreshPhotosForCurrentContext()
-                    if thirdMenuMode == .photosDateAlbums, photosDateAlbums.isEmpty {
-                        abortPhotosDateAlbumsMenuEntryForEmptyLibrary()
+                    guard self.photoLibraryRequestID == requestID else { return }
+                    guard self.activeRootItemID == "photos", self.isInSubmenu else { return }
+                    self.isLoadingPhotoLibrary = false
+                    self.photosDateAlbums = loadedAlbums.dateAlbums
+                    self.photosDateAlbumMenuItems = self.makePhotosDateAlbumMenuItems(from: loadedAlbums.dateAlbums)
+                    self.photosLastTwelveMonthsAlbum = loadedAlbums.lastTwelveMonths
+                    self.photoLibraryHasLoadedAtLeastOnce = true
+                    self.photoLibraryLoadError = nil
+                    self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, self.photosDateAlbums.count - 1))
+                    self.refreshPhotosForCurrentContext()
+                    if self.thirdMenuMode == .photosDateAlbums, self.photosDateAlbums.isEmpty {
+                        self.abortPhotosDateAlbumsMenuEntryForEmptyLibrary()
                     }
                 }
             }
@@ -408,16 +408,16 @@ extension MenuView {
         }
         transitionMenuForFolderSwap(
             useOverlayFade: true,
-            revealWhen: { !isLoadingPhotoLibrary },
+            revealWhen: { !self.isLoadingPhotoLibrary },
         ) {
-            thirdMenuMode = .photosDateAlbums
-            isInThirdMenu = true
-            selectedThirdIndex = min(selectedThirdIndex, max(0, photosDateAlbums.count - 1))
-            headerText = title
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
-            requestPhotoLibraryLoadIfNeeded()
-            refreshDetailPreviewForCurrentContext()
+            self.thirdMenuMode = .photosDateAlbums
+            self.isInThirdMenu = true
+            self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, self.photosDateAlbums.count - 1))
+            self.headerText = title
+            self.submenuOpacity = 0
+            self.thirdMenuOpacity = 1
+            self.requestPhotoLibraryLoadIfNeeded()
+            self.refreshDetailPreviewForCurrentContext()
         }
     }
 
@@ -534,7 +534,7 @@ extension MenuView {
                     artworkDataByAlbumKey: [String: Data],
                 )?
                 do {
-                    let loadedSnapshot = try await loadStartupMusicLibrarySnapshot()
+                    let loadedSnapshot = try await self.loadStartupMusicLibrarySnapshot()
                     snapshot = loadedSnapshot
                     resolvedSong = loadedSnapshot.shuffleSongs.randomElement()
                 } catch {
@@ -542,18 +542,18 @@ extension MenuView {
                     resolvedSong = nil
                 }
                 await MainActor.run {
-                    guard photoSlideshowRequestID == requestID else { return }
+                    guard self.photoSlideshowRequestID == requestID else { return }
                     if let snapshot {
-                        musicAllSongsCache = snapshot.sortedSongs
-                        musicShuffleSongsCache = snapshot.shuffleSongs
+                        self.musicAllSongsCache = snapshot.sortedSongs
+                        self.musicShuffleSongsCache = snapshot.shuffleSongs
                         #if canImport(iTunesLibrary)
-                            musicLibraryItemIndexBySongID = snapshot.itemIndices
-                            musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
+                            self.musicLibraryItemIndexBySongID = snapshot.itemIndices
+                            self.musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
                         #endif
                     }
-                    photoSlideshowResolvedMusicEntry = resolvedSong
-                    photoSlideshowMusicURL = resolvedSong == nil ? defaultPhotoSlideshowMusicURL() : nil
-                    startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded()
+                    self.photoSlideshowResolvedMusicEntry = resolvedSong
+                    self.photoSlideshowMusicURL = resolvedSong == nil ? self.defaultPhotoSlideshowMusicURL() : nil
+                    self.startPhotoSlideshowBackgroundMusicFromResolvedSourceIfNeeded()
                 }
             }
         }
@@ -1125,7 +1125,7 @@ extension MenuView {
             options.isSynchronous = isSynchronous
             PHImageManager.default().requestImage(
                 for: asset,
-                targetSize: normalizedPhotoTargetSize(targetSize, deliveryMode: deliveryMode),
+                targetSize: self.normalizedPhotoTargetSize(targetSize, deliveryMode: deliveryMode),
                 contentMode: contentMode,
                 options: options,
             ) { image, info in

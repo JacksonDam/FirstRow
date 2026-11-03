@@ -699,65 +699,65 @@ extension MenuView {
     func enterITunesTopMenu(_ kind: ITunesTopCarouselKind, title: String) {
         transitionMenuForFolderSwap(
             useOverlayFade: true,
-            revealWhen: { !isLoadingITunesTopCarousel(kind) },
+            revealWhen: { !self.isLoadingITunesTopCarousel(kind) },
         ) {
-            thirdMenuMode = kind.thirdMenuMode
-            isInThirdMenu = true
-            selectedThirdIndex = 0
-            headerText = title
-            resetThirdMenuDirectoryState()
+            self.thirdMenuMode = kind.thirdMenuMode
+            self.isInThirdMenu = true
+            self.selectedThirdIndex = 0
+            self.headerText = title
+            self.resetThirdMenuDirectoryState()
             switch kind {
             case .movies:
-                resetITunesTopMenuState(
+                self.resetITunesTopMenuState(
                     for: .movies,
                     isLoading: true,
                     invalidateLoadRequest: false,
                     resetPlaybackRequestID: false,
                 )
-                resetMusicCategoryStateForNonMusicITunesTop()
-                activeMusicLibraryMediaType = .songs
-                musicSongsShowsShuffleAction = false
+                self.resetMusicCategoryStateForNonMusicITunesTop()
+                self.activeMusicLibraryMediaType = .songs
+                self.musicSongsShowsShuffleAction = false
             case .tvEpisodes:
-                resetITunesTopMenuState(
+                self.resetITunesTopMenuState(
                     for: .tvEpisodes,
                     isLoading: true,
                     invalidateLoadRequest: false,
                     resetPlaybackRequestID: false,
                 )
-                resetMusicCategoryStateForNonMusicITunesTop()
+                self.resetMusicCategoryStateForNonMusicITunesTop()
             case .songs:
-                resetMusicCategoryAndSongStateForMusicITunesTop()
-                resetITunesTopMenuState(
+                self.resetMusicCategoryAndSongStateForMusicITunesTop()
+                self.resetITunesTopMenuState(
                     for: .songs,
                     isLoading: true,
                     invalidateLoadRequest: false,
                     resetPlaybackRequestID: true,
                 )
-                resetITunesTopMenuState(
+                self.resetITunesTopMenuState(
                     for: .musicVideos,
                     isLoading: false,
                     invalidateLoadRequest: true,
                     resetPlaybackRequestID: true,
                 )
             case .musicVideos:
-                resetMusicCategoryAndSongStateForMusicITunesTop()
-                resetITunesTopMenuState(
+                self.resetMusicCategoryAndSongStateForMusicITunesTop()
+                self.resetITunesTopMenuState(
                     for: .musicVideos,
                     isLoading: true,
                     invalidateLoadRequest: false,
                     resetPlaybackRequestID: true,
                 )
-                resetITunesTopMenuState(
+                self.resetITunesTopMenuState(
                     for: .songs,
                     isLoading: false,
                     invalidateLoadRequest: true,
                     resetPlaybackRequestID: true,
                 )
             }
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
-            requestITunesTopLoad(kind)
-            refreshDetailPreviewForCurrentContext()
+            self.submenuOpacity = 0
+            self.thirdMenuOpacity = 1
+            self.requestITunesTopLoad(kind)
+            self.refreshDetailPreviewForCurrentContext()
         }
     }
 
@@ -788,7 +788,7 @@ extension MenuView {
 
     func setCurrentITunesTopPreviewImage(_ image: NSImage?, for kind: ITunesTopCarouselKind, animationDuration: Double) {
         let assignImage = {
-            updateITunesTopState(kind) { $0.previewImage = image }
+            self.updateITunesTopState(kind) { $0.previewImage = image }
         }
         guard kind != .musicVideos, animationDuration > 0 else {
             assignImage()

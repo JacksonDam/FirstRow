@@ -590,8 +590,8 @@ extension MenuView {
                 guard currentSelection.url.standardizedFileURL == selectedDirectory else { return }
                 if hasNavigableContent {
                     rememberCurrentMoviesFolderSelectionIndex()
-                    transitionMenuForFolderSwap(revealWhen: { !isLoadingMoviesFolderEntries }) {
-                        loadThirdMenuDirectory(selectedDirectory, resetSelection: true)
+                    transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
+                        self.loadThirdMenuDirectory(selectedDirectory, resetSelection: true)
                     }
                 } else {
                     presentFeatureErrorScreen(.noContentFound)

@@ -156,9 +156,9 @@ extension MenuView {
                 }
                 LazyVStack(spacing: optionRowSpacing) {
                     ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                        let isSelected = (index == movieResumePromptSelectedIndex)
-                        let hideSelectedText = movieResumePromptSolidBlackSelected && isSelected
-                        let hideUnselectedText = movieResumePromptHideUnselected && !isSelected
+                        let isSelected = (index == self.movieResumePromptSelectedIndex)
+                        let hideSelectedText = self.movieResumePromptSolidBlackSelected && isSelected
+                        let hideUnselectedText = self.movieResumePromptHideUnselected && !isSelected
                         Text(option).font(.firstRowBold(size: 45)).foregroundStyleCompat(.white).lineLimit(1).minimumScaleFactor(0.72).allowsTightening(true).frame(width: optionWidth, height: optionHeight, alignment: .leading).padding(.leading, optionTextInset).opacity((hideSelectedText || hideUnselectedText) ? 0 : 1)
                     }
                 }
@@ -401,17 +401,17 @@ extension MenuView {
                     let item = items[index]
                     let rowIsSelected = index == selectedIndex
                     let rowIsNormalHeight = normalHeightIndices.contains(index)
-                    let rowHeight = rowIsNormalHeight ? selectionBoxHeight : selectionHeight
+                    let rowHeight = rowIsNormalHeight ? self.selectionBoxHeight : selectionHeight
                     let rowYOffset = rowIsNormalHeight ? 0 : selectionYOffset
                     let rowYBase = usesUniformRowLayout ? CGFloat(index) * rowPitch : rowOffsets[index]
 
                     if item.showsTopDivider {
                         Rectangle()
                             .fill(Color.white.opacity(0.34))
-                            .frame(width: max(0, rowContentWidth - (dividerLineInsetHorizontal * 2)), height: 1)
+                            .frame(width: max(0, rowContentWidth - (self.dividerLineInsetHorizontal * 2)), height: 1)
                             .offset(
-                                x: rowContentXOffset + dividerLineInsetHorizontal,
-                                y: rowYBase - dividerGap + dividerLineYOffsetInGap,
+                                x: rowContentXOffset + self.dividerLineInsetHorizontal,
+                                y: rowYBase - dividerGap + self.dividerLineYOffsetInGap,
                             )
                     }
 
@@ -431,7 +431,7 @@ extension MenuView {
                             )
                     }
 
-                    menuItemView(
+                    self.menuItemView(
                         itemID: item.id,
                         title: item.title,
                         isSelected: rowIsSelected,
@@ -443,12 +443,12 @@ extension MenuView {
                         trailingText: item.trailingText,
                         trailingSymbolName: item.trailingSymbolName,
                         showsPlaybackSpeaker:
-                            (thirdMenuMode == .musicSongs &&
-                             activeMusicPlaybackSongID == item.id &&
-                             hasActiveMusicPlaybackSession()) ||
-                            (thirdMenuMode == .podcastsEpisodes &&
-                             isPodcastAudioNowPlaying &&
-                             activePodcastPlaybackEpisodeID == item.id),
+                            (self.thirdMenuMode == .musicSongs &&
+                             self.activeMusicPlaybackSongID == item.id &&
+                             self.hasActiveMusicPlaybackSession()) ||
+                            (self.thirdMenuMode == .podcastsEpisodes &&
+                             self.isPodcastAudioNowPlaying &&
+                             self.activePodcastPlaybackEpisodeID == item.id),
                         showsBlueDot: item.showsBlueDot,
                         alignsTextToDividerStart: item.alignsTextToDividerStart,
                         arrowAppearance: arrowAppearance,
@@ -1297,20 +1297,22 @@ extension MenuView {
     #endif
 
     var body: some View {
-        ZStack {
+        let revision = renderRevision
+        return ZStack {
             GeometryReader { geometry in
-                menuLayoutContainer(in: geometry).onKeyEvents(
+                let _ = revision
+                self.menuLayoutContainer(in: geometry).onKeyEvents(
                     onKeyDown: { key, isRepeat, modifiers in
                         if key == .upArrow || key == .downArrow || key == .leftArrow || key == .rightArrow {
                             if isRepeat { return }
-                            handleDirectionalPressBegan(key, modifiers: modifiers)
+                            self.handleDirectionalPressBegan(key, modifiers: modifiers)
                             return
                         }
-                        endDirectionalHoldSession()
-                        handleKeyInput(key, isRepeat: isRepeat, modifiers: modifiers)
+                        self.endDirectionalHoldSession()
+                        self.handleKeyInput(key, isRepeat: isRepeat, modifiers: modifiers)
                     },
                     onKeyUp: { key, _ in
-                        handleDirectionalPressEnded(key)
+                        self.handleDirectionalPressEnded(key)
                     },
                 )
                 #if os(iOS)
@@ -1383,41 +1385,41 @@ extension MenuView {
                 .overlay(
                     GameControllerInputOverlay(
                         onArrowKeyDown: { key in
-                            handleDirectionalPressBegan(key)
+                            self.handleDirectionalPressBegan(key)
                         },
                         onArrowKeyUp: { key in
-                            handleDirectionalPressEnded(key)
+                            self.handleDirectionalPressEnded(key)
                         },
                         onEnter: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.enter, isRepeat: false, modifiers: [])
+                            self.endDirectionalHoldSession()
+                            self.handleKeyInput(.enter, isRepeat: false, modifiers: [])
                         },
                         onBackspace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.delete, isRepeat: false, modifiers: [])
+                            self.endDirectionalHoldSession()
+                            self.handleKeyInput(.delete, isRepeat: false, modifiers: [])
                         },
                         onSpace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.space, isRepeat: false, modifiers: [])
+                            self.endDirectionalHoldSession()
+                            self.handleKeyInput(.space, isRepeat: false, modifiers: [])
                         },
                     ).allowsHitTesting(false),
                 )
                 #endif
                 .onAppear {
-                    beginStartupMusicLibraryPreloadIfNeeded()
-                    registerUserInteractionForScreenSaver()
-                    startScreenSaverIdleMonitor()
-                    startupSoundWarmUpWorkItem?.cancel()
-                    startupSoundWarmUpWorkItem = Task {
+                    self.beginStartupMusicLibraryPreloadIfNeeded()
+                    self.registerUserInteractionForScreenSaver()
+                    self.startScreenSaverIdleMonitor()
+                    self.startupSoundWarmUpWorkItem?.cancel()
+                    self.startupSoundWarmUpWorkItem = Task {
                         try? await firstRowSleep(0.75)
                         guard !Task.isCancelled else { return }
                         SoundEffectPlayer.shared.warmUp(soundNames: ["Selection", "SelectionChange", "Exit", "Limit"])
                     }
                 }.onDisappear {
-                    startupSoundWarmUpWorkItem?.cancel()
-                    startupSoundWarmUpWorkItem = nil
-                    endDirectionalHoldSession()
-                    stopScreenSaverIdleMonitor()
+                    self.startupSoundWarmUpWorkItem?.cancel()
+                    self.startupSoundWarmUpWorkItem = nil
+                    self.endDirectionalHoldSession()
+                    self.stopScreenSaverIdleMonitor()
                 }
             }
             if startupMusicLibraryPreloadOverlayOpacity > 0.001 {
@@ -1428,7 +1430,7 @@ extension MenuView {
             }
         }.ignoresSafeArea()
         #if os(iOS)
-            .sheet(isPresented: $isMoviesFolderPickerPresented) {
+            .sheet(isPresented: Binding(get: { self.isMoviesFolderPickerPresented }, set: { self.isMoviesFolderPickerPresented = $0 })) {
                 IOSFolderPicker(
                     onPick: { selectedURL in
                         handleMoviesFolderPickedFromFiles(selectedURL)
@@ -1443,6 +1445,7 @@ extension MenuView {
 
     @ViewBuilder
     func menuLayoutContainer(in geometry: GeometryProxy) -> some View {
+        let revision = renderRevision
         #if os(iOS)
             let virtualSize = activeMenuVirtualSceneSize
             let scale = geometry.size.height / virtualSize.height
@@ -1456,6 +1459,7 @@ extension MenuView {
             }()
             ZStack {
                 GeometryReader { virtualGeometry in
+                    let _ = revision
                     menuScene(geometry: virtualGeometry)
                 }.frame(width: virtualSize.width, height: virtualSize.height).scaleEffect(scale, anchor: .center).frame(width: geometry.size.width, height: geometry.size.height).offset(x: -horizontalCompensation)
                 fullscreenPresentationLayers(containerSize: fullscreenContainerSize)
@@ -1468,7 +1472,8 @@ extension MenuView {
             )
             ZStack {
                 GeometryReader { virtualGeometry in
-                    menuScene(geometry: virtualGeometry)
+                    let _ = revision
+                    self.menuScene(geometry: virtualGeometry)
                 }
                 .frame(width: layout.virtualSize.width, height: layout.virtualSize.height)
                 .scaleEffect(layout.scale, anchor: .topLeading)
@@ -1547,7 +1552,8 @@ extension MenuView {
     }
 
     func menuScene(geometry: GeometryProxy) -> some View {
-        ZStack {
+        let revision = renderRevision
+        return ZStack {
             VStack {
                 Spacer()
                 headerView(geometry: geometry).offset(y: menuClusterVerticalCompensation)
@@ -1557,10 +1563,11 @@ extension MenuView {
                             settledLandedIconView(image: image, geometry: geometry)
                         }
                         ForEach(visibleIndices(), id: \.self) { index in
-                            carouselItemView(for: index, geometry: geometry).opacity(
-                                showsSettledLandedIcon
+                            let _ = revision
+                            self.carouselItemView(for: index, geometry: geometry).opacity(
+                                self.showsSettledLandedIcon
                                     ? 0
-                                    : (isInSubmenu && !isReturningToRoot && index != selectedIndex ? 0 : 1),
+                                    : (self.isInSubmenu && !self.isReturningToRoot && index != self.selectedIndex ? 0 : 1),
                             )
                         }
                     }.background(Group {
@@ -1584,7 +1591,7 @@ extension MenuView {
             }
         }.onPreferenceChange(RootMenuSelectionCenterPreferenceKey.self) { centerX in
             guard centerX.isFinite else { return }
-            rootMenuSelectionCenterSceneX = centerX
+            self.rootMenuSelectionCenterSceneX = centerX
         }
         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
         .coordinateSpace(name: "menuSceneSpace")

@@ -1953,7 +1953,7 @@ extension MenuView {
     func startMusicScrubTimerIfNeeded() {
         guard musicScrubTimer == nil else { return }
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
-            handleMusicScrubTick()
+            self.handleMusicScrubTick()
         }
         RunLoop.main.add(timer, forMode: .common)
         musicScrubTimer = timer

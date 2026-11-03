@@ -429,7 +429,7 @@ extension MenuView {
     func startMovieScrubTimerIfNeeded() {
         guard movieScrubTimer == nil else { return }
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
-            handleMovieScrubTick()
+            self.handleMovieScrubTick()
         }
         RunLoop.main.add(timer, forMode: .common)
         movieScrubTimer = timer
@@ -566,16 +566,16 @@ extension MenuView {
         let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
         movieTimeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
             let currentSeconds = max(0, time.seconds.isFinite ? time.seconds : 0)
-            if movieScrubDirection == 0 {
-                moviePlaybackCurrentSeconds = currentSeconds
+            if self.movieScrubDirection == 0 {
+                self.moviePlaybackCurrentSeconds = currentSeconds
             }
-            let durationSeconds = resolvedMovieDurationSeconds(for: player)
+            let durationSeconds = self.resolvedMovieDurationSeconds(for: player)
             if durationSeconds > 0 {
-                moviePlaybackDurationSeconds = durationSeconds
-                if pendingMovieControlsRevealOnDurationReady {
-                    pendingMovieControlsRevealOnDurationReady = false
-                    showMovieControlsInstantly()
-                    scheduleMovieControlsAutoHide()
+                self.moviePlaybackDurationSeconds = durationSeconds
+                if self.pendingMovieControlsRevealOnDurationReady {
+                    self.pendingMovieControlsRevealOnDurationReady = false
+                    self.showMovieControlsInstantly()
+                    self.scheduleMovieControlsAutoHide()
                 }
             }
         }

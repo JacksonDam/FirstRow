@@ -20,9 +20,9 @@ extension MenuView {
         guard isInSubmenu || isEnteringSubmenu else { return }
         transitionMenuForFolderSwap(
             useOverlayFade: true,
-            revealWhen: { !isInSubmenu && activeRootItemID == nil },
+            revealWhen: { !self.isInSubmenu && self.activeRootItemID == nil },
         ) {
-            returnToRootMenu(playExitSound: false)
+            self.returnToRootMenu(playExitSound: false)
         }
     }
 
@@ -87,38 +87,38 @@ extension MenuView {
 
     func exitMoviesThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
         transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
-            isInThirdMenu = false
-            thirdMenuMode = .none
-            thirdMenuOpacity = 0
-            submenuOpacity = 1
-            headerText = rootMenuTitle(for: activeRootItemID)
-            resetThirdMenuDirectoryState()
-            moviesFolderSelectionIndexByDirectoryPath = [:]
-            resetITunesTopCarouselAndPreviewState(for: [.movies, .tvEpisodes])
-            refreshDetailPreviewForCurrentContext()
+            self.isInThirdMenu = false
+            self.thirdMenuMode = .none
+            self.thirdMenuOpacity = 0
+            self.submenuOpacity = 1
+            self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
+            self.resetThirdMenuDirectoryState()
+            self.moviesFolderSelectionIndexByDirectoryPath = [:]
+            self.resetITunesTopCarouselAndPreviewState(for: [.movies, .tvEpisodes])
+            self.refreshDetailPreviewForCurrentContext()
         }
     }
 
     func exitPodcastsThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
         transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
-            isInThirdMenu = false
-            thirdMenuMode = .none
-            thirdMenuOpacity = 0
-            submenuOpacity = 1
-            headerText = rootMenuTitle(for: activeRootItemID)
-            syncPodcastSubmenuSelectionForActiveSeries()
-            refreshDetailPreviewForCurrentContext()
+            self.isInThirdMenu = false
+            self.thirdMenuMode = .none
+            self.thirdMenuOpacity = 0
+            self.submenuOpacity = 1
+            self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
+            self.syncPodcastSubmenuSelectionForActiveSeries()
+            self.refreshDetailPreviewForCurrentContext()
         }
     }
 
     func exitPhotosThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
         transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
-            isInThirdMenu = false
-            thirdMenuMode = .none
-            thirdMenuOpacity = 0
-            submenuOpacity = 1
-            headerText = rootMenuTitle(for: activeRootItemID)
-            refreshDetailPreviewForCurrentContext()
+            self.isInThirdMenu = false
+            self.thirdMenuMode = .none
+            self.thirdMenuOpacity = 0
+            self.submenuOpacity = 1
+            self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
+            self.refreshDetailPreviewForCurrentContext()
         }
     }
 
@@ -126,20 +126,20 @@ extension MenuView {
         if thirdMenuMode == .musicSongs, isMusicSongsCategoryScoped {
             playSound(named: "Exit")
             transitionMenuForFolderSwap {
-                thirdMenuMode = .musicCategories
-                isMusicSongsCategoryScoped = false
-                isLoadingMusicSongs = false
-                musicSongsLoadError = nil
-                headerText = activeMusicCategoryMenuTitle.isEmpty
-                    ? rootMenuTitle(for: activeRootItemID)
-                    : activeMusicCategoryMenuTitle
-                selectedThirdIndex = min(
-                    lastSelectedMusicCategoryIndex,
-                    max(0, musicCategoryThirdMenuItems.count - 1),
+                self.thirdMenuMode = .musicCategories
+                self.isMusicSongsCategoryScoped = false
+                self.isLoadingMusicSongs = false
+                self.musicSongsLoadError = nil
+                self.headerText = self.activeMusicCategoryMenuTitle.isEmpty
+                    ? self.rootMenuTitle(for: self.activeRootItemID)
+                    : self.activeMusicCategoryMenuTitle
+                self.selectedThirdIndex = min(
+                    self.lastSelectedMusicCategoryIndex,
+                    max(0, self.musicCategoryThirdMenuItems.count - 1),
                 )
-                refreshDetailPreviewForCurrentContext()
-                submenuOpacity = 0
-                thirdMenuOpacity = 1
+                self.refreshDetailPreviewForCurrentContext()
+                self.submenuOpacity = 0
+                self.thirdMenuOpacity = 1
             }
             return
         }
@@ -169,13 +169,13 @@ extension MenuView {
                 let parentURL = standardizedCurrent.deletingLastPathComponent()
                 rememberCurrentMoviesFolderSelectionIndex()
                 transitionMenuForFolderSwap {
-                    loadThirdMenuDirectory(parentURL, resetSelection: true)
+                    self.loadThirdMenuDirectory(parentURL, resetSelection: true)
                 }
             } else if !movieLibraryRootURLs.isEmpty {
                 rememberCurrentMoviesFolderSelectionIndex()
                 #if os(macOS)
                     transitionMenuForFolderSwap {
-                        loadMoviesRootSelectorEntries(resetSelection: false)
+                        self.loadMoviesRootSelectorEntries(resetSelection: false)
                     }
                 #else
                     exitMoviesThirdMenuToSecondLevelWithSwap()

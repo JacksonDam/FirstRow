@@ -670,27 +670,27 @@ extension MenuView {
     }
 
     func enterMoviesFolderMenu() {
-        transitionMenuForFolderSwap(revealWhen: { !isLoadingMoviesFolderEntries }) {
-            thirdMenuMode = .moviesFolder
-            resetAllITunesTopMenusForNonITunesContext()
-            resetMusicCategoryStateForNonMusicITunesTop()
-            activeMusicLibraryMediaType = .songs
-            musicSongsShowsShuffleAction = false
-            moviesFolderSelectionIndexByDirectoryPath = [:]
-            isInThirdMenu = true
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
+        transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
+            self.thirdMenuMode = .moviesFolder
+            self.resetAllITunesTopMenusForNonITunesContext()
+            self.resetMusicCategoryStateForNonMusicITunesTop()
+            self.activeMusicLibraryMediaType = .songs
+            self.musicSongsShowsShuffleAction = false
+            self.moviesFolderSelectionIndexByDirectoryPath = [:]
+            self.isInThirdMenu = true
+            self.submenuOpacity = 0
+            self.thirdMenuOpacity = 1
             #if os(iOS)
                 promptForMoviesFolderPickerIfNeeded()
             #endif
             #if os(macOS)
-                let roots = allMoviesRootURLs()
-                movieLibraryRootURLs = roots.count > 1 ? roots : []
+                let roots = self.allMoviesRootURLs()
+                self.movieLibraryRootURLs = roots.count > 1 ? roots : []
                 if roots.count > 1 {
-                    loadMoviesRootSelectorEntries(resetSelection: true)
+                    self.loadMoviesRootSelectorEntries(resetSelection: true)
                 } else {
-                    thirdMenuRootURL = roots[0]
-                    loadThirdMenuDirectory(roots[0], resetSelection: true)
+                    self.thirdMenuRootURL = roots[0]
+                    self.loadThirdMenuDirectory(roots[0], resetSelection: true)
                 }
             #else
                 let rootURL = moviesRootDirectoryURL()

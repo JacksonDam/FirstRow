@@ -296,7 +296,7 @@ extension MenuView {
         case musicNowPlayingFullscreenKey:
             musicNowPlayingSceneView()
         case screenSaverFullscreenKey:
-            ScreenSaverFullscreenView(onDismiss: { dismissScreenSaverForUserInteraction() })
+            ScreenSaverFullscreenView(onDismiss: { self.dismissScreenSaverForUserInteraction() })
         case featureErrorFullscreenKey:
             let copy = FeatureErrorCopy.resolve(from: scene.payload)
             FeatureErrorFullscreenView(
@@ -311,7 +311,7 @@ extension MenuView {
         case photoSlideshowFullscreenKey:
             PhotoSlideshowFullscreenView(
                 imageCount: photoSlideshowAssetLocalIdentifiers.count,
-                imageForIndex: { index in photoSlideshowImageCache[index] },
+                imageForIndex: { index in self.photoSlideshowImageCache[index] },
                 isPaused: photoSlideshowIsPaused,
                 pausedIndex: photoSlideshowPausedIndex,
                 playbackStartDate: photoSlideshowPlaybackStartDate,
@@ -320,12 +320,12 @@ extension MenuView {
                 crossfadeDuration: photoSlideshowCrossfadeDuration,
                 hasAlreadyFinished: photoSlideshowHasFinished,
                 onFrameIndicesChanged: { primaryIndex, secondaryIndex in
-                    updatePhotoSlideshowVisibleIndices(
+                    self.updatePhotoSlideshowVisibleIndices(
                         primaryIndex: primaryIndex,
                         secondaryIndex: secondaryIndex,
                     )
                 },
-                onFinished: { handlePhotoSlideshowPlaybackFinished() },
+                onFinished: { self.handlePhotoSlideshowPlaybackFinished() },
             )
         default:
             Color.black
