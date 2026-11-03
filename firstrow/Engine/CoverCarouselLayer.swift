@@ -40,6 +40,8 @@ final class CoverCarouselLayerController: LayerController {
     private static let keyframeCount = 240
     private static let reflectionOpacity: Float = 0.30
     private static let reflectionFadeEnd: CGFloat = 0.44
+    /// The part of a cover's trip over which it fades in at the back.
+    private static let spawnFadeFraction: Double = 0.03
 
     private final class Lane {
         /// Untransformed parent that flattens the artwork into its own plane, so covers are
@@ -270,12 +272,30 @@ final class CoverCarouselLayerController: LayerController {
             }
             let lanePosition = elapsed * Self.coversPerSecond - Double(slot) / Double(Self.laneCount)
             let progress = lanePosition - floor(lanePosition)
+            // Depth follows the motion in the render server, so a cover that has just wrapped
+            // round to the back is behind the others from its very first frame (re-ordering
+            // layers from the app always lagged the wrap a little).
+            lane.plane.removeAllAnimations()
+            let depth = CAKeyframeAnimation(keyPath: "zPosition")
+            depth.values = [0, 1]
+            depth.keyTimes = [0, 1]
+            depth.duration = Self.cycleDuration
+            depth.repeatCount = .infinity
+            depth.beginTime = 0
+            depth.timeOffset = progress * Self.cycleDuration
+            depth.isRemovedOnCompletion = false
+            lane.plane.add(depth, forKey: "depth")
             for layer in [lane.reflection, lane.preview] {
                 layer.removeAllAnimations()
+                // Each cover fades in as it appears at the back, which also covers the moment
+                // its picture changes to the next one.
+                let peakOpacity = layer === lane.reflection ? Double(Self.reflectionOpacity) : 1
+                let fades = keyTimes.map { NSNumber(value: peakOpacity * min(1, $0.doubleValue / Self.spawnFadeFraction)) }
                 let group = CAAnimationGroup()
                 group.animations = [
                     keyframes("position", positions, keyTimes),
                     keyframes("transform", transforms, keyTimes),
+                    keyframes("opacity", fades, keyTimes),
                 ]
                 group.duration = Self.cycleDuration
                 group.repeatCount = .infinity
@@ -324,7 +344,7 @@ final class CoverCarouselLayerController: LayerController {
         let nextWrap = (floor(elapsed / quarter) + 1) * quarter
         let delay = max(0.01, nextWrap - elapsed) + 0.03
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolatedIfPossible {
                 self?.refreshLaneImages()
                 self?.scheduleWrapTimer()
             }
