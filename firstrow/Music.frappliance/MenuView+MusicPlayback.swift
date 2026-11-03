@@ -484,9 +484,11 @@ extension MenuView {
                         self.musicAppleScriptStartupDeadline = trackStartResult.didBeginPlayback
                             ? Date().addingTimeInterval(2.0)
                             : nil
+                        // The clock starts once Music reports the song moving (see
+                        // applyMusicSystemPlayerSnapshot), not while it is still loading.
                         self.updateMusicAppleScriptProgressAnchor(
                             elapsedSeconds: 0,
-                            isPlaying: trackStartResult.didBeginPlayback,
+                            isPlaying: false,
                         )
                         self.startMusicAppleScriptProgressTimerIfNeeded()
                     } else {
@@ -924,9 +926,13 @@ extension MenuView {
                 musicAppleScriptStartupDeadline = isGraceActive ? musicAppleScriptStartupDeadline : nil
                 let snapshotElapsed = max(0, snapshot.elapsedSeconds)
                 musicNowPlayingElapsedSeconds = snapshotElapsed
+                // Music says "playing" while a song is still loading, with its position held at
+                // the start; counting on from there showed 0:01, then the next check put it back
+                // to 0:00, over and over until the song began. Count on once it has moved.
+                let hasStartedMoving = snapshotElapsed > 0.05
                 updateMusicAppleScriptProgressAnchor(
                     elapsedSeconds: snapshotElapsed,
-                    isPlaying: isGraceActive ? false : effectiveIsPlaying,
+                    isPlaying: (isGraceActive ? false : effectiveIsPlaying) && hasStartedMoving,
                 )
                 musicNowPlayingLeadingGlyphState = effectiveIsPlaying ? nil : .pause
             }
