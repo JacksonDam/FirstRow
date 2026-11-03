@@ -122,7 +122,10 @@ struct MoviePreviewSlideshowGapContentView: View {
     let reflectionYawDegrees: Double
     let cycleDuration: TimeInterval
     let crossfadeDuration: TimeInterval
-    @State private var phaseOriginReferenceTime = Date.timeIntervalSinceReferenceDate
+    /// Index of the preview fully shown; the next one fades in over it at the end of each cycle.
+    @State private var currentIndex = 0
+    @State private var crossfadeProgress: Double = 0
+    @State private var cycleTask: Task<Void, Never>?
     init(
         descriptors: [MenuView.MovieGapPreviewDescriptor],
         baseIconSize: CGFloat,
@@ -155,18 +158,48 @@ struct MoviePreviewSlideshowGapContentView: View {
         }
     }
 
+    /// Holds each preview, then crossfades to the next. Driven by one task and a SwiftUI
+    /// animation per crossfade, instead of a 60 fps timeline redrawing the whole time.
     private var slideshowView: some View {
-        FirstRowTimelineView(minimumInterval: 1.0 / 60.0) { currentDate in
-            let state = slideshowState(at: currentDate)
-            ZStack {
-                moviePreview(state.current).opacity(1 - state.crossfadeProgress)
-                moviePreview(state.next).opacity(state.crossfadeProgress)
-            }
+        ZStack {
+            moviePreview(descriptors[wrappedIndex(currentIndex, count: descriptors.count)]).opacity(1 - crossfadeProgress)
+            moviePreview(descriptors[wrappedIndex(currentIndex + 1, count: descriptors.count)]).opacity(crossfadeProgress)
         }.onAppear {
-            phaseOriginReferenceTime = Date.timeIntervalSinceReferenceDate
+            restartCycle()
         }.onChange(of: slideshowIdentityKey, perform: { _ in
-            phaseOriginReferenceTime = Date.timeIntervalSinceReferenceDate
-        })
+            restartCycle()
+        }).onDisappear {
+            cycleTask?.cancel()
+            cycleTask = nil
+        }
+    }
+
+    private func restartCycle() {
+        cycleTask?.cancel()
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            currentIndex = 0
+            crossfadeProgress = 0
+        }
+        let crossfade = min(max(0.001, crossfadeDuration), max(0.001, cycleDuration))
+        let hold = max(0, cycleDuration - crossfade)
+        cycleTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await firstRowSleep(hold)
+                guard !Task.isCancelled else { return }
+                withAnimation(.linear(duration: crossfade)) {
+                    crossfadeProgress = 1
+                }
+                try? await firstRowSleep(crossfade)
+                guard !Task.isCancelled else { return }
+                // The incoming preview becomes the current one; nothing visibly changes.
+                withTransaction(instant) {
+                    currentIndex += 1
+                    crossfadeProgress = 0
+                }
+            }
+        }
     }
 
     private var slideshowIdentityKey: String {
@@ -190,31 +223,6 @@ struct MoviePreviewSlideshowGapContentView: View {
             previewYawDegrees: previewYawDegrees,
             reflectionYawDegrees: reflectionYawDegrees,
         ).id(descriptor.id)
-    }
-
-    private func slideshowState(at date: Date) -> (
-        current: MenuView.MovieGapPreviewDescriptor,
-        next: MenuView.MovieGapPreviewDescriptor,
-        crossfadeProgress: Double,
-    ) {
-        let safeCycleDuration = max(0.001, cycleDuration)
-        let safeCrossfadeDuration = min(max(0.001, crossfadeDuration), safeCycleDuration)
-        let elapsed = max(0, date.timeIntervalSinceReferenceDate - phaseOriginReferenceTime)
-        let cycleIndex = Int(floor(elapsed / safeCycleDuration))
-        let localTime = elapsed.truncatingRemainder(dividingBy: safeCycleDuration)
-        let fadeStartTime = safeCycleDuration - safeCrossfadeDuration
-        let currentIndex = wrappedIndex(cycleIndex, count: descriptors.count)
-        let nextIndex = wrappedIndex(cycleIndex + 1, count: descriptors.count)
-        let progress: Double = if localTime <= fadeStartTime {
-            0
-        } else {
-            min(1, (localTime - fadeStartTime) / safeCrossfadeDuration)
-        }
-        return (
-            current: descriptors[currentIndex],
-            next: descriptors[nextIndex],
-            crossfadeProgress: progress,
-        )
     }
 }
 
