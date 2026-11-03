@@ -496,12 +496,12 @@ extension MenuView {
             for collection in collections {
                 let downloadedItems = collection.items.filter { $0.assetURL != nil }
                 guard !downloadedItems.isEmpty else { continue }
-                let seriesTitle = downloadedItems.lazy.compactMap { normalizedPodcastText($0.albumTitle) }.first
+                let seriesTitle = downloadedItems.lazy.compactMap { self.normalizedPodcastText($0.albumTitle) }.first
                     ?? normalizedPodcastText(downloadedItems.first?.artist)
                     ?? "Unknown Podcast"
-                let seriesArtist = downloadedItems.lazy.compactMap { normalizedPodcastText($0.artist) }.first
+                let seriesArtist = downloadedItems.lazy.compactMap { self.normalizedPodcastText($0.artist) }.first
                     ?? "Unknown Artist"
-                var seriesArtwork = downloadedItems.lazy.compactMap { $0.artwork?.image(at: podcastArtworkRequestSize) }.first
+                var seriesArtwork = downloadedItems.lazy.compactMap { $0.artwork?.image(at: self.podcastArtworkRequestSize) }.first
                 var episodes: [PodcastEpisodeEntry] = []
                 episodes.reserveCapacity(downloadedItems.count)
                 for item in downloadedItems {
@@ -545,11 +545,11 @@ extension MenuView {
                 }
                 guard !episodes.isEmpty else { continue }
                 let seriesDescription = downloadedItems.lazy.compactMap { item -> String? in
-                    if let comments = normalizedPodcastText(item.value(forProperty: MPMediaItemPropertyComments) as? String) {
+                    if let comments = self.normalizedPodcastText(item.value(forProperty: MPMediaItemPropertyComments) as? String) {
                         return comments
                     }
                     guard let mediaURL = item.assetURL else { return nil }
-                    return loadPodcastDescriptionFromMediaMetadata(mediaURL)
+                    return self.loadPodcastDescriptionFromMediaMetadata(mediaURL)
                 }.first
                     ?? ""
                 seriesEntries.append(

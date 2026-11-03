@@ -1318,23 +1318,23 @@ extension MenuView {
                 #if os(iOS)
                 .overlay {
                     TouchNavigationInputOverlay(
-                        onArrowKeyDown: { key in handleDirectionalPressBegan(key) },
-                        onArrowKeyUp: { key in handleDirectionalPressEnded(key) },
+                        onArrowKeyDown: { key in self.handleDirectionalPressBegan(key) },
+                        onArrowKeyUp: { key in self.handleDirectionalPressEnded(key) },
                         onEnter: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.enter, isRepeat: false, modifiers: [])
+                            self.endDirectionalHoldSession()
+                            self.handleKeyInput(.enter, isRepeat: false, modifiers: [])
                         },
                         onBackspace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.delete, isRepeat: false, modifiers: [])
+                            self.endDirectionalHoldSession()
+                            self.handleKeyInput(.delete, isRepeat: false, modifiers: [])
                         },
                         onSpace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.space, isRepeat: false, modifiers: [])
+                            self.endDirectionalHoldSession()
+                            self.handleKeyInput(.space, isRepeat: false, modifiers: [])
                         },
                         onSingleFingerTap: {
-                            guard activeFullscreenScene?.key == screenSaverFullscreenKey else { return false }
-                            dismissScreenSaverForUserInteraction()
+                            guard self.activeFullscreenScene?.key == self.screenSaverFullscreenKey else { return false }
+                            self.dismissScreenSaverForUserInteraction()
                             return true
                         },
                     ).ignoresSafeArea()
@@ -1345,14 +1345,14 @@ extension MenuView {
                     TVRemoteInputOverlay(
                         onKeyDown: { key in
                             if key == .upArrow || key == .downArrow || key == .leftArrow || key == .rightArrow {
-                                handleDirectionalPressBegan(key)
+                                self.handleDirectionalPressBegan(key)
                             } else {
-                                endDirectionalHoldSession()
-                                handleKeyInput(key, isRepeat: false, modifiers: [])
+                                self.endDirectionalHoldSession()
+                                self.handleKeyInput(key, isRepeat: false, modifiers: [])
                             }
                         },
                         onKeyUp: { key in
-                            handleDirectionalPressEnded(key)
+                            self.handleDirectionalPressEnded(key)
                         },
                     ).ignoresSafeArea()
                 }
@@ -1361,22 +1361,22 @@ extension MenuView {
                 .overlay {
                     GameControllerInputOverlay(
                         onArrowKeyDown: { key in
-                            handleDirectionalPressBegan(key)
+                            self.handleDirectionalPressBegan(key)
                         },
                         onArrowKeyUp: { key in
-                            handleDirectionalPressEnded(key)
+                            self.handleDirectionalPressEnded(key)
                         },
                         onEnter: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.enter, isRepeat: false, modifiers: [])
+                            self.endDirectionalHoldSession()
+                            self.handleKeyInput(.enter, isRepeat: false, modifiers: [])
                         },
                         onBackspace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.delete, isRepeat: false, modifiers: [])
+                            self.endDirectionalHoldSession()
+                            self.handleKeyInput(.delete, isRepeat: false, modifiers: [])
                         },
                         onSpace: {
-                            endDirectionalHoldSession()
-                            handleKeyInput(.space, isRepeat: false, modifiers: [])
+                            self.endDirectionalHoldSession()
+                            self.handleKeyInput(.space, isRepeat: false, modifiers: [])
                         },
                     ).ignoresSafeArea().allowsHitTesting(false)
                 }
@@ -1433,10 +1433,10 @@ extension MenuView {
             .sheet(isPresented: Binding(get: { self.isMoviesFolderPickerPresented }, set: { self.isMoviesFolderPickerPresented = $0 })) {
                 IOSFolderPicker(
                     onPick: { selectedURL in
-                        handleMoviesFolderPickedFromFiles(selectedURL)
+                        self.handleMoviesFolderPickedFromFiles(selectedURL)
                     },
                     onCancel: {
-                        hasPromptedMoviesFolderPickerThisSession = false
+                        self.hasPromptedMoviesFolderPickerThisSession = false
                     },
                 ).ignoresSafeArea()
             }
@@ -1460,7 +1460,7 @@ extension MenuView {
             ZStack {
                 GeometryReader { virtualGeometry in
                     let _ = revision
-                    menuScene(geometry: virtualGeometry)
+                    self.menuScene(geometry: virtualGeometry)
                 }.frame(width: virtualSize.width, height: virtualSize.height).scaleEffect(scale, anchor: .center).frame(width: geometry.size.width, height: geometry.size.height).offset(x: -horizontalCompensation)
                 fullscreenPresentationLayers(containerSize: fullscreenContainerSize)
                 menuDisplayFadeOverlays(containerSize: fullscreenContainerSize)

@@ -681,7 +681,7 @@ extension MenuView {
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1
             #if os(iOS)
-                promptForMoviesFolderPickerIfNeeded()
+                self.promptForMoviesFolderPickerIfNeeded()
             #endif
             #if os(macOS)
                 let roots = self.allMoviesRootURLs()
@@ -693,9 +693,9 @@ extension MenuView {
                     self.loadThirdMenuDirectory(roots[0], resetSelection: true)
                 }
             #else
-                let rootURL = moviesRootDirectoryURL()
-                thirdMenuRootURL = rootURL
-                loadThirdMenuDirectory(rootURL, resetSelection: true)
+                let rootURL = self.moviesRootDirectoryURL()
+                self.thirdMenuRootURL = rootURL
+                self.loadThirdMenuDirectory(rootURL, resetSelection: true)
             #endif
         }
     }
