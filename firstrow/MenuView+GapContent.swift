@@ -463,8 +463,10 @@ extension MenuView {
                     fade: .easeInOut(duration: 0.22),
                 ))
             } else if usesMetadata, let selectedMovie, let descriptor, !showsCarousel {
+                // One piece for the whole list: moving to another movie swaps its poster and
+                // details straight away (as SwiftUI did), with no crossfade over the old text.
                 items.append(GapItemSpec(
-                    key: "itunes_movie_metadata:\(selectedMovie.id)",
+                    key: "itunes_movie_metadata",
                     kind: .metadata(MetadataPreviewSpec(
                         image: descriptor.image,
                         aspectRatio: descriptor.aspectRatio,
@@ -509,7 +511,7 @@ extension MenuView {
             }
             if usesMetadata, let selectedEpisode, let descriptor, !showsCarousel {
                 items.append(GapItemSpec(
-                    key: "itunes_tv_metadata:\(selectedEpisode.id)",
+                    key: "itunes_tv_metadata",
                     kind: .metadata(MetadataPreviewSpec(
                         image: descriptor.image,
                         aspectRatio: descriptor.aspectRatio,
