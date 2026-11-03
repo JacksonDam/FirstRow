@@ -316,6 +316,9 @@ extension MenuView {
             pauseSystemMusicPlayback: {
                 #if os(macOS)
                     !(isCurrentMusicPlaybackUsingAppleScript && willUseAppleScriptPlayback)
+                #elseif os(tvOS)
+                    // A new Apple Music queue replaces the old one, so there's no need to stop it first.
+                    song.musicKitSong == nil
                 #else
                     true
                 #endif
@@ -1403,12 +1406,25 @@ extension MenuView {
             Task { @MainActor in
                 do {
                     let player = ApplicationMusicPlayer.shared
-                    player.stop()
                     player.queue = ApplicationMusicPlayer.Queue(for: [song], startingAt: song)
                     try await player.play()
                     refreshMusicKitPlaybackProgress()
                     startMusicKitProgressTimerIfNeeded()
                     updateMusicNowPlayingFlipTimerState()
+                    // Straight after another song the player can drop a new song as it starts;
+                    // start it again if it stops before it has really played.
+                    var retries = 0
+                    for _ in 0 ..< 30 {
+                        try? await firstRowSleep(0.1)
+                        guard activeMusicPlaybackSongID == song.id.rawValue else { return }
+                        if player.state.playbackStatus == .stopped, player.playbackTime < 0.5, retries < 2 {
+                            retries += 1
+                            try? await firstRowSleep(0.3)
+                            guard activeMusicPlaybackSongID == song.id.rawValue else { return }
+                            player.queue = ApplicationMusicPlayer.Queue(for: [song], startingAt: song)
+                            try await player.play()
+                        }
+                    }
                 } catch {
                     self.musicSongsLoadError = self.musicLibraryErrorMessage(for: error)
                 }
@@ -1495,7 +1511,9 @@ extension MenuView {
             musicAppleScriptDidHandleTrackBoundary = false
         #endif
         #if os(tvOS)
-            ApplicationMusicPlayer.shared.stop()
+            if pauseSystemMusicPlayback {
+                ApplicationMusicPlayer.shared.stop()
+            }
             stopMusicKitProgressTimer()
             musicKitScrubGlyphResetWorkItem?.cancel()
             musicKitScrubGlyphResetWorkItem = nil
