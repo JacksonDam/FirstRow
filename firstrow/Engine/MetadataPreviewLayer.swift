@@ -91,8 +91,9 @@ final class MetadataPreviewLayer: GapItemLayer {
         let description = Self.cappedDescription(spec.description)
         let baseMetadataWidth = min(compact ? 680 : 760, max(compact ? 520 : 560, size.width * (compact ? 0.48 : 0.56)))
         let metadataWidth = baseMetadataWidth + 380
-        let trimLeft: CGFloat = 105
-        let trimRight: CGFloat = 65
+        // Equal trims keep the details centred on the cover and clear of the list.
+        let trimLeft: CGFloat = 165
+        let trimRight: CGFloat = 125
         let displayWidth = max(220, metadataWidth - (trimLeft + trimRight))
         let block = DetailsBlock(spec: spec, description: description, width: displayWidth, scale: scale)
         let metadataHeight = block.height
