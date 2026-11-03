@@ -715,6 +715,36 @@ extension MenuView {
 
     // MARK: - Carousel item views
 
+    /// The old SwiftUI carousel, kept for side-by-side comparison (`FIRSTROW_SWIFTUI_CAROUSEL=1`, debug only).
+    static var usesSwiftUIRootCarousel: Bool {
+        FirstRowHarness.isActive && ProcessInfo.processInfo.environment["FIRSTROW_SWIFTUI_CAROUSEL"] != nil
+    }
+
+    func rootCarouselConfiguration(geometry: GeometryProxy) -> RootCarouselConfiguration {
+        RootCarouselConfiguration(
+            images: menuItems.map { menuImage(forRootID: $0.id) },
+            selectedIndex: selectedIndex,
+            isIconAnimated: isIconAnimated,
+            isEnteringSubmenu: isEnteringSubmenu,
+            isReturningToRoot: isReturningToRoot,
+            isInSubmenu: isInSubmenu,
+            showsSettledLandedIcon: showsSettledLandedIcon,
+            iconSize: iconSize,
+            scaleReduction: scaleReduction,
+            landedIconScale: landedIconScale,
+            selectedSizeMultiplier: selectedCarouselAdjustedSizeMultiplier,
+            arcRadius: arcRadius,
+            restingOffset: CGPoint(x: restingSelectedHorizontalOffset, y: restingSelectedVerticalOffset),
+            landedOffset: CGPoint(x: landedSelectedHorizontalOffset(geometry: geometry), y: landedSelectedVerticalOffset),
+            entryOffset: selectedCarouselEntryOffset,
+            sceneWidth: geometry.size.width,
+            selectionDuration: selectionAnimationDuration,
+            iconFlightDuration: iconFlightAnimationDuration,
+            backgroundTransitionDuration: submenuBackgroundIconTransitionDuration,
+            backgroundReturnDuration: submenuBackgroundIconReturnDuration,
+        )
+    }
+
     func carouselItemView(for index: Int, geometry: GeometryProxy) -> some View {
         let position = CGFloat(index - selectedIndex)
         let angle = position * .pi / 6
@@ -1562,13 +1592,18 @@ extension MenuView {
                         if showsSettledLandedIcon, let activeRootItemID, let image = menuImage(forRootID: activeRootItemID) {
                             settledLandedIconView(image: image, geometry: geometry)
                         }
-                        ForEach(visibleIndices(), id: \.self) { index in
-                            let _ = revision
-                            self.carouselItemView(for: index, geometry: geometry).opacity(
-                                self.showsSettledLandedIcon
-                                    ? 0
-                                    : (self.isInSubmenu && !self.isReturningToRoot && index != self.selectedIndex ? 0 : 1),
-                            )
+                        if Self.usesSwiftUIRootCarousel {
+                            ForEach(visibleIndices(), id: \.self) { index in
+                                let _ = revision
+                                self.carouselItemView(for: index, geometry: geometry).opacity(
+                                    self.showsSettledLandedIcon
+                                        ? 0
+                                        : (self.isInSubmenu && !self.isReturningToRoot && index != self.selectedIndex ? 0 : 1),
+                                )
+                            }
+                        } else {
+                            LayerHost<RootCarouselLayerController>(configuration: rootCarouselConfiguration(geometry: geometry))
+                                .frame(width: carouselWidth(geometry: geometry), height: iconSize * selectedCarouselAdjustedSizeMultiplier + 100)
                         }
                     }.background(Group {
                         if isInSubmenu {

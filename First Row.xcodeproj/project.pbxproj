@@ -110,6 +110,7 @@
 		A516DA6EAF2DD34DF9910801 /* ITunesLibraryXML.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */; };
 		84B81E61DCCF2640C3D43B4C /* PhotoSourceAlbums.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE605EE0DFC89FB84A25401D /* PhotoSourceAlbums.swift */; };
 		966707EFDE8CA87E77C585B3 /* AppleRemoteInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0133167D30CE00D7FEBEBEA /* AppleRemoteInput.swift */; };
+		03187D4ADCEF2BC7279576E2 /* RootCarouselLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D3DC886D39FA9BA6319FA7E /* RootCarouselLayer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -235,6 +236,7 @@
 		E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ITunesLibraryXML.swift; sourceTree = "<group>"; };
 		CE605EE0DFC89FB84A25401D /* PhotoSourceAlbums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSourceAlbums.swift; sourceTree = "<group>"; };
 		D0133167D30CE00D7FEBEBEA /* AppleRemoteInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleRemoteInput.swift; sourceTree = "<group>"; };
+		7D3DC886D39FA9BA6319FA7E /* RootCarouselLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootCarouselLayer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -504,6 +506,7 @@
 		2C8096D62CAC0F80B1BDAF5E /* Engine */ = {
 			isa = PBXGroup;
 			children = (
+				7D3DC886D39FA9BA6319FA7E /* RootCarouselLayer.swift */,
 				23DE04BBBBB68BB54DCB30D6 /* CoverCarouselLayer.swift */,
 				B5FD4A1D9F2FA9ED06D30B1E /* LayerKit.swift */,
 			);
@@ -681,6 +684,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03187D4ADCEF2BC7279576E2 /* RootCarouselLayer.swift in Sources */,
 				966707EFDE8CA87E77C585B3 /* AppleRemoteInput.swift in Sources */,
 				84B81E61DCCF2640C3D43B4C /* PhotoSourceAlbums.swift in Sources */,
 				A516DA6EAF2DD34DF9910801 /* ITunesLibraryXML.swift in Sources */,
