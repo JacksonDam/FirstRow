@@ -291,7 +291,8 @@ final class MenuView: ObservableObject {
     @Published var musicPreviewDisplayedSong: MusicLibrarySongEntry?
     @Published var musicPreviewRequestID = 0
     @Published var musicPreviewRefreshWorkItem: Task<Void, Never>?
-    @Published var musicPreviewCache: [String: NSImage] = [:]
+    /// Song covers ready to show, around the selection (not published: filling it changes nothing on screen).
+    let musicPreviewCache = LRUCache<String, NSImage>(maxEntryCount: 32)
     @Published var musicLibraryArtworkDataByAlbumKey: [String: Data] = [:]
     @Published var musicTopLevelCarouselActiveSubmenuID: String?
     @Published var musicTopLevelCarouselArtworksByIndex: [Int: NSImage?] = [:]
@@ -398,7 +399,7 @@ final class MenuView: ObservableObject {
     @Published var musicLastScrubInputDate: Date?
     @Published var musicLastScrubTickDate: Date?
     @Published var musicScrubTimer: Timer?
-    @Published var musicArtworkPrefetchInFlightKeys: Set<String> = []
+    var musicArtworkPrefetchInFlightKeys: Set<String> = []
     @Published var musicPlaybackRequestID = 0
     #if os(tvOS) || os(macOS)
         @Published var musicKitScrubGlyphResetWorkItem: Task<Void, Never>?

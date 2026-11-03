@@ -789,30 +789,31 @@ extension MenuView {
         return musicSongIndex(forThirdMenuSelectionIndex: selectedThirdIndex)
     }
 
-    func prefetchMusicPreviewArtworkAroundCurrentSelection(
-        lookbehindCount: Int = 1,
-        lookaheadCount: Int = 3,
-    ) {
+    /// Covers for the songs around the selection, nearest first. While an arrow is held, further
+    /// ahead in the direction the list is moving, so covers are ready as the selection arrives.
+    func prefetchMusicPreviewArtworkAroundCurrentSelection() {
         guard activeRootItemID == "music", isInSubmenu else { return }
         guard isInThirdMenu, thirdMenuMode == .musicSongs else { return }
-        guard activeDirectionalHoldKey == .none else { return }
-        if let lastArrowNavigationInputTime,
-           Date().timeIntervalSince(lastArrowNavigationInputTime) < 0.08
-        {
-            return
-        }
         guard let currentIndex = currentMusicPreviewSongIndex() else { return }
         guard musicSongsThirdMenuItems.indices.contains(currentIndex) else { return }
-        let lowerBound = max(0, currentIndex - max(0, lookbehindCount))
-        let upperBound = min(
-            musicSongsThirdMenuItems.count - 1,
-            currentIndex + max(0, lookaheadCount),
-        )
-        var queuedSongIDs: Set<String> = []
-        for index in lowerBound ... upperBound {
-            let song = musicSongsThirdMenuItems[index]
-            guard queuedSongIDs.insert(song.id).inserted else { continue }
-            prefetchMusicArtworkIfNeeded(for: song)
+        let direction: Int = switch activeDirectionalHoldKey {
+        case .upArrow: -1
+        case .downArrow: 1
+        default: 0
+        }
+        let forward = direction == 0 ? 1 : direction
+        let ahead = direction == 0 ? 3 : 12
+        // Nearest first: this song, the next one, the previous one, then further ahead.
+        var offsets = [0, forward, -forward]
+        if ahead > 1 {
+            offsets += (2 ... ahead).map { $0 * forward }
+        }
+        for offset in offsets {
+            let index = currentIndex + offset
+            guard musicSongsThirdMenuItems.indices.contains(index) else { continue }
+            // A few at a time, so a long held scroll doesn't queue hundreds of decodes.
+            guard musicArtworkPrefetchInFlightKeys.count < 6 else { return }
+            prefetchMusicArtworkIfNeeded(for: musicSongsThirdMenuItems[index])
         }
     }
 
@@ -864,8 +865,9 @@ extension MenuView {
             return
         }
         musicPreviewTargetSongID = resolvedSongID
-        let requestID = incrementRequestID(&musicPreviewRequestID)
+        _ = incrementRequestID(&musicPreviewRequestID)
         musicPreviewRefreshWorkItem?.cancel()
+        musicPreviewRefreshWorkItem = nil
         guard let selectedSong else {
             withAnimation(.easeInOut(duration: 0.18)) {
                 musicPreviewImage = nil
@@ -873,61 +875,46 @@ extension MenuView {
             musicPreviewDisplayedSong = nil
             return
         }
-        let shouldDeferPreviewRefresh =
-            activeRootItemID == "music" &&
-            isInThirdMenu &&
-            (thirdMenuMode == .musicSongs || isShowingMusicAlbumsList) &&
-            (activeDirectionalHoldKey != .none ||
-                (lastArrowNavigationInputTime.map { Date().timeIntervalSince($0) < 0.08 } ?? false))
-        let refreshDelay = shouldDeferPreviewRefresh ? 0.08 : 0.0
-        musicPreviewRefreshWorkItem = Task {
-            if refreshDelay > 0 {
-                try? await firstRowSleep(refreshDelay)
+        // The details and cover follow every step, held arrows included (they used to wait
+        // until the list stopped). Covers come from the prefetched ones around the selection.
+        let isScrolling = activeDirectionalHoldKey != .none
+        let fadeDuration = isScrolling ? 0.06 : 0.18
+        musicPreviewDisplayedSong = selectedSong
+        prefetchMusicPreviewArtworkAroundCurrentSelection()
+        if let embeddedArtwork = selectedSong.artwork {
+            withAnimation(.easeInOut(duration: fadeDuration)) {
+                musicPreviewImage = embeddedArtwork
             }
-            guard !Task.isCancelled else { return }
+            return
+        }
+        guard let cacheKey = musicArtworkCacheKey(for: selectedSong) else {
+            withAnimation(.easeInOut(duration: fadeDuration)) {
+                musicPreviewImage = nil
+            }
+            return
+        }
+        if let cached = musicPreviewCache[cacheKey] {
+            withAnimation(.easeInOut(duration: fadeDuration)) {
+                musicPreviewImage = cached
+            }
+            return
+        }
+        // Not decoded yet: the cover on screen stays until this one is ready (a moment, as a
+        // rule), rather than flashing the placeholder between covers.
+        let targetSongID = selectedSong.id
+        Task.detached(priority: .userInitiated) {
+            let resolvedArtwork = await self.resolveMusicArtworkImage(
+                for: selectedSong,
+                cacheKey: cacheKey,
+            )
             await MainActor.run {
-                guard self.musicPreviewRequestID == requestID else { return }
-                guard self.musicPreviewTargetSongID == selectedSong.id else { return }
-                self.musicPreviewDisplayedSong = selectedSong
-                self.prefetchMusicPreviewArtworkAroundCurrentSelection()
-                if let embeddedArtwork = selectedSong.artwork {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        self.musicPreviewImage = embeddedArtwork
-                    }
-                    return
+                if let resolvedArtwork {
+                    // Kept even if the selection has moved on, for when it comes back.
+                    self.musicPreviewCache[cacheKey] = resolvedArtwork
                 }
-                guard let cacheKey = self.musicArtworkCacheKey(for: selectedSong) else {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        self.musicPreviewImage = nil
-                    }
-                    return
-                }
-                if let cached = self.musicPreviewCache[cacheKey] {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        self.musicPreviewImage = cached
-                    }
-                    return
-                }
-                let targetSongID = selectedSong.id
-                Task.detached(priority: .userInitiated) {
-                    let resolvedArtwork = await self.resolveMusicArtworkImage(
-                        for: selectedSong,
-                        cacheKey: cacheKey,
-                    )
-                    await MainActor.run {
-                        guard self.musicPreviewRequestID == requestID else { return }
-                        guard self.musicPreviewTargetSongID == targetSongID else { return }
-                        if let resolvedArtwork {
-                            self.musicPreviewCache[cacheKey] = resolvedArtwork
-                            withAnimation(.easeInOut(duration: 0.22)) {
-                                self.musicPreviewImage = resolvedArtwork
-                            }
-                        } else {
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                self.musicPreviewImage = nil
-                            }
-                        }
-                    }
+                guard self.musicPreviewTargetSongID == targetSongID else { return }
+                withAnimation(.easeInOut(duration: self.activeDirectionalHoldKey != .none ? 0.06 : 0.22)) {
+                    self.musicPreviewImage = resolvedArtwork
                 }
             }
         }
