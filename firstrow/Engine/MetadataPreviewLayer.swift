@@ -21,6 +21,9 @@ final class MetadataPreviewLayer: GapItemLayer {
     private let details = SceneLayer()
     private var identity: String?
     private var layoutKey: String?
+    /// When the current item's move started (or starts), so a re-layout part way through
+    /// (its picture arriving, say) carries on with the same move instead of jumping to the end.
+    private var transitionBegin: CFTimeInterval?
     private static let sampleCount = 40
 
     override init() {
@@ -59,7 +62,12 @@ final class MetadataPreviewLayer: GapItemLayer {
         let layoutKey = "\(ObjectIdentifier(spec.image))|\(spec.title)|\(spec.description ?? "")|\(spec.lines.map { "\($0.label)=\($0.value)" })|\(context.boxFrame)|\(context.sceneSize)|\(context.scale)|\(spec.offsetX)|\(spec.offsetY)"
         guard restarts || layoutKey != self.layoutKey else { return }
         self.layoutKey = layoutKey
-        layout(spec, context: context, animates: restarts && spec.animatesTransition)
+        if restarts {
+            transitionBegin = spec.animatesTransition ? CACurrentMediaTime() + spec.transitionDelay : nil
+        } else if let begin = transitionBegin, CACurrentMediaTime() > begin + 0.62 + 0.3 {
+            transitionBegin = nil
+        }
+        layout(spec, context: context, transitionBegin: transitionBegin)
     }
 
     // MARK: - Layout
@@ -76,7 +84,7 @@ final class MetadataPreviewLayer: GapItemLayer {
         var targetScale: CGFloat
     }
 
-    private func layout(_ spec: MetadataPreviewSpec, context: GapItemContext, animates: Bool) {
+    private func layout(_ spec: MetadataPreviewSpec, context: GapItemContext, transitionBegin: CFTimeInterval?) {
         let scale = context.scale
         // The SwiftUI view filled the carousel box less its bottom padding, offset as a whole.
         let origin = CGPoint(x: spec.offsetX, y: spec.offsetY)
@@ -155,9 +163,8 @@ final class MetadataPreviewLayer: GapItemLayer {
         sweep.position = CGPoint(x: 0, y: final.sweepOffset)
         sweep.opacity = 1
         details.opacity = 1
-        guard animates else { return }
+        guard let begin = transitionBegin else { return }
 
-        let begin = CACurrentMediaTime() + spec.transitionDelay
         let samples = (0 ... Self.sampleCount).map { index -> Double in
             RootCarouselLayerController.easeInEaseOut(Double(index) / Double(Self.sampleCount))
         }

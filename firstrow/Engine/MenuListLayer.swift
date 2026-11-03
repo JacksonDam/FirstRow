@@ -153,7 +153,7 @@ final class MenuListLayer {
         // Which rows need layers: the visible part, wherever the scroll is now and where it's going.
         let renderRange: Range<Int>
         if c.usesUniformRowLayout, !items.isEmpty {
-            let presentedOffset = (rowsContainer.presentation()?.position.y).map { $0 } ?? scrollOffset
+            let presentedOffset = rowsContainer.animation(forKey: "position") != nil ? (rowsContainer.presentation()?.position.y ?? scrollOffset) : scrollOffset
             let overscan = max(80, rowPitch * (menu.activeDirectionalHoldKey != .none ? 6.0 : 2.5))
             let top = min(-scrollOffset, -presentedOffset) - overscan
             let bottom = max(-scrollOffset, -presentedOffset) + viewportHeight + overscan
@@ -162,7 +162,7 @@ final class MenuListLayer {
             renderRange = first < last + 1 ? first ..< (last + 1) : 0 ..< 0
         } else if !rowOffsets.isEmpty {
             // Rows sit at increasing offsets: find the first and last near the visible part.
-            let presentedOffset = rowsContainer.presentation()?.position.y ?? scrollOffset
+            let presentedOffset = rowsContainer.animation(forKey: "position") != nil ? (rowsContainer.presentation()?.position.y ?? scrollOffset) : scrollOffset
             let overscan = max(80, rowPitch * 2.5)
             let top = min(-scrollOffset, -presentedOffset) - overscan
             let bottom = max(-scrollOffset, -presentedOffset) + viewportHeight + overscan
@@ -590,7 +590,7 @@ final class MarqueeLayer {
     }
 
     func show(title: String, viewportWidth: CGFloat, height: CGFloat, scale: CGFloat) {
-        if let current, current.title == title, current.width == viewportWidth, current.scale == scale, !layer.isHidden {
+        if let current, current.title == title, current.width == viewportWidth, current.scale == scale, !layer.isHidden, strip.animation(forKey: "marquee") != nil {
             return
         }
         current = (title, viewportWidth, scale)
@@ -611,6 +611,7 @@ final class MarqueeLayer {
         scroll.toValue = -cycle
         scroll.duration = Double(cycle / Self.speed)
         scroll.repeatCount = .infinity
+        scroll.isRemovedOnCompletion = false
         scroll.beginTime = CACurrentMediaTime()
         strip.add(scroll, forKey: "marquee")
     }

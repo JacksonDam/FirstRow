@@ -249,19 +249,11 @@ struct ScreenSaverPhotoEntry: Identifiable {
     let riseSpeed: CGFloat
 }
 
-/// The screen saver's photos: the bundled set, each placed twice or more in the stream.
+/// The screen saver's photos: the bundled set, each placed twice or more in the stream, laid
+/// out afresh each time the screen saver starts.
 @MainActor
 enum ScreenSaverPhotoStream {
-    private static var cached: [ScreenSaverPhotoEntry]?
-
-    static func photos() -> [ScreenSaverPhotoEntry] {
-        if let cached { return cached }
-        let made = makePhotos()
-        cached = made
-        return made
-    }
-
-    private static func makePhotos() -> [ScreenSaverPhotoEntry] {
+    static func makePhotos() -> [ScreenSaverPhotoEntry] {
         let imageURLs = loadScreenSaverImageURLs()
         let loadedImages = imageURLs.compactMap { url -> NSImage? in
             guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else {

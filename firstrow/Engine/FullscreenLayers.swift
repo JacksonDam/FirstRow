@@ -412,18 +412,21 @@ final class SpinnerLayer {
 
     func start() {
         let size = layer.bounds.size
-        replicator.frame = CGRect(origin: .zero, size: size)
         let length = size.height * 0.28
         let thickness = max(1.5, size.width * 0.085)
-        spoke.bounds = CGRect(x: 0, y: 0, width: thickness, height: length)
-        spoke.cornerRadius = thickness * 0.5
-        spoke.position = CGPoint(x: size.width * 0.5, y: length * 0.5)
+        withoutLayerActions {
+            replicator.frame = CGRect(origin: .zero, size: size)
+            spoke.bounds = CGRect(x: 0, y: 0, width: thickness, height: length)
+            spoke.cornerRadius = thickness * 0.5
+            spoke.position = CGPoint(x: size.width * 0.5, y: length * 0.5)
+        }
         guard spoke.animation(forKey: "fade") == nil else { return }
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 1
         fade.toValue = 0.25
         fade.duration = 1
         fade.repeatCount = .infinity
+        fade.isRemovedOnCompletion = false
         spoke.add(fade, forKey: "fade")
     }
 
@@ -511,6 +514,7 @@ final class LoadingSceneLayer: FullscreenContent {
 final class ScreenSaverSceneLayer: FullscreenContent {
     private let space = SceneLayer()
     private let controller = ScreenSaverLayerController()
+    private lazy var photos = ScreenSaverPhotoStream.makePhotos()
 
     override init() {
         super.init()
@@ -524,7 +528,7 @@ final class ScreenSaverSceneLayer: FullscreenContent {
     override func update(menu _: MenuView, scene _: FullscreenScenePresentation, pass _: RenderPass, size: CGSize, scale _: CGFloat) {
         space.frame = CGRect(origin: .zero, size: size)
         controller.rootLayer.frame = space.bounds
-        controller.update(.init(photos: ScreenSaverPhotoStream.photos()), bounds: size)
+        controller.update(.init(photos: photos), bounds: size)
     }
 
     override func tearDown() {
