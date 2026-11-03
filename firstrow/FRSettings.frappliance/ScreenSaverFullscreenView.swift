@@ -1,8 +1,8 @@
+import QuartzCore
 import SwiftUI
 
 struct ScreenSaverFullscreenView: View {
     @StateObject private var model = ScreenSaverPhotoStreamModel()
-    @State private var startTime = Date()
     let onDismiss: () -> Void
 
     init(onDismiss: @escaping () -> Void = {}) {
@@ -10,109 +10,239 @@ struct ScreenSaverFullscreenView: View {
     }
 
     var body: some View {
-        screenSaverBody
-    }
-
-    private var screenSaverBody: some View {
-        GeometryReader { proxy in
-            FirstRowTimelineView(minimumInterval: 1.0 / 144.0) { currentDate in
-                let elapsed = max(0, currentDate.timeIntervalSince(startTime))
-                let spinState = SpinCycleState(elapsed: elapsed)
-                ZStack {
-                    Color.black
-                    ForEach(model.photos) { photo in
-                        let snapshot = projectedSnapshot(
-                            for: photo,
-                            elapsed: elapsed,
-                            canvasSize: proxy.size,
-                            spinState: spinState,
-                        )
-                        if snapshot.isVisible {
-                            ZStack {
-                                Image(nsImage: photo.image).resizable().interpolation(.high).antialiased(true).frame(width: snapshot.size.width, height: snapshot.size.height).opacity(snapshot.showsFrontFace ? 1 : 0)
-                                Image(nsImage: photo.image).resizable().interpolation(.high).antialiased(true).frame(width: snapshot.size.width, height: snapshot.size.height).scaleEffect(x: -1, y: 1).rotation3DEffect(.degrees(180),
-                                                                                                                                                                                                                         axis: (x: 0, y: 1, z: 0),
-                                                                                                                                                                                                                         perspective: 0).opacity(snapshot.showsFrontFace ? 0 : 1)
-                            }.rotation3DEffect(.degrees(snapshot.cardRotationDegrees),
-                                               axis: (x: 0, y: 1, z: 0),
-                                               perspective: 0).shadow(
-                                color: Color.black.opacity(0.55),
-                                radius: min(26, max(8, snapshot.size.width * 0.03)),
-                                x: 0,
-                                y: min(16, max(4, snapshot.size.height * 0.025)),
-                            ).position(snapshot.position).opacity(snapshot.opacity)
-                        }
-                    }
-                }.scaleEffect(1 - (0.08 * spinState.zoomOutAmount), anchor: .center).ignoresSafeArea()
-            }
-        }
+        LayerHost<ScreenSaverLayerController>(configuration: ScreenSaverLayerController.Configuration(
+            photos: model.photos,
+        ))
         .background(Color.black.ignoresSafeArea())
+        .ignoresSafeArea()
         .contentShape(Rectangle())
         .onAppear {
-            startTime = Date()
             model.loadIfNeeded()
         }
     }
+}
 
-    private func projectedSnapshot(
-        for photo: ScreenSaverPhotoEntry,
-        elapsed: TimeInterval,
-        canvasSize: CGSize,
-        spinState: SpinCycleState,
-    ) -> ProjectedPhotoSnapshot {
-        let initialEmptyDuration: TimeInterval = 3
+/// The floating photos screen saver, drawn with Core Animation. Every photo rises at a steady
+/// speed and wraps round, and once a minute the whole stream spins round its vertical axis.
+/// All of it runs as repeating layer animations, so the app does no work per frame (the
+/// SwiftUI version re-projected every photo 144 times a second).
+@MainActor
+final class ScreenSaverLayerController: LayerController {
+    struct Configuration {
+        fileprivate var photos: [ScreenSaverPhotoEntry]
+    }
 
-        let motionElapsed = max(0, elapsed - initialEmptyDuration)
-        let streamHeight = canvasSize.height * 2.25
-        let baseStartY = -canvasSize.height * 0.9
+    let rootLayer: CALayer = StillLayer()
+    private let sceneLayer = StillLayer()
+    private var installedKey: String?
+    private var startTime: CFTimeInterval?
+
+    private static let initialEmptyDuration: Double = 3
+    private static let spinCycle: Double = 60
+    private static let spinDuration: Double = 3
+    private static let cameraDistance: CGFloat = 760
+
+    init() {
+        rootLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
+        rootLayer.masksToBounds = true
+        rootLayer.addSublayer(sceneLayer)
+    }
+
+    func update(_ configuration: Configuration, bounds: CGSize) {
+        guard bounds.width > 0, bounds.height > 0, !configuration.photos.isEmpty else { return }
+        let key = "\(configuration.photos.count)|\(Int(bounds.width))x\(Int(bounds.height))"
+        guard key != installedKey else { return }
+        installedKey = key
+        let now = CACurrentMediaTime()
+        if startTime == nil {
+            startTime = now
+        }
+        install(configuration.photos, size: bounds, elapsedAtInstall: now - (startTime ?? now))
+    }
+
+    // MARK: - Spin cycle
+
+    private struct Spin {
+        var orbitRadians: Double = 0
+        var cardDegrees: Double = 0
+        var zoomOut: CGFloat = 0
+    }
+
+    /// The spin a minute into each cycle: three seconds round the vertical axis, zooming out and back in.
+    private static func spin(atCycleTime cycleTime: Double) -> Spin {
+        guard cycleTime < spinDuration else { return Spin() }
+        let progress = cycleTime / spinDuration
+        let eased = easeInOutQuad(progress)
+        let zoom = progress < 0.75
+            ? CGFloat(easeInOutQuad(progress / 0.75))
+            : CGFloat(1 - easeInOutQuad((progress - 0.75) / 0.25))
+        return Spin(orbitRadians: 2 * .pi * eased, cardDegrees: 360 * eased, zoomOut: zoom)
+    }
+
+    private static func easeInOutQuad(_ t: Double) -> Double {
+        let x = min(max(t, 0), 1)
+        return x < 0.5 ? 2 * x * x : 1 - pow(-2 * x + 2, 2) / 2
+    }
+
+    /// Times within the minute-long cycle at which the spin is sampled: densely through the
+    /// spin, then once at the end (nothing moves for the rest of the minute).
+    private static let cycleSampleTimes: [Double] = {
+        let samples = 120
+        return (0 ... samples).map { spinDuration * Double($0) / Double(samples) } + [spinCycle]
+    }()
+
+    // MARK: - Layers
+
+    private func install(_ photos: [ScreenSaverPhotoEntry], size: CGSize, elapsedAtInstall: Double) {
+        let width = size.width
+        let height = size.height
+        let space = LayerSpace(height: height)
+        let center = CGPoint(x: width / 2, y: height / 2)
+        let streamHeight = height * 2.25
+        let baseStartY = -height * 0.9
         let lowerY = baseStartY - streamHeight
-        let upperY = canvasSize.height * 1.2
+        let upperY = height * 1.2
         let wrapSpan = max(1, upperY - lowerY)
-        let baseY = baseStartY - (photo.normalizedY * streamHeight)
-        let unwrappedY = baseY + (photo.riseSpeed * CGFloat(motionElapsed))
-        let wrappedY = lowerY + positiveModulo(unwrappedY - lowerY, wrapSpan)
-        let worldY = wrappedY
-        let initialWrappedY = lowerY + positiveModulo(baseY - lowerY, wrapSpan)
-        let worldWidth = canvasSize.width * 1.25
-        let worldX = (photo.normalizedX - 0.5) * worldWidth
-        let worldZ = (photo.normalizedZ - 0.5) * 620
-        let cosTheta = CGFloat(cos(spinState.orbitRotationRadians))
-        let sinTheta = CGFloat(sin(spinState.orbitRotationRadians))
-        let rotatedX = (worldX * cosTheta) + (worldZ * sinTheta)
-        let rotatedZ = (worldZ * cosTheta) - (worldX * sinTheta)
-        let cameraDistance: CGFloat = 760
-        let perspective = cameraDistance / max(180, cameraDistance - rotatedZ)
-        let projectedX = (canvasSize.width * 0.5) + (rotatedX * perspective)
-        let projectedY = (canvasSize.height * 0.5) - (worldY * perspective)
-        let initialProjectedY = (canvasSize.height * 0.5) - (initialWrappedY * perspective)
-        let pixelToPoint: CGFloat = 0.34
-        let rawScale = pixelToPoint * perspective * photo.sizeMultiplier
-        var projectedWidth = max(70, photo.imageSize.width * rawScale)
-        var projectedHeight = max(70, photo.imageSize.height * rawScale)
-        let maxWidth = canvasSize.width * 0.9
-        let maxHeight = canvasSize.height * 0.95
-        let clampScale = min(1, maxWidth / projectedWidth, maxHeight / projectedHeight)
-        projectedWidth *= clampScale
-        projectedHeight *= clampScale
-        let verticalVisibilityPadding = projectedHeight * 0.8
-        let initialCycle = floor((baseY - lowerY) / wrapSpan)
-        let currentCycle = floor((unwrappedY - lowerY) / wrapSpan)
-        let hasWrappedSinceStart = currentCycle > initialCycle
-        let startedBelowBottom = initialProjectedY >= canvasSize.height
-        let startupRevealAllowed = startedBelowBottom || hasWrappedSinceStart
-        let isVisible = elapsed >= initialEmptyDuration
-            && startupRevealAllowed
-            && projectedY > -verticalVisibilityPadding
-            && projectedY < (canvasSize.height + verticalVisibilityPadding)
-        let opacity: CGFloat = isVisible ? 1 : 0
-        return ProjectedPhotoSnapshot(
-            isVisible: isVisible,
-            position: CGPoint(x: projectedX, y: projectedY),
-            size: CGSize(width: projectedWidth, height: projectedHeight),
-            opacity: opacity,
-            cardRotationDegrees: spinState.cardRotationDegrees,
-            showsFrontFace: cos(spinState.orbitRotationRadians) >= 0,
+        let keyTimes = Self.cycleSampleTimes.map { NSNumber(value: $0 / Self.spinCycle) }
+        let spins = Self.cycleSampleTimes.map { Self.spin(atCycleTime: $0) }
+        // Spins start a minute in; the animations below run in "cycle time" from that point.
+        let firstSpinIn = Self.spinCycle - elapsedAtInstall
+        let motionStartsIn = max(0, Self.initialEmptyDuration - elapsedAtInstall)
+        let motionElapsed = max(0, elapsedAtInstall - Self.initialEmptyDuration)
+
+        withoutLayerActions {
+            sceneLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            sceneLayer.removeAllAnimations()
+            sceneLayer.bounds = CGRect(origin: .zero, size: size)
+            sceneLayer.position = space.point(center)
+        }
+        sceneLayer.add(
+            cycleAnimation("transform", spins.map { spin in
+                let scale = 1 - 0.08 * spin.zoomOut
+                return NSValue(caTransform3D: CATransform3DMakeScale(scale, scale, 1))
+            }, keyTimes, startsIn: firstSpinIn),
+            forKey: "zoom",
         )
+
+        for photo in photos {
+            guard let image = ScreenSaverImageCache.image(for: photo) else { continue }
+            let worldX = (photo.normalizedX - 0.5) * width * 1.25
+            let worldZ = (photo.normalizedZ - 0.5) * 620
+            func perspective(orbit: Double) -> CGFloat {
+                let rotatedZ = worldZ * CGFloat(cos(orbit)) - worldX * CGFloat(sin(orbit))
+                return Self.cameraDistance / max(180, Self.cameraDistance - rotatedZ)
+            }
+            func rotatedX(orbit: Double) -> CGFloat {
+                worldX * CGFloat(cos(orbit)) + worldZ * CGFloat(sin(orbit))
+            }
+            let restingPerspective = perspective(orbit: 0)
+            // Size at rest, with the same minimum and screen-size limits as before; the holder's
+            // perspective scale grows or shrinks it from there during a spin.
+            var restingWidth = max(70, photo.imageSize.width * 0.34 * restingPerspective * photo.sizeMultiplier)
+            var restingHeight = max(70, photo.imageSize.height * 0.34 * restingPerspective * photo.sizeMultiplier)
+            let clamp = min(1, width * 0.9 / restingWidth, height * 0.95 / restingHeight)
+            restingWidth *= clamp
+            restingHeight *= clamp
+            let cardSize = CGSize(width: restingWidth / restingPerspective, height: restingHeight / restingPerspective)
+
+            // The holder scales its card by the perspective about the screen centre; it has no 3D
+            // transform of its own, so cards are painted in order rather than depth-tested.
+            let holder = StillLayer()
+            let card = StillLayer()
+            withoutLayerActions {
+                holder.bounds = CGRect(origin: .zero, size: size)
+                holder.position = space.point(center)
+                holder.transform = CATransform3DMakeScale(restingPerspective, restingPerspective, 1)
+                card.bounds = CGRect(origin: .zero, size: cardSize)
+                card.contents = image
+                card.contentsGravity = .resize
+                card.isDoubleSided = true
+                card.shadowColor = CGColor(gray: 0, alpha: 1)
+                card.shadowOpacity = 0.55
+                card.shadowRadius = min(26, max(8, restingWidth * 0.03)) / restingPerspective
+                let shadowDrop = min(16, max(4, restingHeight * 0.025)) / restingPerspective
+                #if os(macOS)
+                    card.shadowOffset = CGSize(width: 0, height: -shadowDrop)
+                #else
+                    card.shadowOffset = CGSize(width: 0, height: shadowDrop)
+                #endif
+                card.shadowPath = CGPath(rect: card.bounds, transform: nil)
+            }
+            holder.addSublayer(card)
+            sceneLayer.addSublayer(holder)
+
+            // Rising: world y climbs steadily from lowerY to upperY, then wraps.
+            let baseY = baseStartY - photo.normalizedY * streamHeight
+            let startWorldY = lowerY + positiveModulo(baseY - lowerY, wrapSpan)
+            let currentWorldY = lowerY + positiveModulo(baseY + photo.riseSpeed * CGFloat(motionElapsed) - lowerY, wrapSpan)
+            let wrapDuration = Double(wrapSpan / photo.riseSpeed)
+            let restingX = space.point(CGPoint(x: center.x + rotatedX(orbit: 0), y: center.y)).x
+            let yAtLower = space.point(CGPoint(x: 0, y: center.y - lowerY)).y
+            let yAtUpper = space.point(CGPoint(x: 0, y: center.y - upperY)).y
+            withoutLayerActions {
+                card.position = CGPoint(x: restingX, y: space.point(CGPoint(x: 0, y: center.y - currentWorldY)).y)
+            }
+            let rise = CABasicAnimation(keyPath: "position.y")
+            rise.fromValue = yAtLower
+            rise.toValue = yAtUpper
+            rise.duration = wrapDuration
+            rise.repeatCount = .infinity
+            rise.timeOffset = Double((currentWorldY - lowerY) / photo.riseSpeed)
+            rise.beginTime = motionStartsIn > 0 ? card.convertTime(CACurrentMediaTime(), from: nil) + motionStartsIn : 0
+            rise.fillMode = .backwards
+            card.add(rise, forKey: "rise")
+
+            // The spin: perspective scale on the holder, sideways swing and card turn on the card.
+            holder.add(cycleAnimation("transform", spins.map { spin in
+                let scale = perspective(orbit: spin.orbitRadians)
+                return NSValue(caTransform3D: CATransform3DMakeScale(scale, scale, 1))
+            }, keyTimes, startsIn: firstSpinIn), forKey: "spin")
+            card.add(cycleAnimation("position.x", spins.map { spin in
+                NSNumber(value: Double(space.point(CGPoint(x: center.x + rotatedX(orbit: spin.orbitRadians), y: 0)).x))
+            }, keyTimes, startsIn: firstSpinIn), forKey: "swing")
+            card.add(cycleAnimation("transform", spins.map { spin in
+                NSValue(caTransform3D: CATransform3DMakeRotation(CGFloat(spin.cardDegrees * .pi / 180), 0, 1, 0))
+            }, keyTimes, startsIn: firstSpinIn), forKey: "turn")
+
+            // Startup: an empty screen for three seconds, and photos that start out on screen
+            // stay hidden until they first come round from below (no popping in mid-screen).
+            let initialProjectedY = center.y - startWorldY * restingPerspective
+            let revealAt: Double
+            if initialProjectedY >= height {
+                revealAt = Self.initialEmptyDuration
+            } else {
+                revealAt = Self.initialEmptyDuration + Double((upperY - startWorldY) / photo.riseSpeed)
+            }
+            let revealIn = revealAt - elapsedAtInstall
+            if revealIn > 0 {
+                let reveal = CAKeyframeAnimation(keyPath: "opacity")
+                reveal.values = [0, 1]
+                reveal.keyTimes = [0, 1]
+                reveal.calculationMode = .discrete
+                reveal.duration = revealIn
+                reveal.beginTime = 0
+                reveal.isRemovedOnCompletion = true
+                card.add(reveal, forKey: "reveal")
+            }
+        }
+    }
+
+    /// A keyframe animation over the minute-long spin cycle, repeating forever, whose first
+    /// spin is `startsIn` seconds away (or already under way when negative).
+    private func cycleAnimation(_ keyPath: String, _ values: [Any], _ keyTimes: [NSNumber], startsIn: Double) -> CAKeyframeAnimation {
+        let animation = CAKeyframeAnimation(keyPath: keyPath)
+        animation.values = values
+        animation.keyTimes = keyTimes
+        animation.calculationMode = .linear
+        animation.duration = Self.spinCycle
+        animation.repeatCount = .infinity
+        if startsIn > 0 {
+            animation.beginTime = rootLayer.convertTime(CACurrentMediaTime(), from: nil) + startsIn
+        } else {
+            animation.beginTime = 0
+            animation.timeOffset = positiveModulo(CGFloat(-startsIn), CGFloat(Self.spinCycle)).doubleValue
+        }
+        return animation
     }
 
     private func positiveModulo(_ value: CGFloat, _ modulus: CGFloat) -> CGFloat {
@@ -121,59 +251,27 @@ struct ScreenSaverFullscreenView: View {
     }
 }
 
-private struct ProjectedPhotoSnapshot {
-    let isVisible: Bool
-    let position: CGPoint
-    let size: CGSize
-    let opacity: CGFloat
-    let cardRotationDegrees: Double
-    let showsFrontFace: Bool
+private extension CGFloat {
+    var doubleValue: Double { Double(self) }
 }
 
-private struct SpinCycleState {
-    let orbitRotationRadians: Double
-    let cardRotationDegrees: Double
-    let zoomOutAmount: CGFloat
-    init(elapsed: TimeInterval) {
-        guard elapsed >= 60 else {
-            orbitRotationRadians = 0
-            cardRotationDegrees = 0
-            zoomOutAmount = 0
-            return
-        }
-        let cycleTime = (elapsed - 60).truncatingRemainder(dividingBy: 60)
-        let rotationDuration: TimeInterval = 3.0
-        if cycleTime < rotationDuration {
-            let progress = cycleTime / rotationDuration
-            let eased = SpinCycleState.easeInOutQuad(progress)
+/// Screen saver photos as bitmaps no bigger than the screen needs.
+@MainActor
+private enum ScreenSaverImageCache {
+    private static var images: [ObjectIdentifier: CGImage] = [:]
 
-            orbitRotationRadians = 2 * Double.pi * eased
-            cardRotationDegrees = 360 * eased
-
-            if progress < 0.75 {
-                let zoomOutProgress = progress / 0.75
-                zoomOutAmount = CGFloat(SpinCycleState.easeInOutQuad(zoomOutProgress))
-            } else {
-                let zoomInProgress = (progress - 0.75) / 0.25
-                zoomOutAmount = CGFloat(1 - SpinCycleState.easeInOutQuad(zoomInProgress))
-            }
-        } else {
-            orbitRotationRadians = 0
-            cardRotationDegrees = 0
-            zoomOutAmount = 0
+    static func image(for photo: ScreenSaverPhotoEntry) -> CGImage? {
+        let key = ObjectIdentifier(photo.image)
+        if let cached = images[key] {
+            return cached
         }
-    }
-
-    private static func easeInOutQuad(_ t: TimeInterval) -> TimeInterval {
-        let x = min(max(t, 0), 1)
-        if x < 0.5 {
-            return 2 * x * x
-        }
-        return 1 - (pow(-2 * x + 2, 2) / 2)
+        guard let image = LayerImageCache.cgImage(for: photo.image) else { return nil }
+        images[key] = image
+        return image
     }
 }
 
-private struct ScreenSaverPhotoEntry: Identifiable {
+fileprivate struct ScreenSaverPhotoEntry: Identifiable {
     let id: Int
     let image: NSImage
     let imageSize: CGSize
