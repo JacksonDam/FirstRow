@@ -2845,9 +2845,11 @@ final class MusicCarouselArtworkDigestCache {
     }
 }
 
-/// Cache key for artwork read from a song file (shared by previews and the carousel).
+/// Cache key for artwork read from a song file (shared by previews and the carousel). Songs in
+/// the iPhone's media library all have the path "/item.m4a" (ipod-library://item/item.m4a?id=…),
+/// so only the whole address tells them apart.
 func musicArtworkCacheKeyForFile(_ url: URL) -> String {
-    url.standardizedFileURL.path
+    url.isFileURL ? url.standardizedFileURL.path : url.absoluteString
 }
 
 /// Artwork embedded in a song file, decoded for display; safe to call off the main thread.
