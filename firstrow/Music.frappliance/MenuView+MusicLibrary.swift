@@ -428,7 +428,7 @@ extension MenuView {
                 artworkDataByAlbumKey: result.artworkDataByAlbumKey,
             )
         #else
-            let songs = try fetchMusicLibrarySongsForShuffle()
+            let songs = try await fetchMusicLibrarySongsForShuffle()
             return (
                 sortedSongs: sortedMusicLibraryEntries(songs),
                 shuffleSongs: songs,
@@ -1000,12 +1000,17 @@ extension MenuView {
                             startIndex: resolvedStartIndex,
                             limit: self.musicTopLevelCarouselArtworkLimit,
                         )
-                        let pageArtworks = try songCachePage ?? self.fetchMusicTopLevelCarouselArtworks(
-                            startIndex: resolvedStartIndex,
-                            limit: self.musicTopLevelCarouselArtworkLimit,
-                        )
+                        let pageArtworks: [NSImage?]
+                        if let songCachePage {
+                            pageArtworks = songCachePage
+                        } else {
+                            pageArtworks = try await self.fetchMusicTopLevelCarouselArtworks(
+                                startIndex: resolvedStartIndex,
+                                limit: self.musicTopLevelCarouselArtworkLimit,
+                            )
+                        }
                     #else
-                        let pageArtworks = try self.fetchMusicTopLevelCarouselArtworks(
+                        let pageArtworks = try await self.fetchMusicTopLevelCarouselArtworks(
                             startIndex: resolvedStartIndex,
                             limit: self.musicTopLevelCarouselArtworkLimit,
                         )
@@ -1081,7 +1086,7 @@ extension MenuView {
         musicTopLevelCarouselArtworksByIndex[globalIndex] ?? musicFallbackImage
     }
 
-    func fetchMusicTopLevelCarouselArtworks(startIndex: Int, limit: Int) throws -> [NSImage?] {
+    func fetchMusicTopLevelCarouselArtworks(startIndex: Int, limit: Int) async throws -> [NSImage?] {
         let resolvedStartIndex = max(0, startIndex)
         let resolvedLimit = max(1, limit)
         #if os(iOS)
@@ -1127,48 +1132,37 @@ extension MenuView {
                     userInfo: [NSLocalizedDescriptionKey: "MusicKit library requests require tvOS 16 or newer"],
                 )
             }
-            var fetchResult: Result<[NSImage?], Error>?
-            let semaphore = DispatchSemaphore(value: 0)
-            Task {
-                defer { semaphore.signal() }
-                do {
-                    let rawBatchSize = max(resolvedLimit * 4, 72)
-                    var rawOffset = 0
-                    var uniqueAlbumIndex = 0
-                    var seenAlbumKeys: Set<String> = []
-                    var artworks: [NSImage?] = []
-                    artworks.reserveCapacity(resolvedLimit)
-                    while artworks.count < resolvedLimit {
-                        var request = MusicLibraryRequest<Song>()
-                        request.limit = rawBatchSize
-                        request.offset = rawOffset
-                        let response = try await request.response()
-                        guard !response.items.isEmpty else { break }
-                        for song in response.items {
-                            let albumKey = self.musicTopLevelCarouselAlbumKey(for: song)
-                            guard seenAlbumKeys.insert(albumKey).inserted else { continue }
-                            guard uniqueAlbumIndex >= resolvedStartIndex else {
-                                uniqueAlbumIndex += 1
-                                continue
-                            }
-                            artworks.append(loadMusicKitArtworkImage(song.artwork) ?? musicFallbackImage)
-                            uniqueAlbumIndex += 1
-                            if artworks.count >= resolvedLimit {
-                                break
-                            }
-                        }
-                        rawOffset += response.items.count
-                        if response.items.count < rawBatchSize {
-                            break
-                        }
+            let rawBatchSize = max(resolvedLimit * 4, 72)
+            var rawOffset = 0
+            var uniqueAlbumIndex = 0
+            var seenAlbumKeys: Set<String> = []
+            var artworks: [NSImage?] = []
+            artworks.reserveCapacity(resolvedLimit)
+            while artworks.count < resolvedLimit {
+                var request = MusicLibraryRequest<Song>()
+                request.limit = rawBatchSize
+                request.offset = rawOffset
+                let response = try await request.response()
+                guard !response.items.isEmpty else { break }
+                for song in response.items {
+                    let albumKey = musicTopLevelCarouselAlbumKey(for: song)
+                    guard seenAlbumKeys.insert(albumKey).inserted else { continue }
+                    guard uniqueAlbumIndex >= resolvedStartIndex else {
+                        uniqueAlbumIndex += 1
+                        continue
                     }
-                    fetchResult = .success(artworks)
-                } catch {
-                    fetchResult = .failure(error)
+                    artworks.append(await loadMusicKitArtworkImage(song.artwork) ?? musicFallbackImage)
+                    uniqueAlbumIndex += 1
+                    if artworks.count >= resolvedLimit {
+                        break
+                    }
+                }
+                rawOffset += response.items.count
+                if response.items.count < rawBatchSize {
+                    break
                 }
             }
-            semaphore.wait()
-            return try fetchResult?.get() ?? []
+            return artworks
         #elseif canImport(iTunesLibrary)
             return try withITLibrary { library in
                 var seenAlbumKeys: Set<String> = []
@@ -1544,11 +1538,11 @@ extension MenuView {
         }
     }
 
-    func fetchMusicLibrarySongs() throws -> [MusicLibrarySongEntry] {
-        try fetchMusicLibraryEntries(for: .songs, includeArtwork: false)
+    func fetchMusicLibrarySongs() async throws -> [MusicLibrarySongEntry] {
+        try await fetchMusicLibraryEntries(for: .songs, includeArtwork: false)
     }
 
-    func fetchRandomMusicLibrarySongForShuffleSeed(includeArtwork: Bool = true) throws -> MusicLibrarySongEntry? {
+    func fetchRandomMusicLibrarySongForShuffleSeed(includeArtwork: Bool = true) async throws -> MusicLibrarySongEntry? {
         #if os(iOS)
             guard MPMediaLibrary.authorizationStatus() == .authorized else {
                 throw NSError(
@@ -1584,13 +1578,13 @@ extension MenuView {
                 return nil
             }
         #else
-            let songs = try fetchMusicLibrarySongsForShuffle()
+            let songs = try await fetchMusicLibrarySongsForShuffle()
             return songs.randomElement()
         #endif
     }
 
-    func fetchMusicLibrarySongsForShuffle() throws -> [MusicLibrarySongEntry] {
-        try fetchMusicLibraryEntries(
+    func fetchMusicLibrarySongsForShuffle() async throws -> [MusicLibrarySongEntry] {
+        try await fetchMusicLibraryEntries(
             for: .songs,
             includeArtwork: false,
             shouldSort: false,
@@ -1781,7 +1775,7 @@ extension MenuView {
         for mediaType: MusicLibraryMediaType,
         includeArtwork: Bool = true,
         shouldSort: Bool = true,
-    ) throws -> [MusicLibrarySongEntry] {
+    ) async throws -> [MusicLibrarySongEntry] {
         #if os(iOS)
             guard MPMediaLibrary.authorizationStatus() == .authorized else {
                 throw NSError(
@@ -1811,7 +1805,7 @@ extension MenuView {
         #elseif os(tvOS)
             switch mediaType {
             case .songs:
-                return try fetchMusicLibrarySongsFromMusicKit(
+                return try await fetchMusicLibrarySongsFromMusicKit(
                     includeArtwork: includeArtwork,
                     shouldSort: shouldSort,
                 )
@@ -2077,7 +2071,7 @@ extension MenuView {
         func fetchMusicLibrarySongsFromMusicKit(
             includeArtwork: Bool = true,
             shouldSort: Bool = true,
-        ) throws -> [MusicLibrarySongEntry] {
+        ) async throws -> [MusicLibrarySongEntry] {
             guard MusicAuthorization.currentStatus == .authorized else {
                 throw NSError(
                     domain: "firstRowMusicLibrary",
@@ -2092,32 +2086,21 @@ extension MenuView {
                     userInfo: [NSLocalizedDescriptionKey: "MusicKit library requests require tvOS 16 or newer"],
                 )
             }
-            var fetchResult: Result<[MusicLibrarySongEntry], Error>?
-            let semaphore = DispatchSemaphore(value: 0)
-            Task {
-                defer { semaphore.signal() }
-                do {
-                    var request = MusicLibraryRequest<Song>()
-                    request.limit = 5000
-                    let response = try await request.response()
-                    var songs: [MusicLibrarySongEntry] = []
-                    songs.reserveCapacity(response.items.count)
-                    for song in response.items {
-                        guard let entry = makeMusicLibrarySongEntry(from: song, includeArtwork: includeArtwork) else {
-                            continue
-                        }
-                        songs.append(entry)
-                    }
-                    fetchResult = .success(shouldSort ? sortedMusicLibraryEntries(songs) : songs)
-                } catch {
-                    fetchResult = .failure(error)
+            var request = MusicLibraryRequest<Song>()
+            request.limit = 5000
+            let response = try await request.response()
+            var songs: [MusicLibrarySongEntry] = []
+            songs.reserveCapacity(response.items.count)
+            for song in response.items {
+                guard let entry = await makeMusicLibrarySongEntry(from: song, includeArtwork: includeArtwork) else {
+                    continue
                 }
+                songs.append(entry)
             }
-            semaphore.wait()
-            return try fetchResult?.get() ?? []
+            return shouldSort ? sortedMusicLibraryEntries(songs) : songs
         }
 
-        func makeMusicLibrarySongEntry(from song: Song, includeArtwork: Bool = true) -> MusicLibrarySongEntry? {
+        func makeMusicLibrarySongEntry(from song: Song, includeArtwork: Bool = true) async -> MusicLibrarySongEntry? {
             guard song.playParameters != nil else { return nil }
             let previewURL = song.previewAssets?.first(where: { $0.hlsURL != nil || $0.url != nil })
             let playbackURL = previewURL?.hlsURL ?? previewURL?.url ?? song.url
@@ -2138,16 +2121,17 @@ extension MenuView {
                 discNumber: song.discNumber ?? 1,
                 artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: song),
                 url: playbackURL,
-                artwork: includeArtwork ? loadMusicKitArtworkImage(song.artwork) : nil,
+                artwork: includeArtwork ? await loadMusicKitArtworkImage(song.artwork) : nil,
                 musicKitSong: song,
             )
         }
 
-        func loadMusicKitArtworkImage(_ artwork: Artwork?) -> NSImage? {
+        func loadMusicKitArtworkImage(_ artwork: Artwork?) async -> NSImage? {
             guard let artwork else { return nil }
             let side = max(300, min(800, min(artwork.maximumWidth, artwork.maximumHeight)))
             guard let artworkURL = artwork.url(width: side, height: side) else { return nil }
-            guard let data = try? Data(contentsOf: artworkURL) else { return nil }
+            // Read off the main thread: the artwork can be a download.
+            guard let data = await Task.detached(operation: { try? Data(contentsOf: artworkURL) }).value else { return nil }
             return cachedDecodedDisplayArtworkImage(
                 from: data,
                 sourceKey: artworkURL.absoluteString,
@@ -2242,12 +2226,12 @@ extension MenuView {
                             itemIndices = result.itemIndices
                             artworkDataByAlbumKey = result.artworkDataByAlbumKey
                         } else {
-                            songs = try self.fetchMusicLibraryEntries(for: requestedMediaType)
+                            songs = try await self.fetchMusicLibraryEntries(for: requestedMediaType)
                             itemIndices = [:]
                             artworkDataByAlbumKey = self.musicLibraryArtworkDataByAlbumKey
                         }
                     #else
-                        let songs = try self.fetchMusicLibraryEntries(for: requestedMediaType)
+                        let songs = try await self.fetchMusicLibraryEntries(for: requestedMediaType)
                     #endif
                     await MainActor.run {
                         guard self.musicSongsRequestID == requestID else { return }
@@ -2324,7 +2308,7 @@ extension MenuView {
                             if let cachedSongs {
                                 songs = cachedSongs
                             } else {
-                                songs = try self.fetchMusicLibrarySongs()
+                                songs = try await self.fetchMusicLibrarySongs()
                             }
                         #endif
                         categories = self.buildMusicCategoryEntries(from: songs, kind: kind)
@@ -2459,7 +2443,7 @@ extension MenuView {
             #if canImport(iTunesLibrary)
                 Task(priority: .userInitiated) {
                     do {
-                        guard let seedSong = try self.fetchRandomMusicLibrarySongForShuffleSeed() else {
+                        guard let seedSong = try await self.fetchRandomMusicLibrarySongForShuffleSeed() else {
                             await MainActor.run {
                                 guard self.musicSongsRequestID == requestID else { return }
                                 self.deferNowPlayingMenuItemUntilAfterFadeOut = false
@@ -2511,7 +2495,7 @@ extension MenuView {
             #else
                 Task(priority: .userInitiated) {
                     do {
-                        let songs = try self.fetchMusicLibrarySongsForShuffle()
+                        let songs = try await self.fetchMusicLibrarySongsForShuffle()
                         await MainActor.run {
                             guard self.musicSongsRequestID == requestID else { return }
                             self.musicShuffleSongsCache = songs
