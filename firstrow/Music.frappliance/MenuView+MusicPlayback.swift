@@ -1517,6 +1517,9 @@ extension MenuView {
         invalidateMusicNowPlayingFlipTimer()
         musicNowPlayingFlipMidpointWorkItem?.cancel()
         musicNowPlayingFlipMidpointWorkItem = nil
+        if isMusicNowPlayingFlipAnimating {
+            cancelMusicNowPlayingFlipAnimation()
+        }
         if clearDisplayState {
             clearMusicNowPlayingDisplayState()
             resetMusicNowPlayingFlipState()
@@ -1571,9 +1574,16 @@ extension MenuView {
         let shouldRun = isMusicSceneVisible && isMusicPlaying && !isMovieTransitioning && !isMoviePlaybackVisible
         if !shouldRun {
             invalidateMusicNowPlayingFlipTimer()
+            // A flip under way finishes (pausing mid-turn used to cancel its second half and
+            // leave the panel edge-on, black, until the next song).
+            if isMusicNowPlayingFlipAnimating, isMusicSceneVisible {
+                return
+            }
             musicNowPlayingFlipMidpointWorkItem?.cancel()
             musicNowPlayingFlipMidpointWorkItem = nil
-            if !isMusicNowPlayingFlipAnimating {
+            if isMusicNowPlayingFlipAnimating {
+                cancelMusicNowPlayingFlipAnimation()
+            } else {
                 musicNowPlayingFlipRotationDegrees = 0
             }
             return
@@ -1604,7 +1614,11 @@ extension MenuView {
             try? await firstRowSleep(halfDuration)
             guard !Task.isCancelled else { return }
             guard generation == musicNowPlayingFlipGeneration else { return }
-            guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
+            guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else {
+                // Now Playing went away mid-turn: face front again for next time.
+                cancelMusicNowPlayingFlipAnimation()
+                return
+            }
             musicNowPlayingUsesAlternateLayout.toggle()
             var resetTransaction = Transaction()
             resetTransaction.disablesAnimations = true
