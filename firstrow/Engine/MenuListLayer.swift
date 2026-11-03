@@ -263,46 +263,55 @@ final class MenuListLayer {
     }
 }
 
-/// The glowing selection bar: two end caps and a stretched middle.
+/// The glowing selection bar: two end caps and a stretched middle, drawn as one picture
+/// stretched through a column of its middle (`contentsCenter`). Three separate layers met at
+/// fractional pixel edges, where their soft edges showed as faint vertical lines.
 @MainActor
 final class SelectionBoxLayer {
     let layer = SceneLayer()
-    private let left = SceneLayer()
-    private let middle = SceneLayer()
-    private let right = SceneLayer()
-    private static let sourceCapWidth: CGFloat = 50
-    private static let sourceHeight: CGFloat = 97
+    private let texture = SceneLayer()
 
-    private static let textures: (left: CGImage, middle: CGImage, right: CGImage)? = {
+    private static let joined: (image: CGImage, height: CGFloat, center: CGRect)? = {
         guard let left = LayerImageCache.cgImage(for: NSImage(named: "SelectionEndCapLeft")),
               let middle = LayerImageCache.cgImage(for: NSImage(named: "SelectionMiddle")),
               let right = LayerImageCache.cgImage(for: NSImage(named: "SelectionEndCapRight"))
         else { return nil }
-        return (left, middle, right)
+        let height = left.height
+        let width = left.width + middle.width + right.width
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
+        ) else { return nil }
+        context.interpolationQuality = .none
+        context.draw(left, in: CGRect(x: 0, y: 0, width: left.width, height: height))
+        context.draw(middle, in: CGRect(x: left.width, y: 0, width: middle.width, height: height))
+        context.draw(right, in: CGRect(x: left.width + middle.width, y: 0, width: right.width, height: height))
+        guard let image = context.makeImage() else { return nil }
+        // Stretch one column from the middle of the middle piece; everything either side keeps its shape.
+        let column = CGFloat(left.width + middle.width / 2)
+        return (image, CGFloat(height), CGRect(x: column / CGFloat(width), y: 0, width: 1 / CGFloat(width), height: 1))
     }()
 
     init() {
-        for part in [left, middle, right] {
-            part.contentsGravity = .resize
-            layer.addSublayer(part)
+        texture.contentsGravity = .resize
+        if let joined = Self.joined {
+            texture.contents = joined.image
+            texture.contentsCenter = joined.center
         }
-        if let textures = Self.textures {
-            left.contents = textures.left
-            middle.contents = textures.middle
-            right.contents = textures.right
-        }
+        layer.addSublayer(texture)
     }
 
     /// `frame` is the visual box; the texture is taller than it (its glow) and centred on it.
     func update(frame: CGRect, selectionBoxHeight: CGFloat, animation: Animation?) {
-        let textureHeight = frame.height * (Self.sourceHeight / selectionBoxHeight)
-        let capWidth = min(textureHeight * (Self.sourceCapWidth / Self.sourceHeight), frame.width * 0.5)
-        let middleWidth = max(0, frame.width - capWidth * 2)
-        let top = (frame.height - textureHeight) * 0.5
+        guard let joined = Self.joined else { return }
+        let textureHeight = frame.height * (joined.height / selectionBoxHeight)
+        // The caps keep the picture's proportions at this height.
+        let pixelsPerPoint = joined.height / max(1, textureHeight)
+        if texture.contentsScale != pixelsPerPoint {
+            texture.contentsScale = pixelsPerPoint
+        }
         layer.setFrame(frame, animation)
-        left.setFrame(CGRect(x: 0, y: top, width: capWidth, height: textureHeight), animation)
-        middle.setFrame(CGRect(x: capWidth, y: top, width: middleWidth, height: textureHeight), animation)
-        right.setFrame(CGRect(x: capWidth + middleWidth, y: top, width: capWidth, height: textureHeight), animation)
+        texture.setFrame(CGRect(x: 0, y: (frame.height - textureHeight) * 0.5, width: frame.width, height: textureHeight), animation)
     }
 }
 
