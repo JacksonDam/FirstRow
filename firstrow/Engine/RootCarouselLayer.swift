@@ -27,6 +27,8 @@ struct RootCarouselConfiguration {
     var entryOffset: CGFloat
     var sceneWidth: CGFloat
     var selectionDuration: Double
+    /// Holding an arrow key sweeps at a steady speed rather than easing in and out of every step.
+    var usesLinearSweep: Bool
     var iconFlightDuration: Double
     var backgroundTransitionDuration: Double
     var backgroundReturnDuration: Double
@@ -55,10 +57,37 @@ final class RootCarouselLayerController: LayerController {
         var reflectionOpacity: Float
         var reflectionBlur: CGFloat
         var showsReflection: Bool
+
+        static func interpolate(_ a: IconState, _ b: IconState, _ t: Double) -> IconState {
+            func mix(_ x: CGFloat, _ y: CGFloat) -> CGFloat { x + (y - x) * CGFloat(t) }
+            func mix(_ x: Float, _ y: Float) -> Float { x + (y - x) * Float(t) }
+            return IconState(
+                center: CGPoint(x: mix(a.center.x, b.center.x), y: mix(a.center.y, b.center.y)),
+                size: mix(a.size, b.size),
+                opacity: mix(a.opacity, b.opacity),
+                blurRadius: mix(a.blurRadius, b.blurRadius),
+                position: t < 0.5 ? a.position : b.position,
+                reflectionCenter: CGPoint(x: mix(a.reflectionCenter.x, b.reflectionCenter.x), y: mix(a.reflectionCenter.y, b.reflectionCenter.y)),
+                reflectionSize: mix(a.reflectionSize, b.reflectionSize),
+                reflectionOpacity: mix(a.reflectionOpacity, b.reflectionOpacity),
+                reflectionBlur: mix(a.reflectionBlur, b.reflectionBlur),
+                showsReflection: t < 0.5 ? a.showsReflection : b.showsReflection,
+            )
+        }
     }
 
     private var icons: [Icon] = []
     private var previous: RootCarouselConfiguration?
+
+    // The selection as a continuous value while the carousel turns: every icon's place is a
+    // function of it, so however fast the arrows are pressed, icons stay on the carousel's path
+    // (animating each icon in a straight line from wherever it was cut corners and, press after
+    // press, pulled the carousel inwards).
+    private var phaseFrom: Double = 0
+    private var phaseTo: Double = 0
+    private var phaseStart: CFTimeInterval = 0
+    private var phaseDuration: Double = 0
+    private var phaseIsLinear = false
 
     func update(_ configuration: RootCarouselConfiguration, bounds: CGSize) {
         guard bounds.width > 0, bounds.height > 0 else { return }
@@ -67,6 +96,15 @@ final class RootCarouselLayerController: LayerController {
             icons = configuration.images.map { _ in makeIcon() }
             previous = nil
         }
+        updateImages(configuration)
+        if let old = previous, Self.onlySelectionChanged(old, configuration) {
+            animateSelection(to: configuration, from: old, bounds: bounds)
+            previous = configuration
+            return
+        }
+        phaseFrom = Double(configuration.selectedIndex)
+        phaseTo = phaseFrom
+        phaseDuration = 0
         var from = previous
         if let old = previous, configuration.isReturningToRoot, !old.isReturningToRoot {
             // Coming back from a section: start from where the carousel was left (selected icon
@@ -84,24 +122,152 @@ final class RootCarouselLayerController: LayerController {
         }
         let durations = transitionDurations(from: from, to: configuration)
         for (index, icon) in icons.enumerated() {
-            let image = configuration.images[index]
-            if icon.imageObject !== image {
-                icon.imageObject = image
-                withoutLayerActions {
-                    icon.image.contents = LayerImageCache.cgImage(for: image)
-                    icon.reflection.contents = CarouselReflectionCache.reflection(for: image)
-                }
-            }
             let target = state(for: index, configuration: configuration, bounds: bounds)
             let duration = target.position == 0 ? durations.selected : durations.background
             apply(target, to: icon, duration: icon.state == nil ? 0 : duration, bounds: bounds)
         }
-        // Farther icons first; the selected one on top.
-        let ordered = icons.sorted { ($0.state?.position ?? 0) > ($1.state?.position ?? 0) }.map(\.container)
+        applyStackingOrder(configuration)
+        previous = configuration
+    }
+
+    private func updateImages(_ configuration: RootCarouselConfiguration) {
+        for (index, icon) in icons.enumerated() {
+            let image = configuration.images[index]
+            guard icon.imageObject !== image else { continue }
+            icon.imageObject = image
+            withoutLayerActions {
+                icon.image.contents = LayerImageCache.cgImage(for: image)
+                icon.reflection.contents = CarouselReflectionCache.reflection(for: image)
+            }
+        }
+    }
+
+    private static func onlySelectionChanged(_ old: RootCarouselConfiguration, _ new: RootCarouselConfiguration) -> Bool {
+        old.selectedIndex != new.selectedIndex &&
+            old.isIconAnimated == new.isIconAnimated &&
+            old.isEnteringSubmenu == new.isEnteringSubmenu &&
+            old.isReturningToRoot == new.isReturningToRoot &&
+            old.isInSubmenu == new.isInSubmenu &&
+            old.showsSettledLandedIcon == new.showsSettledLandedIcon
+    }
+
+    /// Stacking as in the SwiftUI version: icons drawn in the order selection+6 ... selection
+    /// (wrapping round), with z-index 1 for the selected icon, 0 for the arc behind it and 1000
+    /// for icons off screen (so one leaving the front passes over the rest on its way out).
+    private func applyStackingOrder(_ c: RootCarouselConfiguration) {
+        let count = icons.count
+        guard count > 0 else { return }
+        let drawOrder = (0 ..< count).map { (c.selectedIndex + $0 + count) % count }.reversed()
+        let ordered = drawOrder.enumerated().sorted { lhs, rhs in
+            let left = zIndex(position: lhs.element - c.selectedIndex, c)
+            let right = zIndex(position: rhs.element - c.selectedIndex, c)
+            return left != right ? left < right : lhs.offset < rhs.offset
+        }.map { icons[$0.element].container }
         if rootLayer.sublayers?.elementsEqual(ordered, by: ===) != true {
             withoutLayerActions { rootLayer.sublayers = ordered }
         }
-        previous = configuration
+    }
+
+    private func zIndex(position: Int, _ c: RootCarouselConfiguration) -> Int {
+        if position == 0 { return c.isIconAnimated ? 1000 : 1 }
+        return (1 ... 3).contains(position) ? 0 : 1000
+    }
+
+    // MARK: - Turning the carousel
+
+    private func presentedPhase(at time: CFTimeInterval) -> Double {
+        guard phaseDuration > 0 else { return phaseTo }
+        let t = min(1, max(0, (time - phaseStart) / phaseDuration))
+        return phaseFrom + (phaseTo - phaseFrom) * (phaseIsLinear ? t : Self.easeInEaseOut(t))
+    }
+
+    /// Core Animation's ease-in-ease-out timing (cubic Bézier with control points 0.42,0 and 0.58,1).
+    static func easeInEaseOut(_ x: Double) -> Double {
+        func bezier(_ t: Double, _ p1: Double, _ p2: Double) -> Double {
+            let u = 1 - t
+            return 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t
+        }
+        var low = 0.0
+        var high = 1.0
+        for _ in 0 ..< 30 {
+            let mid = (low + high) / 2
+            if bezier(mid, 0.42, 0.58) < x { low = mid } else { high = mid }
+        }
+        return bezier((low + high) / 2, 0, 1)
+    }
+
+    /// Where icon `index` is when the selection stands at `phase` (between two slots, part way
+    /// along the line from one to the other, which is how a single step always moved).
+    private func state(for index: Int, phase: Double, configuration c: RootCarouselConfiguration, bounds: CGSize) -> IconState {
+        let position = Double(index) - phase
+        let lower = floor(position)
+        let fraction = position - lower
+        let a = slotState(position: Int(lower), configuration: c, bounds: bounds)
+        guard fraction > 0.0001 else { return a }
+        let b = slotState(position: Int(lower) + 1, configuration: c, bounds: bounds)
+        return IconState.interpolate(a, b, fraction)
+    }
+
+    private func animateSelection(to c: RootCarouselConfiguration, from old: RootCarouselConfiguration, bounds: CGSize) {
+        let now = CACurrentMediaTime()
+        let start = phaseDuration > 0 ? presentedPhase(at: now) : Double(old.selectedIndex)
+        let target = Double(c.selectedIndex)
+        let duration = c.selectionDuration * 0.85
+        phaseFrom = start
+        phaseTo = target
+        phaseStart = now
+        phaseDuration = duration
+        phaseIsLinear = c.usesLinearSweep
+        // Key frames wherever an icon passes through a slot, so the path between them is exact.
+        var phases = [start]
+        if target > start {
+            var slot = floor(start) + 1
+            while slot < target { phases.append(slot); slot += 1 }
+        } else {
+            var slot = ceil(start) - 1
+            while slot > target { phases.append(slot); slot -= 1 }
+        }
+        phases.append(target)
+        let span = abs(target - start)
+        let keyTimes = phases.map { NSNumber(value: span > 0 ? abs($0 - start) / span : 1) }
+        let timing = CAMediaTimingFunction(name: c.usesLinearSweep ? .linear : .easeInEaseOut)
+        let space = LayerSpace(height: bounds.height)
+        for (index, icon) in icons.enumerated() {
+            let states = phases.map { state(for: index, phase: $0, configuration: c, bounds: bounds) }
+            guard let final = states.last else { continue }
+            func run(_ layer: CALayer, _ keyPath: String, _ values: [Any]) {
+                guard let last = values.last else { return }
+                let animation = CAKeyframeAnimation(keyPath: keyPath)
+                animation.values = values
+                animation.keyTimes = keyTimes
+                animation.calculationMode = .linear
+                animation.timingFunction = timing
+                animation.duration = duration
+                withoutLayerActions { layer.setValue(last, forKeyPath: keyPath) }
+                layer.add(animation, forKey: keyPath)
+            }
+            run(icon.container, "position", states.map { NSValue.layerPoint(space.point($0.center)) })
+            run(icon.container, "opacity", states.map { NSNumber(value: $0.opacity) })
+            run(icon.image, "bounds", states.map { NSValue.layerRect(CGRect(x: 0, y: 0, width: $0.size, height: $0.size)) })
+            run(icon.reflection, "bounds", states.map { NSValue.layerRect(CGRect(x: 0, y: 0, width: $0.reflectionSize, height: $0.reflectionSize)) })
+            run(icon.reflection, "position", states.map { NSValue.layerPoint(Self.reflectionPosition($0)) })
+            run(icon.reflection, "opacity", states.map { NSNumber(value: $0.showsReflection ? $0.reflectionOpacity : 0) })
+            #if os(macOS)
+                run(icon.container, "filters.blur.inputRadius", states.map { NSNumber(value: Double($0.blurRadius)) })
+                run(icon.reflection, "filters.blur.inputRadius", states.map { NSNumber(value: Double($0.reflectionBlur)) })
+            #endif
+            icon.state = final
+        }
+        applyStackingOrder(c)
+    }
+
+    private static func reflectionPosition(_ state: IconState) -> CGPoint {
+        // Relative to the icon's centre (the container's origin).
+        #if os(macOS)
+            CGPoint(x: state.reflectionCenter.x, y: -state.reflectionCenter.y)
+        #else
+            state.reflectionCenter
+        #endif
     }
 
     private func makeIcon() -> Icon {
@@ -153,10 +319,13 @@ final class RootCarouselLayerController: LayerController {
     /// Where icon `index` sits, ported from the SwiftUI layout: offsets are from the carousel's
     /// centre, 50 points above it (the icons' frames carried 100 points of bottom padding).
     private func state(for index: Int, configuration c: RootCarouselConfiguration, bounds: CGSize) -> IconState {
-        let count = c.images.count
-        var position = index - c.selectedIndex
-        // The arc shows the selection and the six after it (wrapping round).
-        if position < 0 { position += count }
+        slotState(position: index - c.selectedIndex, configuration: c, bounds: bounds)
+    }
+
+    /// The icon `position` places after the selection (negative: before it). Only the selection
+    /// and the three after it sit on the arc; the rest wait off screen (no wrapping round, so
+    /// the first icons never reappear behind the last ones).
+    private func slotState(position: Int, configuration c: RootCarouselConfiguration, bounds: CGSize) -> IconState {
         let angle = CGFloat(position) * .pi / 6
         let isLanded = position == 0 && c.isIconAnimated
         let scale = isLanded ? c.landedIconScale : 1 - CGFloat(abs(position)) * c.scaleReduction
@@ -168,7 +337,7 @@ final class RootCarouselLayerController: LayerController {
         } else if position == 0 {
             x = -1.25 * c.arcRadius * sin(angle) * 1.5 + c.restingOffset.x
             y = c.restingOffset.y
-        } else if position <= 3 {
+        } else if (1 ... 3).contains(position) {
             x = -1.25 * c.arcRadius * sin(angle) * 0.9 - 0.1 * c.iconSize
             y = -c.arcRadius * (1 - cos(angle)) * 0.025 + (position < 2 ? 0.2 * c.iconSize : 0.15 * c.iconSize)
         } else {
@@ -178,12 +347,12 @@ final class RootCarouselLayerController: LayerController {
         if c.isEnteringSubmenu, position != 0 {
             x -= max(c.sceneWidth * 1.15, c.iconSize * 3)
         }
-        let baseOpacity: CGFloat = position == 0 ? 1 : (position <= 2 ? 1 : 1 - CGFloat(position) * 0.4)
+        let baseOpacity: CGFloat = position == 0 ? 1 : (abs(position) <= 2 ? 1 : max(0, 1 - CGFloat(abs(position)) * 0.4))
         var opacity = c.isEnteringSubmenu && position != 0 ? max(0, baseOpacity - 0.95) : baseOpacity
         let isIncoming = position == 0 && !c.isIconAnimated
         let baseX = x + (isIncoming ? -c.entryOffset : 0)
         let baseY = y + (isIncoming ? c.entryOffset : 0)
-        let adjustedSize = position == 1 || position == 2 ? c.iconSize : c.iconSize * c.selectedSizeMultiplier
+        let adjustedSize = abs(position) == 1 || abs(position) == 2 ? c.iconSize : c.iconSize * c.selectedSizeMultiplier
         // Hidden while the section's own landed icon stands in, and in sections apart from the selected one.
         if c.showsSettledLandedIcon {
             opacity = 0
@@ -231,13 +400,7 @@ final class RootCarouselLayerController: LayerController {
         let size = CGSize(width: target.size, height: target.size)
         let reflectionSize = CGSize(width: target.reflectionSize, height: target.reflectionSize)
         // Positions inside the container are relative to the icon's centre (the container's origin).
-        let reflectionPosition: CGPoint = {
-            #if os(macOS)
-                CGPoint(x: target.reflectionCenter.x, y: -target.reflectionCenter.y)
-            #else
-                target.reflectionCenter
-            #endif
-        }()
+        let reflectionPosition = Self.reflectionPosition(target)
         CATransaction.begin()
         CATransaction.setDisableActions(duration <= 0)
         if duration > 0 {

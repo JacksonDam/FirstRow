@@ -727,6 +727,7 @@ extension MenuView {
             entryOffset: selectedCarouselEntryOffset,
             sceneWidth: geometry.size.width,
             selectionDuration: selectionAnimationDuration,
+            usesLinearSweep: useLinearSelectionSweepAnimation,
             iconFlightDuration: iconFlightAnimationDuration,
             backgroundTransitionDuration: submenuBackgroundIconTransitionDuration,
             backgroundReturnDuration: submenuBackgroundIconReturnDuration,
