@@ -1510,18 +1510,11 @@ extension MenuView {
         }
     }
 
-    func revealDeferredNowPlayingMenuItemIfNeeded(compensateSelection: Bool) {
+    /// Shows the Now Playing row held back while the menu faded out. The selection stays on its
+    /// row (`keepMusicSubmenuSelectionOnItsRow`).
+    func revealDeferredNowPlayingMenuItemIfNeeded() {
         guard deferNowPlayingMenuItemUntilAfterFadeOut else { return }
         deferNowPlayingMenuItemUntilAfterFadeOut = false
-        guard compensateSelection else { return }
-        guard activeRootItemID == "music", isInSubmenu, !isInThirdMenu else { return }
-        guard isMusicActivelyPlaying else { return }
-        let submenuItemsWithoutNowPlaying = MenuConfiguration.submenuItems(forRootID: "music")
-        guard !submenuItemsWithoutNowPlaying.isEmpty else { return }
-        selectedSubIndex = min(
-            selectedSubIndex + 1,
-            max(0, currentSubmenuItems().count - 1),
-        )
     }
 
     func enterMusicCategoryMenu(title: String, kind: MusicCategoryKind) {
@@ -2571,7 +2564,9 @@ extension MenuView {
             activeMusicLibraryMediaType == .songs &&
             !isMusicSongsCategoryScoped &&
             !musicSongsThirdMenuItems.isEmpty
-        if !isMusicActivelyPlaying {
+        // A Now Playing row that isn't there yet appears once the menu has faded out; one that
+        // is already there (paused music) stays put, as hiding it moved every row up by one.
+        if !shouldExposeMusicNowPlayingMenuItem {
             deferNowPlayingMenuItemUntilAfterFadeOut = true
         }
         activeMusicLibraryMediaType = .songs

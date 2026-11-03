@@ -1345,7 +1345,13 @@ extension MenuView {
                 self.stopMusicScrubbing(showPauseGlyph: false)
                 self.musicNowPlayingLeadingGlyphState = nil
                 if self.musicNowPlayingArtist == "iTunes Top Songs" {
-                    self.dismissFullscreenScene(preserveMusicPlayback: false)
+                    if self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey {
+                        self.dismissFullscreenScene(preserveMusicPlayback: false)
+                    } else {
+                        // Finished while Now Playing wasn't showing: end the session, or its
+                        // Now Playing row stayed in the Music menu with nothing playing.
+                        self.stopMusicPlaybackSession(clearDisplayState: false)
+                    }
                 } else {
                     self.switchMusicNowPlayingTrack(direction: 1)
                 }

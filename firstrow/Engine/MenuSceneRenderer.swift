@@ -205,6 +205,7 @@ final class MenuSceneRenderer: TransactionRendering {
 
     private func update(_ pass: RenderPass, includesCarousel: Bool) {
         let menu = menu
+        menu.keepMusicSubmenuSelectionOnItsRow()
         let sceneSize = menu.activeMenuVirtualSceneSize
         let frames = menu.sceneFrames(sceneSize: sceneSize)
         let scale = textScale

@@ -109,7 +109,7 @@ extension MenuView {
                 guard !Task.isCancelled else { return }
                 guard self.isFullscreenSceneTransitioning else { return }
                 if shouldRevealDeferredNowPlaying {
-                    self.revealDeferredNowPlayingMenuItemIfNeeded(compensateSelection: true)
+                    self.revealDeferredNowPlayingMenuItemIfNeeded()
                 }
                 var instant = Transaction()
                 instant.disablesAnimations = true
@@ -148,7 +148,7 @@ extension MenuView {
                 try? await firstRowSleep(fadeOutDuration)
                 guard !Task.isCancelled else { return }
                 if shouldRevealDeferredNowPlaying {
-                    revealDeferredNowPlayingMenuItemIfNeeded(compensateSelection: true)
+                    revealDeferredNowPlayingMenuItemIfNeeded()
                 }
             }
             Task {
@@ -182,7 +182,7 @@ extension MenuView {
             try? await firstRowSleep(fadeOutDuration)
             guard !Task.isCancelled else { return }
             if shouldRevealDeferredNowPlaying {
-                revealDeferredNowPlayingMenuItemIfNeeded(compensateSelection: true)
+                revealDeferredNowPlayingMenuItemIfNeeded()
             }
         }
         Task {

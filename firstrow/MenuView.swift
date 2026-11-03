@@ -359,6 +359,8 @@ final class MenuView: ObservableObject {
     // MARK: - Music playback state
 
     @Published var deferNowPlayingMenuItemUntilAfterFadeOut = false
+    /// The Music menu as last drawn: whether it had a Now Playing row and which row was selected.
+    var musicSubmenuSelectionMemo: (hasNowPlayingRow: Bool, selectedID: String?)?
     @Published var holdNowPlayingMenuItemDuringExitFade = false
     @Published var hasPendingExternalMusicRestore = false
     @Published var isMusicSongsShuffleMode = false
