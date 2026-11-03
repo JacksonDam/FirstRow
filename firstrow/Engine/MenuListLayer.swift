@@ -160,8 +160,23 @@ final class MenuListLayer {
             let first = max(0, Int(floor(top / rowPitch)))
             let last = min(items.count - 1, Int(ceil(bottom / rowPitch)))
             renderRange = first < last + 1 ? first ..< (last + 1) : 0 ..< 0
+        } else if !rowOffsets.isEmpty {
+            // Rows sit at increasing offsets: find the first and last near the visible part.
+            let presentedOffset = rowsContainer.presentation()?.position.y ?? scrollOffset
+            let overscan = max(80, rowPitch * 2.5)
+            let top = min(-scrollOffset, -presentedOffset) - overscan
+            let bottom = max(-scrollOffset, -presentedOffset) + viewportHeight + overscan
+            var low = 0
+            var high = rowOffsets.count
+            while low < high {
+                let mid = (low + high) / 2
+                if rowOffsets[mid] + selectionHeight < top { low = mid + 1 } else { high = mid }
+            }
+            var last = low
+            while last + 1 < rowOffsets.count, rowOffsets[last + 1] <= bottom { last += 1 }
+            renderRange = low < rowOffsets.count ? low ..< (last + 1) : 0 ..< 0
         } else {
-            renderRange = 0 ..< items.count
+            renderRange = 0 ..< 0
         }
 
         for (index, row) in rows where !renderRange.contains(index) {

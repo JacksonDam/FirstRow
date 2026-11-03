@@ -135,9 +135,21 @@ enum FontMetrics {
         lineHeight(font(fontName, size: size))
     }
 
+    private static let widthCache: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 5000
+        return cache
+    }()
+
     static func width(_ text: String, fontName: String, size: CGFloat) -> CGFloat {
+        let key = "\(fontName)|\(size)|\(text)" as NSString
+        if let cached = widthCache.object(forKey: key) {
+            return CGFloat(cached.doubleValue)
+        }
         let line = CTLineCreateWithAttributedString(attributed(text, font: font(fontName, size: size), color: .white))
-        return ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
+        let width = ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
+        widthCache.setObject(NSNumber(value: Double(width)), forKey: key)
+        return width
     }
 
     static func attributed(_ text: String, font: CTFont, color: RGBA) -> CFAttributedString {

@@ -50,6 +50,8 @@ final class MenuSceneRenderer: TransactionRendering {
     private(set) var backingScale: CGFloat = 2
     private var canvasScale: CGFloat = 1
     private var isDirty = true
+    /// Set when a pass skipped the carousel, which takes the run loop pass's changes together.
+    private var carouselNeedsUpdate = true
     private var observation: Any?
     private var flushObserver: RunLoopFlushObserver?
     private var memo = RenderMemo()
@@ -162,6 +164,7 @@ final class MenuSceneRenderer: TransactionRendering {
     func render(_ transaction: Transaction) {
         guard isDirty, containerSize != .zero else { return }
         isDirty = false
+        carouselNeedsUpdate = true
         update(RenderPass(transaction: transaction), includesCarousel: false)
     }
 
@@ -172,9 +175,10 @@ final class MenuSceneRenderer: TransactionRendering {
         if isDirty {
             isDirty = false
             update(RenderPass(transaction: Transaction()), includesCarousel: true)
-        } else {
+        } else if carouselNeedsUpdate {
             updateCarousel()
         }
+        carouselNeedsUpdate = false
     }
 
     /// Re-draws everything now (after the window or the menu's data changed outside it).
@@ -182,8 +186,10 @@ final class MenuSceneRenderer: TransactionRendering {
         isDirty = true
     }
 
+    /// Pixels per scene point, rounded up a little so cached text is shared between passes
+    /// without ever being drawn smaller than the screen shows it.
     private var textScale: CGFloat {
-        max(1, (canvasScale * backingScale * 4).rounded() / 4)
+        max(1, (canvasScale * backingScale * 100).rounded(.up) / 100)
     }
 
     private func update(_ pass: RenderPass, includesCarousel: Bool) {
@@ -383,7 +389,7 @@ final class MenuSceneRenderer: TransactionRendering {
         let showsPill = menu.shouldShowTVShowsSortPill
         let pillChanged = memo.showsSortPill != nil && memo.showsSortPill != showsPill
         if showsPill || sortPill.opacity > 0 {
-            if memo.sortMode != menu.tvShowsSortMode || sortPill.contents == nil {
+            if memo.sortMode != menu.tvShowsSortMode || sortPill.contentsScale != scale || sortPill.contents == nil {
                 let graphic = TVShowsSortPillRenderer.render(mode: menu.tvShowsSortMode, scale: scale)
                 sortPill.contents = graphic.image
                 sortPill.contentsScale = graphic.scale
