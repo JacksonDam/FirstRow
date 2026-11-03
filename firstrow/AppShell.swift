@@ -21,6 +21,11 @@ struct FirstRowShell: App {
         }
         #if os(macOS)
         .windowStyle(HiddenTitleBarWindowStyle()).commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    MediaSourcesWindowController.shared.show()
+                }.keyboardShortcut(",", modifiers: [.command])
+            }
             CommandGroup(replacing: .newItem) {}
             CommandGroup(replacing: .windowSize) {}
             CommandGroup(replacing: .windowArrangement) {}

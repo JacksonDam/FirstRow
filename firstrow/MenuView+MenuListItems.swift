@@ -46,6 +46,18 @@ extension MenuView {
             return podcastsSubmenuItems()
         }
         var items = MenuConfiguration.submenuItems(forRootID: activeRootItemID)
+        if activeRootItemID == "photos" {
+            // Folders chosen in Settings and iPhoto albums, after the Photos library's own items.
+            items += photosSourceAlbums.map { album in
+                SubmenuItemConfig(
+                    id: album.id,
+                    title: album.title,
+                    leadingImageAssetName: "photos",
+                    trailingText: "(\(album.count))",
+                    showsLightRowBackground: true,
+                )
+            }
+        }
         if activeRootItemID == "music",
            shouldExposeMusicNowPlayingMenuItem
         {

@@ -19,6 +19,7 @@ Here, the Leopard/Snow Leopard version of the interface is used as a reference.
 - Photo slideshows (Apple Photos library) with background music from your library and a Ken Burns Effect
 - Local movie playback from macOS Movies folder `Users/<username>/Movies` (or iOS/iPadOS/visionOS file system) via AVFoundation
 - Basic support for music and movies on external volumes / network shares (under a `Movies` or `Music` folder in the root of any volumes)
+- Your own folders of movies, music and photos, an iTunes library file (`iTunes Music Library.xml`) and an iPhoto library, added on macOS in Settings (`Cmd+,`, or Settings > Media Folders inside First Row)
 - Podcast viewing/listening on macOS if podcasts are downloaded on the device via Apple Podcasts
 - iTunes Top Charts and playable previews (movies, TV episodes, songs, music videos) via the iTunes RSS feeds
 - Screen saver with gorgeous floating photos 

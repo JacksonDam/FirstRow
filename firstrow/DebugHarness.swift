@@ -152,6 +152,14 @@ enum FirstRowHarness {
                     walk(window.contentView!, depth: 0)
                     fputs("[dumpviews] window \(window.windowNumber) occlusion=\(window.occlusionState.rawValue)\n" + lines.joined(separator: "\n") + "\n", stderr)
                 }
+            case "source" where parts.count == 3:
+                // source:movies|music|photos:/path/to/folder
+                guard let kind = MediaSources.FolderKind(rawValue: parts[1]) else { return }
+                MediaSources.shared.addFolder(URL(fileURLWithPath: parts[2], isDirectory: true), kind: kind)
+            case "library" where parts.count == 3:
+                // library:iTunesXML|iPhoto:/path
+                guard let kind = MediaSources.LibraryKind(rawValue: parts[1]) else { return }
+                MediaSources.shared.setLibrary(URL(fileURLWithPath: parts[2]), kind: kind)
             case "press" where parts.count == 2:
                 guard let key = keyCodes[parts[1]] else { return }
                 post(key, type: .keyDown)

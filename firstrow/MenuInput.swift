@@ -71,7 +71,7 @@ import SwiftUI
                         onKeyDown(.escape, event.isARepeat, modifiers)
                         return nil
                     }
-                    if event.window?.firstResponder is KeyCapturingView {
+                    if event.window?.firstResponder is KeyCapturingView || Self.belongsToOtherWindow(event) {
                         return event
                     }
                     onKeyDown(key, event.isARepeat, modifiers)
@@ -82,12 +82,18 @@ import SwiftUI
                     guard let self else { return event }
                     let key = KeyCode(rawValue: event.keyCode) ?? .none
                     let modifiers = event.modifierFlags
-                    if event.window?.firstResponder is KeyCapturingView {
+                    if event.window?.firstResponder is KeyCapturingView || Self.belongsToOtherWindow(event) {
                         return event
                     }
                     onKeyUp(key, modifiers)
                     return nil
                 }
+            }
+
+            /// Typing in Settings or a folder picker must reach that window, not drive the menu.
+            static func belongsToOtherWindow(_ event: NSEvent) -> Bool {
+                guard let window = event.window else { return false }
+                return window is MediaSourcesSettingsWindow || window is NSPanel
             }
 
             func stopMonitoring() {

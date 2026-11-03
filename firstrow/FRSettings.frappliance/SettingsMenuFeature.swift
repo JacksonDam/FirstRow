@@ -5,7 +5,7 @@ import Foundation
 
 struct SettingsMenuFeature: MenuFeatureConfiguration {
     let rootItem = RootMenuItemConfig(id: "settings", title: "Settings", iconAssetName: "settings")
-    let submenuItems: [SubmenuItemConfig]
+    var submenuItems: [SubmenuItemConfig]
     init() {
         #if os(macOS)
             let deviceName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
@@ -18,5 +18,8 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
             .init(id: "settings_screensaver", title: "Screen Saver", trailingText: "On"),
             .init(id: "settings_soundeffects", title: "Sound Effects", trailingText: "On"),
         ]
+        #if os(macOS)
+            submenuItems.append(.init(id: "settings_media_folders", title: "Media Folders", trailingText: "..."))
+        #endif
     }
 }

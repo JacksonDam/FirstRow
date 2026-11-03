@@ -459,6 +459,30 @@ extension MenuView {
         }
     }
 
+    /// Picks up folders and libraries added or removed in Settings, without blocking the menu.
+    func reloadMediaAfterSourcesChange() {
+        requestPhotoSourceAlbumsLoad()
+        guard isStartupMusicLibraryPreloadComplete else { return }
+        let requestID = incrementRequestID(&musicStartupPreloadRequestID)
+        Task(priority: .userInitiated) {
+            guard let snapshot = try? await self.loadStartupMusicLibrarySnapshot() else { return }
+            guard self.musicStartupPreloadRequestID == requestID else { return }
+            self.musicAllSongsCache = snapshot.sortedSongs
+            self.musicShuffleSongsCache = snapshot.shuffleSongs
+            #if canImport(iTunesLibrary)
+                self.musicLibraryItemIndexBySongID = snapshot.itemIndices
+                self.musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
+            #endif
+            _ = self.incrementRequestID(&self.musicTopLevelCarouselRequestID)
+            self.musicTopLevelCarouselArtworksByIndex = [:]
+            self.musicTopLevelCarouselLoadedArtworkCount = 0
+            self.musicTopLevelCarouselResolvedArtworkCount = nil
+            self.musicTopLevelCarouselPageStartsInFlight.removeAll()
+            self.isLoadingMusicTopLevelCarousel = false
+            self.refreshDetailPreviewForCurrentContext()
+        }
+    }
+
     func resetMusicCategoryStateForNonMusicITunesTop() {
         _ = incrementRequestID(&musicSongsRequestID)
         activeMusicCategoryKind = nil
@@ -1559,9 +1583,9 @@ extension MenuView {
 
         nonisolated func externalMusicRootURLs() -> [URL] {
             if let harnessMusicFolder = FirstRowHarness.musicFolderOverride {
-                return [harnessMusicFolder]
+                return [harnessMusicFolder] + MediaSources.shared.folders(.music)
             }
-            return externalVolumeRootURLs().compactMap { volumeURL in
+            return MediaSources.shared.folders(.music) + externalVolumeRootURLs().compactMap { volumeURL in
                 let musicURL = volumeURL.appendingPathComponent("Music", isDirectory: true)
                 var isDir: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: musicURL.path, isDirectory: &isDir),
@@ -1679,7 +1703,7 @@ extension MenuView {
         ) {
             var (songs, itemIndices, artworkDataByAlbumKey): ([MusicLibrarySongEntry], [String: Int], [String: Data]) = FirstRowHarness.isActive
                 ? ([], [:], [:])
-                : try withITLibrary { library in
+                : ((try? withITLibrary { library in
                 var songs: [MusicLibrarySongEntry] = []
                 var itemIndices: [String: Int] = [:]
                 var artworkDataByAlbumKey: [String: Data] = [:]
@@ -1697,8 +1721,16 @@ extension MenuView {
                     }
                 }
                 return (songs: songs, itemIndices: itemIndices, artworkDataByAlbumKey: artworkDataByAlbumKey)
+            }) ?? ([], [:], [:]))
+            // Music in chosen folders and on drives, and songs from an iTunes library file, even
+            // when the Music library itself is unavailable (permission denied, or no Music app use).
+            var knownPaths = Set(songs.compactMap { $0.url?.standardizedFileURL.path })
+            for entry in await fetchExternalMusicSongEntries() where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
+                songs.append(entry)
             }
-            songs.append(contentsOf: await fetchExternalMusicSongEntries())
+            for entry in iTunesXMLSongEntries() where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
+                songs.append(entry)
+            }
             return (
                 songs: shouldSort ? sortedMusicLibraryEntries(songs) : songs,
                 itemIndices: itemIndices,
@@ -1800,7 +1832,7 @@ extension MenuView {
                 $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
         #elseif canImport(iTunesLibrary)
-            return try withITLibrary { library in
+            let libraryPlaylists = (try? withITLibrary { library in
                 library.allPlaylists.compactMap { playlist -> MusicCategoryEntry? in
                     guard playlist.isVisible else { return nil }
                     guard playlist.kind != .folder else { return nil }
@@ -1825,14 +1857,49 @@ extension MenuView {
                         title: title,
                         songs: songs,
                     )
-                }.sorted {
-                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
                 }
+            }) ?? []
+            return (libraryPlaylists + iTunesXMLPlaylistEntries()).sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
         #else
             return []
         #endif
     }
+
+    #if canImport(iTunesLibrary)
+        nonisolated func iTunesXMLSongEntry(_ track: ITunesLibraryXML.Track) -> MusicLibrarySongEntry {
+            MusicLibrarySongEntry(
+                id: "xml::\(track.persistentID)",
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                genre: track.genre,
+                composer: track.composer,
+                durationSeconds: track.durationSeconds,
+                trackNumber: track.trackNumber,
+                discNumber: track.discNumber,
+                artworkAlbumKey: nil,
+                url: track.url,
+                artwork: nil,
+            )
+        }
+
+        nonisolated func iTunesXMLSongEntries() -> [MusicLibrarySongEntry] {
+            ITunesLibraryXML.shared.contents()?.tracks.map(iTunesXMLSongEntry) ?? []
+        }
+
+        nonisolated func iTunesXMLPlaylistEntries() -> [MusicCategoryEntry] {
+            guard let contents = ITunesLibraryXML.shared.contents() else { return [] }
+            return contents.playlists.map { playlist in
+                MusicCategoryEntry(
+                    id: "playlist::xml::\(playlist.persistentID)",
+                    title: playlist.name,
+                    songs: playlist.trackIDs.compactMap { contents.tracksByID[$0] }.map(iTunesXMLSongEntry),
+                )
+            }
+        }
+    #endif
 
     func normalizedMusicLibraryText(_ rawValue: String?, fallback: String) -> String {
         let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

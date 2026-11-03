@@ -107,9 +107,18 @@ final class MenuView: ObservableObject {
     var renderRevision = 0
     private var revisionSubscription: Any?
 
+    private var mediaSourcesObserver: NSObjectProtocol?
+
     init() {
         revisionSubscription = objectWillChange.sink { [weak self] _ in
             self?.renderRevision &+= 1
+        }
+        mediaSourcesObserver = NotificationCenter.default.addObserver(
+            forName: MediaSources.didChangeNotification,
+            object: nil,
+            queue: .main,
+        ) { [weak self] _ in
+            Task { @MainActor in self?.reloadMediaAfterSourcesChange() }
         }
     }
 
@@ -286,6 +295,7 @@ final class MenuView: ObservableObject {
     // MARK: - Photos state
 
     @Published var photosDateAlbums: [PhotoLibraryAlbumEntry] = []
+    @Published var photosSourceAlbums: [PhotoLibraryAlbumEntry] = []
     @Published var photosDateAlbumMenuItems: [MenuListItemConfig] = []
     @Published var photosLastTwelveMonthsAlbum: PhotoLibraryAlbumEntry?
     @Published var isLoadingPhotoLibrary = false

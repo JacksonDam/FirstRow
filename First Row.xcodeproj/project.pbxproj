@@ -105,6 +105,10 @@
 		53B4A6DEA27C6CA048B10150 /* DebugHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0328D590CE103DDAC0E103E5 /* DebugHarness.swift */; };
 		F57F5C2FDEF703D3CEA23C34 /* LayerKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5FD4A1D9F2FA9ED06D30B1E /* LayerKit.swift */; };
 		012F4C1B83C28FA7B0A5BE09 /* CoverCarouselLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23DE04BBBBB68BB54DCB30D6 /* CoverCarouselLayer.swift */; };
+		44AED348DDD49FA849CA760E /* MediaSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A3C5C46415705C3597FD27 /* MediaSources.swift */; };
+		5121AE16787486D9E470CEE2 /* MediaSourcesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 867D7C3813699D4C4068E075 /* MediaSourcesWindow.swift */; };
+		A516DA6EAF2DD34DF9910801 /* ITunesLibraryXML.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */; };
+		84B81E61DCCF2640C3D43B4C /* PhotoSourceAlbums.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE605EE0DFC89FB84A25401D /* PhotoSourceAlbums.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -225,6 +229,10 @@
 		0328D590CE103DDAC0E103E5 /* DebugHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugHarness.swift; sourceTree = "<group>"; };
 		B5FD4A1D9F2FA9ED06D30B1E /* LayerKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayerKit.swift; sourceTree = "<group>"; };
 		23DE04BBBBB68BB54DCB30D6 /* CoverCarouselLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverCarouselLayer.swift; sourceTree = "<group>"; };
+		F6A3C5C46415705C3597FD27 /* MediaSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaSources.swift; sourceTree = "<group>"; };
+		867D7C3813699D4C4068E075 /* MediaSourcesWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaSourcesWindow.swift; sourceTree = "<group>"; };
+		E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ITunesLibraryXML.swift; sourceTree = "<group>"; };
+		CE605EE0DFC89FB84A25401D /* PhotoSourceAlbums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSourceAlbums.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -263,6 +271,7 @@
 		7A73DE282F5776A20021C281 /* FRSettings.frappliance */ = {
 			isa = PBXGroup;
 			children = (
+				867D7C3813699D4C4068E075 /* MediaSourcesWindow.swift */,
 				7A73DE242F5776A20021C281 /* MenuView+ScreenSaverIdle.swift */,
 				7A73DE252F5776A20021C281 /* MenuView+ScreenSaverNowPlaying.swift */,
 				7A73DE262F5776A20021C281 /* ScreenSaverFullscreenView.swift */,
@@ -274,6 +283,7 @@
 		7A73DE2B2F5776A20021C281 /* FRSources.frappliance */ = {
 			isa = PBXGroup;
 			children = (
+				F6A3C5C46415705C3597FD27 /* MediaSources.swift */,
 				7A73DE2A2F5776A20021C281 /* SourcesMenuFeature.swift */,
 			);
 			path = FRSources.frappliance;
@@ -297,6 +307,7 @@
 		7A73DE3B2F5776A20021C281 /* Music.frappliance */ = {
 			isa = PBXGroup;
 			children = (
+				E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */,
 				7A73DE352F5776A20021C281 /* MenuView+MusicLibrary.swift */,
 				7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */,
 				7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */,
@@ -312,6 +323,7 @@
 		7A73DE3F2F5776A20021C281 /* Photos.frappliance */ = {
 			isa = PBXGroup;
 			children = (
+				CE605EE0DFC89FB84A25401D /* PhotoSourceAlbums.swift */,
 				7A73DE3C2F5776A20021C281 /* MenuView+Photos.swift */,
 				7A73DE3D2F5776A20021C281 /* PhotoSlideshowFullscreenView.swift */,
 				7A73DE3E2F5776A20021C281 /* PhotosMenuFeature.swift */,
@@ -666,6 +678,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				84B81E61DCCF2640C3D43B4C /* PhotoSourceAlbums.swift in Sources */,
+				A516DA6EAF2DD34DF9910801 /* ITunesLibraryXML.swift in Sources */,
+				5121AE16787486D9E470CEE2 /* MediaSourcesWindow.swift in Sources */,
+				44AED348DDD49FA849CA760E /* MediaSources.swift in Sources */,
 				012F4C1B83C28FA7B0A5BE09 /* CoverCarouselLayer.swift in Sources */,
 				F57F5C2FDEF703D3CEA23C34 /* LayerKit.swift in Sources */,
 				53B4A6DEA27C6CA048B10150 /* DebugHarness.swift in Sources */,

@@ -450,6 +450,15 @@ extension MenuView {
             startPhotoAlbumSlideshow(for: album)
             return
         }
+        if activeRootItemID == "photos", let album = photosSourceAlbums.first(where: { $0.id == item.id }) {
+            guard album.isPlayable else {
+                playLimitSoundOnceForCurrentHold()
+                return
+            }
+            playSound(named: "Selection")
+            startPhotoAlbumSlideshow(for: album)
+            return
+        }
         if activeRootItemID == "photos", item.id == "photos_last_import" {
             playSound(named: "Selection")
             return
@@ -487,6 +496,13 @@ extension MenuView {
             }
             return
         }
+        #if os(macOS)
+            if activeRootItemID == "settings", item.id == "settings_media_folders" {
+                playSound(named: "Selection")
+                MediaSourcesWindowController.shared.show()
+                return
+            }
+        #endif
         if activeRootItemID == "settings", item.id == "settings_soundeffects" {
             isUISoundEffectsEnabled.toggle()
             playSound(named: "Selection")

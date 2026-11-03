@@ -156,7 +156,7 @@ extension MenuView {
         }
 
         nonisolated func externalMoviesRootURLs() -> [URL] {
-            externalVolumeRootURLs().compactMap { volumeURL in
+            MediaSources.shared.folders(.movies) + externalVolumeRootURLs().compactMap { volumeURL in
                 let moviesURL = volumeURL.appendingPathComponent("Movies", isDirectory: true)
                 var isDir: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: moviesURL.path, isDirectory: &isDir),
@@ -174,6 +174,11 @@ extension MenuView {
                 .appendingPathComponent("Movies").standardizedFileURL.path
             if url.standardizedFileURL.path == internalPath {
                 return "My Mac"
+            }
+            // Folders chosen in Settings go by their own names; drives by the drive's name.
+            let chosenFolderPaths = MediaSources.shared.folders(.movies).map(\.standardizedFileURL.path)
+            if chosenFolderPaths.contains(url.standardizedFileURL.path) {
+                return FileManager.default.displayName(atPath: url.path)
             }
             return (try? url.resourceValues(forKeys: [.volumeNameKey]))?.volumeName
                 ?? url.lastPathComponent

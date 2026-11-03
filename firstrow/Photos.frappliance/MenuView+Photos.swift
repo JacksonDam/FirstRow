@@ -107,7 +107,7 @@ extension MenuView {
         case "photos_last_import":
             photosLastImportAlbum
         default:
-            nil
+            photosSourceAlbums.first { $0.id == submenuItemID }
         }
     }
 
@@ -140,6 +140,9 @@ extension MenuView {
             return
         }
         requestPhotoLibraryLoadIfNeeded()
+        if photosSourceAlbums.isEmpty {
+            requestPhotoSourceAlbumsLoad()
+        }
         if let photosLastTwelveMonthsAlbum {
             requestPhotoAlbumCoverImageIfNeeded(for: photosLastTwelveMonthsAlbum)
         }
@@ -1108,6 +1111,17 @@ extension MenuView {
         isSynchronous: Bool = false,
         completion: @escaping (NSImage?) -> Void,
     ) {
+        if let fileURL = filePhotoURL(fromIdentifier: localIdentifier) {
+            if isSynchronous {
+                completion(loadFilePhotoImage(fileURL, targetSize: targetSize))
+            } else {
+                Task.detached(priority: .userInitiated) {
+                    let image = self.loadFilePhotoImage(fileURL, targetSize: targetSize)
+                    await MainActor.run { completion(image) }
+                }
+            }
+            return
+        }
         let performRequest = {
             let fetchedAssets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
             guard let asset = fetchedAssets.firstObject else {
@@ -1170,6 +1184,16 @@ extension MenuView {
             return []
         }
         let resolvedTargetSize = normalizedPhotoTargetSize(targetSize, deliveryMode: deliveryMode)
+        if localIdentifiers.allSatisfy({ $0.hasPrefix(Self.filePhotoIdentifierPrefix) }) {
+            var images: [NSImage?] = []
+            images.reserveCapacity(localIdentifiers.count)
+            for identifier in localIdentifiers {
+                if await shouldAbort?() == true { break }
+                let url = filePhotoURL(fromIdentifier: identifier)
+                images.append(url.flatMap { loadFilePhotoImage($0, targetSize: resolvedTargetSize) })
+            }
+            return images
+        }
         let fetchedAssets = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
         var assetsByID: [String: PHAsset] = [:]
         fetchedAssets.enumerateObjects { asset, _, _ in
@@ -1250,6 +1274,8 @@ extension MenuView {
             case last12Months
             case dateGroup
             case lastImport
+            /// A folder chosen in Settings, or an iPhoto album or event.
+            case source
         }
 
         let id: String
