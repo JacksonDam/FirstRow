@@ -336,7 +336,8 @@ enum BlurredBackdrop {
             height: target.height,
         )
         image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.92])
-        image = image.clampedToExtent().applyingGaussianBlur(sigma: 28 * workScale).cropped(to: crop)
+        // Cropped first and blurred without clamping, so the edges soften into the black behind.
+        image = image.cropped(to: crop).applyingGaussianBlur(sigma: 28 * workScale).cropped(to: crop)
         guard let blurred = context.createCGImage(image, from: crop) else { return nil }
         if cache.count > 4 { cache.removeAll() }
         cache[ObjectIdentifier(source)] = (source, blurred)
