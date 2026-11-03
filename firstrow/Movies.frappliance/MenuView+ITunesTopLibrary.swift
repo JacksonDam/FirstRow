@@ -11,7 +11,10 @@ private let iTunesTopArtworkParallelismLimit = 4
 private struct ITunesTopMoviesFeedEntry {
     let rank: Int
     let lookupID: String
+    /// The collection's name when the entry has one (an episode's season), else the entry's own.
     let title: String
+    /// The entry's own name (a song's, not its album's).
+    let name: String
     let summary: String?
     let artworkURL: URL?
     let storeURL: URL?
@@ -28,6 +31,8 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
     private var currentIDURL: URL?
     private var currentFallbackTitle: String?
     private var currentMovieName: String?
+    private var currentEntryName: String?
+    private var isInsideCollection = false
     private var currentSummary: String?
     private var currentStoreURL: URL?
     private var currentArtworkURL: URL?
@@ -38,6 +43,8 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
         currentIDURL = nil
         currentFallbackTitle = nil
         currentMovieName = nil
+        currentEntryName = nil
+        isInsideCollection = false
         currentSummary = nil
         currentStoreURL = nil
         currentArtworkURL = nil
@@ -61,11 +68,13 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
         let resolvedTitle = currentMovieName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackTitle = currentFallbackTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         let title = (resolvedTitle?.isEmpty == false ? resolvedTitle : fallbackTitle) ?? "Unknown Movie"
+        let entryName = currentEntryName?.trimmingCharacters(in: .whitespacesAndNewlines)
         entries.append(
             ITunesTopMoviesFeedEntry(
                 rank: entries.count + 1,
                 lookupID: currentLookupID,
                 title: title,
+                name: (entryName?.isEmpty == false ? entryName : nil) ?? title,
                 summary: currentSummary,
                 artworkURL: currentArtworkURL,
                 storeURL: currentStoreURL ?? currentIDURL,
@@ -87,6 +96,9 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
             return
         }
         guard isInsideEntry else { return }
+        if elementName == "im:collection" {
+            isInsideCollection = true
+        }
         if elementName == "id",
            let rawLookupID = attributeDict["im:id"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !rawLookupID.isEmpty
@@ -146,6 +158,9 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
                     currentSummary = trimmed
                 case "im:name":
                     currentMovieName = trimmed
+                    if !isInsideCollection {
+                        currentEntryName = trimmed
+                    }
                 case "im:image":
                     if let imageURL = URL(string: trimmed) {
                         addArtworkCandidate(url: imageURL, height: currentImageHeight)
@@ -157,6 +172,9 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
             currentElementName = nil
             currentElementText = ""
             currentImageHeight = nil
+        }
+        if elementName == "im:collection" {
+            isInsideCollection = false
         }
         if elementName == "entry" {
             appendCurrentEntryIfPossible()
@@ -397,7 +415,8 @@ extension MenuView {
             ITunesTopSongEntry(
                 id: "itunes_top_song_\(entry.lookupID)",
                 rank: entry.rank,
-                title: entry.title,
+                // The song's own name; the feed's other name is its album's ("Babydoll - Single").
+                title: entry.name,
                 lookupID: entry.lookupID,
                 artworkURL: entry.artworkURL,
                 storeURL: entry.storeURL,
