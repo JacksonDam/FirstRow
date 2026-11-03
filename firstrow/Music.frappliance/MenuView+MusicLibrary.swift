@@ -1549,7 +1549,10 @@ extension MenuView {
         }
 
         nonisolated func externalMusicRootURLs() -> [URL] {
-            externalVolumeRootURLs().compactMap { volumeURL in
+            if let harnessMusicFolder = FirstRowHarness.musicFolderOverride {
+                return [harnessMusicFolder]
+            }
+            return externalVolumeRootURLs().compactMap { volumeURL in
                 let musicURL = volumeURL.appendingPathComponent("Music", isDirectory: true)
                 var isDir: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: musicURL.path, isDirectory: &isDir),
@@ -1665,7 +1668,9 @@ extension MenuView {
             itemIndices: [String: Int],
             artworkDataByAlbumKey: [String: Data],
         ) {
-            var (songs, itemIndices, artworkDataByAlbumKey) = try withITLibrary { library in
+            var (songs, itemIndices, artworkDataByAlbumKey): ([MusicLibrarySongEntry], [String: Int], [String: Data]) = FirstRowHarness.isActive
+                ? ([], [:], [:])
+                : try withITLibrary { library in
                 var songs: [MusicLibrarySongEntry] = []
                 var itemIndices: [String: Int] = [:]
                 var artworkDataByAlbumKey: [String: Data] = [:]
@@ -2050,7 +2055,7 @@ extension MenuView {
 
     func requestMusicLibraryAuthorization(completion: @escaping (Bool) -> Void) {
         if FirstRowHarness.isActive {
-            completion(false)
+            completion(FirstRowHarness.musicFolderOverride != nil)
             return
         }
         #if os(iOS)
