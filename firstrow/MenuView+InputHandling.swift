@@ -672,6 +672,7 @@ extension MenuView {
         viewportHeight: CGFloat,
     ) -> Int? {
         guard itemCount > 0 else { return nil }
+        navigatedListItemCount = itemCount
         guard prepareNavigationTiming(direction: direction, isRepeat: isRepeat) else { return nil }
         let nextIndex = max(0, min(itemCount - 1, currentIndex + direction))
         guard nextIndex != currentIndex else {
@@ -750,6 +751,7 @@ extension MenuView {
         if activeRootItemID == "photos", thirdMenuMode == .photosDateAlbums {
             let thirdMenuCount = photosDateAlbumMenuItems.count
             guard thirdMenuCount > 0 else { return }
+            navigatedListItemCount = thirdMenuCount
             guard prepareNavigationTiming(direction: direction, isRepeat: isRepeat) else { return }
             let nextIndex = max(0, min(thirdMenuCount - 1, selectedThirdIndex + direction))
             guard nextIndex != selectedThirdIndex else {
@@ -845,18 +847,24 @@ extension MenuView {
     func scheduleDirectionalHoldTick(
         for key: KeyCode,
         modifiers: NSEvent.ModifierFlags = [],
+        previousTickDue: TimeInterval? = nil,
     ) {
         guard activeDirectionalHoldKey == key else { return }
         let phaseStart = directionalHoldRepeatPhaseStartTime ?? Date()
         let elapsedInScrollingState = Date().timeIntervalSince(phaseStart)
         let totalHoldDuration = directionalHoldInitialDelay + elapsedInScrollingState
         let interval = minimumHoldRepeatInterval(for: totalHoldDuration)
+        // Each step is due a fixed interval after the last one was due, so the time a step
+        // takes to draw (and the timer's own slack) doesn't stretch every interval: waiting the
+        // full interval after each step made the top speed about a third slower than set.
+        let now = ProcessInfo.processInfo.systemUptime
+        let due = max(now, (previousTickDue ?? now) + interval)
         directionalHoldTickWorkItem = Task {
-            try? await firstRowSleep(interval)
+            try? await firstRowSleep(max(0, due - ProcessInfo.processInfo.systemUptime))
             guard !Task.isCancelled else { return }
             guard activeDirectionalHoldKey == key else { return }
             handleKeyInput(key, isRepeat: true, modifiers: modifiers)
-            scheduleDirectionalHoldTick(for: key, modifiers: modifiers)
+            scheduleDirectionalHoldTick(for: key, modifiers: modifiers, previousTickDue: due)
         }
     }
 
@@ -880,8 +888,11 @@ extension MenuView {
 
     func minimumHoldRepeatInterval(for holdDuration: TimeInterval) -> TimeInterval {
         let accelerationProgress = thirdStageAccelerationProgress(for: holdDuration)
+        let fastestInterval = navigatedListItemCount > longListItemCount
+            ? directionalHoldLongListFastRepeatInterval
+            : directionalHoldFastRepeatInterval
         return directionalHoldBaseRepeatInterval
-            - ((directionalHoldBaseRepeatInterval - directionalHoldFastRepeatInterval) * accelerationProgress)
+            - ((directionalHoldBaseRepeatInterval - fastestInterval) * accelerationProgress)
     }
 
     func thirdStageAccelerationProgress(for holdDuration: TimeInterval) -> Double {

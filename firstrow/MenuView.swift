@@ -78,6 +78,11 @@ final class MenuView: ObservableObject {
     let directionalHoldInitialDelay: TimeInterval = 0.5
     let directionalHoldBaseRepeatInterval: TimeInterval = 0.16
     let directionalHoldFastRepeatInterval: TimeInterval = 0.08
+    /// Lists longer than `longListItemCount` reach twice the top speed.
+    let directionalHoldLongListFastRepeatInterval: TimeInterval = 0.04
+    let longListItemCount = 12
+    /// How many rows the list the arrows last moved through has (sets the top hold speed).
+    var navigatedListItemCount = 0
     let directionalHoldAccelerationDelay: TimeInterval = 0.5
     let directionalHoldAccelerationRampDuration: TimeInterval = 0.3
     let directionalHoldSweepOverlapFactor: Double = 1.18
