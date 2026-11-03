@@ -33,9 +33,12 @@ extension MenuView {
     }
 
     func requestPhotoSourceAlbumsLoad() {
+        let requestID = incrementRequestID(&photoSourceAlbumsRequestID)
         Task.detached(priority: .userInitiated) {
             let albums = Self.loadPhotoSourceAlbums()
             await MainActor.run {
+                // A newer load (sources changed again) wins over this one.
+                guard self.photoSourceAlbumsRequestID == requestID else { return }
                 self.photosSourceAlbums = albums
                 for album in albums {
                     self.requestPhotoAlbumCoverImageIfNeeded(for: album)

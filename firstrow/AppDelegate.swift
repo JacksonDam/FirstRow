@@ -48,7 +48,7 @@
                 let isCommandEscape =
                     (modifiers.contains(.command) || isCommandKeyDown) &&
                     (event.keyCode == KeyCode.escape.rawValue || event.charactersIgnoringModifiers == "\u{1b}")
-                if isCommandEscape {
+                if isCommandEscape, !(event.window is MediaSourcesSettingsWindow) {
                     NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
                     return nil
                 }
@@ -237,7 +237,10 @@
                     else {
                         return noErr
                     }
-                    NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
+                    // Not while the Settings window is in front: Cmd+Esc there shouldn't quit First Row.
+                    if !(NSApplication.shared.keyWindow is MediaSourcesSettingsWindow) {
+                        NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
+                    }
                     return noErr
                 },
                 1,

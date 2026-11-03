@@ -193,6 +193,8 @@ import SwiftUI
     /// the app on a black screen at launch.
     final class UnavailableAppleMusicTrackCache {
         static let shared = UnavailableAppleMusicTrackCache()
+        static let didUpdateNotification = Notification.Name("FirstRowUnavailableAppleMusicTracksDidUpdate")
+        fileprivate static let lookupQueue = DispatchQueue(label: "First Row unavailable Apple Music tracks", qos: .utility)
 
         private let lock = NSLock()
         private var cachedPersistentIDHexes: Set<String>?
@@ -236,10 +238,19 @@ import SwiftUI
             if cachedPersistentIDHexes != nil { return nil }
             if let fetchTask { return fetchTask }
             let task = Task.detached(priority: .utility) { () -> Set<String> in
-                let fetched = await musicAppleScriptExecutor.run {
-                    UnavailableAppleMusicTrackCache.fetchPersistentIDHexes()
+                // Its own queue, not the executor playback scripts share: the lookup can take a
+                // while on a big library and mustn't hold up play, pause or now-playing updates.
+                let fetched = await withCheckedContinuation { (continuation: CheckedContinuation<Set<String>, Never>) in
+                    UnavailableAppleMusicTrackCache.lookupQueue.async {
+                        continuation.resume(returning: UnavailableAppleMusicTrackCache.fetchPersistentIDHexes())
+                    }
                 }
                 UnavailableAppleMusicTrackCache.shared.store(fetched)
+                if !fetched.isEmpty {
+                    await MainActor.run {
+                        NotificationCenter.default.post(name: UnavailableAppleMusicTrackCache.didUpdateNotification, object: nil)
+                    }
+                }
                 return fetched
             }
             fetchTask = task
@@ -459,6 +470,27 @@ extension MenuView {
         }
     }
 
+    #if os(macOS)
+        /// When the unplayable-track lookup finishes after the library loaded (it is given a few
+        /// seconds at launch), take those tracks out of the loaded lists.
+        func removeUnavailableAppleMusicTracksFromCaches() {
+            let unavailable = UnavailableAppleMusicTrackCache.shared.persistentIDHexes()
+            guard !unavailable.isEmpty else { return }
+            func isAvailable(_ song: MusicLibrarySongEntry) -> Bool {
+                guard song.prefersSystemMusicPlayerPlayback, let persistentID = UInt64(song.id) else { return true }
+                return !unavailable.contains(String(format: "%016llX", persistentID))
+            }
+            if let songs = musicAllSongsCache {
+                let filtered = songs.filter(isAvailable)
+                if filtered.count != songs.count { musicAllSongsCache = filtered }
+            }
+            if let songs = musicShuffleSongsCache {
+                let filtered = songs.filter(isAvailable)
+                if filtered.count != songs.count { musicShuffleSongsCache = filtered }
+            }
+        }
+    #endif
+
     /// Picks up folders and libraries added or removed in Settings, without blocking the menu.
     func reloadMediaAfterSourcesChange() {
         requestPhotoSourceAlbumsLoad()
@@ -587,24 +619,11 @@ extension MenuView {
     }
 
     func generateMusicArtworkThumbnail(for url: URL) async -> NSImage? {
-        let standardizedURL = url.standardizedFileURL
-        let cacheKey = musicArtworkCacheKey(for: standardizedURL)
-        if let cached = cachedDecodedDisplayArtworkImage(
-            sourceKey: cacheKey,
-            maxPixelSize: 900,
-        ) {
-            return cached
-        }
-        guard let data = await loadEmbeddedArtworkData(from: standardizedURL) else { return nil }
-        return cachedDecodedDisplayArtworkImage(
-            from: data,
-            sourceKey: cacheKey,
-            maxPixelSize: 900,
-        )
+        await generateMusicArtworkThumbnailOffMain(for: url)
     }
 
     func musicArtworkCacheKey(for url: URL) -> String {
-        url.standardizedFileURL.path
+        musicArtworkCacheKeyForFile(url)
     }
 
     func musicArtworkCacheKey(for song: MusicLibrarySongEntry) -> String? {
@@ -1183,9 +1202,18 @@ extension MenuView {
     }
 
     #if canImport(iTunesLibrary)
-        /// Builds a carousel page from the songs loaded at startup: one cover per album,
-        /// never the same picture twice. Returns nil when there is nothing to show, so the
-        /// caller can fall back to reading the library directly.
+        /// Where one album's carousel cover comes from.
+        enum MusicCarouselArtworkSource {
+            case libraryData(Data, sourceKey: String)
+            case file(URL)
+            case image(NSImage)
+        }
+
+        /// Builds a carousel page from the songs loaded at startup: one cover per album, never
+        /// the same picture twice. Albums before the page are only fingerprinted (cached after the
+        /// first time), and only the page's own covers are decoded, off the main thread.
+        /// Returns nil when there is nothing to show, so the caller can fall back to reading the
+        /// library directly.
         func fetchMusicTopLevelCarouselArtworksFromSongCache(startIndex: Int, limit: Int) async -> [NSImage?]? {
             guard let songs = musicShuffleSongsCache ?? musicAllSongsCache, !songs.isEmpty else { return nil }
             let libraryArtworkData = musicLibraryArtworkDataByAlbumKey
@@ -1194,48 +1222,65 @@ extension MenuView {
             var seenAlbums: Set<String> = []
             var seenArtworkDigests: Set<Int> = []
             var albumIndex = 0
-            var artworks: [NSImage?] = []
+            var pageSources: [MusicCarouselArtworkSource] = []
             for song in songs {
                 let albumIdentity = song.album == "Unknown Album"
                     ? "song::\(song.id)"
                     : "\(song.album.lowercased())::\(song.artist.lowercased())"
                 guard seenAlbums.insert(albumIdentity).inserted else { continue }
-                guard let artwork = await musicTopLevelCarouselArtwork(
+                guard let source = await musicTopLevelCarouselArtworkSource(
                     for: song,
                     libraryArtworkData: libraryArtworkData,
                     seenArtworkDigests: &seenArtworkDigests,
                 ) else { continue }
                 defer { albumIndex += 1 }
                 guard albumIndex >= resolvedStartIndex else { continue }
-                artworks.append(artwork)
-                if artworks.count >= resolvedLimit {
+                pageSources.append(source)
+                if pageSources.count >= resolvedLimit {
                     break
                 }
             }
-            if resolvedStartIndex == 0, artworks.isEmpty {
+            if resolvedStartIndex == 0, pageSources.isEmpty {
                 return nil
+            }
+            var artworks: [NSImage?] = []
+            artworks.reserveCapacity(pageSources.count)
+            for source in pageSources {
+                artworks.append(await Self.decodedMusicCarouselArtwork(source))
             }
             return artworks
         }
 
-        /// The cover for one album: the Music library's copy, or, when the library hands back a
-        /// picture another album already used, the artwork embedded in the song file itself.
-        func musicTopLevelCarouselArtwork(
+        nonisolated static func decodedMusicCarouselArtwork(_ source: MusicCarouselArtworkSource) async -> NSImage? {
+            switch source {
+            case let .libraryData(data, sourceKey):
+                await Task.detached(priority: .userInitiated) {
+                    cachedDecodedDisplayArtworkImage(from: data, sourceKey: sourceKey, maxPixelSize: 900)
+                }.value
+            case let .file(url):
+                await Task.detached(priority: .userInitiated) {
+                    await generateMusicArtworkThumbnailOffMain(for: url)
+                }.value
+            case let .image(image):
+                image
+            }
+        }
+
+        /// Where an album's cover comes from: the Music library's copy, or, when the library
+        /// hands back a picture another album already used, the artwork embedded in the song
+        /// file itself. Nothing is decoded here, only fingerprinted.
+        func musicTopLevelCarouselArtworkSource(
             for song: MusicLibrarySongEntry,
             libraryArtworkData: [String: Data],
             seenArtworkDigests: inout Set<Int>,
-        ) async -> NSImage? {
+        ) async -> MusicCarouselArtworkSource? {
             let digestCache = MusicCarouselArtworkDigestCache.shared
             if let albumKey = song.artworkAlbumKey, let data = libraryArtworkData[albumKey] {
                 let digestKey = "library::\(albumKey)"
                 let digest = digestCache.digest(for: digestKey) ?? artworkContentDigest(data)
                 digestCache.store(digest, for: digestKey)
                 if seenArtworkDigests.insert(digest).inserted {
-                    return cachedDecodedDisplayArtworkImage(
-                        from: data,
-                        sourceKey: "music_carousel::\(albumKey)",
-                        maxPixelSize: 900,
-                    )
+                    return .libraryData(data, sourceKey: "music_carousel::\(albumKey)")
                 }
             }
             if let url = song.url?.standardizedFileURL {
@@ -1243,21 +1288,15 @@ extension MenuView {
                 let digest: Int?
                 if digestCache.hasEntry(for: digestKey) {
                     digest = digestCache.digest(for: digestKey)
-                } else if let data = await loadEmbeddedArtworkData(from: url) {
-                    digest = artworkContentDigest(data)
-                    _ = cachedDecodedDisplayArtworkImage(from: data, sourceKey: musicArtworkCacheKey(for: url), maxPixelSize: 900)
-                    digestCache.store(digest, for: digestKey)
                 } else {
-                    digest = nil
-                    digestCache.store(nil, for: digestKey)
+                    digest = await loadEmbeddedArtworkData(from: url).map(artworkContentDigest)
+                    digestCache.store(digest, for: digestKey)
                 }
                 if let digest, seenArtworkDigests.insert(digest).inserted {
-                    if let image = await generateMusicArtworkThumbnail(for: url) {
-                        return image
-                    }
+                    return .file(url)
                 }
             }
-            return song.artwork
+            return song.artwork.map(MusicCarouselArtworkSource.image)
         }
     #endif
 
@@ -1701,9 +1740,10 @@ extension MenuView {
             itemIndices: [String: Int],
             artworkDataByAlbumKey: [String: Data],
         ) {
-            var (songs, itemIndices, artworkDataByAlbumKey): ([MusicLibrarySongEntry], [String: Int], [String: Data]) = FirstRowHarness.isActive
-                ? ([], [:], [:])
-                : ((try? withITLibrary { library in
+            typealias LibrarySnapshot = (songs: [MusicLibrarySongEntry], itemIndices: [String: Int], artworkDataByAlbumKey: [String: Data])
+            let libraryResult: Result<LibrarySnapshot, Error> = FirstRowHarness.isActive
+                ? .success(([], [:], [:]))
+                : Result { try withITLibrary { library in
                 var songs: [MusicLibrarySongEntry] = []
                 var itemIndices: [String: Int] = [:]
                 var artworkDataByAlbumKey: [String: Data] = [:]
@@ -1721,15 +1761,22 @@ extension MenuView {
                     }
                 }
                 return (songs: songs, itemIndices: itemIndices, artworkDataByAlbumKey: artworkDataByAlbumKey)
-            }) ?? ([], [:], [:]))
+            } }
+            var (songs, itemIndices, artworkDataByAlbumKey) = (try? libraryResult.get()) ?? ([], [:], [:])
             // Music in chosen folders and on drives, and songs from an iTunes library file, even
             // when the Music library itself is unavailable (permission denied, or no Music app use).
             var knownPaths = Set(songs.compactMap { $0.url?.standardizedFileURL.path })
             for entry in await fetchExternalMusicSongEntries() where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
                 songs.append(entry)
             }
-            for entry in iTunesXMLSongEntries() where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
+            let xmlEntries = await Task.detached(priority: .userInitiated) { self.iTunesXMLSongEntries() }.value
+            for entry in xmlEntries where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
                 songs.append(entry)
+            }
+            // The Music library couldn't be read and nothing else had songs: report that, as
+            // before, rather than caching an empty library for the rest of the session.
+            if case let .failure(error) = libraryResult, songs.isEmpty {
+                throw error
             }
             return (
                 songs: shouldSort ? sortedMusicLibraryEntries(songs) : songs,
@@ -2772,4 +2819,20 @@ final class MusicCarouselArtworkDigestCache {
         defer { lock.unlock() }
         digests[key] = .some(digest)
     }
+}
+
+/// Cache key for artwork read from a song file (shared by previews and the carousel).
+func musicArtworkCacheKeyForFile(_ url: URL) -> String {
+    url.standardizedFileURL.path
+}
+
+/// Artwork embedded in a song file, decoded for display; safe to call off the main thread.
+func generateMusicArtworkThumbnailOffMain(for url: URL) async -> NSImage? {
+    let standardizedURL = url.standardizedFileURL
+    let cacheKey = musicArtworkCacheKeyForFile(standardizedURL)
+    if let cached = cachedDecodedDisplayArtworkImage(sourceKey: cacheKey, maxPixelSize: 900) {
+        return cached
+    }
+    guard let data = await loadEmbeddedArtworkData(from: standardizedURL) else { return nil }
+    return cachedDecodedDisplayArtworkImage(from: data, sourceKey: cacheKey, maxPixelSize: 900)
 }

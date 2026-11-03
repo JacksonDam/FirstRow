@@ -120,7 +120,19 @@ final class MenuView: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.reloadMediaAfterSourcesChange() }
         }
+        #if os(macOS)
+            unavailableTracksObserver = NotificationCenter.default.addObserver(
+                forName: UnavailableAppleMusicTrackCache.didUpdateNotification,
+                object: nil,
+                queue: .main,
+            ) { [weak self] _ in
+                Task { @MainActor in self?.removeUnavailableAppleMusicTracksFromCaches() }
+            }
+        #endif
     }
+
+    private var unavailableTracksObserver: NSObjectProtocol?
+    var photoSourceAlbumsRequestID = 0
 
     // MARK: - Navigation state
 

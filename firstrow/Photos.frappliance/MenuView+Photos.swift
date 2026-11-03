@@ -1186,12 +1186,17 @@ extension MenuView {
         }
         let resolvedTargetSize = normalizedPhotoTargetSize(targetSize, deliveryMode: deliveryMode)
         if localIdentifiers.allSatisfy({ $0.hasPrefix(Self.filePhotoIdentifierPrefix) }) {
+            // Pictures from folders and iPhoto decode off the main thread, one at a time.
             var images: [NSImage?] = []
             images.reserveCapacity(localIdentifiers.count)
             for identifier in localIdentifiers {
                 if await shouldAbort?() == true { break }
                 let url = filePhotoURL(fromIdentifier: identifier)
-                images.append(url.flatMap { loadFilePhotoImage($0, targetSize: resolvedTargetSize) })
+                let image: NSImage? = await Task.detached(priority: .userInitiated) { () -> NSImage? in
+                    guard let url else { return nil }
+                    return self.loadFilePhotoImage(url, targetSize: resolvedTargetSize)
+                }.value
+                images.append(image)
             }
             return images
         }

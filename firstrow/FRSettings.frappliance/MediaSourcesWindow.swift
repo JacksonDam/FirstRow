@@ -62,7 +62,7 @@
 
         private func reload() {
             for (kind, list) in folderLists {
-                list.folders = MediaSources.shared.folders(kind)
+                list.folders = MediaSources.shared.folderEntries(kind)
             }
             for (kind, row) in libraryRows {
                 row.url = MediaSources.shared.library(kind)
@@ -114,7 +114,7 @@
     @MainActor
     private final class FolderListView: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let kind: MediaSources.FolderKind
-        var folders: [URL] = [] {
+        var folders: [MediaSources.FolderEntry] = [] {
             didSet {
                 table.reloadData()
                 removeButton.isEnabled = false
@@ -167,8 +167,13 @@
         func numberOfRows(in _: NSTableView) -> Int { folders.count }
 
         func tableView(_: NSTableView, viewFor _: NSTableColumn?, row: Int) -> NSView? {
-            let field = NSTextField(labelWithString: (folders[row].path as NSString).abbreviatingWithTildeInPath)
+            let entry = folders[row]
+            let path = (entry.displayPath as NSString).abbreviatingWithTildeInPath
+            let field = NSTextField(labelWithString: entry.url == nil ? "\(path) (not available)" : path)
             field.lineBreakMode = .byTruncatingMiddle
+            if entry.url == nil {
+                field.textColor = .secondaryLabelColor
+            }
             return field
         }
 
