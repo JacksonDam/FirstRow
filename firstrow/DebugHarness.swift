@@ -182,28 +182,7 @@ enum FirstRowHarness {
         }
 
         private static func post(_ key: KeyCode, type: NSEvent.EventType) {
-            let characters: String = switch key {
-            case .enter: "\r"
-            case .escape: "\u{1b}"
-            case .delete: "\u{7f}"
-            case .space: " "
-            default: ""
-            }
-            // Window number 0: the event reaches the app's key monitors even though
-            // the harness window is never the key window.
-            guard let event = NSEvent.keyEvent(
-                with: type,
-                location: .zero,
-                modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: 0,
-                context: nil,
-                characters: characters,
-                charactersIgnoringModifiers: characters,
-                isARepeat: false,
-                keyCode: key.rawValue,
-            ) else { return }
-            NSApplication.shared.postEvent(event, atStart: false)
+            SyntheticKeyEvents.post(key, down: type == .keyDown)
         }
     }
 #elseif os(macOS)

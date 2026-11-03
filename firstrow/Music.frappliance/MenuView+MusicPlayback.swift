@@ -1803,7 +1803,7 @@ extension MenuView {
             clearMusicSongSwitchTransitionState()
             dismissFullscreenScene(preserveMusicPlayback: true)
             playSound(named: "Exit")
-        case .space:
+        case .space, .enter:
             handleMusicSpacebarPressed()
         case .upArrow:
             switchMusicNowPlayingTrack(direction: -1)

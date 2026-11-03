@@ -352,7 +352,7 @@ extension MenuView {
         case .delete, .escape:
             playSound(named: "Exit")
             stopMoviePlaybackAndReturnToMenu()
-        case .space:
+        case .space, .enter:
             handleMovieSpacebarPressed()
         case .leftArrow:
             beginMovieScrubbing(direction: -1, isRepeat: isRepeat)

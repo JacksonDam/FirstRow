@@ -701,7 +701,7 @@ extension MenuView {
     func handlePhotoSlideshowInput(_ key: KeyCode, isRepeat: Bool) {
         _ = isRepeat
         switch key {
-        case .space:
+        case .space, .enter:
             if photoSlideshowIsPaused {
                 resumePhotoSlideshow()
             } else {

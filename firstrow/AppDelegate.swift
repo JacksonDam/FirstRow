@@ -59,11 +59,13 @@
 
         func applicationDidBecomeActive(_: Notification) {
             guard !FirstRowHarness.isActive else { return }
+            AppleRemoteInput.shared.start()
             applyImmersivePresentationOptions()
             activateAndFocusAppWindow()
         }
 
         func applicationWillResignActive(_: Notification) {
+            AppleRemoteInput.shared.stop()
             NSApplication.shared.presentationOptions = []
         }
 
