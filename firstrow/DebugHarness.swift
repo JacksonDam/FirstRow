@@ -146,20 +146,29 @@ enum FirstRowHarness {
         private static func perform(_ command: String) {
             let parts = command.split(separator: ":").map(String.init)
             switch parts.first {
-            case "dumpviews":
-                for window in NSApplication.shared.windows where window.contentView != nil {
+            case "dumplayers":
+                // Every layer holding a picture: its size, and whether it is on screen, so
+                // memory held by hidden layers shows up.
+                for window in NSApplication.shared.windows {
+                    guard let root = window.contentView?.layer else { continue }
                     var lines: [String] = []
-                    func walk(_ view: NSView, depth: Int) {
-                        guard depth < 40 else { return }
-                        let name = String(describing: type(of: view))
-                        let interesting = name.contains("PlatformView") || name.contains("Flipped") || depth < 3
-                        if interesting {
-                            lines.append(String(repeating: " ", count: depth) + "\(name.prefix(90)) frame=\(view.frame) hidden=\(view.isHidden) alpha=\(view.alphaValue) sublayers=\(view.layer?.sublayers?.count ?? -1)")
+                    var shownBytes = 0
+                    var hiddenBytes = 0
+                    func walk(_ layer: CALayer, path: String, hidden: Bool) {
+                        let isHidden = hidden || layer.isHidden || layer.opacity <= 0
+                        let name = "\(path)/\(String(describing: type(of: layer)))"
+                        if let contents = layer.contents, CFGetTypeID(contents as CFTypeRef) == CGImage.typeID {
+                            let image = contents as! CGImage
+                            let bytes = image.bytesPerRow * image.height
+                            if isHidden { hiddenBytes += bytes } else { shownBytes += bytes }
+                            lines.append("\(bytes / 1024)KB \(image.width)x\(image.height) \(isHidden ? "hidden" : "shown") \(name.suffix(140))")
                         }
-                        for sub in view.subviews { walk(sub, depth: depth + 1) }
+                        for sublayer in layer.sublayers ?? [] { walk(sublayer, path: name, hidden: isHidden) }
+                        if let mask = layer.mask { walk(mask, path: name + "/mask", hidden: isHidden) }
                     }
-                    walk(window.contentView!, depth: 0)
-                    fputs("[dumpviews] window \(window.windowNumber) occlusion=\(window.occlusionState.rawValue)\n" + lines.joined(separator: "\n") + "\n", stderr)
+                    walk(root, path: "", hidden: false)
+                    lines.sort { (Int($0.prefix { $0.isNumber }) ?? 0) > (Int($1.prefix { $0.isNumber }) ?? 0) }
+                    fputs("[dumplayers] window \(window.windowNumber): \(lines.count) pictures, shown \(shownBytes / 1_048_576) MB, hidden \(hiddenBytes / 1_048_576) MB\n" + lines.joined(separator: "\n") + "\n", stderr)
                 }
             case "source" where parts.count == 3:
                 // source:movies|music|photos:/path/to/folder
