@@ -56,6 +56,10 @@
             }
         }
 
+        func reloadForHarness() {
+            reload()
+        }
+
         private func reload() {
             for (kind, list) in folderLists {
                 list.folders = MediaSources.shared.folders(kind)
