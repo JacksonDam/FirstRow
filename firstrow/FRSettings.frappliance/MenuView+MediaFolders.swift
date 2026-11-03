@@ -86,7 +86,7 @@ extension MenuView {
             if sources.library(kind) != nil {
                 return [
                     plainMenuListItem(id: "media_choose_library", title: kind.chooseAnotherTitle, trailingText: "..."),
-                    plainMenuListItem(id: "media_clear_library", title: "Stop Using It"),
+                    plainMenuListItem(id: "media_clear_library", title: "Stop Using This Library"),
                 ]
             }
             return [plainMenuListItem(id: "media_choose_library", title: kind.chooseTitle, trailingText: "...")]
