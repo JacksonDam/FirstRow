@@ -5,8 +5,9 @@ import Foundation
 
 /// A development harness for running First Row without taking over the Mac.
 ///
-/// Debug builds, or Release builds made with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=FIRSTROW_HARNESS_BUILD`.
-/// Launch with `FIRSTROW_HARNESS=1` (for example
+/// Debug builds, or Release builds made with `SWIFT_ACTIVE_COMPILATION_CONDITIONS=FIRSTROW_HARNESS_BUILD`,
+/// built with `PRODUCT_BUNDLE_IDENTIFIER=jacksondam.firstrow.harness` so the harness keeps its
+/// own settings. Launch with `FIRSTROW_HARNESS=1` (for example
 /// `open -g -n -a "First Row.app" --env FIRSTROW_HARNESS=1`) and the app:
 /// - runs as a background accessory app in a 1280x720 window behind other windows,
 ///   never activating, hiding the Dock or menu bar, or hiding the cursor;
@@ -45,6 +46,13 @@ enum FirstRowHarness {
 
         static func applicationWillFinishLaunching() {
             guard isActive else { return }
+            // Settings live with the bundle identifier (the app isn't sandboxed), so a harness
+            // build under the real identifier would change the installed First Row's media
+            // folders and libraries.
+            if !(Bundle.main.bundleIdentifier ?? "").hasSuffix(".harness") {
+                FileHandle.standardError.write(Data("First Row harness: build with PRODUCT_BUNDLE_IDENTIFIER=<id>.harness so its settings stay apart from the real app's.\n".utf8))
+                exit(64)
+            }
             NSApplication.shared.setActivationPolicy(.accessory)
         }
 
