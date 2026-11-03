@@ -265,6 +265,7 @@ extension MenuView {
             stopMusicPlaybackSession(clearDisplayState: false)
         }
         let player = AVPlayer(url: url)
+        player.isMuted = FirstRowHarness.isActive
         configureMoviePlaybackObservation(for: player)
         currentMoviePlaybackURL = url.standardizedFileURL
         moviePlayer = player

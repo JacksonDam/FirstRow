@@ -184,6 +184,7 @@ struct ContentView: View {
             requestLandscapeIfPossible()
         #endif
         let p = AVPlayer(url: url)
+        p.isMuted = FirstRowHarness.isActive
         p.isMuted = false
         player = p
         observeVideoCompletion(player: p)

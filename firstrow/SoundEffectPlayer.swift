@@ -28,6 +28,8 @@ final class SoundEffectPlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     func play(named fileName: String, fileExtension: String = "aif") {
+        // The test harness runs silently: it shares the Mac with whoever is using it.
+        guard !FirstRowHarness.isActive else { return }
         Task { @MainActor in
             let now = Date()
             if let lastPlayed = self.lastPlayedAt[fileName],

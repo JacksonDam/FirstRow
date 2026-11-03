@@ -646,6 +646,7 @@ extension MenuView {
         #endif
         photoSlideshowUsesAppleScriptMusic = false
         let player = AVPlayer(url: url)
+        player.isMuted = FirstRowHarness.isActive
         observedPhotoSlideshowMusicPlayer = player
         photoSlideshowMusicPlayer = player
         if let currentItem = player.currentItem {

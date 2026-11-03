@@ -334,6 +334,7 @@ extension MenuView {
             } else if let songURL = song.url?.standardizedFileURL {
                 performPlayback = {
                     let player = AVPlayer(url: songURL)
+                    player.isMuted = FirstRowHarness.isActive
                     player.automaticallyWaitsToMinimizeStalling = false
                     self.configureMusicPlaybackObservation(for: player)
                     self.musicAudioPlayer = player
@@ -351,6 +352,7 @@ extension MenuView {
                 } else if let songURL = song.url?.standardizedFileURL {
                     performPlayback = {
                         let player = AVPlayer(url: songURL)
+                        player.isMuted = FirstRowHarness.isActive
                         player.automaticallyWaitsToMinimizeStalling = false
                         self.configureMusicPlaybackObservation(for: player)
                         self.musicAudioPlayer = player
@@ -363,6 +365,7 @@ extension MenuView {
                 if let songURL = song.url?.standardizedFileURL {
                     performPlayback = {
                         let player = AVPlayer(url: songURL)
+                        player.isMuted = FirstRowHarness.isActive
                         player.automaticallyWaitsToMinimizeStalling = false
                         self.configureMusicPlaybackObservation(for: player)
                         self.musicAudioPlayer = player
