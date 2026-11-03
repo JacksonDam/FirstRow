@@ -361,6 +361,7 @@ enum ReflectionImageCache {
     private static let cache: NSCache<ReflectionKey, ReflectionBox> = {
         let cache = NSCache<ReflectionKey, ReflectionBox>()
         cache.countLimit = 120
+        cache.totalCostLimit = 24 * 1024 * 1024
         return cache
     }()
 
@@ -408,7 +409,7 @@ enum ReflectionImageCache {
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+            bitmapInfo: layerBitmapInfo,
         ) else { return nil }
         let rect = CGRect(x: 0, y: 0, width: width, height: height)
         // Fade: opaque at the top (next to the artwork), clear at `fadeEnd` of the height.
@@ -425,7 +426,8 @@ enum ReflectionImageCache {
             context.restoreGState()
         }
         guard let reflection = context.makeImage() else { return nil }
-        cache.setObject(ReflectionBox(reflection), forKey: key)
+        // The key keeps its source picture alive too, so that counts towards the limit.
+        cache.setObject(ReflectionBox(reflection), forKey: key, cost: reflection.bytesPerRow * reflection.height + source.bytesPerRow * source.height)
         return reflection
     }
 
@@ -472,7 +474,7 @@ enum CoverArtPlaceholder {
         }
         guard let context = CGContext(
             data: nil, width: pixelSide, height: pixelSide, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
         ) else { return nil }
         let rect = CGRect(x: 0, y: 0, width: pixelSide, height: pixelSide)
         let colors = [

@@ -191,8 +191,10 @@ enum TextRenderer {
 
     private static let cache: NSCache<Key, Box> = {
         let cache = NSCache<Key, Box>()
-        cache.countLimit = 1500
-        cache.totalCostLimit = 64 * 1024 * 1024
+        // Text is quick to draw again, and every picture Core Animation has shown keeps a
+        // shared-memory copy for as long as it lives, so only recent text is kept.
+        cache.countLimit = 400
+        cache.totalCostLimit = 12 * 1024 * 1024
         return cache
     }()
 
@@ -302,7 +304,7 @@ enum TextRenderer {
                   bitsPerComponent: 8,
                   bytesPerRow: 0,
                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+                  bitmapInfo: layerBitmapInfo,
               )
         else {
             return RenderedGraphic(image: nil, size: size, padding: padding, scale: scale)
@@ -422,7 +424,7 @@ enum SymbolRenderer {
         let height = Int(pixelSize.height)
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
         ) else { return nil }
         let rect = CGRect(x: 0, y: 0, width: width, height: height)
         context.draw(image, in: rect)
@@ -471,7 +473,7 @@ enum SymbolFallback {
         let height = Int(ceil(size.height * oversample))
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
         ) else { return nil }
         // Draw in points with the origin at the top left.
         context.scaleBy(x: oversample, y: oversample)

@@ -521,6 +521,7 @@ enum ReflectionRenderer {
     private static let cache: NSCache<Key, Box> = {
         let cache = NSCache<Key, Box>()
         cache.countLimit = 80
+        cache.totalCostLimit = 16 * 1024 * 1024
         return cache
     }()
 
@@ -542,7 +543,7 @@ enum ReflectionRenderer {
         }
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
         ), let mask = alphaMask(width: width, height: height, stops: stops) else { return nil }
         let rect = CGRect(x: 0, y: 0, width: width, height: height)
         context.clip(to: rect, mask: mask)
@@ -565,7 +566,7 @@ enum ReflectionRenderer {
             context.draw(source, in: drawRect)
         }
         guard let reflection = context.makeImage() else { return nil }
-        cache.setObject(Box(reflection), forKey: key)
+        cache.setObject(Box(reflection), forKey: key, cost: reflection.bytesPerRow * reflection.height)
         return reflection
     }
 

@@ -44,6 +44,11 @@ final class StillGradientLayer: CAGradientLayer {
     override func action(forKey _: String) -> CAAction? { nil }
 }
 
+/// The bitmap layout Core Animation shows as it is (BGRA, premultiplied). Pictures drawn in
+/// any other layout get a converted copy as soon as a layer shows them, which doubles the
+/// memory each one takes.
+let layerBitmapInfo: UInt32 = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+
 /// Bitmap for a platform image, cached per image object (converting can mean rasterising,
 /// for example for icons drawn from PDF). The cache keeps the images it holds alive, so it is
 /// limited by memory as well as count.
@@ -52,7 +57,7 @@ enum LayerImageCache {
     private static let cache: NSCache<AnyObject, CGImageBox> = {
         let cache = NSCache<AnyObject, CGImageBox>()
         cache.countLimit = 300
-        cache.totalCostLimit = 160 * 1024 * 1024
+        cache.totalCostLimit = 96 * 1024 * 1024
         return cache
     }()
 

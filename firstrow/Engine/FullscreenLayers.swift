@@ -413,7 +413,7 @@ final class PlaybackGlyphLayer {
         }
         guard let context = CGContext(
             data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
         ) else { return graphic }
         context.translateBy(x: CGFloat(image.width), y: CGFloat(image.height))
         context.rotate(by: .pi)

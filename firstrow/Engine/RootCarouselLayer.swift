@@ -453,7 +453,12 @@ enum CarouselReflectionCache {
     }
 
     /// Keyed by the image object itself (kept alive by the cache), never by its address.
-    private static let cache = NSCache<NSImage, Box>()
+    private static let cache: NSCache<NSImage, Box> = {
+        let cache = NSCache<NSImage, Box>()
+        cache.countLimit = 24
+        cache.totalCostLimit = 16 * 1024 * 1024
+        return cache
+    }()
 
     static func reflection(for image: NSImage?) -> CGImage? {
         guard let image else { return nil }
@@ -465,7 +470,7 @@ enum CarouselReflectionCache {
         let height = source.height
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
         ), let mask = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue,
@@ -481,7 +486,7 @@ enum CarouselReflectionCache {
         context.scaleBy(x: 1, y: -1)
         context.draw(source, in: rect)
         guard let reflection = context.makeImage() else { return nil }
-        cache.setObject(Box(reflection), forKey: image)
+        cache.setObject(Box(reflection), forKey: image, cost: reflection.bytesPerRow * reflection.height)
         return reflection
     }
 }
