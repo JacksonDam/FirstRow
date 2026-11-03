@@ -660,3 +660,117 @@ final class ScreenSaverToastLayer {
         }
     }
 }
+
+/// The volume overlay: a speaker over a level bar, centred near the bottom of the screen. It
+/// shows when the remote changes the volume and fades out three seconds after the last change.
+@MainActor
+final class VolumeOverlayLayer {
+    /// Covers the screen in full-screen canvas points; the overlay itself is `box`.
+    let layer = SceneLayer()
+    private let box = SceneLayer()
+    private let speaker = SceneLayer()
+    private let leftEnd = SceneLayer()
+    private let track = SceneLayer()
+    private let rightEnd = SceneLayer()
+    private let fill = SceneLayer()
+    private let level = SceneLayer()
+    private var percent: CGFloat = 0
+    private var screenSize: CGSize = .zero
+    private var fadeTimer: Timer?
+    private var hideTimer: Timer?
+    private var observer: NSObjectProtocol?
+
+    init() {
+        layer.isHidden = true
+        layer.addSublayer(box)
+        for piece in [speaker, leftEnd, track, rightEnd, fill, level] {
+            piece.contentsGravity = .resize
+            box.addSublayer(piece)
+        }
+        observer = NotificationCenter.default.addObserver(forName: .firstRowVolumeChanged, object: nil, queue: .main) { [weak self] note in
+            let volume = note.userInfo?["volume"] as? Double ?? 0
+            MainActor.assumeIsolatedIfPossible { self?.show(volume: volume) }
+        }
+    }
+
+    func tearDown() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        fadeTimer?.invalidate()
+        hideTimer?.invalidate()
+    }
+
+    func layout(screenSize: CGSize) {
+        guard screenSize != self.screenSize else { return }
+        self.screenSize = screenSize
+        if !layer.isHidden { place() }
+    }
+
+    private func show(volume: Double) {
+        percent = CGFloat(min(1, max(0, volume))) * 100
+        fadeTimer?.invalidate()
+        hideTimer?.invalidate()
+        withoutLayerActions {
+            layer.removeAnimation(forKey: "opacity")
+            layer.opacity = 1
+            layer.isHidden = false
+            place()
+        }
+        let fade = Timer(timeInterval: 3, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolatedIfPossible { self?.fadeOut() }
+        }
+        RunLoop.main.add(fade, forMode: .common)
+        fadeTimer = fade
+    }
+
+    private func fadeOut() {
+        layer.setOpacity(0, .linear(duration: 1))
+        let hide = Timer(timeInterval: 1.05, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolatedIfPossible { self?.layer.isHidden = true }
+        }
+        RunLoop.main.add(hide, forMode: .common)
+        hideTimer = hide
+    }
+
+    /// Lays the overlay out as a fraction of the screen's height, and the bar as a fraction of
+    /// the overlay, from pieces drawn for a 720-point-tall screen.
+    private func place() {
+        let canvas = FullscreenCanvas(screenSize: screenSize)
+        canvas.apply(to: layer)
+        let height = canvas.size.height
+        let boxHeight = ceil(height * 0.252)
+        let boxWidth = ceil(height * 0.23)
+        withoutLayerActions {
+            box.frame = CGRect(x: ceil((canvas.size.width - boxWidth) * 0.5), y: height - ceil(height * 0.075) - boxHeight, width: boxWidth, height: boxHeight)
+            speaker.frame = box.bounds
+            speaker.contents = Self.image(percent > 0 ? "Vol_BKG_v1_ON" : "Vol_BKG_v1_OFF")
+
+            let barWidth = ceil(boxWidth * 0.855)
+            let barHeight = ceil(boxWidth * 0.126)
+            let bar = CGRect(x: ceil((boxWidth - barWidth) * 0.5), y: boxHeight - ceil(boxHeight * 0.2) - barHeight, width: barWidth, height: barHeight)
+            let unit = barHeight / 21
+            let endWidth = floor(11 * unit)
+            leftEnd.frame = CGRect(x: bar.minX, y: bar.minY, width: endWidth, height: barHeight)
+            leftEnd.contents = Self.image(percent > 0 ? "Vol_Blue_LEFT" : "Vol_Black_LEFT")
+            rightEnd.frame = CGRect(x: bar.maxX - endWidth, y: bar.minY, width: endWidth, height: barHeight)
+            rightEnd.contents = Self.image(percent >= 100 ? "Vol_Blue_RIGHT" : "Vol_Black_RIGHT")
+
+            // Between the ends: the blue fill, the level cap just past it, then the dark track.
+            let middleX = bar.minX + endWidth
+            let middleWidth = floor(barWidth - endWidth * 2)
+            let showsCap = percent >= 5 && percent <= 99
+            let gap = showsCap ? 5 * unit : 0
+            let fillWidth = max(0, percent > 1 ? ceil(middleWidth * percent / 100 - gap) : 0)
+            fill.frame = CGRect(x: middleX, y: bar.minY, width: fillWidth, height: barHeight)
+            fill.contents = Self.image("Vol_Blue_CENTER")
+            level.frame = CGRect(x: middleX + fillWidth, y: bar.minY, width: showsCap ? 17 * unit : 0, height: barHeight)
+            level.contents = Self.image("Vol_Blue_PositionCAP")
+            track.frame = CGRect(x: middleX + gap + fillWidth, y: bar.minY, width: max(0, floor(middleWidth - fillWidth) - gap), height: barHeight)
+            track.contents = Self.image("Vol_Black_CENTER")
+        }
+    }
+
+    private static func image(_ name: String) -> CGImage? {
+        LayerImageCache.cgImage(for: NSImage(named: name))
+    }
+}

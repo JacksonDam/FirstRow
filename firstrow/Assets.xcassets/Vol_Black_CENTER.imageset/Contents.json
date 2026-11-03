@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "Vol_Black_CENTER.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

@@ -36,6 +36,7 @@ final class MenuSceneRenderer: TransactionRendering {
     private let playback = MoviePlaybackLayers()
     private let fullscreenScene: FullscreenSceneLayer
     private let toast = ScreenSaverToastLayer()
+    private let volumeOverlay = VolumeOverlayLayer()
     private let folderSwapOverlay = SceneLayer()
     private let movieTransitionOverlay = SceneLayer()
     private let fullscreenTransitionOverlay = SceneLayer()
@@ -84,6 +85,7 @@ final class MenuSceneRenderer: TransactionRendering {
         flushObserver = nil
         RenderScheduler.unregister(self)
         fullscreenScene.tearDown()
+        volumeOverlay.tearDown()
         detailContent.tearDown()
         rootCarousel.tearDown()
     }
@@ -123,6 +125,7 @@ final class MenuSceneRenderer: TransactionRendering {
             overlay.isHidden = true
             rootLayer.addSublayer(overlay)
         }
+        rootLayer.addSublayer(volumeOverlay.layer)
     }
 
     /// The window changed size or moved to a screen with a different pixel density.
@@ -234,6 +237,7 @@ final class MenuSceneRenderer: TransactionRendering {
         playback.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         fullscreenScene.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         toast.update(menu: menu, pass: pass, bounds: fullBounds, backingScale: backingScale)
+        volumeOverlay.layout(screenSize: fullBounds.size)
         for (overlay, opacity) in [
             (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),
             (movieTransitionOverlay, menu.movieTransitionOverlayOpacity),

@@ -158,6 +158,9 @@ enum FirstRowHarness {
                 // library:iTunesXML|iPhoto:/path
                 guard let kind = MediaSources.LibraryKind(rawValue: parts[1]) else { return }
                 MediaSources.shared.setLibrary(URL(fileURLWithPath: parts[2]), kind: kind)
+            case "volume" where parts.count == 2:
+                // volume:0.5 shows the volume overlay at that level.
+                NotificationCenter.default.post(name: .firstRowVolumeChanged, object: nil, userInfo: ["volume": Double(parts[1]) ?? 0])
             case "press" where parts.count == 2:
                 guard let key = keyCodes[parts[1]] else { return }
                 post(key, type: .keyDown)
