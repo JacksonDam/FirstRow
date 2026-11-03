@@ -17,6 +17,9 @@ final class MetadataPreviewLayer: GapItemLayer {
     private let reflectionClip = SceneLayer()
     private let reflectionImage = SceneLayer()
     private let reflectionMask = SceneGradientLayer()
+    /// Hides the reflection from the bottom up as the poster settles. It's the reflection's
+    /// mask rather than a black layer over it: two layers in the same plane of a turning poster
+    /// can trade places part way across, which made half the reflection flicker dark.
     private let sweep = SceneGradientLayer()
     private let details = SceneLayer()
     private var identity: String?
@@ -44,9 +47,9 @@ final class MetadataPreviewLayer: GapItemLayer {
         reflectionClip.addSublayer(reflectionImage)
         reflectionMask.colors = [0.82, 0.42, 0.14, 0].map { CGColor(gray: 0, alpha: $0) }
         reflectionMask.locations = [0, 0.18, 0.42, 1]
-        sweep.colors = [CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1)]
-        sweep.locations = [0, 0.01, 0.05, 1]
-        reflectionClip.addSublayer(sweep)
+        sweep.colors = Self.sweepColors(hidden: 1)
+        sweep.locations = [0, 0.505, 0.525, 1]
+        reflectionClip.mask = sweep
         layer.addSublayer(details)
     }
 
@@ -140,7 +143,8 @@ final class MetadataPreviewLayer: GapItemLayer {
         // The mask is drawn in the flipped picture's space: its top is the picture's bottom.
         reflectionMask.startPoint = CGPoint(x: 0.5, y: 1)
         reflectionMask.endPoint = CGPoint(x: 0.5, y: 0)
-        sweep.bounds = CGRect(x: 0, y: 0, width: unitSize.width, height: initialHeight)
+        // Twice the reflection's height: clear above the sweep line, then fading out below it.
+        sweep.bounds = CGRect(x: 0, y: 0, width: unitSize.width, height: initialHeight * 2)
         sweep.anchorPoint = .zero
 
         // Details.
@@ -160,8 +164,8 @@ final class MetadataPreviewLayer: GapItemLayer {
         details.removeAllAnimations()
         unit.position = final.position
         unit.transform = final.transform
-        sweep.position = CGPoint(x: 0, y: final.sweepOffset)
-        sweep.opacity = 1
+        sweep.position = CGPoint(x: 0, y: final.sweepOffset - initialHeight)
+        sweep.colors = Self.sweepColors(hidden: 1)
         details.opacity = 1
         guard let begin = transitionBegin else { return }
 
@@ -180,8 +184,8 @@ final class MetadataPreviewLayer: GapItemLayer {
         }
         unit.add(keyframes("position", states.map { NSValue.layerPoint($0.position) }), forKey: "move")
         unit.add(keyframes("transform", states.map { NSValue(caTransform3D: $0.transform) }), forKey: "turn")
-        sweep.add(keyframes("position", states.map { NSValue.layerPoint(CGPoint(x: 0, y: $0.sweepOffset)) }), forKey: "sweep")
-        sweep.add(keyframes("opacity", samples.map { NSNumber(value: $0) }), forKey: "sweepFade")
+        sweep.add(keyframes("position", states.map { NSValue.layerPoint(CGPoint(x: 0, y: $0.sweepOffset - initialHeight)) }), forKey: "sweep")
+        sweep.add(keyframes("colors", samples.map { Self.sweepColors(hidden: CGFloat($0)) }), forKey: "sweepFade")
         let reveal = CABasicAnimation(keyPath: "opacity")
         reveal.fromValue = 0
         reveal.toValue = 1
@@ -190,6 +194,12 @@ final class MetadataPreviewLayer: GapItemLayer {
         reveal.fillMode = .backwards
         reveal.timingFunction = Animation.easeInOut(duration: 0.3).timingFunction
         details.add(reveal, forKey: "reveal")
+    }
+
+    /// The sweep mask's stops: fully shown above the line, `hidden` (0 to 1) of the way gone below it.
+    private static func sweepColors(hidden: CGFloat) -> [CGColor] {
+        let below = CGColor(gray: 0, alpha: 1 - min(max(hidden, 0), 1))
+        return [CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1), below, below]
     }
 
     private struct State {
