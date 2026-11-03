@@ -81,7 +81,7 @@ enum LayerImageCache {
 }
 
 /// Perspective for a view of the given size, with depth set by its larger side.
-func swiftUIPerspectiveTransform(perspective: CGFloat, viewSize: CGSize) -> CATransform3D {
+func depthPerspectiveTransform(perspective: CGFloat, viewSize: CGSize) -> CATransform3D {
     var transform = CATransform3DIdentity
     let depth = max(viewSize.width, viewSize.height)
     if depth > 0, perspective != 0 {
@@ -93,7 +93,7 @@ func swiftUIPerspectiveTransform(perspective: CGFloat, viewSize: CGSize) -> CATr
 /// A rotation about the vertical axis through the layer's anchor, with perspective.
 func yawTransform(degrees: Double, perspective: CGFloat, viewSize: CGSize) -> CATransform3D {
     let rotation = CATransform3DMakeRotation(CGFloat(degrees * .pi / 180), 0, 1, 0)
-    return CATransform3DConcat(rotation, swiftUIPerspectiveTransform(perspective: perspective, viewSize: viewSize))
+    return CATransform3DConcat(rotation, depthPerspectiveTransform(perspective: perspective, viewSize: viewSize))
 }
 
 extension NSValue {
