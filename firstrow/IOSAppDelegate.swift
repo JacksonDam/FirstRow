@@ -1,10 +1,15 @@
 #if os(iOS) || os(tvOS)
+    import AVFoundation
     import UIKit
 
     /// Scene-based, since iOS and tvOS 27 won't launch apps without the scene life cycle.
     final class IOSAppDelegate: UIResponder, UIApplicationDelegate {
         func application(_: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-            true
+            #if os(tvOS)
+                // Mix with other audio, or each interface sound stops the Apple Music player.
+                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            #endif
+            return true
         }
 
         func application(_: UIApplication, configurationForConnecting session: UISceneSession, options _: UIScene.ConnectionOptions) -> UISceneConfiguration {
