@@ -396,6 +396,10 @@ extension MenuView {
             case .denied, .restricted:
                 completion(false)
             case .notDetermined:
+                #if os(macOS)
+                    // The system asks in a dialog of its own: show the pointer so it can be answered.
+                    NSCursor.setHiddenUntilMouseMoves(false)
+                #endif
                 let handler: (PHAuthorizationStatus) -> Void = { newStatus in
                     Task { @MainActor in
                         completion(newStatus == .authorized || newStatus == .limited)
