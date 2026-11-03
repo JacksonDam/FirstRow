@@ -233,7 +233,8 @@ final class NowPlayingPanelLayer {
         let alignment: TextAlignment = mirrored ? .leading : .trailing
         let texts: [(SceneLayer, RenderedGraphic, CGFloat)] = {
             var result: [(SceneLayer, RenderedGraphic, CGFloat)] = [
-                (title, TextRenderer.render(TextSpec(text: snapshot.trackTitle, fontName: firstRowBoldFontName, size: titleSize, maxWidth: metadataWidth, minimumScaleFactor: 0.62), scale: scale), 0),
+                // The song name gets twice the room before it is cut short.
+                (title, TextRenderer.render(TextSpec(text: snapshot.trackTitle, fontName: firstRowBoldFontName, size: titleSize, maxWidth: metadataWidth * 2, minimumScaleFactor: 0.62), scale: scale), 0),
                 (artist, TextRenderer.render(TextSpec(text: snapshot.artistName, fontName: firstRowRegularFontName, size: infoSize, color: RGBA(white: 1, alpha: 0.88), maxWidth: metadataWidth, minimumScaleFactor: 0.62), scale: scale), 0),
                 (album, TextRenderer.render(TextSpec(text: snapshot.albumTitle, fontName: firstRowRegularFontName, size: infoSize, color: RGBA(white: 1, alpha: 0.76), maxWidth: metadataWidth, minimumScaleFactor: 0.62), scale: scale), 0),
             ]
