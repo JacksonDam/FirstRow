@@ -8,6 +8,8 @@ import QuartzCore
 
 extension Notification.Name {
     static let firstRowQuitRequested = Notification.Name("firstRowQuitRequested")
+    /// Posted when the remote changes the volume. `userInfo["volume"]` is 0...1, 0 when muted.
+    static let firstRowVolumeChanged = Notification.Name("firstRowVolumeChanged")
 }
 
 /// Runs First Row in its window: the intro movie, the menus, key handling and the quit fade.

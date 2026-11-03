@@ -63,6 +63,7 @@
         func applicationDidBecomeActive(_: Notification) {
             guard !FirstRowHarness.isActive else { return }
             AppleRemoteInput.shared.start()
+            SiriRemoteInput.shared.start()
             applyImmersivePresentationOptions()
             // Refocus the window unless a First Row panel, like the folder picker, is in front.
             if let window, NSApplication.shared.keyWindow == nil, !NSApplication.shared.windows.contains(where: { $0 is NSPanel && $0.isVisible }) {
@@ -73,6 +74,7 @@
         func applicationWillResignActive(_: Notification) {
             isCommandKeyDown = false
             AppleRemoteInput.shared.stop()
+            SiriRemoteInput.shared.stop()
             NSApplication.shared.presentationOptions = []
         }
 

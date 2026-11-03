@@ -428,7 +428,7 @@ import Foundation
     import AppKit
     import GameController
 
-    /// Game controllers and Siri Remotes paired with the Mac, as arrow, select, back and play keys.
+    /// Game controllers as arrow, select, back and play keys.
     final class GameControllerInput: NSObject {
             enum ControllerDirection {
                 case up
@@ -580,33 +580,6 @@ import Foundation
                     }
                 }
 
-                // Siri Remote from 2021 on: clicks only, so a resting thumb can't move the selection.
-                if #available(macOS 12.0, *), let remote = controller.microGamepad as? GCDirectionalGamepad,
-                   let ring = remote.dpads[GCInputDirectionalCardinalDpad]
-                {
-                    configureDirectionPadHandlers(ring, controllerID: controllerID, source: .dpad)
-                    remote.buttons[GCInputDirectionalCenterButton]?.pressedChangedHandler = { [weak self] _, _, isPressed in
-                        guard isPressed else { return }
-                        self?.dispatchOnMain {
-                            self?.onEnter()
-                        }
-                    }
-                    remote.buttonX.pressedChangedHandler = { [weak self] _, _, isPressed in
-                        guard isPressed else { return }
-                        self?.dispatchOnMain {
-                            self?.onSpace()
-                        }
-                    }
-                    remote.buttonMenu.pressedChangedHandler = { [weak self] _, _, isPressed in
-                        guard isPressed else { return }
-                        self?.dispatchOnMain {
-                            self?.onBackspace()
-                        }
-                    }
-                    return
-                }
-
-                // First Siri Remote and other small controllers: swipes move, a click anywhere selects.
                 if let gamepad = controller.microGamepad {
                     configureDirectionPadHandlers(gamepad.dpad, controllerID: controllerID, source: .dpad)
                     gamepad.buttonA.pressedChangedHandler = { [weak self] _, _, isPressed in
@@ -638,12 +611,6 @@ import Foundation
                     gamepad.buttonB.pressedChangedHandler = nil
                     gamepad.buttonX.pressedChangedHandler = nil
                     gamepad.buttonMenu.pressedChangedHandler = nil
-                }
-                if #available(macOS 12.0, *), let remote = controller.microGamepad as? GCDirectionalGamepad {
-                    if let ring = remote.dpads[GCInputDirectionalCardinalDpad] {
-                        clearDirectionPadHandlers(ring)
-                    }
-                    remote.buttons[GCInputDirectionalCenterButton]?.pressedChangedHandler = nil
                 }
                 if let gamepad = controller.microGamepad {
                     clearDirectionPadHandlers(gamepad.dpad)
