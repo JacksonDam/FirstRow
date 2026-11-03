@@ -163,7 +163,8 @@ final class CoverCarouselLayerController: LayerController {
         applyDepthOrder(elapsed: elapsed)
         if case let .dynamic(_, _, _, prefetch, _) = configuration.source, lastPrefetchSerial != maxSerial {
             lastPrefetchSerial = maxSerial
-            prefetch(maxSerial)
+            // Not from inside SwiftUI's update of this view: prefetching changes menu state.
+            DispatchQueue.main.async { prefetch(maxSerial) }
         }
     }
 
@@ -333,9 +334,9 @@ final class CoverCarouselLayerController: LayerController {
 /// the reflection layer needs no mask (masks cost an offscreen render pass every frame).
 @MainActor
 enum ReflectionImageCache {
-    private static let cache: NSCache<NSString, ReflectionBox> = {
-        let cache = NSCache<NSString, ReflectionBox>()
-        cache.countLimit = 200
+    private static let cache: NSCache<ReflectionKey, ReflectionBox> = {
+        let cache = NSCache<ReflectionKey, ReflectionBox>()
+        cache.countLimit = 120
         return cache
     }()
 
@@ -344,10 +345,35 @@ enum ReflectionImageCache {
         init(_ image: CGImage) { self.image = image }
     }
 
+    /// Holds on to the source image, so a cached reflection can never be matched to a different
+    /// image that happens to reuse a freed one's address.
+    private final class ReflectionKey: NSObject {
+        let source: CGImage
+        let width: Int
+        let height: Int
+        let fadeEnd: CGFloat
+
+        init(source: CGImage, width: Int, height: Int, fadeEnd: CGFloat) {
+            self.source = source
+            self.width = width
+            self.height = height
+            self.fadeEnd = fadeEnd
+        }
+
+        override func isEqual(_ object: Any?) -> Bool {
+            guard let other = object as? ReflectionKey else { return false }
+            return other.source === source && other.width == width && other.height == height && other.fadeEnd == fadeEnd
+        }
+
+        override var hash: Int {
+            ObjectIdentifier(source).hashValue ^ (width &* 31) ^ (height &* 1009)
+        }
+    }
+
     static func reflection(for image: NSImage?, size: CGSize, fadeEnd: CGFloat, placeholderSide: CGFloat) -> CGImage? {
         let source = LayerImageCache.cgImage(for: image) ?? CoverArtPlaceholder.image(side: placeholderSide)
         guard let source, size.width > 0, size.height > 0 else { return nil }
-        let key = "\(ObjectIdentifier(source).hashValue)|\(Int(size.width))x\(Int(size.height))|\(fadeEnd)" as NSString
+        let key = ReflectionKey(source: source, width: Int(size.width), height: Int(size.height), fadeEnd: fadeEnd)
         if let cached = cache.object(forKey: key) {
             return cached.image
         }

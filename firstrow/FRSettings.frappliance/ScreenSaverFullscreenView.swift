@@ -125,7 +125,7 @@ final class ScreenSaverLayerController: LayerController {
         )
 
         for photo in photos {
-            guard let image = ScreenSaverImageCache.image(for: photo) else { continue }
+            guard let image = LayerImageCache.cgImage(for: photo.image) else { continue }
             let worldX = (photo.normalizedX - 0.5) * width * 1.25
             let worldZ = (photo.normalizedZ - 0.5) * 620
             func perspective(orbit: Double) -> CGFloat {
@@ -253,22 +253,6 @@ final class ScreenSaverLayerController: LayerController {
 
 private extension CGFloat {
     var doubleValue: Double { Double(self) }
-}
-
-/// Screen saver photos as bitmaps no bigger than the screen needs.
-@MainActor
-private enum ScreenSaverImageCache {
-    private static var images: [ObjectIdentifier: CGImage] = [:]
-
-    static func image(for photo: ScreenSaverPhotoEntry) -> CGImage? {
-        let key = ObjectIdentifier(photo.image)
-        if let cached = images[key] {
-            return cached
-        }
-        guard let image = LayerImageCache.cgImage(for: photo.image) else { return nil }
-        images[key] = image
-        return image
-    }
 }
 
 fileprivate struct ScreenSaverPhotoEntry: Identifiable {

@@ -280,12 +280,18 @@ final class RootCarouselLayerController: LayerController {
 /// Icon reflections: the icon flipped, fading from 100% at its base to nothing 60% of the way down.
 @MainActor
 enum CarouselReflectionCache {
-    private static var cache: [ObjectIdentifier: CGImage] = [:]
+    private final class Box {
+        let image: CGImage
+        init(_ image: CGImage) { self.image = image }
+    }
+
+    /// Keyed by the image object itself (kept alive by the cache), never by its address.
+    private static let cache = NSCache<NSImage, Box>()
 
     static func reflection(for image: NSImage?) -> CGImage? {
         guard let image else { return nil }
-        if let cached = cache[ObjectIdentifier(image)] {
-            return cached
+        if let cached = cache.object(forKey: image) {
+            return cached.image
         }
         guard let source = LayerImageCache.cgImage(for: image) else { return nil }
         let width = source.width
@@ -308,7 +314,7 @@ enum CarouselReflectionCache {
         context.scaleBy(x: 1, y: -1)
         context.draw(source, in: rect)
         guard let reflection = context.makeImage() else { return nil }
-        cache[ObjectIdentifier(image)] = reflection
+        cache.setObject(Box(reflection), forKey: image)
         return reflection
     }
 }

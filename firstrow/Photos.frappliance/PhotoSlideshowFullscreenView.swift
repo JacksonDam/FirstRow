@@ -151,7 +151,9 @@ final class PhotoSlideshowLayerController: LayerController {
         reportIndicesIfChanged(primary, secondary, configuration)
         if elapsed >= total, !didReportFinish {
             didReportFinish = true
-            configuration.onFinished()
+            // Not from inside SwiftUI's update of this view: it changes menu state.
+            let onFinished = configuration.onFinished
+            DispatchQueue.main.async { onFinished() }
         }
         // Keep layers for the photo before, the visible ones and the one coming next.
         let wanted = Set((primary - 1) ... (primary + 2)).filter { $0 >= 0 && $0 < configuration.imageCount }
@@ -199,7 +201,8 @@ final class PhotoSlideshowLayerController: LayerController {
     private func reportIndicesIfChanged(_ primary: Int, _ secondary: Int?, _ configuration: Configuration) {
         if let last = lastReportedIndices, last.0 == primary, last.1 == secondary { return }
         lastReportedIndices = (primary, secondary)
-        configuration.onFrameIndicesChanged(primary, secondary)
+        let onFrameIndicesChanged = configuration.onFrameIndicesChanged
+        DispatchQueue.main.async { onFrameIndicesChanged(primary, secondary) }
     }
 
     // MARK: - Layers
@@ -227,7 +230,6 @@ final class PhotoSlideshowLayerController: LayerController {
         layer.contents = LayerImageCache.cgImage(for: image)
         let appear = originMediaTime + appearTime(index, configuration)
         let fadeOutStart = originMediaTime + Double(index + 1) * block - configuration.crossfadeDuration
-        let now = CACurrentMediaTime()
 
         // Pan and zoom over one block from when the photo appears, then hold.
         layer.transform = kenBurnsTransform(index: index, progress: 1)
@@ -237,12 +239,9 @@ final class PhotoSlideshowLayerController: LayerController {
         kenBurns.duration = block
         kenBurns.fillMode = .both
         kenBurns.isRemovedOnCompletion = false
+        // A start in the past (for example after resuming) picks up part way through; no
+        // timeOffset, which on a one-shot animation wraps round to the beginning.
         kenBurns.beginTime = layer.convertTime(appear, from: nil)
-        if appear < now {
-            // Already under way (for example after resuming): start part way through.
-            kenBurns.beginTime = layer.convertTime(now, from: nil)
-            kenBurns.timeOffset = min(block, now - appear)
-        }
         layer.add(kenBurns, forKey: "kenBurns")
 
         // Fade in over the crossfade (not the first photo), and out over the next one's.
@@ -257,12 +256,7 @@ final class PhotoSlideshowLayerController: LayerController {
         fade.duration = span
         fade.fillMode = .both
         fade.isRemovedOnCompletion = false
-        if appear < now {
-            fade.beginTime = layer.convertTime(now, from: nil)
-            fade.timeOffset = now - appear
-        } else {
-            fade.beginTime = layer.convertTime(appear, from: nil)
-        }
+        fade.beginTime = layer.convertTime(appear, from: nil)
         layer.opacity = isLast ? 1 : 0
         layer.add(fade, forKey: "fade")
         return layer

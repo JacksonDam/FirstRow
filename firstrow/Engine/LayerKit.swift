@@ -223,12 +223,15 @@ final class StillGradientLayer: CAGradientLayer {
     override func action(forKey _: String) -> CAAction? { nil }
 }
 
-/// Bitmap for a platform image, cached per image object.
+/// Bitmap for a platform image, cached per image object (converting can mean rasterising,
+/// for example for icons drawn from PDF). The cache keeps the images it holds alive, so it is
+/// limited by memory as well as count.
 @MainActor
 enum LayerImageCache {
     private static let cache: NSCache<AnyObject, CGImageBox> = {
         let cache = NSCache<AnyObject, CGImageBox>()
-        cache.countLimit = 400
+        cache.countLimit = 300
+        cache.totalCostLimit = 160 * 1024 * 1024
         return cache
     }()
 
@@ -247,7 +250,7 @@ enum LayerImageCache {
         #else
             guard let cgImage = image.cgImage ?? renderedCGImage(image) else { return nil }
         #endif
-        cache.setObject(CGImageBox(cgImage), forKey: image)
+        cache.setObject(CGImageBox(cgImage), forKey: image, cost: cgImage.bytesPerRow * cgImage.height)
         return cgImage
     }
 
