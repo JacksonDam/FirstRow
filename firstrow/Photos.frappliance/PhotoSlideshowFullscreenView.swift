@@ -1,5 +1,12 @@
+import QuartzCore
 import SwiftUI
 
+/// The full-screen photo slideshow: each photo slowly pans and zooms (the Ken Burns effect)
+/// and crossfades into the next.
+///
+/// Drawn with Core Animation. Every photo's pan, zoom and fades are animations with absolute
+/// start times, so the render server plays the whole show; the app only wakes at each photo
+/// change to swap in the next photos (the SwiftUI version redrew 60 times a second).
 struct PhotoSlideshowFullscreenView: View {
     let imageCount: Int
     let imageForIndex: (Int) -> NSImage?
@@ -12,202 +19,282 @@ struct PhotoSlideshowFullscreenView: View {
     let hasAlreadyFinished: Bool
     let onFrameIndicesChanged: (_ primaryIndex: Int, _ secondaryIndex: Int?) -> Void
     let onFinished: () -> Void
-    private var transitionBlockDuration: TimeInterval {
-        displayDuration + crossfadeDuration
-    }
-
-    private var totalDuration: TimeInterval {
-        guard imageCount > 0 else { return 0 }
-        return (Double(max(0, imageCount - 1)) * transitionBlockDuration) + displayDuration
-    }
 
     var body: some View {
-        slideshowBody
-    }
-
-    private var slideshowBody: some View {
-        GeometryReader { proxy in
-            FirstRowTimelineView(minimumInterval: 1.0 / 60.0) { currentDate in
-                let elapsed = resolvedElapsed(at: currentDate)
-                let frameState = frameState(for: elapsed)
-                let frameIndicesKey = PhotoSlideshowFrameIndicesKey(
-                    primaryIndex: frameState.primaryIndex,
-                    secondaryIndex: frameState.secondaryIndex,
-                )
-                ZStack {
-                    Color.black
-                    if frameState.primaryIndex >= 0,
-                       frameState.primaryIndex < imageCount,
-                       let primaryImage = imageForIndex(frameState.primaryIndex)
-                    {
-                        kenBurnsImage(
-                            primaryImage,
-                            index: frameState.primaryIndex,
-                            progress: frameState.primaryKenBurnsProgress,
-                            canvasSize: proxy.size,
-                        ).opacity(frameState.primaryOpacity)
-                    }
-                    if let secondaryIndex = frameState.secondaryIndex,
-                       secondaryIndex >= 0,
-                       secondaryIndex < imageCount,
-                       let secondaryImage = imageForIndex(secondaryIndex)
-                    {
-                        kenBurnsImage(
-                            secondaryImage,
-                            index: secondaryIndex,
-                            progress: frameState.secondaryKenBurnsProgress,
-                            canvasSize: proxy.size,
-                        ).opacity(frameState.secondaryOpacity)
-                    }
-                }.ignoresSafeArea().modifier(
-                    PhotoSlideshowFrameIndicesUpdateModifier(
-                        frameIndicesKey: frameIndicesKey,
-                        onUpdate: {
-                            onFrameIndicesChanged(frameState.primaryIndex, frameState.secondaryIndex)
-                        },
-                    ),
-                )
-            }
-        }.background(Color.black.ignoresSafeArea())
-    }
-
-    private func resolvedElapsed(at date: Date) -> TimeInterval {
-        if isPaused {
-            return max(0, playbackElapsedOffset)
-        }
-        return max(0, playbackElapsedOffset + date.timeIntervalSince(playbackStartDate))
-    }
-
-    private func frameState(for elapsed: TimeInterval) -> PhotoSlideshowFrameState {
-        guard imageCount > 0 else {
-            return PhotoSlideshowFrameState(
-                primaryIndex: 0,
-                secondaryIndex: nil,
-                primaryOpacity: 0,
-                secondaryOpacity: 0,
-                primaryKenBurnsProgress: 0,
-                secondaryKenBurnsProgress: 0,
-            )
-        }
-        if isPaused {
-            let clampedIndex = min(max(0, pausedIndex), imageCount - 1)
-            return PhotoSlideshowFrameState(
-                primaryIndex: clampedIndex,
-                secondaryIndex: nil,
-                primaryOpacity: 1,
-                secondaryOpacity: 0,
-                primaryKenBurnsProgress: 0.25,
-                secondaryKenBurnsProgress: 0,
-            )
-        }
-        let clampedElapsed = min(max(0, elapsed), totalDuration)
-        if !hasAlreadyFinished, clampedElapsed >= totalDuration {
-            Task { @MainActor in onFinished() }
-        }
-        if imageCount == 1 {
-            let progress = min(1, clampedElapsed / max(0.001, displayDuration))
-            return PhotoSlideshowFrameState(
-                primaryIndex: 0,
-                secondaryIndex: nil,
-                primaryOpacity: 1,
-                secondaryOpacity: 0,
-                primaryKenBurnsProgress: progress,
-                secondaryKenBurnsProgress: 0,
-            )
-        }
-        let block = max(0.001, transitionBlockDuration)
-        let lastIndex = imageCount - 1
-        let segment = min(lastIndex, Int(clampedElapsed / block))
-        if segment >= lastIndex {
-            let local = clampedElapsed - (Double(lastIndex) * block)
-            let progress = min(1, (1 + local) / block)
-            return PhotoSlideshowFrameState(
-                primaryIndex: lastIndex,
-                secondaryIndex: nil,
-                primaryOpacity: 1,
-                secondaryOpacity: 0,
-                primaryKenBurnsProgress: progress,
-                secondaryKenBurnsProgress: 0,
-            )
-        }
-        let local = clampedElapsed - (Double(segment) * block)
-        let primaryBase = segment == 0 ? 0.0 : 1.0
-        let primaryProgress = min(1, (primaryBase + local) / block)
-        if local < displayDuration {
-            return PhotoSlideshowFrameState(
-                primaryIndex: segment,
-                secondaryIndex: nil,
-                primaryOpacity: 1,
-                secondaryOpacity: 0,
-                primaryKenBurnsProgress: primaryProgress,
-                secondaryKenBurnsProgress: 0,
-            )
-        }
-        let crossfadeProgress = min(1, (local - displayDuration) / max(0.001, crossfadeDuration))
-        let secondaryProgress = min(1, crossfadeProgress / block)
-        return PhotoSlideshowFrameState(
-            primaryIndex: segment,
-            secondaryIndex: min(lastIndex, segment + 1),
-            primaryOpacity: 1 - crossfadeProgress,
-            secondaryOpacity: crossfadeProgress,
-            primaryKenBurnsProgress: primaryProgress,
-            secondaryKenBurnsProgress: secondaryProgress,
-        )
-    }
-
-    private func kenBurnsImage(
-        _ image: NSImage,
-        index: Int,
-        progress: TimeInterval,
-        canvasSize: CGSize,
-    ) -> some View {
-        let clampedProgress = min(max(progress, 0), 1)
-        let directionX: CGFloat = (index % 2 == 0) ? 1 : -1
-        let directionY: CGFloat = (index % 3 == 0) ? -1 : 1
-        let zoomStart = 1.04 + (CGFloat(index % 5) * 0.01)
-        let zoomEnd = zoomStart + 0.16
-        let zoom = zoomStart + ((zoomEnd - zoomStart) * CGFloat(clampedProgress))
-        let maxPanX = canvasSize.width * 0.06
-        let maxPanY = canvasSize.height * 0.045
-        let centeredProgress = CGFloat(clampedProgress - 0.5)
-        return Image(nsImage: image).resizable().interpolation(.high).antialiased(true).scaledToFill().scaleEffect(zoom).offset(
-            x: directionX * maxPanX * centeredProgress,
-            y: directionY * maxPanY * centeredProgress,
-        ).frame(width: canvasSize.width, height: canvasSize.height).clipped()
+        LayerHost<PhotoSlideshowLayerController>(configuration: .init(
+            imageCount: imageCount,
+            imageForIndex: imageForIndex,
+            isPaused: isPaused,
+            pausedIndex: pausedIndex,
+            playbackStartDate: playbackStartDate,
+            playbackElapsedOffset: playbackElapsedOffset,
+            displayDuration: displayDuration,
+            crossfadeDuration: crossfadeDuration,
+            hasAlreadyFinished: hasAlreadyFinished,
+            onFrameIndicesChanged: onFrameIndicesChanged,
+            onFinished: onFinished,
+        ))
+        .background(Color.black.ignoresSafeArea())
+        .ignoresSafeArea()
     }
 }
 
-private struct PhotoSlideshowFrameState {
-    let primaryIndex: Int
-    let secondaryIndex: Int?
-    let primaryOpacity: Double
-    let secondaryOpacity: Double
-    let primaryKenBurnsProgress: TimeInterval
-    let secondaryKenBurnsProgress: TimeInterval
-}
+@MainActor
+final class PhotoSlideshowLayerController: LayerController {
+    struct Configuration {
+        let imageCount: Int
+        let imageForIndex: (Int) -> NSImage?
+        let isPaused: Bool
+        let pausedIndex: Int
+        let playbackStartDate: Date
+        let playbackElapsedOffset: TimeInterval
+        let displayDuration: TimeInterval
+        let crossfadeDuration: TimeInterval
+        let hasAlreadyFinished: Bool
+        let onFrameIndicesChanged: (_ primaryIndex: Int, _ secondaryIndex: Int?) -> Void
+        let onFinished: () -> Void
+    }
 
-private struct PhotoSlideshowFrameIndicesKey: Hashable {
-    let primaryIndex: Int
-    let secondaryIndex: Int?
-}
+    let rootLayer: CALayer = StillLayer()
+    private var configuration: Configuration?
+    private var bounds: CGSize = .zero
+    private var layersByIndex: [Int: StillLayer] = [:]
+    private var imagesByIndex: [Int: NSImage] = [:]
+    private var scheduleKey: String?
+    /// Media time at which the show's elapsed time was zero.
+    private var originMediaTime: CFTimeInterval = 0
+    private var timer: Timer?
+    private var lastReportedIndices: (Int, Int?)?
+    private var didReportFinish = false
 
-private struct PhotoSlideshowFrameIndicesUpdateModifier: ViewModifier {
-    let frameIndicesKey: PhotoSlideshowFrameIndicesKey
-    let onUpdate: () -> Void
+    init() {
+        rootLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
+        rootLayer.masksToBounds = true
+    }
 
-    func body(content: Content) -> some View {
-        if #available(macOS 12.0, *) {
-            content.task(id: frameIndicesKey) {
-                onUpdate()
-            }
-        } else {
-            content
-                .onAppear {
-                    onUpdate()
+    func update(_ configuration: Configuration, bounds: CGSize) {
+        self.configuration = configuration
+        self.bounds = bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let key = [
+            "\(configuration.imageCount)", "\(configuration.isPaused)", "\(configuration.pausedIndex)",
+            "\(configuration.playbackStartDate.timeIntervalSinceReferenceDate)", "\(configuration.playbackElapsedOffset)",
+            "\(Int(bounds.width))x\(Int(bounds.height))",
+        ].joined(separator: "|")
+        if key != scheduleKey {
+            scheduleKey = key
+            let elapsed = currentElapsed(configuration)
+            originMediaTime = CACurrentMediaTime() - elapsed
+            didReportFinish = configuration.hasAlreadyFinished
+            for layer in layersByIndex.values { layer.removeFromSuperlayer() }
+            layersByIndex = [:]
+            imagesByIndex = [:]
+        }
+        refresh()
+    }
+
+    func tearDown() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    // MARK: - Timeline
+
+    private var block: Double {
+        guard let configuration else { return 4 }
+        return max(0.001, configuration.displayDuration + configuration.crossfadeDuration)
+    }
+
+    private func currentElapsed(_ configuration: Configuration) -> TimeInterval {
+        if configuration.isPaused {
+            return max(0, configuration.playbackElapsedOffset)
+        }
+        return max(0, configuration.playbackElapsedOffset + Date().timeIntervalSince(configuration.playbackStartDate))
+    }
+
+    private func totalDuration(_ configuration: Configuration) -> Double {
+        guard configuration.imageCount > 0 else { return 0 }
+        return Double(configuration.imageCount - 1) * block + configuration.displayDuration
+    }
+
+    /// When photo `index` starts fading in (the first photo is there from the start).
+    private func appearTime(_ index: Int, _ configuration: Configuration) -> Double {
+        index == 0 ? 0 : Double(index) * block - configuration.crossfadeDuration
+    }
+
+    /// Photos on screen at `elapsed`: the current one, and the next while they crossfade.
+    private func visibleIndices(at elapsed: Double, _ configuration: Configuration) -> (Int, Int?) {
+        let last = configuration.imageCount - 1
+        let segment = min(last, max(0, Int(elapsed / block)))
+        let local = elapsed - Double(segment) * block
+        if segment < last, local >= configuration.displayDuration {
+            return (segment, segment + 1)
+        }
+        return (segment, nil)
+    }
+
+    private func refresh() {
+        timer?.invalidate()
+        timer = nil
+        guard let configuration, configuration.imageCount > 0 else {
+            for layer in layersByIndex.values { layer.removeFromSuperlayer() }
+            layersByIndex = [:]
+            return
+        }
+        if configuration.isPaused {
+            showPaused(configuration)
+            return
+        }
+        let elapsed = CACurrentMediaTime() - originMediaTime
+        let total = totalDuration(configuration)
+        let (primary, secondary) = visibleIndices(at: min(elapsed, total), configuration)
+        reportIndicesIfChanged(primary, secondary, configuration)
+        if elapsed >= total, !didReportFinish {
+            didReportFinish = true
+            configuration.onFinished()
+        }
+        // Keep layers for the photo before, the visible ones and the one coming next.
+        let wanted = Set((primary - 1) ... (primary + 2)).filter { $0 >= 0 && $0 < configuration.imageCount }
+        for (index, layer) in layersByIndex where !wanted.contains(index) {
+            layer.removeFromSuperlayer()
+            layersByIndex[index] = nil
+            imagesByIndex[index] = nil
+        }
+        for index in wanted.sorted() {
+            let image = configuration.imageForIndex(index)
+            if let layer = layersByIndex[index] {
+                if let image, imagesByIndex[index] !== image {
+                    imagesByIndex[index] = image
+                    withoutLayerActions { layer.contents = LayerImageCache.cgImage(for: image) }
                 }
-                .onChange(of: frameIndicesKey, perform: { _ in
-                    onUpdate()
-                })
+                continue
+            }
+            let layer = makePhotoLayer(index: index, image: image, configuration: configuration)
+            layersByIndex[index] = layer
+            imagesByIndex[index] = image
+        }
+        // Later photos sit on top of earlier ones, so a crossfade brings the next one in over the last.
+        for index in layersByIndex.keys.sorted() {
+            if let layer = layersByIndex[index], layer.superlayer !== rootLayer || rootLayer.sublayers?.last !== layer {
+                rootLayer.addSublayer(layer)
+            }
+        }
+        // Wake at the next change of photos (start or end of a crossfade), or soon if a photo
+        // we need hasn't loaded yet.
+        let missingImage = wanted.contains { imagesByIndex[$0] == nil }
+        let boundaries = [Double(primary + 1) * block - configuration.crossfadeDuration, Double(primary + 1) * block, total]
+        let next = boundaries.filter { $0 > elapsed + 0.001 }.min() ?? (elapsed + block)
+        let delay = missingImage ? min(0.25, next - elapsed) : next - elapsed + 0.01
+        scheduleRefresh(after: max(0.02, delay))
+    }
+
+    private func scheduleRefresh(after delay: Double) {
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private func reportIndicesIfChanged(_ primary: Int, _ secondary: Int?, _ configuration: Configuration) {
+        if let last = lastReportedIndices, last.0 == primary, last.1 == secondary { return }
+        lastReportedIndices = (primary, secondary)
+        configuration.onFrameIndicesChanged(primary, secondary)
+    }
+
+    // MARK: - Layers
+
+    /// The pan and zoom for photo `index` at Ken Burns progress `progress` (0...1).
+    private func kenBurnsTransform(index: Int, progress: Double) -> CATransform3D {
+        let p = CGFloat(min(max(progress, 0), 1))
+        let directionX: CGFloat = index % 2 == 0 ? 1 : -1
+        let directionY: CGFloat = index % 3 == 0 ? -1 : 1
+        let zoomStart = 1.04 + CGFloat(index % 5) * 0.01
+        let zoom = zoomStart + 0.16 * p
+        let panX = directionX * bounds.width * 0.06 * (p - 0.5)
+        var panY = directionY * bounds.height * 0.045 * (p - 0.5)
+        #if os(macOS)
+            panY = -panY
+        #endif
+        return CATransform3DConcat(CATransform3DMakeScale(zoom, zoom, 1), CATransform3DMakeTranslation(panX, panY, 0))
+    }
+
+    private func makePhotoLayer(index: Int, image: NSImage?, configuration: Configuration) -> StillLayer {
+        let layer = StillLayer()
+        layer.bounds = CGRect(origin: .zero, size: bounds)
+        layer.position = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+        layer.contentsGravity = .resizeAspectFill
+        layer.contents = LayerImageCache.cgImage(for: image)
+        let appear = originMediaTime + appearTime(index, configuration)
+        let fadeOutStart = originMediaTime + Double(index + 1) * block - configuration.crossfadeDuration
+        let now = CACurrentMediaTime()
+
+        // Pan and zoom over one block from when the photo appears, then hold.
+        layer.transform = kenBurnsTransform(index: index, progress: 1)
+        let kenBurns = CABasicAnimation(keyPath: "transform")
+        kenBurns.fromValue = NSValue(caTransform3D: kenBurnsTransform(index: index, progress: 0))
+        kenBurns.toValue = NSValue(caTransform3D: kenBurnsTransform(index: index, progress: 1))
+        kenBurns.duration = block
+        kenBurns.fillMode = .both
+        kenBurns.isRemovedOnCompletion = false
+        kenBurns.beginTime = layer.convertTime(appear, from: nil)
+        if appear < now {
+            // Already under way (for example after resuming): start part way through.
+            kenBurns.beginTime = layer.convertTime(now, from: nil)
+            kenBurns.timeOffset = min(block, now - appear)
+        }
+        layer.add(kenBurns, forKey: "kenBurns")
+
+        // Fade in over the crossfade (not the first photo), and out over the next one's.
+        let isLast = index == configuration.imageCount - 1
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        let fadeInEnd = appear + (index == 0 ? 0 : configuration.crossfadeDuration)
+        let fadeOutEnd = isLast ? fadeInEnd + 3600 : fadeOutStart + configuration.crossfadeDuration
+        let times = [appear, fadeInEnd, isLast ? fadeOutEnd : fadeOutStart, fadeOutEnd]
+        let span = max(0.001, fadeOutEnd - appear)
+        fade.values = index == 0 ? [1, 1, 1, isLast ? 1 : 0] : [0, 1, 1, isLast ? 1 : 0]
+        fade.keyTimes = times.map { NSNumber(value: ($0 - appear) / span) }
+        fade.duration = span
+        fade.fillMode = .both
+        fade.isRemovedOnCompletion = false
+        if appear < now {
+            fade.beginTime = layer.convertTime(now, from: nil)
+            fade.timeOffset = now - appear
+        } else {
+            fade.beginTime = layer.convertTime(appear, from: nil)
+        }
+        layer.opacity = isLast ? 1 : 0
+        layer.add(fade, forKey: "fade")
+        return layer
+    }
+
+    /// Paused: the paused photo alone, standing still a quarter of the way through its pan.
+    private func showPaused(_ configuration: Configuration) {
+        let index = min(max(0, configuration.pausedIndex), configuration.imageCount - 1)
+        for (other, layer) in layersByIndex where other != index {
+            layer.removeFromSuperlayer()
+            layersByIndex[other] = nil
+            imagesByIndex[other] = nil
+        }
+        let image = configuration.imageForIndex(index)
+        let layer = layersByIndex[index] ?? StillLayer()
+        withoutLayerActions {
+            layer.removeAllAnimations()
+            layer.bounds = CGRect(origin: .zero, size: bounds)
+            layer.position = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+            layer.contentsGravity = .resizeAspectFill
+            layer.contents = LayerImageCache.cgImage(for: image)
+            layer.opacity = 1
+            layer.transform = kenBurnsTransform(index: index, progress: 0.25)
+        }
+        if layer.superlayer == nil {
+            rootLayer.addSublayer(layer)
+        }
+        layersByIndex[index] = layer
+        imagesByIndex[index] = image
+        reportIndicesIfChanged(index, nil, configuration)
+        if image == nil {
+            scheduleRefresh(after: 0.25)
         }
     }
 }
