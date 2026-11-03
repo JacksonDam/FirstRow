@@ -6,10 +6,6 @@ import QuartzCore
 #endif
 
 // Core Animation building blocks shared by First Row's layer-based views.
-//
-// Animated parts of the interface are drawn with CALayers and CAAnimations instead of
-// SwiftUI views redrawn every frame: the system render server runs the animations, so
-// the app itself does almost no work while they play.
 
 /// Something that owns a layer tree drawn inside the scene.
 @MainActor
@@ -44,14 +40,10 @@ final class StillGradientLayer: CAGradientLayer {
     override func action(forKey _: String) -> CAAction? { nil }
 }
 
-/// The bitmap layout Core Animation shows as it is (BGRA, premultiplied). Pictures drawn in
-/// any other layout get a converted copy as soon as a layer shows them, which doubles the
-/// memory each one takes.
+/// BGRA premultiplied: Core Animation shows this layout without making a converted copy.
 let layerBitmapInfo: UInt32 = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
 
-/// Bitmap for a platform image, cached per image object (converting can mean rasterising,
-/// for example for icons drawn from PDF). The cache keeps the images it holds alive, so it is
-/// limited by memory as well as count.
+/// CGImage per platform image, cached because converting can mean rasterising a PDF icon.
 @MainActor
 enum LayerImageCache {
     private static let cache: NSCache<AnyObject, CGImageBox> = {
@@ -88,7 +80,7 @@ enum LayerImageCache {
     #endif
 }
 
-/// Perspective used by SwiftUI's `rotation3DEffect` for a view of the given size.
+/// Perspective for a view of the given size, with depth set by its larger side.
 func swiftUIPerspectiveTransform(perspective: CGFloat, viewSize: CGSize) -> CATransform3D {
     var transform = CATransform3DIdentity
     let depth = max(viewSize.width, viewSize.height)
@@ -98,7 +90,7 @@ func swiftUIPerspectiveTransform(perspective: CGFloat, viewSize: CGSize) -> CATr
     return transform
 }
 
-/// A rotation about the vertical axis, with SwiftUI's perspective, about the layer's anchor.
+/// A rotation about the vertical axis through the layer's anchor, with perspective.
 func yawTransform(degrees: Double, perspective: CGFloat, viewSize: CGSize) -> CATransform3D {
     let rotation = CATransform3DMakeRotation(CGFloat(degrees * .pi / 180), 0, 1, 0)
     return CATransform3DConcat(rotation, swiftUIPerspectiveTransform(perspective: perspective, viewSize: viewSize))
@@ -130,7 +122,7 @@ extension NSValue {
     }
 }
 
-/// Converts SwiftUI-style coordinates (origin top left, y down) to layer coordinates.
+/// Converts top-left-origin, y-down coordinates to layer coordinates.
 struct LayerSpace {
     let height: CGFloat
 
@@ -142,7 +134,7 @@ struct LayerSpace {
         #endif
     }
 
-    /// A frame given in SwiftUI coordinates, for a layer whose superlayer has `height`.
+    /// A top-left-origin frame, for a layer whose superlayer has `height`.
     func rect(_ rect: CGRect) -> CGRect {
         #if os(macOS)
             CGRect(x: rect.minX, y: height - rect.maxY, width: rect.width, height: rect.height)

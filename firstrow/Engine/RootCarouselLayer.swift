@@ -8,11 +8,7 @@ import QuartzCore
     import AppKit
 #endif
 
-/// The arc of section icons on the main menu (Movies, TV Shows, Music, ...), drawn with Core
-/// Animation: the selected icon in front with its reflection, the next three getting smaller
-/// and blurrier behind it. Moving the selection, entering a section (the selected icon flies up
-/// beside the title while the rest slide away) and coming back are layer animations, so the
-/// render server moves the icons instead of SwiftUI recomputing them every frame.
+/// The main menu's arc of section icons, the selected one in front with its reflection.
 struct RootCarouselConfiguration {
     var images: [NSImage?]
     var selectedIndex: Int
@@ -48,8 +44,7 @@ final class RootCarouselLayerController: LayerController {
         let container = StillLayer()
         let image = StillLayer()
         let reflection = StillLayer()
-        // iOS and tvOS draw layers without filters, so the blur behind the front is a blurred
-        // copy of the picture faded in over it (with room round the edges for the blur).
+        // iOS and tvOS layers have no filters, so blur is a pre-blurred copy faded in over the icon.
         let blurredImage = StillLayer()
         let blurredReflection = StillLayer()
         var blurMargin: CGFloat = 0
@@ -91,10 +86,7 @@ final class RootCarouselLayerController: LayerController {
     private var icons: [Icon] = []
     private var previous: RootCarouselConfiguration?
 
-    // The selection as a continuous value while the carousel turns: every icon's place is a
-    // function of it, so however fast the arrows are pressed, icons stay on the carousel's path
-    // (animating each icon in a straight line from wherever it was cut corners and, press after
-    // press, pulled the carousel inwards).
+    // The selection as a continuous value, so icons stay on the arc however fast arrows are pressed.
     private var phaseFrom: Double = 0
     private var phaseTo: Double = 0
     private var phaseStart: CFTimeInterval = 0
@@ -119,9 +111,7 @@ final class RootCarouselLayerController: LayerController {
         phaseDuration = 0
         var from = previous
         if let old = previous, configuration.isReturningToRoot, !old.isReturningToRoot {
-            // Coming back from a section: start from where the carousel was left (selected icon
-            // up by the title, the rest off to the left), shown instantly, then fly home. SwiftUI
-            // may deliver the whole change in one update, so the starting point is set here.
+            // Back from a section: the change can arrive in one update, so set the start layout here.
             var start = configuration
             start.isEnteringSubmenu = true
             start.isIconAnimated = true
@@ -171,9 +161,7 @@ final class RootCarouselLayerController: LayerController {
             old.showsSettledLandedIcon == new.showsSettledLandedIcon
     }
 
-    /// Stacking as in the SwiftUI version: icons drawn in the order selection+6 ... selection
-    /// (wrapping round), with z-index 1 for the selected icon, 0 for the arc behind it and 1000
-    /// for icons off screen (so one leaving the front passes over the rest on its way out).
+    /// Orders the icons back to front around the selection.
     private func applyStackingOrder(_ c: RootCarouselConfiguration) {
         let count = icons.count
         guard count > 0 else { return }
@@ -213,8 +201,7 @@ final class RootCarouselLayerController: LayerController {
         TimingCurve.easeInEaseOut.value(at: x)
     }
 
-    /// Where icon `index` is when the selection stands at `phase` (between two slots, part way
-    /// along the line from one to the other, which is how a single step always moved).
+    /// Where icon `index` is at `phase`, part way along the straight line between two slots.
     private func state(for index: Int, phase: Double, configuration c: RootCarouselConfiguration, bounds: CGSize) -> IconState {
         let position = Double(index) - phase
         let lower = floor(position)
@@ -230,8 +217,7 @@ final class RootCarouselLayerController: LayerController {
         let start = phaseDuration > 0 ? presentedPhase(at: now) : Double(old.selectedIndex)
         let target = Double(c.selectedIndex)
         let duration = c.selectionDuration * 0.85
-        // A press while the carousel is still turning carries on at the speed it was going
-        // (starting again from a standstill made each press stall, then lurch).
+        // A press while the carousel is still turning carries on at the speed it was going.
         var curve = c.usesLinearSweep ? TimingCurve.linear : TimingCurve.easeInEaseOut
         if !c.usesLinearSweep, target != start {
             let slope = phaseVelocity(at: now) * duration / (target - start)
@@ -267,8 +253,7 @@ final class RootCarouselLayerController: LayerController {
                 animation.calculationMode = .linear
                 animation.timingFunction = timing
                 animation.duration = duration
-                // From the moment the start was worked out, so later work in this pass can't
-                // delay it and leave the first frame behind where the last turn had got to.
+                // Begin when the start was computed, so later work in this pass can't delay it.
                 animation.beginTime = layer.convertTime(now, from: nil)
                 withoutLayerActions { layer.setValue(last, forKeyPath: keyPath) }
                 layer.add(animation, forKey: keyPath)
@@ -371,22 +356,17 @@ final class RootCarouselLayerController: LayerController {
         return (selected, background)
     }
 
-    /// Where icon `index` sits, ported from the SwiftUI layout: offsets are from the carousel's
-    /// centre, 50 points above it (the icons' frames carried 100 points of bottom padding).
+    /// Where icon `index` sits. Offsets are from 50 points above the carousel's centre.
     private func state(for index: Int, configuration c: RootCarouselConfiguration, bounds: CGSize) -> IconState {
         slotState(position: index - c.selectedIndex, configuration: c, bounds: bounds)
     }
 
-    /// The icon `position` places after the selection (negative: before it). Only the selection
-    /// and the three after it sit on the arc; the rest wait off screen (no wrapping round, so
-    /// the first icons never reappear behind the last ones).
+    /// The icon `position` places after the selection (negative: before it).
+    /// Only the selection and the three after it sit on the arc, and positions never wrap round.
     private func slotState(position: Int, configuration c: RootCarouselConfiguration, bounds: CGSize) -> IconState {
         let angle = CGFloat(position) * .pi / 6
         let isLanded = position == 0 && c.isIconAnimated
-        // The slot just before the selection is where the front icon goes as the next one comes
-        // forward (and comes back from): just past the left edge of the screen at the front
-        // icon's size, so it slides off in view while the next arrives and the front of the
-        // carousel never stands empty. Further slots wait far off screen.
+        // Slot -1 is just off the left edge at front size, so the outgoing icon slides off in view.
         let isExitSlot = position == -1
         let scale = isLanded ? c.landedIconScale : (isExitSlot ? 1 : 1 - CGFloat(abs(position)) * c.scaleReduction)
         var x: CGFloat
@@ -425,8 +405,7 @@ final class RootCarouselLayerController: LayerController {
         } else if c.isInSubmenu, !c.isReturningToRoot, position != 0 {
             opacity = 0
         }
-        // The reflection: under the icon normally; left behind, faint and soft, while the
-        // selected icon flies up into a section or back down.
+        // The reflection stays behind, faint and soft, while the selected icon flies to or from a section.
         let animateReflection = position == 0 && (!c.isInSubmenu || c.isEnteringSubmenu || c.isReturningToRoot)
         let detached = animateReflection &&
             ((c.isEnteringSubmenu && !c.isReturningToRoot) || (c.isReturningToRoot && c.isIconAnimated))
@@ -439,8 +418,7 @@ final class RootCarouselLayerController: LayerController {
         let reflectionScale = detached ? 1 : scale
         let showsReflection = !(position == 0 && c.isInSubmenu && !c.isEnteringSubmenu && !c.isReturningToRoot)
         let center = CGPoint(x: bounds.width / 2 + baseX, y: bounds.height / 2 - 50 + baseY)
-        // In SwiftUI the reflection was the image flipped below its own frame, offset, then
-        // scaled about that frame's centre (the icon's centre).
+        // The reflection sits below the icon's frame, offset, then scaled about the icon's centre.
         let reflectionCenter = CGPoint(
             x: reflectionOffset.x * reflectionScale,
             y: (adjustedSize + reflectionOffset.y) * reflectionScale,
@@ -505,8 +483,7 @@ final class RootCarouselLayerController: LayerController {
             return
         }
         let animation = CABasicAnimation(keyPath: keyPath)
-        // Mid-flight: continue from what is on screen. Otherwise from the model value, which may
-        // have been set an instant ago in this same update (the presentation layer lags behind).
+        // Use the model value unless mid-flight: the presentation layer lags a value set this update.
         let source: CALayer = layer.animation(forKey: keyPath) != nil ? (layer.presentation() ?? layer) : layer
         animation.fromValue = source.value(forKeyPath: keyPath)
         animation.toValue = value
@@ -577,9 +554,8 @@ extension NSValue {
 #if !os(macOS)
     import CoreImage
 
-    /// Blurred copies of pictures, for platforms whose layers have no filters. They are drawn
-    /// small (a blur keeps no detail worth the memory) with a clear margin round the picture
-    /// for the blur to spread into, given as a share of the picture's side.
+    /// Small blurred copies of pictures, for platforms whose layers have no filters.
+    /// `margin` is the clear border the blur spreads into, as a share of the picture's side.
     @MainActor
     enum BlurredPictureCache {
         private final class Box {
@@ -608,8 +584,7 @@ extension NSValue {
             let shrink = min(1, 192 / longest)
             let input = CIImage(cgImage: source).transformed(by: CGAffineTransform(scaleX: shrink, y: shrink))
             let side = max(input.extent.width, input.extent.height)
-            // The Mac blurs the arc's icons by 10 points at about 280 points across; the same
-            // share of the picture here.
+            // Same blur as on the Mac: 10 points on an icon about 280 points across.
             let sigma = Double(side) * 10 / 280
             let margin = CGFloat(ceil(sigma * 3))
             let output = input.applyingGaussianBlur(sigma: sigma)

@@ -439,8 +439,7 @@ extension MenuView {
         return firstMovieFileURL(in: moviesRootDirectoryURL())
     }
 
-    /// The picture to show for a movie in the menus: its embedded cover art (as set by
-    /// iTunes, Subler and similar tools) when it has one, otherwise a frame from the video.
+    /// A movie's menu picture: its embedded cover art, or else a frame from the video.
     nonisolated func generateMoviePreviewImage(for url: URL) async -> NSImage? {
         let standardizedURL = url.standardizedFileURL
         if let artworkData = await loadEmbeddedArtworkData(from: standardizedURL),

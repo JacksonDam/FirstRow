@@ -1,8 +1,6 @@
 import Foundation
 
-/// Reads the library file iTunes (and Music, via File > Library > Export Library) writes:
-/// "iTunes Music Library.xml" / "iTunes Library.xml", a property list of tracks and playlists.
-/// Only songs stored as local files are used; the parsed result is cached until the file changes.
+/// Parses the library XML that iTunes writes or Music exports (File > Library > Export Library).
 final class ITunesLibraryXML: @unchecked Sendable {
     struct Track {
         let trackID: Int
@@ -120,8 +118,7 @@ final class ITunesLibraryXML: @unchecked Sendable {
         )
     }
 
-    /// iTunes writes file URLs; libraries copied from another Mac keep the old paths, so a file
-    /// that isn't there is looked for again under the chosen file's own "iTunes Media" folder.
+    /// A copied library keeps the old Mac's paths, so missing files are looked up beside the XML.
     private static func resolvedFileURL(_ location: String, musicFolder: URL?) -> URL? {
         guard let url = URL(string: location), url.isFileURL else { return nil }
         if FileManager.default.fileExists(atPath: url.path) {

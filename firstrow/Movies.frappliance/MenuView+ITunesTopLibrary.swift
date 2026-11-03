@@ -210,8 +210,7 @@ extension MenuView {
         else {
             return rawArtwork
         }
-        // Artwork is decoded to at most 900 pixels, so a 1000x1500 JPEG is plenty (about 0.3 MB;
-        // the 2000x3000 PNG asked for before was about 8.5 MB, too much to load in the background).
+        // Artwork is decoded to at most 900 pixels, so a 1000x1500 JPEG is plenty.
         var replaced = rawArtwork
         replaced.replaceSubrange(wholeMatchRange, with: "/1000x1500bb.jpg")
         return replaced
@@ -415,7 +414,7 @@ extension MenuView {
             ITunesTopSongEntry(
                 id: "itunes_top_song_\(entry.lookupID)",
                 rank: entry.rank,
-                // The song's own name; the feed's other name is its album's ("Babydoll - Single").
+                // The song's name, since the feed's other name is the album's ("Babydoll - Single").
                 title: entry.name,
                 lookupID: entry.lookupID,
                 artworkURL: entry.artworkURL,
@@ -457,8 +456,7 @@ extension MenuView {
         )
     }
 
-    /// Downloads a chart entry's artwork into `ITunesTopStore` without decoding it (the larger
-    /// copy when there is one, as `fetchITunesTopMovieArtworkImage` prefers).
+    /// Downloads a chart entry's artwork into `ITunesTopStore` undecoded, larger copy first.
     nonisolated func prefetchITunesTopArtworkData(from lowResolutionURL: URL) async {
         if let highResolutionURL = highResolutionITunesArtworkURL(from: lowResolutionURL),
            await ITunesTopStore.shared.artworkData(for: highResolutionURL) != nil
@@ -468,9 +466,7 @@ extension MenuView {
         _ = await ITunesTopStore.shared.artworkData(for: lowResolutionURL)
     }
 
-    /// Loads the four charts and their artwork in the background, soon after launch, so the
-    /// carousels and lists have them before anyone opens them. Best effort: anything that fails
-    /// loads again when its menu asks for it.
+    /// Best-effort preload of the four charts and their artwork, soon after launch.
     func preloadITunesTopChartsInBackground() {
         Task.detached(priority: .utility) {
             guard await ITunesTopStore.shared.beginPreload() else { return }
@@ -628,8 +624,7 @@ extension MenuView {
         }
     }
 
-    /// A chart's entries: from `ITunesTopStore` while fresh, otherwise downloaded (once, however
-    /// many menus ask at the same time).
+    /// A chart's entries, from `ITunesTopStore` while fresh, otherwise downloaded.
     nonisolated func fetchITunesTopEntries(for kind: ITunesTopCarouselKind) async throws -> ITunesTopLoadEntries {
         try await ITunesTopStore.shared.entries(for: kind) {
             try await self.downloadITunesTopEntries(for: kind)
@@ -671,9 +666,7 @@ extension MenuView {
                 await MainActor.run {
                     guard self.currentITunesTopRequestID(kind) == requestID else { return }
                     guard self.shouldAcceptITunesTopLoadResult(kind) else {
-                        // Moved on before it arrived: keep it for coming back, and don't leave
-                        // the chart marked as loading (nothing asked for it again after that,
-                        // so its carousel stayed empty).
+                        // Moved on: keep the chart for later and clear loading, or its carousel stays empty.
                         self.setITunesTopLoading(false, for: kind)
                         self.setITunesTopEntries(loadedEntries, for: kind)
                         return
@@ -1234,14 +1227,10 @@ extension MenuView {
 }
 
 /// The iTunes Store charts and their artwork, kept for the session and shared by every menu.
-/// They load in the background soon after launch, so lists and carousels have them before they
-/// are opened. A download always finishes and is kept, even when the menu that asked for it has
-/// moved on (that used to throw it away, so a carousel left half loaded started again from
-/// nothing next time).
 actor ITunesTopStore {
     static let shared = ITunesTopStore()
 
-    /// Charts change through the day; older than this, they are downloaded again when asked for.
+    /// Charts older than this are downloaded again when asked for.
     private static let chartFreshness: TimeInterval = 15 * 60
     /// Downloaded (still compressed) artwork kept, least recently used dropped first.
     private static let artworkByteBudget = 24 * 1024 * 1024

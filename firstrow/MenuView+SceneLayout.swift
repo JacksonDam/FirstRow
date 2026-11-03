@@ -41,10 +41,6 @@ struct MenuVirtualSceneLayout {
 }
 
 /// Where the main parts of the menu scene sit, in scene points (origin top left).
-///
-/// The scene is a column: the section title, then a row of the icon carousel and the menu
-/// list, centred vertically as a group; the row is wider than the scene, so it overhangs
-/// both sides equally.
 struct MenuSceneFrames {
     let sceneSize: CGSize
     let headerTop: CGFloat
@@ -407,8 +403,7 @@ extension MenuView {
             if UIDevice.current.userInterfaceIdiom == .pad {
                 return MenuVirtualScenePreset.iPad
             }
-            // A phone screen nearly as square as an iPad's (a foldable opened out) gets the
-            // iPad's 4:3 layout; the 16:9 one would lose its sides.
+            // Near-square phone screens (a foldable opened out) get the iPad's 4:3 layout.
             let screen = activeFullscreenContainerSize
             if screen.width > 0, screen.height > 0, screen.width / screen.height < 1.6 {
                 return MenuVirtualScenePreset.iPad

@@ -171,8 +171,7 @@ func decodedArtworkImageCost(_ image: NSImage) -> Int {
     return 4 * 1024 * 1024
 }
 
-/// Reads the picture embedded in a media file: MPEG-4 `covr` (iTunes, Subler),
-/// ID3 `APIC` and QuickTime artwork. Returns nil when the file has none.
+/// The picture embedded in a media file (MPEG-4 `covr`, ID3 `APIC` or QuickTime artwork), if any.
 func loadEmbeddedArtworkData(from url: URL) async -> Data? {
     let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
     var candidates: [AVMetadataItem] = []

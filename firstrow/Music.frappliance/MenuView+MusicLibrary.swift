@@ -192,10 +192,7 @@ import Foundation
         return result
     }
 
-    /// Apple Music catalog tracks that can no longer be played (removed, ineligible, ...),
-    /// looked up through AppleScript. The lookup runs in the background and never on the
-    /// main thread: a big library, or the "control Music" permission prompt, used to freeze
-    /// the app on a black screen at launch.
+    /// Unplayable Apple Music tracks, looked up through AppleScript in the background.
     final class UnavailableAppleMusicTrackCache {
         static let shared = UnavailableAppleMusicTrackCache()
         static let didUpdateNotification = Notification.Name("FirstRowUnavailableAppleMusicTracksDidUpdate")
@@ -205,8 +202,7 @@ import Foundation
         private var cachedPersistentIDHexes: Set<String>?
         private var fetchTask: Task<Set<String>, Never>?
 
-        /// Never blocks. Returns what is known so far (empty until the lookup finishes)
-        /// and starts the lookup if it hasn't started yet.
+        /// Never blocks: returns what is known so far and starts the lookup if needed.
         func persistentIDHexes() -> Set<String> {
             if let cached = cachedValue() {
                 return cached
@@ -243,8 +239,7 @@ import Foundation
             if cachedPersistentIDHexes != nil { return nil }
             if let fetchTask { return fetchTask }
             let task = Task.detached(priority: .utility) { () -> Set<String> in
-                // Its own queue, not the executor playback scripts share: the lookup can take a
-                // while on a big library and mustn't hold up play, pause or now-playing updates.
+                // Own queue, so a slow lookup on a big library doesn't hold up playback scripts.
                 let fetched = await withCheckedContinuation { (continuation: CheckedContinuation<Set<String>, Never>) in
                     UnavailableAppleMusicTrackCache.lookupQueue.async {
                         continuation.resume(returning: UnavailableAppleMusicTrackCache.fetchPersistentIDHexes())
@@ -273,7 +268,7 @@ import Foundation
             #"{"error", "ineligible", "no longer available", "prerelease", "removed"}"#
 
         private static func fetchPersistentIDHexes() -> Set<String> {
-            // Two bulk requests (every ID, every status) instead of two Apple Events per track.
+            // Two bulk requests for every ID and status, not two Apple Events per track.
             let bulkResult = executeAppleScript(bulkSource)
             if bulkResult.succeeded {
                 return parsePersistentIDHexes(bulkResult.trimmedStandardOutput)
@@ -281,8 +276,7 @@ import Foundation
             if appleScriptFailedBecauseApplicationIsNotRunning(bulkResult) {
                 return []
             }
-            // Bulk requests and `whose` filters fail against some Apple Music libraries,
-            // especially with playlist-only tracks, so fall back to asking track by track.
+            // Bulk requests and `whose` filters fail on some libraries, so fall back to one track at a time.
             let perTrackResult = executeAppleScript(perTrackSource)
             if !perTrackResult.succeeded, !appleScriptFailedBecauseApplicationIsNotRunning(perTrackResult) {
                 print("[Music] unavailable track lookup error: \(perTrackResult.combinedFailureDescription)")
@@ -376,8 +370,7 @@ extension MenuView {
         !isStartupMusicLibraryPreloadComplete || startupMusicLibraryPreloadOverlayOpacity > 0.001
     }
 
-    /// While the music library is still loading at launch, the menus work as usual; only
-    /// opening Music waits, and happens by itself once the library is ready.
+    /// Holds back opening Music until the launch library load is done, then opens it by itself.
     func deferForStartupMusicLibraryPreload(_ key: KeyCode) -> Bool {
         guard blocksMenuForStartupMusicLibraryPreload else { return false }
         guard key == .enter, !isInSubmenu, !isEnteringSubmenu, activeFullscreenScene == nil,
@@ -453,8 +446,7 @@ extension MenuView {
             return
         }
         let requestID = incrementRequestID(&musicStartupPreloadRequestID)
-        // Never leave the menu locked behind the preload: a slow or stuck library read
-        // (or an unanswered permission prompt) used to leave the app black and ignoring keys.
+        // Never leave the menu locked if the library read stalls or a permission prompt goes unanswered.
         Task {
             try? await firstRowSleep(startupMusicLibraryPreloadTimeout)
             guard self.musicStartupPreloadRequestID == requestID, !self.isStartupMusicLibraryPreloadComplete else { return }
@@ -468,8 +460,7 @@ extension MenuView {
             }
             Task(priority: .userInitiated) {
                 #if os(macOS)
-                    // Look up unplayable Apple Music tracks off the main thread first, so the
-                    // library scan below doesn't stop to wait for Music.app.
+                    // Prefetch unplayable tracks first so the library scan doesn't wait on Music.app.
                     await UnavailableAppleMusicTrackCache.shared.prefetch(timeout: 6)
                 #endif
                 do {
@@ -495,8 +486,7 @@ extension MenuView {
     }
 
     #if os(macOS)
-        /// When the unplayable-track lookup finishes after the library loaded (it is given a few
-        /// seconds at launch), take those tracks out of the loaded lists.
+        /// Drops unplayable tracks from the loaded lists once their late lookup finishes.
         func removeUnavailableAppleMusicTracksFromCaches() {
             let unavailable = UnavailableAppleMusicTrackCache.shared.persistentIDHexes()
             guard !unavailable.isEmpty else { return }
@@ -789,8 +779,7 @@ extension MenuView {
         return musicSongIndex(forThirdMenuSelectionIndex: selectedThirdIndex)
     }
 
-    /// Covers for the songs around the selection, nearest first. While an arrow is held, further
-    /// ahead in the direction the list is moving, so covers are ready as the selection arrives.
+    /// Prefetches covers around the selection, reaching further ahead while an arrow is held.
     func prefetchMusicPreviewArtworkAroundCurrentSelection() {
         guard activeRootItemID == "music", isInSubmenu else { return }
         guard isInThirdMenu, thirdMenuMode == .musicSongs else { return }
@@ -875,8 +864,7 @@ extension MenuView {
             musicPreviewDisplayedSong = nil
             return
         }
-        // The details and cover follow every step, held arrows included (they used to wait
-        // until the list stopped). Covers come from the prefetched ones around the selection.
+        // Details and cover follow every step, using covers prefetched around the selection.
         let isScrolling = activeDirectionalHoldKey != .none
         let fadeDuration = isScrolling ? 0.06 : 0.18
         musicPreviewDisplayedSong = selectedSong
@@ -899,8 +887,7 @@ extension MenuView {
             }
             return
         }
-        // Not decoded yet: the cover on screen stays until this one is ready (a moment, as a
-        // rule), rather than flashing the placeholder between covers.
+        // Not decoded yet: keep the current cover up rather than flash the placeholder.
         let targetSongID = selectedSong.id
         Task.detached(priority: .userInitiated) {
             let resolvedArtwork = await self.resolveMusicArtworkImage(
@@ -1025,8 +1012,7 @@ extension MenuView {
                     #endif
                     await MainActor.run {
                         guard self.musicTopLevelCarouselRequestID == activeRequestID else {
-                            // Superseded. Don't leave the loading overlay this request raised
-                            // covering the carousel when nothing else is loading.
+                            // Superseded: drop this request's loading overlay if nothing else is loading.
                             if showsOverlay, self.musicTopLevelCarouselPageStartsInFlight.isEmpty {
                                 self.musicTopLevelCarouselLoadOverlayOpacity = 0
                             }
@@ -1053,8 +1039,7 @@ extension MenuView {
                             self.musicTopLevelCarouselResolvedArtworkCount = resolvedStartIndex + pageArtworks.count
                         }
                         self.isLoadingMusicTopLevelCarousel = !self.musicTopLevelCarouselPageStartsInFlight.isEmpty
-                        // Covers have arrived, so the loading overlay goes, whichever request raised it
-                        // (the request that raised it may have been superseded by this one).
+                        // Covers arrived: clear the overlay even if a superseded request raised it.
                         if self.musicTopLevelCarouselLoadOverlayOpacity > 0, self.musicTopLevelCarouselLoadedArtworkCount > 0 {
                             withAnimation(.easeInOut(duration: 0.22)) {
                                 self.musicTopLevelCarouselLoadOverlayOpacity = 0
@@ -1220,11 +1205,7 @@ extension MenuView {
             case image(NSImage)
         }
 
-        /// Builds a carousel page from the songs loaded at startup: one cover per album, never
-        /// the same picture twice. Albums before the page are only fingerprinted (cached after the
-        /// first time), and only the page's own covers are decoded, off the main thread.
-        /// Returns nil when there is nothing to show, so the caller can fall back to reading the
-        /// library directly.
+        /// A carousel page from the startup song cache, one distinct cover per album, or nil if empty.
         func fetchMusicTopLevelCarouselArtworksFromSongCache(startIndex: Int, limit: Int) async -> [NSImage?]? {
             guard let songs = musicShuffleSongsCache ?? musicAllSongsCache, !songs.isEmpty else { return nil }
             let libraryArtworkData = musicLibraryArtworkDataByAlbumKey
@@ -1277,9 +1258,7 @@ extension MenuView {
             }
         }
 
-        /// Where an album's cover comes from: the Music library's copy, or, when the library
-        /// hands back a picture another album already used, the artwork embedded in the song
-        /// file itself. Nothing is decoded here, only fingerprinted.
+        /// The library's cover, or the song file's own art when another album already shows that picture.
         func musicTopLevelCarouselArtworkSource(
             for song: MusicLibrarySongEntry,
             libraryArtworkData: [String: Data],
@@ -1510,8 +1489,7 @@ extension MenuView {
         }
     }
 
-    /// Shows the Now Playing row held back while the menu faded out. The selection stays on its
-    /// row (`keepMusicSubmenuSelectionOnItsRow`).
+    /// Shows the Now Playing row held back while the menu faded out.
     func revealDeferredNowPlayingMenuItemIfNeeded() {
         guard deferNowPlayingMenuItemUntilAfterFadeOut else { return }
         deferNowPlayingMenuItemUntilAfterFadeOut = false
@@ -1767,8 +1745,7 @@ extension MenuView {
                 return (songs: songs, itemIndices: itemIndices, artworkDataByAlbumKey: artworkDataByAlbumKey)
             } }
             var (songs, itemIndices, artworkDataByAlbumKey) = (try? libraryResult.get()) ?? ([], [:], [:])
-            // Music in chosen folders and on drives, and songs from an iTunes library file, even
-            // when the Music library itself is unavailable (permission denied, or no Music app use).
+            // Add folder, drive and iTunes XML songs, even when the Music library can't be read.
             var knownPaths = Set(songs.compactMap { $0.url?.standardizedFileURL.path })
             for entry in await fetchExternalMusicSongEntries() where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
                 songs.append(entry)
@@ -1777,8 +1754,7 @@ extension MenuView {
             for entry in xmlEntries where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
                 songs.append(entry)
             }
-            // The Music library couldn't be read and nothing else had songs: report that, as
-            // before, rather than caching an empty library for the rest of the session.
+            // Library unreadable and no other songs: throw rather than cache an empty library.
             if case let .failure(error) = libraryResult, songs.isEmpty {
                 throw error
             }
@@ -2564,8 +2540,7 @@ extension MenuView {
             activeMusicLibraryMediaType == .songs &&
             !isMusicSongsCategoryScoped &&
             !musicSongsThirdMenuItems.isEmpty
-        // A Now Playing row that isn't there yet appears once the menu has faded out; one that
-        // is already there (paused music) stays put, as hiding it moved every row up by one.
+        // A new Now Playing row waits for the fade-out, but an existing one stays so rows don't shift.
         if !shouldExposeMusicNowPlayingMenuItem {
             deferNowPlayingMenuItemUntilAfterFadeOut = true
         }
@@ -2827,9 +2802,7 @@ final class MusicCarouselArtworkDigestCache {
     }
 }
 
-/// Cache key for artwork read from a song file (shared by previews and the carousel). Songs in
-/// the iPhone's media library all have the path "/item.m4a" (ipod-library://item/item.m4a?id=…),
-/// so only the whole address tells them apart.
+/// Artwork cache key. iPhone library songs all have the path "/item.m4a", so they use the full URL.
 func musicArtworkCacheKeyForFile(_ url: URL) -> String {
     url.isFileURL ? url.standardizedFileURL.path : url.absoluteString
 }

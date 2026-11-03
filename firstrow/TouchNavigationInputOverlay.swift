@@ -1,9 +1,7 @@
 #if os(iOS)
     import UIKit
 
-    /// Touch controls on iPhone and iPad: tap or hold a quarter of the screen for an arrow
-    /// (top left up, top right down, bottom left left, bottom right right), two fingers to
-    /// select, three to go back and four to play or pause.
+    /// Touch controls: hold a screen quarter for an arrow, 2 fingers select, 3 go back, 4 play/pause.
     final class TouchNavigationInputView: UIView {
         var onArrowKeyDown: ((KeyCode) -> Void)?
         var onArrowKeyUp: ((KeyCode) -> Void)?

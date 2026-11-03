@@ -2,8 +2,7 @@
     import Carbon.HIToolbox
     import AppKit
 
-    /// First Row's full-screen window. Borderless windows can't normally become key; this one
-    /// can, without changing how any other window (alerts, panels, privacy prompts) behaves.
+    /// Borderless full-screen window that can still become key and main.
     final class FirstRowWindow: NSWindow {
         override var canBecomeKey: Bool { true }
         override var canBecomeMain: Bool { true }
@@ -55,8 +54,7 @@
             applyImmersivePresentationOptions()
             NSApplication.shared.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
-            // The pointer hides while First Row is driven from the keyboard or remote, and comes
-            // back as soon as the mouse moves (to answer a permission prompt, say).
+            // Only until the mouse moves, so the pointer comes back for permission prompts.
             NSCursor.setHiddenUntilMouseMoves(true)
             registerCommandEscapeHotKey()
             controller.start()
@@ -66,8 +64,7 @@
             guard !FirstRowHarness.isActive else { return }
             AppleRemoteInput.shared.start()
             applyImmersivePresentationOptions()
-            // Back in front: put the keyboard back on First Row, unless one of its own panels
-            // (the folder picker) is what's in front.
+            // Refocus the window unless a First Row panel, like the folder picker, is in front.
             if let window, NSApplication.shared.keyWindow == nil, !NSApplication.shared.windows.contains(where: { $0 is NSPanel && $0.isVisible }) {
                 window.makeKeyAndOrderFront(nil)
             }
@@ -94,9 +91,7 @@
             true
         }
 
-        /// Keys for First Row's window (and the ones the Apple Remote and harness post, which
-        /// have no window) go to the menus; keys for other windows, and shortcuts with
-        /// Command, carry on as usual. Command-Escape quits.
+        /// Routes keys for First Row's window, or posted with no window, to the menus.
         private func installKeyMonitor() {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
                 guard let self else { return event }

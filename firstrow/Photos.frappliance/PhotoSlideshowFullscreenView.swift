@@ -5,12 +5,7 @@ import QuartzCore
     import UIKit
 #endif
 
-/// The full-screen photo slideshow: each photo slowly pans and zooms (the Ken Burns effect)
-/// and crossfades into the next.
-///
-/// Drawn with Core Animation. Every photo's pan, zoom and fades are animations with absolute
-/// start times, so the render server plays the whole show; the app only wakes at each photo
-/// change to swap in the next photos (the SwiftUI version redrew 60 times a second).
+/// Full-screen slideshow: each photo pans and zooms (Ken Burns), then crossfades into the next.
 @MainActor
 final class PhotoSlideshowLayerController: LayerController {
     struct Configuration {
@@ -123,7 +118,7 @@ final class PhotoSlideshowLayerController: LayerController {
         reportIndicesIfChanged(primary, secondary, configuration)
         if elapsed >= total, !didReportFinish {
             didReportFinish = true
-            // Not from inside SwiftUI's update of this view: it changes menu state.
+            // Deferred: it changes menu state, and this can run inside a scene update.
             let onFinished = configuration.onFinished
             DispatchQueue.main.async { onFinished() }
         }
@@ -153,8 +148,7 @@ final class PhotoSlideshowLayerController: LayerController {
                 rootLayer.addSublayer(layer)
             }
         }
-        // Wake at the next change of photos (start or end of a crossfade), or soon if a photo
-        // we need hasn't loaded yet.
+        // Wake at the next crossfade start or end, or soon if a needed photo hasn't loaded.
         let missingImage = wanted.contains { imagesByIndex[$0] == nil }
         let boundaries = [Double(primary + 1) * block - configuration.crossfadeDuration, Double(primary + 1) * block, total]
         let next = boundaries.filter { $0 > elapsed + 0.001 }.min() ?? (elapsed + block)
@@ -211,8 +205,7 @@ final class PhotoSlideshowLayerController: LayerController {
         kenBurns.duration = block
         kenBurns.fillMode = .both
         kenBurns.isRemovedOnCompletion = false
-        // A start in the past (for example after resuming) picks up part way through; no
-        // timeOffset, which on a one-shot animation wraps round to the beginning.
+        // A past beginTime resumes mid-pan. timeOffset would wrap a one-shot animation to its start.
         kenBurns.beginTime = layer.convertTime(appear, from: nil)
         layer.add(kenBurns, forKey: "kenBurns")
 

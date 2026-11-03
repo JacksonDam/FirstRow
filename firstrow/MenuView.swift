@@ -6,9 +6,7 @@ import Foundation
     import UIKit
 #endif
 
-/// First Row's menu system: all navigation, library and playback state, plus the logic in
-/// the `MenuView+*` extensions. A class rather than a SwiftUI view, so state lives in one
-/// place and tasks never capture stale copies of it.
+/// The menu system's navigation, library and playback state. Its logic is in the `MenuView+*` files.
 @MainActor
 final class MenuView: ObservableObject {
     let menuItems = MenuConfiguration.rootItems
@@ -291,7 +289,7 @@ final class MenuView: ObservableObject {
     @Published var musicPreviewDisplayedSong: MusicLibrarySongEntry?
     @Published var musicPreviewRequestID = 0
     @Published var musicPreviewRefreshWorkItem: Task<Void, Never>?
-    /// Song covers ready to show, around the selection (not published: filling it changes nothing on screen).
+    /// Song covers near the selection. Not published, since filling it doesn't change the screen.
     let musicPreviewCache = LRUCache<String, NSImage>(maxEntryCount: 32)
     @Published var musicLibraryArtworkDataByAlbumKey: [String: Data] = [:]
     @Published var musicTopLevelCarouselActiveSubmenuID: String?

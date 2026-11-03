@@ -5,10 +5,7 @@ import QuartzCore
     import UIKit
 #endif
 
-/// The floating photos screen saver, drawn with Core Animation. Every photo rises at a steady
-/// speed and wraps round, and once a minute the whole stream spins round its vertical axis.
-/// All of it runs as repeating layer animations, so the app does no work per frame (the
-/// SwiftUI version re-projected every photo 144 times a second).
+/// The floating photos screen saver: photos rise and wrap, and the stream spins once a minute.
 @MainActor
 final class ScreenSaverLayerController: LayerController {
     struct Configuration {
@@ -67,8 +64,7 @@ final class ScreenSaverLayerController: LayerController {
         return x < 0.5 ? 2 * x * x : 1 - pow(-2 * x + 2, 2) / 2
     }
 
-    /// Times within the minute-long cycle at which the spin is sampled: densely through the
-    /// spin, then once at the end (nothing moves for the rest of the minute).
+    /// Spin sample times: dense through the spin, then one at the end of the cycle.
     private static let cycleSampleTimes: [Double] = {
         let samples = 120
         return (0 ... samples).map { spinDuration * Double($0) / Double(samples) } + [spinCycle]
@@ -88,7 +84,7 @@ final class ScreenSaverLayerController: LayerController {
         let wrapSpan = max(1, upperY - lowerY)
         let keyTimes = Self.cycleSampleTimes.map { NSNumber(value: $0 / Self.spinCycle) }
         let spins = Self.cycleSampleTimes.map { Self.spin(atCycleTime: $0) }
-        // Spins start a minute in; the animations below run in "cycle time" from that point.
+        // Spins start a minute in, and the cycle animations below count from there.
         let firstSpinIn = Self.spinCycle - elapsedAtInstall
         let motionStartsIn = max(0, Self.initialEmptyDuration - elapsedAtInstall)
         let motionElapsed = max(0, elapsedAtInstall - Self.initialEmptyDuration)
@@ -119,8 +115,7 @@ final class ScreenSaverLayerController: LayerController {
                 worldX * CGFloat(cos(orbit)) + worldZ * CGFloat(sin(orbit))
             }
             let restingPerspective = perspective(orbit: 0)
-            // Size at rest, with the same minimum and screen-size limits as before; the holder's
-            // perspective scale grows or shrinks it from there during a spin.
+            // Size at rest. The holder's perspective scale grows or shrinks it during a spin.
             var restingWidth = max(70, photo.imageSize.width * 0.34 * restingPerspective * photo.sizeMultiplier)
             var restingHeight = max(70, photo.imageSize.height * 0.34 * restingPerspective * photo.sizeMultiplier)
             let clamp = min(1, width * 0.9 / restingWidth, height * 0.95 / restingHeight)
@@ -128,8 +123,7 @@ final class ScreenSaverLayerController: LayerController {
             restingHeight *= clamp
             let cardSize = CGSize(width: restingWidth / restingPerspective, height: restingHeight / restingPerspective)
 
-            // The holder scales its card by the perspective about the screen centre; it has no 3D
-            // transform of its own, so cards are painted in order rather than depth-tested.
+            // The holder has no 3D transform, so cards paint in order rather than being depth-tested.
             let holder = StillLayer()
             let card = StillLayer()
             withoutLayerActions {
@@ -187,8 +181,7 @@ final class ScreenSaverLayerController: LayerController {
                 NSValue(caTransform3D: CATransform3DMakeRotation(CGFloat(spin.cardDegrees * .pi / 180), 0, 1, 0))
             }, keyTimes, startsIn: firstSpinIn), forKey: "turn")
 
-            // Startup: an empty screen for three seconds, and photos that start out on screen
-            // stay hidden until they first come round from below (no popping in mid-screen).
+            // Start empty, and keep photos that begin on screen hidden until they come up from below.
             let initialProjectedY = center.y - startWorldY * restingPerspective
             let revealAt: Double
             if initialProjectedY >= height {
@@ -210,8 +203,7 @@ final class ScreenSaverLayerController: LayerController {
         }
     }
 
-    /// A keyframe animation over the minute-long spin cycle, repeating forever, whose first
-    /// spin is `startsIn` seconds away (or already under way when negative).
+    /// A repeating spin-cycle animation. A negative `startsIn` means the first spin is under way.
     private func cycleAnimation(_ keyPath: String, _ values: [Any], _ keyTimes: [NSNumber], startsIn: Double) -> CAKeyframeAnimation {
         let animation = CAKeyframeAnimation(keyPath: keyPath)
         animation.values = values
@@ -249,8 +241,7 @@ struct ScreenSaverPhotoEntry: Identifiable {
     let riseSpeed: CGFloat
 }
 
-/// The screen saver's photos: the bundled set, each placed twice or more in the stream, laid
-/// out afresh each time the screen saver starts.
+/// Lays out the bundled photos in the stream, each at least twice, afresh on every start.
 @MainActor
 enum ScreenSaverPhotoStream {
     static func makePhotos() -> [ScreenSaverPhotoEntry] {

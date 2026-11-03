@@ -484,8 +484,7 @@ extension MenuView {
                         self.musicAppleScriptStartupDeadline = trackStartResult.didBeginPlayback
                             ? Date().addingTimeInterval(2.0)
                             : nil
-                        // The clock starts once Music reports the song moving (see
-                        // applyMusicSystemPlayerSnapshot), not while it is still loading.
+                        // Held at 0 until Music reports the song moving (see applyMusicSystemPlayerSnapshot).
                         self.updateMusicAppleScriptProgressAnchor(
                             elapsedSeconds: 0,
                             isPlaying: false,
@@ -926,9 +925,7 @@ extension MenuView {
                 musicAppleScriptStartupDeadline = isGraceActive ? musicAppleScriptStartupDeadline : nil
                 let snapshotElapsed = max(0, snapshot.elapsedSeconds)
                 musicNowPlayingElapsedSeconds = snapshotElapsed
-                // Music says "playing" while a song is still loading, with its position held at
-                // the start; counting on from there showed 0:01, then the next check put it back
-                // to 0:00, over and over until the song began. Count on once it has moved.
+                // Music reports "playing" while a song loads, so only count once the position moves.
                 let hasStartedMoving = snapshotElapsed > 0.05
                 updateMusicAppleScriptProgressAnchor(
                     elapsedSeconds: snapshotElapsed,
@@ -1348,8 +1345,7 @@ extension MenuView {
                     if self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey {
                         self.dismissFullscreenScene(preserveMusicPlayback: false)
                     } else {
-                        // Finished while Now Playing wasn't showing: end the session, or its
-                        // Now Playing row stayed in the Music menu with nothing playing.
+                        // Finished off screen: end the session so the Music menu drops its Now Playing row.
                         self.stopMusicPlaybackSession(clearDisplayState: false)
                     }
                 } else {
@@ -1580,8 +1576,7 @@ extension MenuView {
         let shouldRun = isMusicSceneVisible && isMusicPlaying && !isMovieTransitioning && !isMoviePlaybackVisible
         if !shouldRun {
             invalidateMusicNowPlayingFlipTimer()
-            // A flip under way finishes (pausing mid-turn used to cancel its second half and
-            // leave the panel edge-on, black, until the next song).
+            // Let a flip under way finish, or the panel is left edge-on until the next song.
             if isMusicNowPlayingFlipAnimating, isMusicSceneVisible {
                 return
             }

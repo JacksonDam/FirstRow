@@ -35,8 +35,7 @@ final class MoviePlaybackLayers {
         let showsControls = menu.isMoviePlaybackVisible && menu.areMovieControlsVisible
         controls.layer.isHidden = !showsControls
         guard showsControls else { return }
-        // The bar is laid out on the full-screen canvas, so it keeps its proportions at
-        // every display resolution.
+        // Laid out on the full-screen canvas so it keeps its proportions at any resolution.
         let canvas = FullscreenCanvas(screenSize: bounds.size)
         canvas.apply(to: controls.layer)
         controls.update(

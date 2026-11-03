@@ -1,11 +1,6 @@
 import Foundation
 
-/// Places First Row reads media from on top of the standard libraries: folders of movies, music
-/// and photos the user picks, an iTunes Library XML file and an iPhoto library.
-///
-/// Choices are stored as bookmarks so they survive renames, moves and (in the sandboxed app)
-/// relaunches; the sandbox grants access to each through its security scope, which stays open
-/// for the life of the app. Thread-safe: the library scanners read it off the main thread.
+/// User-picked media folders and library files, stored as bookmarks. Thread-safe.
 final class MediaSources: @unchecked Sendable {
     static let shared = MediaSources()
     static let didChangeNotification = Notification.Name("FirstRowMediaSourcesDidChange")
@@ -53,8 +48,7 @@ final class MediaSources: @unchecked Sendable {
         folderEntries(kind).compactMap(\.url)
     }
 
-    /// Every stored folder, in order, including ones that can't be found right now; row `n`
-    /// here is the folder `removeFolder(at: n)` removes.
+    /// Every stored folder, including missing ones. Index `n` is what `removeFolder(at: n)` removes.
     func folderEntries(_ kind: FolderKind) -> [FolderEntry] {
         lock.lock()
         defer { lock.unlock() }
@@ -147,8 +141,7 @@ final class MediaSources: @unchecked Sendable {
 
     private static func bookmark(for url: URL) -> Data? {
         #if os(macOS)
-            // Security-scoped where the app is sandboxed; a plain bookmark otherwise
-            // (development builds run unsandboxed and can't make scoped ones).
+            // Unsandboxed dev builds can't make security-scoped bookmarks, so fall back to a plain one.
             if let scoped = try? url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil) {
                 return scoped
             }
@@ -191,7 +184,7 @@ final class MediaSources: @unchecked Sendable {
         }
     }
 
-    /// One notification for a burst of changes (adding several folders at once reloads once).
+    /// Coalesces a burst of changes into one notification.
     private func postChange() {
         lock.lock()
         let alreadyPending = changePending

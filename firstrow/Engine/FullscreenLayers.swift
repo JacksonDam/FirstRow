@@ -6,9 +6,7 @@ import QuartzCore
     import UIKit
 #endif
 
-/// Full-screen views are laid out on a canvas 1080 points tall (and at least 1440 wide),
-/// shaped like the screen and scaled to fill it, so they look the same at every display
-/// resolution, as the menus do.
+/// A screen-shaped canvas 1080 pt tall and at least 1440 wide, scaled to fill the screen.
 struct FullscreenCanvas {
     let size: CGSize
     let scale: CGFloat
@@ -244,7 +242,7 @@ final class NowPlayingPanelLayer {
             return result
         }()
         position.isHidden = snapshot.trackPositionText.isEmpty
-        // An empty line still takes its height, as an empty Text did.
+        // An empty line still takes its height.
         func lineHeight(_ graphic: RenderedGraphic, _ fontName: String, _ size: CGFloat) -> CGFloat {
             graphic.image == nil ? FontMetrics.lineHeight(fontName: fontName, size: size) : graphic.size.height
         }

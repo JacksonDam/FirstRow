@@ -10,11 +10,7 @@ extension Notification.Name {
     static let firstRowQuitRequested = Notification.Name("firstRowQuitRequested")
 }
 
-/// Runs First Row inside its window: the optional intro movie, the fade into the menus, key
-/// handling and the fade to black on quit.
-///
-/// For three seconds after launch, holding Delete (three fingers on iPhone and iPad, Menu on
-/// Apple TV) switches the intro movie on or off for the next launch.
+/// Runs First Row in its window: the intro movie, the menus, key handling and the quit fade.
 @MainActor
 final class FirstRowAppController {
     let hostView = SceneHostView(frame: CGRect(x: 0, y: 0, width: 1280, height: 720))
@@ -80,7 +76,6 @@ final class FirstRowAppController {
         }
     }
 
-    /// Starts the launch: the intro movie if it's switched on, otherwise straight to the menus.
     func start() {
         beginLaunchToggleWindow()
         if introMovieEnabled, let url = Bundle.main.url(forResource: "Intro", withExtension: "mov") {

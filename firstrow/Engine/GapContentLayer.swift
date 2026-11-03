@@ -5,12 +5,7 @@ import QuartzCore
     import UIKit
 #endif
 
-/// What fills the space left of the menus inside a section: the section's icon, a preview of
-/// the selected movie or song, its details, or a stream of covers.
-///
-/// The menu decides which pieces to show (`MenuView.gapContentItems`); this keeps one layer
-/// object per piece, keyed by identity, so a piece that stays is updated in place and a new
-/// one fades in over the old one as SwiftUI's transitions did.
+/// Fills the space left of a section's menu: its icon, a preview, details or a stream of covers.
 @MainActor
 final class GapContentLayer {
     let layer = SceneLayer()
@@ -64,7 +59,6 @@ final class GapContentLayer {
         for key in order where !wantedKeys.contains(key) {
             guard let item = items[key] else { continue }
             items[key] = nil
-            // Fades out with its own fade, unless this pass turns animations off.
             let fade = appearing || context.pass.transaction.disablesAnimations ? nil : item.removalAnimation
             if let fade {
                 item.layer.setOpacity(0, fade)
@@ -79,7 +73,7 @@ final class GapContentLayer {
             }
         }
 
-        // Pieces that stay are updated; new ones are made, fading in when their transition says so.
+        // Pieces that stay are updated in place, and new ones fade in as their transition says.
         var newOrder: [String] = []
         for spec in specs {
             let item: GapItemLayer
@@ -105,7 +99,7 @@ final class GapContentLayer {
             newOrder.append(spec.key)
         }
         order = newOrder
-        // Stacking follows the order of the pieces (later ones on top); leaving pieces stay behind.
+        // Later pieces stack on top, and leaving pieces stay behind them.
         let ordered = newOrder.compactMap { items[$0]?.layer }
         for (index, sublayer) in ordered.enumerated() {
             if sublayer.superlayer !== layer {
@@ -132,8 +126,7 @@ struct GapItemContext {
     let scale: CGFloat
     let pass: RenderPass
 
-    /// Centre of a piece of content laid out SwiftUI-style in the box: centred, with 100 points
-    /// of padding below it, then offset.
+    /// Centre of a piece in the box, with 100 pt of padding below it, then offset.
     func center(offsetX: CGFloat, offsetY: CGFloat) -> CGPoint {
         CGPoint(x: boxSize.width * 0.5 + offsetX, y: (boxSize.height - 100) * 0.5 + offsetY)
     }
@@ -292,7 +285,7 @@ final class MoviePreviewLayer: GapItemLayer {
         preview.position = center
         preview.contents = LayerImageCache.cgImage(for: spec.image)
         preview.transform = yawTransform(degrees: spec.previewYaw, perspective: 0.75, viewSize: size)
-        // The reflection turns about the preview's own frame; its picture hangs below that frame.
+        // The reflection turns about the preview's frame, with its picture hanging below it.
         reflection.bounds = CGRect(origin: .zero, size: size)
         reflection.position = center
         reflection.transform = yawTransform(degrees: spec.reflectionYaw, perspective: 0.75, viewSize: size)

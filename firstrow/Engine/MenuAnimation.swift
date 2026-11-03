@@ -1,14 +1,8 @@
 import QuartzCore
 
-// How state changes reach the screen.
-//
-// The menus change state the same way they always have: plainly, or inside `withAnimation`
-// and `withTransaction`. Instead of SwiftUI re-evaluating views, `MenuSceneRenderer` compares
-// the new state with what it last drew and moves Core Animation layers. A plain change is
-// drawn at the end of the current run loop pass; a change inside `withAnimation` is drawn
-// immediately afterwards with that animation, so only the properties it touched animate.
+// Plain changes draw at the end of the run loop pass, `withAnimation` changes as it returns.
 
-/// A timing curve and duration for a state change, in the vocabulary the menus were written in.
+/// A timing curve and duration for a state change.
 struct Animation: Equatable {
     enum Curve: Equatable {
         case easeInOut
@@ -54,7 +48,7 @@ struct Animation: Equatable {
 /// The context of a state change: its animation, or none at all.
 struct Transaction {
     var animation: Animation?
-    /// Also turns off the animations views attach to particular values.
+    /// Also turns off the animations attached to particular values.
     var disablesAnimations = false
 
     init(animation: Animation? = nil) {
@@ -145,16 +139,14 @@ struct RenderPass {
         transaction.disablesAnimations ? nil : transaction.animation
     }
 
-    /// The animation for a property with its own animation for when `valueChanged`, like a
-    /// SwiftUI view with `.animation(_:value:)`; otherwise it follows the transaction.
+    /// The animation for a property that has its own animation for when its value changes.
     func animation(_ own: Animation?, when valueChanged: Bool) -> Animation? {
         if transaction.disablesAnimations { return nil }
         return valueChanged ? own : transaction.animation
     }
 }
 
-/// A cubic Bézier timing curve from (0, 0) to (1, 1), evaluated the way Core Animation does,
-/// so code can tell where an animation has got to and how fast it is going.
+/// A cubic Bézier timing curve, evaluated like Core Animation's to get progress and speed.
 struct TimingCurve: Equatable {
     var c1: CGPoint
     var c2: CGPoint
@@ -180,9 +172,7 @@ struct TimingCurve: Equatable {
         CAMediaTimingFunction(controlPoints: Float(c1.x), Float(c1.y), Float(c2.x), Float(c2.y))
     }
 
-    /// An ease in and out that starts at `slope` (progress per unit of time, 1 being the
-    /// average speed) instead of from a standstill, so a move that takes over from another
-    /// carries on at the speed things were already going.
+    /// Ease-in-out starting at `slope` (1 is the average speed), so a move can keep a prior speed.
     static func easeInOut(startingSlope slope: Double) -> TimingCurve {
         guard slope > 0.001 else { return .easeInEaseOut }
         // The first handle's direction sets the starting speed (rise over run).
@@ -227,8 +217,7 @@ struct TimingCurve: Equatable {
     }
 }
 
-/// Where a running basic animation is and how fast it is moving, worked out from the
-/// animation itself rather than read back from the screen.
+/// A running animation's value and velocity, computed from its curve, not read from the screen.
 private struct AnimationMotion {
     let value: [Double]
     let velocity: [Double]
@@ -247,8 +236,7 @@ private struct AnimationMotion {
         velocity = zip(from, to).map { ($1 - $0) * rate }
     }
 
-    /// How fast, as a curve's starting slope, a move to `target` taking `duration` would have
-    /// to start to keep this motion's speed along its own direction.
+    /// Starting slope for a move to `target` over `duration` that keeps this motion's speed.
     func startingSlope(toward target: [Double], duration: Double) -> Double? {
         guard target.count == value.count else { return nil }
         let delta = zip(value, target).map { $1 - $0 }
@@ -295,12 +283,7 @@ private struct AnimationMotion {
 
 extension CALayer {
     /// Sets a property, animating from what is on screen now when `animation` is given.
-    ///
-    /// A move that takes over from one still running starts where that one has got to and,
-    /// for ease-in-out moves, at the speed it was going, the way SwiftUI blended interrupted
-    /// animations (starting again from a standstill made quick presses stutter). Every move
-    /// starts at the moment it is set, so work later in the same pass can't hold it back and
-    /// make the first frame land behind where the previous move had already reached.
+    /// An interrupted ease-in-out move also carries on at the speed the old one had.
     func set(_ keyPath: String, to newValue: Any, unchanged: Bool, animation: Animation?) {
         if unchanged {
             return
@@ -359,7 +342,7 @@ extension CALayer {
         set("bounds", to: NSValue.layerRect(rect), unchanged: bounds.size == size, animation: animation)
     }
 
-    /// Places a layer whose anchor point is its top-left corner (in a top-left-origin space).
+    /// Places a layer by its frame in a top-left-origin space.
     func setFrame(_ frame: CGRect, _ animation: Animation?) {
         setBoundsSize(frame.size, animation)
         setPosition(CGPoint(x: frame.minX + frame.width * anchorPoint.x, y: frame.minY + frame.height * anchorPoint.y), animation)

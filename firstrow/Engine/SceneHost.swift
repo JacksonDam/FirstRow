@@ -6,8 +6,7 @@ import QuartzCore
 #endif
 
 extension MainActor {
-    /// Runs main-actor work from a callback the system always makes on the main thread, right
-    /// away (unlike hopping through a task, which would land on a later run loop pass).
+    /// Runs main-actor work immediately from a callback the system makes on the main thread.
     static func runOnMainThread(_ body: @MainActor () -> Void) {
         precondition(Thread.isMainThread, "Expected to be on the main thread")
         typealias Unisolated = () -> Void

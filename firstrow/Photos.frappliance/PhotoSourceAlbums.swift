@@ -6,10 +6,7 @@ import ImageIO
     import UIKit
 #endif
 
-/// Photo albums from places other than the Photos library: folders chosen in Settings (one
-/// album per folder) and the albums and events of an iPhoto library. Their pictures are
-/// identified by file URLs ("file://…") where Photos uses asset identifiers, and load through
-/// ImageIO instead of PhotoKit.
+/// Albums from Settings folders and iPhoto, keyed by file URL and loaded through ImageIO.
 extension MenuView {
     static let filePhotoIdentifierPrefix = "file://"
 

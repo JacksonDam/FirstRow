@@ -802,9 +802,7 @@ extension MenuView {
 
         isMenuOverflowScrollingUp = true
         isMenuOverflowScrollingDown = true
-        // While an arrow is held, the next step can come a few milliseconds late on a busy
-        // pass; keep the edge fades up between steps instead of letting them flick off and
-        // on, which made the rows at the top and bottom flash half dark.
+        // Held arrows can step a little late, so keep the edge fades up between steps.
         let holdGrace: TimeInterval = activeDirectionalHoldKey != .none ? 0.25 : 0
         let delay = selectionAnimationDuration + 0.02 + holdGrace
         overflowFadeWorkItem = Task {
@@ -854,9 +852,7 @@ extension MenuView {
         let elapsedInScrollingState = Date().timeIntervalSince(phaseStart)
         let totalHoldDuration = directionalHoldInitialDelay + elapsedInScrollingState
         let interval = minimumHoldRepeatInterval(for: totalHoldDuration)
-        // Each step is due a fixed interval after the last one was due, so the time a step
-        // takes to draw (and the timer's own slack) doesn't stretch every interval: waiting the
-        // full interval after each step made the top speed about a third slower than set.
+        // Due from the last step's due time, so draw time and timer slack don't stretch the interval.
         let now = ProcessInfo.processInfo.systemUptime
         let due = max(now, (previousTickDue ?? now) + interval)
         directionalHoldTickWorkItem = Task {

@@ -79,10 +79,7 @@ extension MenuView {
         return items
     }
 
-    /// Keeps the Music menu's selection on the same row when the Now Playing row comes or goes
-    /// (it is the first row, so every other row moves by one). Without this, starting a song from
-    /// a list and going back selected the row above the one left, and a song ending selected the
-    /// row below. Runs at the start of each drawing pass.
+    /// Keeps the Music menu selection on its row when the Now Playing row comes or goes.
     func keepMusicSubmenuSelectionOnItsRow() {
         guard activeRootItemID == "music", isInSubmenu else {
             musicSubmenuSelectionMemo = nil

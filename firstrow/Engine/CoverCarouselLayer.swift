@@ -5,12 +5,7 @@ import QuartzCore
     import UIKit
 #endif
 
-/// The endless stream of album covers drifting across the left of the Music menu (and the
-/// iTunes Top carousels), drawn with Core Animation.
-///
-/// Four lanes cycle through the same path, a quarter of a cycle apart. Each lane's motion is
-/// a keyframe animation that repeats forever, so the render server moves the covers and the
-/// app only wakes up when a lane wraps round to show its next cover (every few seconds).
+/// Album covers drifting across the Music menu and iTunes Top, in four lanes a quarter cycle apart.
 struct CoverCarouselConfiguration {
     enum Source {
         case images([NSImage?])
@@ -44,12 +39,10 @@ final class CoverCarouselLayerController: LayerController {
     private static let spawnFadeFraction: Double = 0.03
 
     private final class Lane {
-        /// Untransformed parent that flattens the artwork into its own plane, so covers are
-        /// painted back to front like SwiftUI does, instead of being depth-tested against each
-        /// other in 3D (which let a cover's near edge poke through a bigger cover in front).
+        /// Untransformed parent so covers paint back to front rather than depth-test in 3D.
         let plane = StillLayer()
         let preview = StillLayer()
-        /// Shares the artwork's position and rotation; its picture sits just below the artwork.
+        /// Follows the artwork's position and rotation, with its picture just below the artwork.
         let reflection = StillLayer()
         let reflectionImage = StillLayer()
         var serial: Int?
@@ -106,7 +99,7 @@ final class CoverCarouselLayerController: LayerController {
         refreshLaneImages()
         if animatedGeometryKey != geometryKey {
             animatedGeometryKey = geometryKey
-            // Outside SwiftUI's update transaction, so its animation context can't touch ours.
+            // Deferred out of the render pass's transaction so its animations can't touch these.
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.animatedGeometryKey == geometryKey else { return }
                 self.installAnimations(bounds: bounds)
@@ -122,8 +115,7 @@ final class CoverCarouselLayerController: LayerController {
 
     // MARK: - Lanes and images
 
-    /// Which cover a lane shows at a given time since the phase began. Lanes start a quarter of a
-    /// cycle apart; the offset keeps the first four covers distinct instead of all showing cover 0.
+    /// The cover a lane shows at `elapsed`. The offset keeps the first four covers distinct.
     private func serial(forLane slot: Int, elapsed: Double) -> Int {
         let lanePosition = elapsed * Self.coversPerSecond - Double(slot) / Double(Self.laneCount)
         let wrapCount = Int(floor(lanePosition))
@@ -169,7 +161,7 @@ final class CoverCarouselLayerController: LayerController {
         applyDepthOrder(elapsed: elapsed)
         if case let .dynamic(_, _, _, prefetch, _) = configuration.source, lastPrefetchSerial != maxSerial {
             lastPrefetchSerial = maxSerial
-            // Not from inside SwiftUI's update of this view: prefetching changes menu state.
+            // Deferred: prefetching changes menu state, so it must not run during a render pass.
             DispatchQueue.main.async { prefetch(maxSerial) }
         }
     }
@@ -252,8 +244,7 @@ final class CoverCarouselLayerController: LayerController {
         let count = Self.keyframeCount
         let keyTimes = (0 ... count).map { NSNumber(value: Double($0) / Double(count)) }
         let states = (0 ... count).map { coverState(progress: Double($0) / Double(count), baseIconSize: configuration.baseIconSize) }
-        // Each cover is laid out in a frame 100 points taller than the artwork (SwiftUI padding), so
-        // scaling about that frame's centre moves the artwork up by 50 points times the scale.
+        // Scaling about a frame 100 pt taller than the artwork lifts it by 50 pt times the scale.
         let space = LayerSpace(height: bounds.height)
         let positions = states.map { state in
             NSValue.layerPoint(space.point(CGPoint(
@@ -272,9 +263,7 @@ final class CoverCarouselLayerController: LayerController {
             }
             let lanePosition = elapsed * Self.coversPerSecond - Double(slot) / Double(Self.laneCount)
             let progress = lanePosition - floor(lanePosition)
-            // Depth follows the motion in the render server, so a cover that has just wrapped
-            // round to the back is behind the others from its very first frame (re-ordering
-            // layers from the app always lagged the wrap a little).
+            // Animated depth puts a cover that just wrapped behind the others from its first frame.
             lane.plane.removeAllAnimations()
             let depth = CAKeyframeAnimation(keyPath: "zPosition")
             depth.values = [0, 1]
@@ -287,8 +276,7 @@ final class CoverCarouselLayerController: LayerController {
             lane.plane.add(depth, forKey: "depth")
             for layer in [lane.reflection, lane.preview] {
                 layer.removeAllAnimations()
-                // Each cover fades in as it appears at the back, which also covers the moment
-                // its picture changes to the next one.
+                // The fade-in at the back also hides the switch to the next picture.
                 let peakOpacity = layer === lane.reflection ? Double(Self.reflectionOpacity) : 1
                 let fades = keyTimes.map { NSNumber(value: peakOpacity * min(1, $0.doubleValue / Self.spawnFadeFraction)) }
                 let group = CAAnimationGroup()
@@ -299,8 +287,7 @@ final class CoverCarouselLayerController: LayerController {
                 ]
                 group.duration = Self.cycleDuration
                 group.repeatCount = .infinity
-                // beginTime 0: the animation starts when Core Animation commits it, in whatever
-                // time space the layer ends up in; the phase comes from timeOffset alone.
+                // beginTime 0 starts on commit, so the phase comes from timeOffset alone.
                 group.beginTime = 0
                 group.timeOffset = progress * Self.cycleDuration
                 group.isRemovedOnCompletion = false
@@ -315,8 +302,7 @@ final class CoverCarouselLayerController: LayerController {
         }
     }
 
-    /// Covers further through their cycle are nearer the viewer. The order only changes when a
-    /// lane wraps round, which is when this runs.
+    /// Puts covers further through their cycle nearer the viewer. Runs when a lane wraps.
     private func applyDepthOrder(elapsed: Double) {
         let ordered = lanes.enumerated().map { slot, lane -> (progress: Double, layer: CALayer) in
             let lanePosition = elapsed * Self.coversPerSecond - Double(slot) / Double(Self.laneCount)
@@ -357,8 +343,7 @@ final class CoverCarouselLayerController: LayerController {
     }
 }
 
-/// Upside-down copies of artwork with the reflection's fade baked into the alpha channel, so
-/// the reflection layer needs no mask (masks cost an offscreen render pass every frame).
+/// Flipped artwork with the fade baked into alpha, so reflections need no offscreen mask pass.
 @MainActor
 enum ReflectionImageCache {
     private static let cache: NSCache<ReflectionKey, ReflectionBox> = {
@@ -373,8 +358,7 @@ enum ReflectionImageCache {
         init(_ image: CGImage) { self.image = image }
     }
 
-    /// Holds on to the source image, so a cached reflection can never be matched to a different
-    /// image that happens to reuse a freed one's address.
+    /// Retains the source so a new image at a freed one's address can't match a stale reflection.
     private final class ReflectionKey: NSObject {
         let source: CGImage
         let width: Int

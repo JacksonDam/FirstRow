@@ -1,8 +1,7 @@
 #if os(iOS) || os(tvOS)
     import UIKit
 
-    /// The app uses the scene life cycle (iOS and tvOS 27 refuse to launch apps that don't):
-    /// the window is made by `FirstRowSceneDelegate` when the system connects the scene.
+    /// Scene-based, since iOS and tvOS 27 won't launch apps without the scene life cycle.
     final class IOSAppDelegate: UIResponder, UIApplicationDelegate {
         func application(_: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
             true

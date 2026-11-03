@@ -6,11 +6,7 @@ import QuartzCore
 #endif
 
 /// One of the menu lists on the right of the scene (main menu, section menu, third level).
-///
-/// Every row sits at a fixed place inside one container, and scrolling moves the container,
-/// so rows can't drift out of line however fast the selection runs (the SwiftUI list animated
-/// each row on its own and rows arriving mid-scroll could lag behind the rest). Long lists
-/// only keep layers for the rows near the visible part.
+/// Rows sit still in one scrolling container, and only rows near the view get layers.
 @MainActor
 final class MenuListLayer {
     struct Configuration {
@@ -57,8 +53,7 @@ final class MenuListLayer {
         bottomFade.endPoint = CGPoint(x: 0.5, y: 0)
     }
 
-    /// Forgets where the selection was, so the list appears afresh next time instead of
-    /// animating from where it was left.
+    /// Forgets the last selection so the list next appears without animating from it.
     func reset() {
         lastSelectedIndex = nil
         lastSelectedRowOffset = nil
@@ -147,9 +142,7 @@ final class MenuListLayer {
         // Rows scroll inside a box that clips them top and bottom only.
         clip.frame = CGRect(x: -Self.clipOverhang, y: 0, width: menuWidth + Self.clipOverhang * 2, height: viewportHeight)
         rowsContainer.bounds = CGRect(x: 0, y: 0, width: menuWidth, height: max(contentHeight, viewportHeight))
-        // Where the rows are on screen right now, read before the new scroll replaces the one
-        // in flight (afterwards the layer only reports where it's heading). A list shown afresh
-        // starts where it's going, wherever the last list was left.
+        // Read the on-screen scroll before the new animation replaces the one in flight.
         let presentedOffset: CGFloat = if isFreshList {
             scrollOffset
         } else if rowsContainer.animation(forKey: "position") != nil {
@@ -159,8 +152,7 @@ final class MenuListLayer {
         }
         rowsContainer.setPosition(CGPoint(x: Self.clipOverhang, y: scrollOffset), scrollAnimation)
 
-        // Which rows need layers: everything the scroll passes over, from where it is on screen
-        // to where it's going, plus a margin.
+        // Rows that need layers: everything the scroll passes over, plus a margin.
         let renderRange: Range<Int>
         let overscan = max(80, rowPitch * (menu.activeDirectionalHoldKey != .none ? 6.0 : 2.5))
         if c.usesUniformRowLayout, !items.isEmpty {
@@ -263,9 +255,7 @@ final class MenuListLayer {
     }
 }
 
-/// The glowing selection bar: two end caps and a stretched middle, drawn as one picture
-/// stretched through a column of its middle (`contentsCenter`). Three separate layers met at
-/// fractional pixel edges, where their soft edges showed as faint vertical lines.
+/// The selection bar as one joined image, so no seams show at fractional pixel edges.
 @MainActor
 final class SelectionBoxLayer {
     let layer = SceneLayer()
@@ -287,7 +277,7 @@ final class SelectionBoxLayer {
         context.draw(middle, in: CGRect(x: left.width, y: 0, width: middle.width, height: height))
         context.draw(right, in: CGRect(x: left.width + middle.width, y: 0, width: right.width, height: height))
         guard let image = context.makeImage() else { return nil }
-        // Stretch one column from the middle of the middle piece; everything either side keeps its shape.
+        // Stretch one column at the middle piece's centre, so the caps keep their shape.
         let column = CGFloat(left.width + middle.width / 2)
         return (image, CGFloat(height), CGRect(x: column / CGFloat(width), y: 0, width: 1 / CGFloat(width), height: 1))
     }()
@@ -301,7 +291,7 @@ final class SelectionBoxLayer {
         layer.addSublayer(texture)
     }
 
-    /// `frame` is the visual box; the texture is taller than it (its glow) and centred on it.
+    /// `frame` is the visual box, and the taller glow texture is centred on it.
     func update(frame: CGRect, selectionBoxHeight: CGFloat, animation: Animation?) {
         guard let joined = Self.joined else { return }
         let textureHeight = frame.height * (joined.height / selectionBoxHeight)
@@ -525,7 +515,7 @@ final class MenuRowLayer {
             blueDot.isHidden = false
             let diameter: CGFloat = 16.5
             let centerX = max(diameter * 0.5 + 1, textStartX * 0.5)
-            // Its left edge sits at the computed centre, nudged left, as the SwiftUI overlay placed it.
+            // The dot's left edge, not its centre, sits at centerX, nudged left.
             blueDot.show(dot, at: CGPoint(x: centerX - 6, y: (rowHeight - diameter) * 0.5))
         } else {
             blueDot.isHidden = true

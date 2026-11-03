@@ -196,7 +196,7 @@ extension MenuView {
 
     var shouldUseMusicSongMetadataPreview: Bool {
         guard shouldShowMusicPreviewContent else { return false }
-        // The Albums list shows just the cover, like the original.
+        // The Albums list shows just the cover.
         guard thirdMenuMode == .musicSongs else { return false }
         guard activeMusicLibraryMediaType == .songs else { return false }
         if !isMusicSongsCategoryScoped {
@@ -463,8 +463,7 @@ extension MenuView {
                     fade: .easeInOut(duration: 0.22),
                 ))
             } else if usesMetadata, let selectedMovie, let descriptor, !showsCarousel {
-                // One piece for the whole list: moving to another movie swaps its poster and
-                // details straight away (as SwiftUI did), with no crossfade over the old text.
+                // One piece for the whole list, so changing movies swaps poster and details with no crossfade.
                 items.append(GapItemSpec(
                     key: "itunes_movie_metadata",
                     kind: .metadata(MetadataPreviewSpec(

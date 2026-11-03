@@ -3,8 +3,7 @@
     import IOKit
     import IOKit.hid
 
-    /// Key events made by First Row itself (the Apple Remote, the debug harness), delivered
-    /// through the same path as the keyboard's.
+    /// Key events First Row posts itself (Apple Remote, harness), handled like the keyboard's.
     enum SyntheticKeyEvents {
         static func post(_ key: KeyCode, down: Bool) {
             let characters: String = switch key {
@@ -31,14 +30,7 @@
         }
     }
 
-    /// The infrared Apple Remote (the white A1156 and the aluminium A1294), on Macs with an IR
-    /// receiver. Its buttons become the keys First Row already understands: + and - are up and
-    /// down, ⏮ and ⏭ are left and right, the centre (play) button is Return, which also plays and
-    /// pauses during playback, and Menu goes back like Escape.
-    ///
-    /// While First Row is in front the receiver is opened exclusively, so the remote stops
-    /// changing the volume or opening Music; it is released whenever First Row is in the
-    /// background. Macs without a receiver are unaffected.
+    /// Turns IR Apple Remote buttons into the arrow, Return and Escape keys the menus handle.
     @MainActor
     final class AppleRemoteInput {
         static let shared = AppleRemoteInput()

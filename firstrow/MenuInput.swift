@@ -23,8 +23,6 @@ enum KeyCode: UInt16 {
 }
 
 extension MenuView {
-    /// A key (or remote button) going down. Arrows start a press that can turn into a hold;
-    /// everything else acts straight away.
     func handleKeyDown(_ key: KeyCode, isRepeat: Bool = false, modifiers: NSEvent.ModifierFlags = []) {
         // The file picker is answering keys of its own.
         if isChoosingMediaSource { return }
@@ -41,8 +39,7 @@ extension MenuView {
         handleDirectionalPressEnded(key)
     }
 
-    /// The menus are on screen: start loading the music library, the screen saver's idle
-    /// timer and the interface sounds.
+    /// Called once the menus are on screen.
     func start() {
         beginStartupMusicLibraryPreloadIfNeeded()
         preloadITunesTopChartsInBackground()

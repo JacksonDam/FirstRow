@@ -7,11 +7,6 @@ import QuartzCore
 #endif
 
 /// Draws First Row's whole interface from `MenuView`'s state with Core Animation layers.
-///
-/// It plays the part SwiftUI's view bodies used to: whenever the menu state changes it works
-/// out where everything should be and moves the layers that differ, animating them as the
-/// change's transaction says. Layers that don't change aren't touched, and animations run in
-/// the render server, so the app does very little work per frame.
 @MainActor
 final class MenuSceneRenderer: TransactionRendering {
     let menu: MenuView
@@ -171,14 +166,8 @@ final class MenuSceneRenderer: TransactionRendering {
         update(RenderPass(transaction: transaction), includesCarousel: false)
     }
 
-    /// The end of a run loop pass: draws plain changes, and turns the carousel, which takes
-    /// a pass's changes together (its timings depend on which of them happened at once).
-    ///
-    /// Each pass is one transaction. Without one, when nothing else in the run loop pass had
-    /// opened a transaction, the first change made in a nested `withoutLayerActions` was
-    /// committed on its own, and on iOS it reached the screen a frame before the animations that
-    /// go with it (the icon leaving the front of the carousel vanished for a frame, and one
-    /// arriving showed at the front over the selected icon).
+    /// Draws plain changes and updates the carousel, whose timings depend on what changed together.
+    /// Each pass is one transaction so its changes reach the screen together.
     private func renderAtEndOfRunLoopPass() {
         guard containerSize != .zero else { return }
         CATransaction.begin()
@@ -192,13 +181,12 @@ final class MenuSceneRenderer: TransactionRendering {
         carouselNeedsUpdate = false
     }
 
-    /// Re-draws everything now (after the window or the menu's data changed outside it).
+    /// Redraws everything on the next pass.
     func setNeedsRender() {
         isDirty = true
     }
 
-    /// Pixels per scene point, rounded up a little so cached text is shared between passes
-    /// without ever being drawn smaller than the screen shows it.
+    /// Pixels per scene point, rounded up to 0.01 so cached text is reused but never undersized.
     private var textScale: CGFloat {
         max(1, (canvasScale * backingScale * 100).rounded(.up) / 100)
     }
@@ -435,8 +423,7 @@ private extension RootCarouselConfiguration {
     }
 }
 
-/// A title line; present or not (fading in and out like an inserted or removed view), with
-/// its own opacity inside.
+/// A title line that fades in and out as a whole, with its own opacity inside.
 @MainActor
 final class HeaderLayer {
     let layer = SceneLayer()

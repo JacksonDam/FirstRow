@@ -4,12 +4,7 @@ import Foundation
     import UniformTypeIdentifiers
 #endif
 
-/// Settings > Media Folders: the folders, iTunes library file and iPhoto library First Row
-/// reads besides the standard libraries, managed from the menus like everything else.
-///
-/// The pages stack up inside the third-level menu: the list of kinds, then the folders of
-/// one kind (with "Add Folder…"), then what can be done with one folder or library. Back
-/// (Escape, Delete, Menu) goes up a page.
+/// Settings > Media Folders: pages for the extra folders and library files First Row reads.
 extension MenuView {
     enum MediaFoldersPage: Equatable {
         case overview
@@ -110,7 +105,6 @@ extension MenuView {
 
     // MARK: - Moving between pages
 
-    /// Settings > Media Folders.
     func enterMediaFoldersMenu() {
         transitionMenuForFolderSwap {
             self.thirdMenuMode = .mediaFolders

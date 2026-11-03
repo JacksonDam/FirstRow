@@ -580,10 +580,7 @@ import Foundation
                     }
                 }
 
-                // The Siri Remote from 2021 on (and remotes like it): the clickpad's outer ring clicks
-                // up, down, left and right and its centre selects. Its touch surface is left alone,
-                // so a thumb resting on it doesn't move the selection, and a click on the ring
-                // doesn't also count as a click on the middle.
+                // Siri Remote from 2021 on: clicks only, so a resting thumb can't move the selection.
                 if #available(macOS 12.0, *), let remote = controller.microGamepad as? GCDirectionalGamepad,
                    let ring = remote.dpads[GCInputDirectionalCardinalDpad]
                 {
@@ -609,8 +606,7 @@ import Foundation
                     return
                 }
 
-                // The first Siri Remote (a touch surface without a ring) and other small controllers:
-                // swipes move, a click anywhere selects.
+                // First Siri Remote and other small controllers: swipes move, a click anywhere selects.
                 if let gamepad = controller.microGamepad {
                     configureDirectionPadHandlers(gamepad.dpad, controllerID: controllerID, source: .dpad)
                     gamepad.buttonA.pressedChangedHandler = { [weak self] _, _, isPressed in

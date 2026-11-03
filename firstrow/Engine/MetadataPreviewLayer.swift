@@ -6,26 +6,19 @@ import QuartzCore
 #endif
 
 /// A poster or cover with its details underneath (iTunes Top items, podcasts, songs).
-///
-/// For iTunes Top items and podcast series it first shows the poster large and turned towards
-/// the menu; after a few seconds the poster straightens, shrinks and rises to make room, and
-/// the details fade in below it. The whole move is sampled into keyframe animations, so it
-/// follows exactly the path the SwiftUI version computed frame by frame.
+/// After a delay the turned poster straightens, shrinks and rises as the details fade in.
 final class MetadataPreviewLayer: GapItemLayer {
     private let unit = CALayer()
     private let poster = SceneLayer()
     private let reflectionClip = SceneLayer()
     private let reflectionImage = SceneLayer()
     private let reflectionMask = SceneGradientLayer()
-    /// Hides the reflection from the bottom up as the poster settles. It's the reflection's
-    /// mask rather than a black layer over it: two layers in the same plane of a turning poster
-    /// can trade places part way across, which made half the reflection flicker dark.
+    /// Masks the reflection away as the poster settles, since a coplanar overlay would z-fight.
     private let sweep = SceneGradientLayer()
     private let details = SceneLayer()
     private var identity: String?
     private var layoutKey: String?
-    /// When the current item's move started (or starts), so a re-layout part way through
-    /// (its picture arriving, say) carries on with the same move instead of jumping to the end.
+    /// Start of the current move, so a re-layout part way through continues it.
     private var transitionBegin: CFTimeInterval?
     private static let sampleCount = 40
 
@@ -89,7 +82,7 @@ final class MetadataPreviewLayer: GapItemLayer {
 
     private func layout(_ spec: MetadataPreviewSpec, context: GapItemContext, transitionBegin: CFTimeInterval?) {
         let scale = context.scale
-        // The SwiftUI view filled the carousel box less its bottom padding, offset as a whole.
+        // The box less its 100 pt bottom padding, offset as a whole.
         let origin = CGPoint(x: spec.offsetX, y: spec.offsetY)
         let size = CGSize(width: context.boxSize.width, height: context.boxSize.height - 100)
         let sceneMinX = context.boxFrame.minX + spec.offsetX
@@ -216,8 +209,7 @@ final class MetadataPreviewLayer: GapItemLayer {
         let coverCenterX = g.startCenter.x + (g.finalCoverCenterX - g.startCenter.x) * p
         let coverCenterY = g.startCenter.y + (finalCoverCenterY - g.startCenter.y) * p
         let yaw = Double(20 * (1 - p))
-        // The unit's centre sits half a poster below the poster's centre; it scales about its
-        // centre and turns about the poster's centre (a quarter of the way down the unit).
+        // Placed as if scaled about the unit's centre, while turning about the poster's centre.
         let unitCenter = CGPoint(x: coverCenterX, y: coverCenterY + scaledCoverHeight * 0.5)
         let anchorPosition = CGPoint(x: g.origin.x + unitCenter.x, y: g.origin.y + unitCenter.y - unitScale * 0.25 * g.unitSize.height)
         let transform = CATransform3DConcat(

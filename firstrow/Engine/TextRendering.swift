@@ -6,12 +6,7 @@ import QuartzCore
     import UIKit
 #endif
 
-// Text and SF Symbols for the layer-drawn interface.
-//
-// Strings are typeset with Core Text into bitmaps (cached by content and size) that layers
-// show as their contents, so text costs nothing to draw again until it changes. Line boxes
-// follow AppKit's text metrics (ascent and descent each rounded), which is what the menus
-// were laid out against.
+// Text and SF Symbols rendered into cached bitmaps, with line boxes measured as AppKit does.
 
 struct RGBA: Hashable {
     var red: CGFloat
@@ -45,7 +40,7 @@ struct RGBA: Hashable {
     }
 }
 
-/// A drop shadow or glow, as SwiftUI's `.shadow(color:radius:x:y:)` drew it.
+/// A drop shadow or glow, with a Core Graphics blur of twice `radius`.
 struct TextShadow: Hashable {
     var color: RGBA
     var radius: CGFloat
@@ -70,8 +65,7 @@ struct TextSpec: Hashable {
     var fontName: String
     var size: CGFloat
     var color: RGBA = .white
-    /// Single line: the widest the line may be before it shrinks (down to
-    /// `minimumScaleFactor`) and then truncates with an ellipsis.
+    /// Widest a single line may be before it shrinks to `minimumScaleFactor`, then truncates.
     var maxWidth: CGFloat?
     var minimumScaleFactor: CGFloat = 1
     /// Wraps onto as many lines as needed at this width instead of staying on one line.
@@ -95,8 +89,7 @@ struct TextSpec: Hashable {
     }
 }
 
-/// A rendered string or symbol. `size` is its layout box; the bitmap can extend past the box
-/// (shadows, glows), by `imageInsets` on each side.
+/// A rendered string or symbol. The bitmap extends `padding` past the `size` box for glows.
 struct RenderedGraphic {
     let image: CGImage?
     let size: CGSize
@@ -191,8 +184,7 @@ enum TextRenderer {
 
     private static let cache: NSCache<Key, Box> = {
         let cache = NSCache<Key, Box>()
-        // Text is quick to draw again, and every picture Core Animation has shown keeps a
-        // shared-memory copy for as long as it lives, so only recent text is kept.
+        // Each image Core Animation has shown holds shared memory, so keep only recent text.
         cache.countLimit = 400
         cache.totalCostLimit = 12 * 1024 * 1024
         return cache
@@ -267,13 +259,13 @@ enum TextRenderer {
         var line = CTLineCreateWithAttributedString(FontMetrics.attributed(spec.text, font: font, color: spec.color))
         var width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         if let maxWidth = spec.maxWidth, width > maxWidth {
-            // Shrink first, like SwiftUI's minimumScaleFactor, then cut the end off.
+            // Shrink first, down to minimumScaleFactor, then cut the end off.
             if spec.minimumScaleFactor < 1 {
                 let fittingSize = max(spec.size * spec.minimumScaleFactor, spec.size * (maxWidth / width))
                 font = FontMetrics.font(spec.fontName, size: fittingSize)
                 line = CTLineCreateWithAttributedString(FontMetrics.attributed(spec.text, font: font, color: spec.color))
                 width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-                // Keep the shrunken line centred on the original line box.
+                // Keep the shrunken line centred on the full-size line box.
                 let shrunkHeight = FontMetrics.lineHeight(font)
                 baseline = ((lineHeight - shrunkHeight) * 0.5) + FontMetrics.baseline(font)
             }
@@ -289,8 +281,7 @@ enum TextRenderer {
         return Layout(lines: [Line(line: line, width: ceil(width))], font: font, size: CGSize(width: boxWidth, height: lineHeight), lineHeight: lineHeight, baseline: baseline)
     }
 
-    /// Draws into a transparent bitmap of `size` (plus `padding` all round) at `scale`, with
-    /// the shadows applied to whatever `body` draws. `body` works in points with y up.
+    /// Draws `body` with `shadows` into a padded bitmap. `body` works in points with y up.
     static func draw(size: CGSize, padding: CGFloat, scale: CGFloat, shadows: [TextShadow], body: (CGContext) -> Void) -> RenderedGraphic {
         let pointWidth = size.width + padding * 2
         let pointHeight = size.height + padding * 2
@@ -315,7 +306,7 @@ enum TextRenderer {
         context.setShouldSubpixelPositionFonts(true)
         context.setShouldSubpixelQuantizeFonts(false)
         context.interpolationQuality = .high
-        // Each shadow applies to everything drawn so far, like stacked SwiftUI `.shadow`s.
+        // Each shadow is cast by the drawing plus the shadows before it.
         for shadow in shadows.reversed() {
             context.setShadow(
                 offset: CGSize(width: shadow.offset.width * scale, height: -shadow.offset.height * scale),
@@ -448,8 +439,7 @@ extension CALayer {
     }
 }
 
-/// Simple drawings of the few SF Symbols First Row uses, for macOS 10.15, which has no
-/// symbol images.
+/// Hand-drawn stand-ins for the SF Symbols First Row uses, for macOS 10.15.
 enum SymbolFallback {
     static func symbol(_ name: String, pointSize: CGFloat, weight: SymbolRenderer.Weight, oversample: CGFloat) -> (image: CGImage, size: CGSize)? {
         let stroke: CGFloat = switch weight {
