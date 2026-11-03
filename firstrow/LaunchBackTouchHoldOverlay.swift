@@ -1,49 +1,33 @@
 #if os(iOS)
-    import SwiftUI
     import UIKit
 
-    struct LaunchBackTouchHoldOverlay: UIViewRepresentable {
-        let onHoldBegan: () -> Void
-        let onHoldEnded: () -> Void
-        func makeCoordinator() -> Coordinator {
-            Coordinator(onHoldBegan: onHoldBegan, onHoldEnded: onHoldEnded)
-        }
+    /// Three fingers held down at launch (the touch equivalent of holding Delete).
+    final class LaunchBackTouchHoldView: UIView {
+        var onHoldBegan: (() -> Void)?
+        var onHoldEnded: (() -> Void)?
 
-        func makeUIView(context: Context) -> UIView {
-            let view = UIView()
-            view.isMultipleTouchEnabled = true
-            view.backgroundColor = .clear
-            let threeFingerHold = UILongPressGestureRecognizer(
-                target: context.coordinator,
-                action: #selector(Coordinator.handleThreeFingerHold(_:)),
-            )
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isMultipleTouchEnabled = true
+            backgroundColor = .clear
+            autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            let threeFingerHold = UILongPressGestureRecognizer(target: self, action: #selector(handleThreeFingerHold(_:)))
             threeFingerHold.minimumPressDuration = 0.01
             threeFingerHold.numberOfTouchesRequired = 3
             threeFingerHold.cancelsTouchesInView = false
-            view.addGestureRecognizer(threeFingerHold)
-            return view
+            addGestureRecognizer(threeFingerHold)
         }
 
-        func updateUIView(_: UIView, context: Context) {
-            context.coordinator.onHoldBegan = onHoldBegan
-            context.coordinator.onHoldEnded = onHoldEnded
+        @available(*, unavailable)
+        required init?(coder _: NSCoder) {
+            fatalError("init(coder:) is not used")
         }
 
-        final class Coordinator: NSObject {
-            var onHoldBegan: () -> Void
-            var onHoldEnded: () -> Void
-            init(onHoldBegan: @escaping () -> Void, onHoldEnded: @escaping () -> Void) {
-                self.onHoldBegan = onHoldBegan
-                self.onHoldEnded = onHoldEnded
-            }
-
-            @objc
-            func handleThreeFingerHold(_ gesture: UILongPressGestureRecognizer) {
-                switch gesture.state {
-                case .began: onHoldBegan()
-                case .ended, .failed, .cancelled: onHoldEnded()
-                default: break
-                }
+        @objc private func handleThreeFingerHold(_ gesture: UILongPressGestureRecognizer) {
+            switch gesture.state {
+            case .began: onHoldBegan?()
+            case .ended, .failed, .cancelled: onHoldEnded?()
+            default: break
             }
         }
     }

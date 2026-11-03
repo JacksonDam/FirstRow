@@ -1,6 +1,11 @@
 import AVFoundation
-import AVKit
-import SwiftUI
+import AVFoundation
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 #if os(iOS)
     import MediaPlayer
 #endif
@@ -2100,46 +2105,5 @@ extension MenuView {
             showsShuffleGlyph: musicNowPlayingShowsShuffleGlyph,
             leadingGlyphState: musicNowPlayingLeadingGlyphState,
         )
-    }
-
-    func musicNowPlayingView(for snapshot: MusicNowPlayingSnapshot) -> some View {
-        MusicNowPlayingFullscreenView(
-            artworkImage: snapshot.artworkImage,
-            trackTitle: snapshot.trackTitle,
-            artistName: snapshot.artistName,
-            albumTitle: snapshot.albumTitle,
-            trackPositionText: snapshot.trackPositionText,
-            elapsedSeconds: snapshot.elapsedSeconds,
-            durationSeconds: snapshot.durationSeconds,
-            showsShuffleGlyph: snapshot.showsShuffleGlyph,
-            leadingGlyphState: snapshot.leadingGlyphState,
-            layoutMode: musicNowPlayingUsesAlternateLayout ? .artworkLeft : .artworkRight,
-        )
-    }
-
-    func musicNowPlayingSceneView() -> some View {
-        let hasTransition = musicSongTransitionSnapshot != nil
-        let incomingStartScale: CGFloat = musicSongTransitionDirection > 0 ? 0.25 : 6
-        let outgoingEndScale: CGFloat = musicSongTransitionDirection > 0 ? 6 : 0.25
-        let outgoingProgress = min(max(musicSongTransitionOutgoingProgress, 0), 1)
-        let outgoingOpacityProgress = min(max(musicSongTransitionOutgoingOpacityProgress, 0), 1)
-        let incomingProgress = min(max(musicSongTransitionIncomingProgress, 0), 1)
-        let incomingScale = hasTransition
-            ? (incomingStartScale + ((1 - incomingStartScale) * incomingProgress))
-            : 1
-        let outgoingScale = hasTransition
-            ? (1 + ((outgoingEndScale - 1) * outgoingProgress))
-            : 1
-        let incomingOpacity = hasTransition ? Double(incomingProgress) : 1
-        let outgoingOpacity = hasTransition ? Double(1 - outgoingOpacityProgress) : 1
-        let flipOpacity = musicNowPlayingFlipVisibilityOpacity()
-        return ZStack {
-            musicNowPlayingView(for: currentMusicNowPlayingSnapshot).scaleEffect(incomingScale).opacity(incomingOpacity)
-            if let outgoing = musicSongTransitionSnapshot {
-                musicNowPlayingView(for: outgoing).scaleEffect(outgoingScale).opacity(outgoingOpacity)
-            }
-        }.rotation3DEffect(.degrees(musicNowPlayingFlipRotationDegrees),
-                           axis: (x: 0, y: 1, z: 0),
-                           perspective: 0.9).opacity(flipOpacity)
     }
 }

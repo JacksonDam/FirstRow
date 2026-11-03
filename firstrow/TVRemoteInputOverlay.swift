@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 #if os(iOS) || os(tvOS)
     import GameController
@@ -19,24 +19,6 @@ import SwiftUI
 
 #if os(tvOS)
     import UIKit
-
-    struct TVRemoteInputOverlay: UIViewRepresentable {
-        let onKeyDown: (KeyCode) -> Void
-        let onKeyUp: (KeyCode) -> Void
-        func makeUIView(context _: Context) -> RemotePressCapturingView {
-            let view = RemotePressCapturingView()
-            view.backgroundColor = .clear
-            view.onKeyDown = onKeyDown
-            view.onKeyUp = onKeyUp
-            return view
-        }
-
-        func updateUIView(_ uiView: RemotePressCapturingView, context _: Context) {
-            uiView.onKeyDown = onKeyDown
-            uiView.onKeyUp = onKeyUp
-            uiView.makePrimaryResponderIfPossible()
-        }
-    }
 
     final class RemotePressCapturingView: UIView {
         var onKeyDown: ((KeyCode) -> Void)?
@@ -125,44 +107,8 @@ import SwiftUI
     import GameController
     import UIKit
 
-    struct GameControllerInputOverlay: UIViewRepresentable {
-        let onArrowKeyDown: (KeyCode) -> Void
-        let onArrowKeyUp: (KeyCode) -> Void
-        let onEnter: () -> Void
-        let onBackspace: () -> Void
-        let onSpace: () -> Void
-
-        func makeCoordinator() -> Coordinator {
-            Coordinator(
-                onArrowKeyDown: onArrowKeyDown,
-                onArrowKeyUp: onArrowKeyUp,
-                onEnter: onEnter,
-                onBackspace: onBackspace,
-                onSpace: onSpace,
-            )
-        }
-
-        func makeUIView(context: Context) -> UIView {
-            let view = UIView()
-            view.backgroundColor = .clear
-            view.isUserInteractionEnabled = false
-            context.coordinator.startMonitoringControllersIfNeeded()
-            return view
-        }
-
-        func updateUIView(_: UIView, context: Context) {
-            context.coordinator.onArrowKeyDown = onArrowKeyDown
-            context.coordinator.onArrowKeyUp = onArrowKeyUp
-            context.coordinator.onEnter = onEnter
-            context.coordinator.onBackspace = onBackspace
-            context.coordinator.onSpace = onSpace
-        }
-
-        static func dismantleUIView(_: UIView, coordinator: Coordinator) {
-            coordinator.stopMonitoringControllers()
-        }
-
-        final class Coordinator: NSObject {
+    /// Game controllers (and the Siri Remote as a game controller) as arrow, select, back and play keys.
+    final class GameControllerInput: NSObject {
             enum ControllerDirection: CaseIterable {
                 case up
                 case down
@@ -474,49 +420,14 @@ import SwiftUI
                 }
             }
         }
-    }
 #endif
 
 #if os(macOS)
     import AppKit
     import GameController
 
-    struct GameControllerInputOverlay: NSViewRepresentable {
-        let onArrowKeyDown: (KeyCode) -> Void
-        let onArrowKeyUp: (KeyCode) -> Void
-        let onEnter: () -> Void
-        let onBackspace: () -> Void
-        let onSpace: () -> Void
-
-        func makeCoordinator() -> Coordinator {
-            Coordinator(
-                onArrowKeyDown: onArrowKeyDown,
-                onArrowKeyUp: onArrowKeyUp,
-                onEnter: onEnter,
-                onBackspace: onBackspace,
-                onSpace: onSpace,
-            )
-        }
-
-        func makeNSView(context: Context) -> NSView {
-            let view = NSView()
-            context.coordinator.startMonitoringControllersIfNeeded()
-            return view
-        }
-
-        func updateNSView(_: NSView, context: Context) {
-            context.coordinator.onArrowKeyDown = onArrowKeyDown
-            context.coordinator.onArrowKeyUp = onArrowKeyUp
-            context.coordinator.onEnter = onEnter
-            context.coordinator.onBackspace = onBackspace
-            context.coordinator.onSpace = onSpace
-        }
-
-        static func dismantleNSView(_: NSView, coordinator: Coordinator) {
-            coordinator.stopMonitoringControllers()
-        }
-
-        final class Coordinator: NSObject {
+    /// Game controllers (and the Siri Remote as a game controller) as arrow, select, back and play keys.
+    final class GameControllerInput: NSObject {
             enum ControllerDirection {
                 case up
                 case down
@@ -812,5 +723,4 @@ import SwiftUI
                 }
             }
         }
-    }
 #endif

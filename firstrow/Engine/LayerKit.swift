@@ -1,5 +1,4 @@
 import QuartzCore
-import SwiftUI
 #if os(macOS)
     import AppKit
 #else
@@ -12,199 +11,21 @@ import SwiftUI
 // SwiftUI views redrawn every frame: the system render server runs the animations, so
 // the app itself does almost no work while they play.
 
-/// Hosts a layer tree in a view. Layer geometry is the platform's own: origin top left on
-/// iOS and tvOS, bottom left on macOS (a flipped layer geometry would draw every image upside
-/// down and confuse depth sorting). Controllers lay out in SwiftUI's top-left coordinates and
-/// convert with `LayerSpace`.
-final class FlippedLayerView: PlatformView {
-    /// Called whenever the view's size settles, so the layer tree can follow it.
-    var onLayout: ((CGSize) -> Void)?
-    private var lastLaidOutSize: CGSize?
-    /// The layer tree drawn in this view. AppKit can replace a view's backing layer (for example
-    /// when it moves into a window), so the tree is re-attached whenever that happens.
-    var contentLayer: CALayer? {
-        didSet {
-            if oldValue !== contentLayer {
-                oldValue?.removeFromSuperlayer()
-            }
-            attachContentLayerIfNeeded()
-        }
-    }
-
-    private func attachContentLayerIfNeeded() {
-        #if os(macOS)
-            guard let host = layer else { return }
-        #else
-            let host = layer
-        #endif
-        guard let contentLayer, contentLayer.superlayer !== host else { return }
-        host.addSublayer(contentLayer)
-    }
-
-    #if os(macOS)
-        // AppKit can hand the view a new backing layer at any time; follow it every time.
-        override var layer: CALayer? {
-            didSet { attachContentLayerIfNeeded() }
-        }
-
-        override func layout() {
-            super.layout()
-            notifyLayoutIfNeeded()
-        }
-
-        override func setFrameSize(_ newSize: NSSize) {
-            super.setFrameSize(newSize)
-            notifyLayoutIfNeeded()
-        }
-
-        init() {
-            super.init(frame: .zero)
-            // Layer-backed (AppKit owns the view's layer); our layer tree is a sublayer of it.
-            wantsLayer = true
-            layer?.masksToBounds = false
-            layerContentsRedrawPolicy = .never
-        }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            attachContentLayerIfNeeded()
-        }
-
-        override func hitTest(_: NSPoint) -> NSView? { nil }
-    #else
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            notifyLayoutIfNeeded()
-        }
-
-        init() {
-            super.init(frame: .zero)
-            clipsToBounds = false
-            isUserInteractionEnabled = false
-            backgroundColor = .clear
-        }
-    #endif
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError("init(coder:) is not used")
-    }
-
-    private func notifyLayoutIfNeeded() {
-        attachContentLayerIfNeeded()
-        let size = bounds.size
-        guard size != lastLaidOutSize else { return }
-        lastLaidOutSize = size
-        onLayout?(size)
-    }
-
-    var hostLayer: CALayer {
-        #if os(macOS)
-            return layer!
-        #else
-            return layer
-        #endif
-    }
-}
-
-#if os(macOS)
-    typealias PlatformView = NSView
-#else
-    typealias PlatformView = UIView
-#endif
-
-/// Something that owns a layer tree drawn inside a SwiftUI view.
+/// Something that owns a layer tree drawn inside the scene.
 @MainActor
 protocol LayerController: AnyObject {
     associatedtype Configuration
     init()
     var rootLayer: CALayer { get }
-    /// Called whenever SwiftUI updates the view; `bounds` is the view's size.
+    /// Called when what it shows or its size changes.
     func update(_ configuration: Configuration, bounds: CGSize)
-    /// Called when SwiftUI removes the view.
+    /// Called when it leaves the screen.
     func tearDown()
 }
 
 extension LayerController {
     func tearDown() {}
 }
-
-/// Hosts a `LayerController` inside SwiftUI.
-struct LayerHost<Controller: LayerController>: View {
-    let configuration: Controller.Configuration
-
-    var body: some View {
-        LayerHostRepresentable<Controller>(configuration: configuration)
-    }
-}
-
-#if os(macOS)
-    private struct LayerHostRepresentable<Controller: LayerController>: NSViewRepresentable {
-        let configuration: Controller.Configuration
-
-        func makeCoordinator() -> Controller { Controller() }
-
-        func makeNSView(context: Context) -> FlippedLayerView {
-            let view = FlippedLayerView()
-            view.contentLayer = context.coordinator.rootLayer
-            return view
-        }
-
-        func updateNSView(_ view: FlippedLayerView, context: Context) {
-            let controller = context.coordinator
-            let configuration = configuration
-            view.onLayout = { [weak controller] size in
-                guard let controller else { return }
-                withoutLayerActions {
-                    controller.rootLayer.frame = CGRect(origin: .zero, size: size)
-                }
-                controller.update(configuration, bounds: size)
-            }
-            view.contentLayer = controller.rootLayer
-            withoutLayerActions {
-                controller.rootLayer.frame = view.bounds
-            }
-            controller.update(configuration, bounds: view.bounds.size)
-        }
-
-        static func dismantleNSView(_: FlippedLayerView, coordinator: Controller) {
-            coordinator.tearDown()
-        }
-    }
-#else
-    private struct LayerHostRepresentable<Controller: LayerController>: UIViewRepresentable {
-        let configuration: Controller.Configuration
-
-        func makeCoordinator() -> Controller { Controller() }
-
-        func makeUIView(context: Context) -> FlippedLayerView {
-            let view = FlippedLayerView()
-            view.contentLayer = context.coordinator.rootLayer
-            return view
-        }
-
-        func updateUIView(_ view: FlippedLayerView, context: Context) {
-            let controller = context.coordinator
-            let configuration = configuration
-            view.onLayout = { [weak controller] size in
-                guard let controller else { return }
-                withoutLayerActions {
-                    controller.rootLayer.frame = CGRect(origin: .zero, size: size)
-                }
-                controller.update(configuration, bounds: size)
-            }
-            view.contentLayer = controller.rootLayer
-            withoutLayerActions {
-                controller.rootLayer.frame = view.bounds
-            }
-            controller.update(configuration, bounds: view.bounds.size)
-        }
-
-        static func dismantleUIView(_: FlippedLayerView, coordinator: Controller) {
-            coordinator.tearDown()
-        }
-    }
-#endif
 
 /// Runs `body` with Core Animation's implicit animations turned off.
 func withoutLayerActions(_ body: () -> Void) {

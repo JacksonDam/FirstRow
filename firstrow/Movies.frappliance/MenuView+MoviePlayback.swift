@@ -1,7 +1,12 @@
 import AVFoundation
-import AVKit
+import AVFoundation
 import Darwin
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 #if os(macOS)
     import AppKit
 #elseif canImport(UIKit)

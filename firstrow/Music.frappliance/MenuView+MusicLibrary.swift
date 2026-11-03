@@ -1,6 +1,11 @@
 import AVFoundation
 import Foundation
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 #if os(iOS)
     import MediaPlayer
     import UIKit

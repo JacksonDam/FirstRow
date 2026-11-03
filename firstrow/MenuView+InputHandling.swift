@@ -1,6 +1,11 @@
 import AVFoundation
-import AVKit
-import SwiftUI
+import AVFoundation
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif

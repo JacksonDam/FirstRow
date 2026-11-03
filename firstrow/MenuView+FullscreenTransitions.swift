@@ -1,4 +1,9 @@
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 
 extension MenuView {
     func presentTheatricalTrailersLoadingThenError() {
@@ -288,47 +293,5 @@ extension MenuView {
 extension MenuView {
     var itunesIconImage: NSImage? {
         NSImage(named: "itunes")
-    }
-
-    @ViewBuilder
-    func fullscreenSceneView(for scene: FullscreenScenePresentation) -> some View {
-        switch scene.key {
-        case musicNowPlayingFullscreenKey:
-            musicNowPlayingSceneView()
-        case screenSaverFullscreenKey:
-            ScreenSaverFullscreenView(onDismiss: { self.dismissScreenSaverForUserInteraction() })
-        case featureErrorFullscreenKey:
-            let copy = FeatureErrorCopy.resolve(from: scene.payload)
-            FeatureErrorFullscreenView(
-                headerText: copy.headerText,
-                subcaptionText: copy.subcaptionText,
-            )
-        case theatricalTrailersLoadingFullscreenKey:
-            FeatureLoadingFullscreenView(
-                headerText: scene.payload["header"] ?? "Loading Theatrical Trailers...",
-                showsSpinner: theatricalTrailersLoadingShowsSpinner,
-            )
-        case photoSlideshowFullscreenKey:
-            PhotoSlideshowFullscreenView(
-                imageCount: photoSlideshowAssetLocalIdentifiers.count,
-                imageForIndex: { index in self.photoSlideshowImageCache[index] },
-                isPaused: photoSlideshowIsPaused,
-                pausedIndex: photoSlideshowPausedIndex,
-                playbackStartDate: photoSlideshowPlaybackStartDate,
-                playbackElapsedOffset: photoSlideshowPlaybackElapsedOffset,
-                displayDuration: photoSlideshowPhotoDisplayDuration,
-                crossfadeDuration: photoSlideshowCrossfadeDuration,
-                hasAlreadyFinished: photoSlideshowHasFinished,
-                onFrameIndicesChanged: { primaryIndex, secondaryIndex in
-                    self.updatePhotoSlideshowVisibleIndices(
-                        primaryIndex: primaryIndex,
-                        secondaryIndex: secondaryIndex,
-                    )
-                },
-                onFinished: { self.handlePhotoSlideshowPlaybackFinished() },
-            )
-        default:
-            Color.black
-        }
     }
 }

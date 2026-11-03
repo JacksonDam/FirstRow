@@ -1,6 +1,11 @@
 import AVFoundation
-import AVKit
-import SwiftUI
+import AVFoundation
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
@@ -17,8 +22,8 @@ extension MenuView {
 
     func startScreenSaverIdleMonitor() {
         stopScreenSaverIdleMonitor()
-        let timer = Timer(timeInterval: screenSaverIdleCheckInterval, repeats: true) { _ in
-            self.evaluateScreenSaverIdleActivation()
+        let timer = Timer(timeInterval: screenSaverIdleCheckInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolatedIfPossible { self?.evaluateScreenSaverIdleActivation() }
         }
         RunLoop.main.add(timer, forMode: .common)
         screenSaverIdleMonitorTimer = timer

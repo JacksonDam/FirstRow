@@ -1,5 +1,9 @@
 import QuartzCore
-import SwiftUI
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 
 /// The endless stream of album covers drifting across the left of the Music menu (and the
 /// iTunes Top carousels), drawn with Core Animation.

@@ -1,6 +1,11 @@
 import AVFoundation
 import Darwin
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 import UniformTypeIdentifiers
 #if os(iOS)
     import UIKit

@@ -1,4 +1,9 @@
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 
 private let musicSongsMenuListItemsCache = BoundedCache<String, [MenuListItemConfig]>(maxEntryCount: 24)
 

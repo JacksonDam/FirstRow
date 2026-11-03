@@ -1,6 +1,11 @@
 import AVFoundation
-import AVKit
-import SwiftUI
+import AVFoundation
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
@@ -74,31 +79,6 @@ extension MenuView {
         withTransaction(instant) {
             screenSaverNowPlayingToastOpacity = 0
         }
-    }
-
-    @ViewBuilder
-    func screenSaverNowPlayingToastView() -> some View {
-        let artwork = musicNowPlayingArtwork ?? musicFallbackImage ?? podcastFallbackImage
-        let title = normalizedScreenSaverToastText(musicNowPlayingTitle, fallback: "Unknown Song")
-        let album = normalizedScreenSaverToastText(musicNowPlayingAlbum, fallback: "Unknown Album")
-        let artist = normalizedScreenSaverToastText(musicNowPlayingArtist, fallback: "Unknown Artist")
-        let artworkSize: CGFloat = 130
-        HStack(alignment: .center, spacing: 16) {
-            Group {
-                if let artwork {
-                    Image(nsImage: artwork).resizable().scaledToFill().frame(width: artworkSize, height: artworkSize).clipped()
-                } else {
-                    Rectangle().fill(Color.black.opacity(0.35)).frame(width: artworkSize, height: artworkSize)
-                }
-            }.frame(width: artworkSize, height: artworkSize).overlay(
-                Rectangle().stroke(Color.white.opacity(0.16), lineWidth: 1),
-            )
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.firstRowBold(size: 30)).foregroundStyleCompat(.white).lineLimit(1).truncationMode(.tail)
-                Text(album).font(.firstRowRegular(size: 24)).foregroundStyleCompat(.white.opacity(0.9)).lineLimit(1).truncationMode(.tail)
-                Text(artist).font(.firstRowRegular(size: 24)).foregroundStyleCompat(.white.opacity(0.9)).lineLimit(1).truncationMode(.tail)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-        }.padding(.horizontal, 18).frame(width: screenSaverNowPlayingToastSize.width, height: screenSaverNowPlayingToastSize.height).background(Color.black.opacity(0.5))
     }
 
     func normalizedScreenSaverToastText(_ value: String, fallback: String) -> String {

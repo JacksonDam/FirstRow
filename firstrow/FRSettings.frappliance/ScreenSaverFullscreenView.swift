@@ -1,26 +1,9 @@
 import QuartzCore
-import SwiftUI
-
-struct ScreenSaverFullscreenView: View {
-    @StateObject private var model = ScreenSaverPhotoStreamModel()
-    let onDismiss: () -> Void
-
-    init(onDismiss: @escaping () -> Void = {}) {
-        self.onDismiss = onDismiss
-    }
-
-    var body: some View {
-        LayerHost<ScreenSaverLayerController>(configuration: ScreenSaverLayerController.Configuration(
-            photos: model.photos,
-        ))
-        .background(Color.black.ignoresSafeArea())
-        .ignoresSafeArea()
-        .contentShape(Rectangle())
-        .onAppear {
-            model.loadIfNeeded()
-        }
-    }
-}
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 
 /// The floating photos screen saver, drawn with Core Animation. Every photo rises at a steady
 /// speed and wraps round, and once a minute the whole stream spins round its vertical axis.
@@ -29,7 +12,7 @@ struct ScreenSaverFullscreenView: View {
 @MainActor
 final class ScreenSaverLayerController: LayerController {
     struct Configuration {
-        fileprivate var photos: [ScreenSaverPhotoEntry]
+        var photos: [ScreenSaverPhotoEntry]
     }
 
     let rootLayer: CALayer = StillLayer()
@@ -255,7 +238,7 @@ private extension CGFloat {
     var doubleValue: Double { Double(self) }
 }
 
-fileprivate struct ScreenSaverPhotoEntry: Identifiable {
+struct ScreenSaverPhotoEntry: Identifiable {
     let id: Int
     let image: NSImage
     let imageSize: CGSize
@@ -266,13 +249,19 @@ fileprivate struct ScreenSaverPhotoEntry: Identifiable {
     let riseSpeed: CGFloat
 }
 
+/// The screen saver's photos: the bundled set, each placed twice or more in the stream.
 @MainActor
-private final class ScreenSaverPhotoStreamModel: ObservableObject {
-    @Published private(set) var photos: [ScreenSaverPhotoEntry] = []
-    private var hasLoaded = false
-    func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
+enum ScreenSaverPhotoStream {
+    private static var cached: [ScreenSaverPhotoEntry]?
+
+    static func photos() -> [ScreenSaverPhotoEntry] {
+        if let cached { return cached }
+        let made = makePhotos()
+        cached = made
+        return made
+    }
+
+    private static func makePhotos() -> [ScreenSaverPhotoEntry] {
         let imageURLs = loadScreenSaverImageURLs()
         let loadedImages = imageURLs.compactMap { url -> NSImage? in
             guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else {
@@ -281,7 +270,7 @@ private final class ScreenSaverPhotoStreamModel: ObservableObject {
             return image
         }
         guard !loadedImages.isEmpty else {
-            return
+            return []
         }
         var rng = SystemRandomNumberGenerator()
 
@@ -290,7 +279,7 @@ private final class ScreenSaverPhotoStreamModel: ObservableObject {
         let slotsPerBand = max(1, total / bandCount)
 
         let halfWrapOffsetInStreamUnits: CGFloat = 0.9666666667
-        photos = (0 ..< total).map { index in
+        return (0 ..< total).map { index in
             let image = loadedImages[index % loadedImages.count]
             let band = index % bandCount
             let slot = index / bandCount
@@ -320,11 +309,11 @@ private final class ScreenSaverPhotoStreamModel: ObservableObject {
         }
     }
 
-    private func fractional(_ value: CGFloat) -> CGFloat {
+    private static func fractional(_ value: CGFloat) -> CGFloat {
         value - floor(value)
     }
 
-    private func loadScreenSaverImageURLs() -> [URL] {
+    private static func loadScreenSaverImageURLs() -> [URL] {
         let fileManager = FileManager.default
         let fullImageExtensions = Set(["jpg", "jpeg", "png", "heic", "heif", "tif", "tiff", "bmp"])
         let fallbackRootExtensions = Set(["jpg", "jpeg", "heic", "heif"])

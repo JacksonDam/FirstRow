@@ -1,49 +1,42 @@
 #if os(iOS)
-    import SwiftUI
     import UIKit
     import UniformTypeIdentifiers
 
-    struct IOSFolderPicker: UIViewControllerRepresentable {
-        let onPick: (URL) -> Void
-        let onCancel: () -> Void
-        func makeCoordinator() -> Coordinator {
-            Coordinator(onPick: onPick, onCancel: onCancel)
-        }
-
-        func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-            let picker = UIDocumentPickerViewController(
-                forOpeningContentTypes: [.folder],
-                asCopy: false,
-            )
-            picker.delegate = context.coordinator
-            picker.allowsMultipleSelection = false
-            picker.shouldShowFileExtensions = true
-            return picker
-        }
-
-        func updateUIViewController(_: UIDocumentPickerViewController, context _: Context) {}
-    }
-
-    extension IOSFolderPicker {
-        final class Coordinator: NSObject, UIDocumentPickerDelegate {
-            private let onPick: (URL) -> Void
-            private let onCancel: () -> Void
+    /// The Files folder picker, for choosing where movies live.
+    enum IOSFolderPicker {
+        private final class Delegate: NSObject, UIDocumentPickerDelegate {
+            let onPick: (URL) -> Void
+            let onCancel: () -> Void
             init(onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
                 self.onPick = onPick
                 self.onCancel = onCancel
             }
 
             func documentPicker(_: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-                guard let selectedURL = urls.first else {
+                IOSFolderPicker.activeDelegate = nil
+                guard let url = urls.first else {
                     onCancel()
                     return
                 }
-                onPick(selectedURL)
+                onPick(url)
             }
 
             func documentPickerWasCancelled(_: UIDocumentPickerViewController) {
+                IOSFolderPicker.activeDelegate = nil
                 onCancel()
             }
+        }
+
+        private static var activeDelegate: Delegate?
+
+        static func present(from presenter: UIViewController, onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+            let delegate = Delegate(onPick: onPick, onCancel: onCancel)
+            activeDelegate = delegate
+            picker.delegate = delegate
+            picker.allowsMultipleSelection = false
+            picker.shouldShowFileExtensions = true
+            presenter.present(picker, animated: true)
         }
     }
 #endif

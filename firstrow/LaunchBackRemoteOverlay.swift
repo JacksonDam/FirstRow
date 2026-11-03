@@ -1,24 +1,5 @@
 #if os(tvOS)
-    import SwiftUI
     import UIKit
-
-    struct LaunchBackRemoteOverlay: UIViewRepresentable {
-        let onBackPressed: () -> Void
-        let onBackReleased: () -> Void
-        func makeUIView(context _: Context) -> LaunchBackRemoteCapturingView {
-            let view = LaunchBackRemoteCapturingView()
-            view.backgroundColor = .clear
-            view.onBackPressed = onBackPressed
-            view.onBackReleased = onBackReleased
-            return view
-        }
-
-        func updateUIView(_ uiView: LaunchBackRemoteCapturingView, context _: Context) {
-            uiView.onBackPressed = onBackPressed
-            uiView.onBackReleased = onBackReleased
-            uiView.makePrimaryResponderIfPossible()
-        }
-    }
 
     final class LaunchBackRemoteCapturingView: UIView {
         var onBackPressed: (() -> Void)?

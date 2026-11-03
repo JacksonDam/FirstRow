@@ -1,67 +1,76 @@
 #if os(macOS)
     import Carbon.HIToolbox
-    import ObjectiveC.runtime
-    import SwiftUI
+    import AppKit
 
-    private let _alwaysTrue: @convention(c) (AnyObject, Selector) -> Bool = { _, _ in true }
+    /// First Row's full-screen window. Borderless windows can't normally become key; this one
+    /// can, without changing how any other window (alerts, panels, privacy prompts) behaves.
+    final class FirstRowWindow: NSWindow {
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { true }
+    }
 
-    class AppDelegate: NSObject, NSApplicationDelegate {
+    final class AppDelegate: NSObject, NSApplicationDelegate {
         private static let commandEscapeHotKeySignature: OSType = 0x4652_5154 // 'FRQT'
         private static let commandEscapeHotKeyIdentifier: UInt32 = 1
-        private static var didInstallBorderlessKeySwizzle = false
-        private var commandEscapeMonitor: Any?
-        private var windowLockObservers: [Any] = []
-        private var pendingWindowLockIDs: Set<ObjectIdentifier> = []
+        private var window: FirstRowWindow?
+        private var appController: FirstRowAppController?
+        private var keyMonitor: Any?
+        private var screenObservers: [NSObjectProtocol] = []
         private var isCommandKeyDown = false
-        private var isAdjustingWindowFrame = false
         private var commandEscapeHotKeyRef: EventHotKeyRef?
         private var commandEscapeHotKeyHandlerRef: EventHandlerRef?
+
         func applicationWillFinishLaunching(_: Notification) {
             FirstRowHarness.applicationWillFinishLaunching()
+            NSApplication.shared.mainMenu = makeMainMenu()
         }
 
+        @MainActor
         func applicationDidFinishLaunching(_: Notification) {
+            let controller = FirstRowAppController()
+            appController = controller
+            let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+            let window = FirstRowWindow(contentRect: screenFrame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.title = "First Row"
+            window.contentView = controller.hostView
+            window.backgroundColor = .black
+            window.isOpaque = true
+            window.hasShadow = false
+            window.tabbingMode = .disallowed
+            window.collectionBehavior = [.fullScreenNone]
+            window.acceptsMouseMovedEvents = true
+            self.window = window
+            installKeyMonitor()
+            window.makeFirstResponder(controller.hostView)
+
             if FirstRowHarness.isActive {
+                window.orderBack(nil)
                 FirstRowHarness.applicationDidFinishLaunching()
+                controller.start()
                 return
             }
-            installBorderlessKeyabilitySwizzleIfNeeded()
-            for window in NSApplication.shared.windows { window.alphaValue = 0 }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.installWindowLockObservers()
-                self.scheduleLockForAllWindows()
-                await Task.yield()
-                for window in NSApplication.shared.windows { window.alphaValue = 1 }
-                self.activateAndFocusAppWindow()
-            }
+            lockWindowToScreen()
+            installScreenObservers()
             applyImmersivePresentationOptions()
-            activateAndFocusAppWindow()
-            NSCursor.hide()
-            commandEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
-                guard let self else { return event }
-                if event.type == .flagsChanged {
-                    isCommandKeyDown = event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
-                    return event
-                }
-                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                let isCommandEscape =
-                    (modifiers.contains(.command) || isCommandKeyDown) &&
-                    (event.keyCode == KeyCode.escape.rawValue || event.charactersIgnoringModifiers == "\u{1b}")
-                if isCommandEscape, !(event.window is MediaSourcesSettingsWindow) {
-                    NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
-                    return nil
-                }
-                return event
-            }
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            // The pointer hides while First Row is driven from the keyboard or remote, and comes
+            // back as soon as the mouse moves (to answer a permission prompt, say).
+            NSCursor.setHiddenUntilMouseMoves(true)
             registerCommandEscapeHotKey()
+            controller.start()
         }
 
         func applicationDidBecomeActive(_: Notification) {
             guard !FirstRowHarness.isActive else { return }
             AppleRemoteInput.shared.start()
             applyImmersivePresentationOptions()
-            activateAndFocusAppWindow()
+            // Back in front: put the keyboard back on First Row, unless one of its own panels
+            // (the folder picker) is what's in front.
+            if let window, NSApplication.shared.keyWindow == nil, !NSApplication.shared.windows.contains(where: { $0 is NSPanel && $0.isVisible }) {
+                window.makeKeyAndOrderFront(nil)
+            }
         }
 
         func applicationWillResignActive(_: Notification) {
@@ -70,144 +79,106 @@
         }
 
         func applicationWillTerminate(_: Notification) {
-            if let m = commandEscapeMonitor { NSEvent.removeMonitor(m); commandEscapeMonitor = nil }
-            for observer in windowLockObservers {
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            keyMonitor = nil
+            for observer in screenObservers {
                 NotificationCenter.default.removeObserver(observer)
             }
-            windowLockObservers.removeAll()
+            screenObservers.removeAll()
             unregisterCommandEscapeHotKey()
             NSApplication.shared.presentationOptions = []
-            NSCursor.unhide()
         }
 
-        private func installWindowLockObservers() {
-            windowLockObservers.append(
-                NotificationCenter.default.addObserver(
-                    forName: NSWindow.didBecomeMainNotification,
-                    object: nil,
-                    queue: .main,
-                ) { [weak self] notification in
-                    guard let window = notification.object as? NSWindow else { return }
-                    self?.scheduleWindowLock(for: window)
-                },
-            )
-            windowLockObservers.append(
-                NotificationCenter.default.addObserver(
-                    forName: NSWindow.didChangeScreenNotification,
-                    object: nil,
-                    queue: .main,
-                ) { [weak self] notification in
-                    guard let window = notification.object as? NSWindow else { return }
-                    self?.scheduleWindowLock(for: window)
-                },
-            )
-            windowLockObservers.append(
-                NotificationCenter.default.addObserver(
-                    forName: NSApplication.didChangeScreenParametersNotification,
-                    object: nil,
-                    queue: .main,
-                ) { [weak self] _ in
-                    self?.scheduleLockForAllWindows()
-                },
-            )
+        func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
+            true
         }
 
-        private func lockAllWindowsToScreenFrame() {
-            for window in NSApplication.shared.windows {
-                lockWindowToScreenFrame(window)
+        /// Keys for First Row's window (and the ones the Apple Remote and harness post, which
+        /// have no window) go to the menus; keys for other windows, and shortcuts with
+        /// Command, carry on as usual. Command-Escape quits.
+        private func installKeyMonitor() {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
+                guard let self else { return event }
+                if event.type == .flagsChanged {
+                    isCommandKeyDown = event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
+                    return event
+                }
+                let hasCommand = event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) || isCommandKeyDown
+                let isEscape = event.keyCode == KeyCode.escape.rawValue || event.charactersIgnoringModifiers == "\u{1b}"
+                guard event.window == nil || event.window === window else { return event }
+                if hasCommand {
+                    if isEscape, event.type == .keyDown {
+                        NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
+                        return nil
+                    }
+                    return event
+                }
+                MainActor.runOnMainThread {
+                    if event.type == .keyDown {
+                        self.appController?.handleKeyDown(event)
+                    } else {
+                        self.appController?.handleKeyUp(event)
+                    }
+                }
+                return nil
             }
         }
 
-        private func scheduleLockForAllWindows() {
-            for window in NSApplication.shared.windows {
-                scheduleWindowLock(for: window)
+        private func makeMainMenu() -> NSMenu {
+            let mainMenu = NSMenu()
+            let appItem = NSMenuItem()
+            mainMenu.addItem(appItem)
+            let appMenu = NSMenu(title: "First Row")
+            appMenu.addItem(withTitle: "About First Row", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+            appMenu.addItem(.separator())
+            let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
+            settings.target = self
+            appMenu.addItem(settings)
+            appMenu.addItem(.separator())
+            appMenu.addItem(withTitle: "Hide First Row", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+            let quitWithFade = NSMenuItem(title: "Quit First Row", action: #selector(requestQuit(_:)), keyEquivalent: "\u{1b}")
+            quitWithFade.keyEquivalentModifierMask = [.command]
+            quitWithFade.target = self
+            appMenu.addItem(quitWithFade)
+            appMenu.addItem(withTitle: "Quit Now", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            appItem.submenu = appMenu
+            return mainMenu
+        }
+
+        @objc private func showSettings(_: Any?) {
+            MainActor.runOnMainThread {
+                appController?.showMediaFolders()
             }
         }
 
-        private func scheduleWindowLock(for window: NSWindow) {
-            let windowID = ObjectIdentifier(window)
-            guard pendingWindowLockIDs.insert(windowID).inserted else { return }
-            Task { @MainActor [weak self, weak window] in
-                guard let self else { return }
-                defer { self.pendingWindowLockIDs.remove(windowID) }
-                await Task.yield()
-                guard let window else { return }
-                self.lockWindowToScreenFrame(window)
-            }
+        @objc private func requestQuit(_: Any?) {
+            NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
         }
 
-        private func installBorderlessKeyabilitySwizzleIfNeeded() {
-            guard !Self.didInstallBorderlessKeySwizzle else { return }
-            Self.didInstallBorderlessKeySwizzle = true
-            let imp = unsafeBitCast(_alwaysTrue, to: IMP.self)
-            if let m = class_getInstanceMethod(NSWindow.self, #selector(getter: NSWindow.canBecomeKey)) {
-                method_setImplementation(m, imp)
-            }
-            if let m = class_getInstanceMethod(NSWindow.self, #selector(getter: NSWindow.canBecomeMain)) {
-                method_setImplementation(m, imp)
-            }
+        private func installScreenObservers() {
+            screenObservers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.lockWindowToScreen()
+            })
+            screenObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: nil, queue: .main) { [weak self] notification in
+                guard notification.object as? NSWindow === self?.window else { return }
+                self?.lockWindowToScreen()
+            })
         }
 
         private func applyImmersivePresentationOptions() {
             NSApplication.shared.presentationOptions = [.hideDock, .hideMenuBar]
         }
 
-        private func activateAndFocusAppWindow() {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            guard let contentWindow = primaryContentWindow() else { return }
-            contentWindow.makeKeyAndOrderFront(nil)
-            contentWindow.makeMain()
-        }
-
-        /// The full-screen window that shows First Row. `windows.first` can be one of AppKit's
-        /// own helper windows on newer macOS, which left the keyboard going nowhere.
-        private func primaryContentWindow() -> NSWindow? {
-            let windows = NSApplication.shared.windows.filter { window in
-                !(window is NSPanel) && window.contentView != nil && window.className != "NSStatusBarWindow"
-            }
-            return windows.first { $0.isVisible } ?? windows.first
-        }
-
-        private func lockWindowToScreenFrame(_ window: NSWindow) {
-            guard let screenFrame = (window.screen ?? NSScreen.main)?.frame else { return }
-
-            if window.styleMask != [.borderless] {
-                if #available(macOS 13.0, *) {
-                    window.styleMask = [.borderless]
-                }
-                // macOS 12 and earlier does not appear to like setStyleMask: (crashes...)
-            }
-            window.collectionBehavior = [.fullScreenNone]
+        /// Keeps First Row's window (only) covering its screen.
+        private func lockWindowToScreen() {
+            guard let window, let screenFrame = (window.screen ?? NSScreen.main)?.frame else { return }
             window.level = .normal
-            window.isOpaque = true
-            window.backgroundColor = .black
-            window.hasShadow = false
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-            window.tabbingMode = .disallowed
             window.isMovable = false
-            window.isMovableByWindowBackground = false
-            window.standardWindowButton(.closeButton)?.isHidden = true
-            window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-            window.standardWindowButton(.zoomButton)?.isHidden = true
-            if window.minSize != screenFrame.size {
-                window.minSize = screenFrame.size
+            window.minSize = screenFrame.size
+            window.maxSize = screenFrame.size
+            if !window.frame.equalTo(screenFrame) {
+                window.setFrame(screenFrame, display: true, animate: false)
             }
-            if window.maxSize != screenFrame.size {
-                window.maxSize = screenFrame.size
-            }
-            if window.contentMinSize != screenFrame.size {
-                window.contentMinSize = screenFrame.size
-            }
-            if window.contentMaxSize != screenFrame.size {
-                window.contentMaxSize = screenFrame.size
-            }
-
-            guard !isAdjustingWindowFrame else { return }
-            if window.frame.equalTo(screenFrame) { return }
-            isAdjustingWindowFrame = true
-            window.setFrame(screenFrame, display: false, animate: false)
-            isAdjustingWindowFrame = false
         }
 
         private func registerCommandEscapeHotKey() {
@@ -237,10 +208,7 @@
                     else {
                         return noErr
                     }
-                    // Not while the Settings window is in front: Cmd+Esc there shouldn't quit First Row.
-                    if !(NSApplication.shared.keyWindow is MediaSourcesSettingsWindow) {
-                        NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
-                    }
+                    NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
                     return noErr
                 },
                 1,

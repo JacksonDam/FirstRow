@@ -1,5 +1,9 @@
 import QuartzCore
-import SwiftUI
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 
 /// The full-screen photo slideshow: each photo slowly pans and zooms (the Ken Burns effect)
 /// and crossfades into the next.
@@ -7,38 +11,6 @@ import SwiftUI
 /// Drawn with Core Animation. Every photo's pan, zoom and fades are animations with absolute
 /// start times, so the render server plays the whole show; the app only wakes at each photo
 /// change to swap in the next photos (the SwiftUI version redrew 60 times a second).
-struct PhotoSlideshowFullscreenView: View {
-    let imageCount: Int
-    let imageForIndex: (Int) -> NSImage?
-    let isPaused: Bool
-    let pausedIndex: Int
-    let playbackStartDate: Date
-    let playbackElapsedOffset: TimeInterval
-    let displayDuration: TimeInterval
-    let crossfadeDuration: TimeInterval
-    let hasAlreadyFinished: Bool
-    let onFrameIndicesChanged: (_ primaryIndex: Int, _ secondaryIndex: Int?) -> Void
-    let onFinished: () -> Void
-
-    var body: some View {
-        LayerHost<PhotoSlideshowLayerController>(configuration: .init(
-            imageCount: imageCount,
-            imageForIndex: imageForIndex,
-            isPaused: isPaused,
-            pausedIndex: pausedIndex,
-            playbackStartDate: playbackStartDate,
-            playbackElapsedOffset: playbackElapsedOffset,
-            displayDuration: displayDuration,
-            crossfadeDuration: crossfadeDuration,
-            hasAlreadyFinished: hasAlreadyFinished,
-            onFrameIndicesChanged: onFrameIndicesChanged,
-            onFinished: onFinished,
-        ))
-        .background(Color.black.ignoresSafeArea())
-        .ignoresSafeArea()
-    }
-}
-
 @MainActor
 final class PhotoSlideshowLayerController: LayerController {
     struct Configuration {

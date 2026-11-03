@@ -1,7 +1,12 @@
 import AVFoundation
 import Foundation
 import ImageIO
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 
 final class DecodedDisplayArtworkCache {
     static let shared = DecodedDisplayArtworkCache()

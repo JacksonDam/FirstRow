@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 enum MenuConfiguration {
     private static let catalog = MenuCatalog(features: [
@@ -18,7 +18,7 @@ enum MenuConfiguration {
         symbolName: "chevron.right",
         color: .white,
         fontSize: 30,
-        fontWeight: .heavy,
+        symbolWeight: .heavy,
         xOffset: -20,
         glowPrimaryRadius: 2.5,
         glowSecondaryRadius: 5,

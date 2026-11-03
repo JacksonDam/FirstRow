@@ -1,5 +1,10 @@
 import AVFoundation
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
 
 /// First Row's menu system: all navigation, library and playback state, plus the logic in
 /// the `MenuView+*` extensions. A class rather than a SwiftUI view, so state lives in one
@@ -102,17 +107,9 @@ final class MenuView: ObservableObject {
     let theatricalTrailersLoadingFullscreenKey = "movies_theatrical_trailers_loading"
     let photoSlideshowFullscreenKey = "photo_slideshow"
 
-    /// Bumped on every state change. SwiftUI skips re-running content closures that capture
-    /// only this class, so the rendering closures capture the revision as well.
-    var renderRevision = 0
-    private var revisionSubscription: Any?
-
     private var mediaSourcesObserver: NSObjectProtocol?
 
     init() {
-        revisionSubscription = objectWillChange.sink { [weak self] _ in
-            self?.renderRevision &+= 1
-        }
         mediaSourcesObserver = NotificationCenter.default.addObserver(
             forName: MediaSources.didChangeNotification,
             object: nil,
@@ -146,7 +143,6 @@ final class MenuView: ObservableObject {
     @Published var headerText = "First Row"
     @Published var headerOpacity: Double = 1
     @Published var submenuTitleOpacity: Double = 0
-    @Published var rootMenuSelectionCenterSceneX: CGFloat?
     @Published var rootMenuOpacity: Double = 1
     @Published var submenuOpacity: Double = 0
     @Published var thirdMenuOpacity: Double = 0

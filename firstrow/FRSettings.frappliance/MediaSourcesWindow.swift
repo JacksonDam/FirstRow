@@ -267,15 +267,4 @@
             MediaSources.shared.setLibrary(nil, kind: kind)
         }
     }
-
-    extension MainActor {
-        /// Runs main-actor work from a callback that AppKit always delivers on the main thread.
-        static func assumeIsolatedIfPossible(_ body: @escaping @MainActor () -> Void) {
-            if #available(macOS 14.0, *) {
-                MainActor.assumeIsolated(body)
-            } else {
-                Task { @MainActor in body() }
-            }
-        }
-    }
 #endif

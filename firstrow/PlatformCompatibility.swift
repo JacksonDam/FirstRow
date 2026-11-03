@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 #if os(iOS) || os(tvOS)
     let firstRowRegularFontName = "Helvetica Neue"
@@ -7,31 +7,6 @@ import SwiftUI
     let firstRowRegularFontName = "Lucida Grande"
     let firstRowBoldFontName = "Lucida Grande Bold"
 #endif
-extension Font {
-    static func firstRowRegular(size: CGFloat) -> Font {
-        .custom(firstRowRegularFontName, size: size)
-    }
-
-    static func firstRowBold(size: CGFloat) -> Font {
-        .custom(firstRowBoldFontName, size: size)
-    }
-}
-
-extension View {
-    @ViewBuilder
-    func foregroundStyleCompat(_ color: Color) -> some View {
-        if #available(macOS 14.0, iOS 17.0, tvOS 17.0, *) {
-            _applyForegroundStyle(color)
-        } else {
-            foregroundColor(color)
-        }
-    }
-
-    @available(macOS 14.0, iOS 17.0, tvOS 17.0, *)
-    private func _applyForegroundStyle(_ color: Color) -> some View {
-        foregroundStyle(color)
-    }
-}
 
 func firstRowSleep(_ seconds: Double) async throws {
     if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
@@ -54,12 +29,6 @@ func firstRowSleep(_ seconds: Double) async throws {
 
         convenience init?(cgImage: CGImage, size _: NSSize) {
             self.init(cgImage: cgImage)
-        }
-    }
-
-    extension Image {
-        init(nsImage: NSImage) {
-            self.init(uiImage: nsImage)
         }
     }
 #endif
