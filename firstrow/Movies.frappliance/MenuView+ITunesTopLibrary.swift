@@ -188,15 +188,14 @@ extension MenuView {
         let nsRange = NSRange(rawArtwork.startIndex ..< rawArtwork.endIndex, in: rawArtwork)
         let matches = regex.matches(in: rawArtwork, options: [], range: nsRange)
         guard let match = matches.last,
-              match.numberOfRanges >= 4,
-              let wholeMatchRange = Range(match.range(at: 0), in: rawArtwork),
-              let extRange = Range(match.range(at: 3), in: rawArtwork)
+              let wholeMatchRange = Range(match.range(at: 0), in: rawArtwork)
         else {
             return rawArtwork
         }
-        let fileExtension = String(rawArtwork[extRange])
+        // Artwork is decoded to at most 900 pixels, so a 1000x1500 JPEG is plenty (about 0.3 MB;
+        // the 2000x3000 PNG asked for before was about 8.5 MB, too much to load in the background).
         var replaced = rawArtwork
-        replaced.replaceSubrange(wholeMatchRange, with: "/2000x3000bb.\(fileExtension)")
+        replaced.replaceSubrange(wholeMatchRange, with: "/1000x1500bb.jpg")
         return replaced
     }
 
@@ -431,20 +430,42 @@ extension MenuView {
         ) {
             return cached
         }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200 ..< 300).contains(httpResponse.statusCode)
-            else {
-                return nil
+        guard let data = await ITunesTopStore.shared.artworkData(for: url) else { return nil }
+        return cachedDecodedDisplayArtworkImage(
+            from: data,
+            sourceKey: url.absoluteString,
+            maxPixelSize: maxPixelSize,
+        )
+    }
+
+    /// Downloads a chart entry's artwork into `ITunesTopStore` without decoding it (the larger
+    /// copy when there is one, as `fetchITunesTopMovieArtworkImage` prefers).
+    nonisolated func prefetchITunesTopArtworkData(from lowResolutionURL: URL) async {
+        if let highResolutionURL = highResolutionITunesArtworkURL(from: lowResolutionURL),
+           await ITunesTopStore.shared.artworkData(for: highResolutionURL) != nil
+        {
+            return
+        }
+        _ = await ITunesTopStore.shared.artworkData(for: lowResolutionURL)
+    }
+
+    /// Loads the four charts and their artwork in the background, soon after launch, so the
+    /// carousels and lists have them before anyone opens them. Best effort: anything that fails
+    /// loads again when its menu asks for it.
+    func preloadITunesTopChartsInBackground() {
+        Task.detached(priority: .utility) {
+            guard await ITunesTopStore.shared.beginPreload() else { return }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await withTaskGroup(of: Void.self) { group in
+                for kind in ITunesTopCarouselKind.allCases {
+                    group.addTask {
+                        guard let entries = try? await self.fetchITunesTopEntries(for: kind) else { return }
+                        for url in entries.artworkURLs {
+                            await self.prefetchITunesTopArtworkData(from: url)
+                        }
+                    }
+                }
             }
-            return cachedDecodedDisplayArtworkImage(
-                from: data,
-                sourceKey: url.absoluteString,
-                maxPixelSize: maxPixelSize,
-            )
-        } catch {
-            return nil
         }
     }
 
@@ -503,6 +524,19 @@ extension MenuView {
                 entries.count
             case let .musicVideos(entries):
                 entries.count
+            }
+        }
+
+        var artworkURLs: [URL] {
+            switch self {
+            case let .movies(entries):
+                entries.compactMap(\.artworkURL)
+            case let .tvEpisodes(entries):
+                entries.compactMap(\.artworkURL)
+            case let .songs(entries):
+                entries.compactMap(\.artworkURL)
+            case let .musicVideos(entries):
+                entries.compactMap(\.artworkURL)
             }
         }
     }
@@ -575,7 +609,15 @@ extension MenuView {
         }
     }
 
+    /// A chart's entries: from `ITunesTopStore` while fresh, otherwise downloaded (once, however
+    /// many menus ask at the same time).
     nonisolated func fetchITunesTopEntries(for kind: ITunesTopCarouselKind) async throws -> ITunesTopLoadEntries {
+        try await ITunesTopStore.shared.entries(for: kind) {
+            try await self.downloadITunesTopEntries(for: kind)
+        }
+    }
+
+    private nonisolated func downloadITunesTopEntries(for kind: ITunesTopCarouselKind) async throws -> ITunesTopLoadEntries {
         switch kind {
         case .movies:
             try await .movies(fetchITunesTopMovies())
@@ -609,7 +651,14 @@ extension MenuView {
                 let loadedEntries = try await self.fetchITunesTopEntries(for: kind)
                 await MainActor.run {
                     guard self.currentITunesTopRequestID(kind) == requestID else { return }
-                    guard self.shouldAcceptITunesTopLoadResult(kind) else { return }
+                    guard self.shouldAcceptITunesTopLoadResult(kind) else {
+                        // Moved on before it arrived: keep it for coming back, and don't leave
+                        // the chart marked as loading (nothing asked for it again after that,
+                        // so its carousel stayed empty).
+                        self.setITunesTopLoading(false, for: kind)
+                        self.setITunesTopEntries(loadedEntries, for: kind)
+                        return
+                    }
                     self.setITunesTopLoading(false, for: kind)
                     self.setITunesTopEntries(loadedEntries, for: kind)
                     self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, loadedEntries.count - 1))
@@ -622,7 +671,10 @@ extension MenuView {
             } catch {
                 await MainActor.run {
                     guard self.currentITunesTopRequestID(kind) == requestID else { return }
-                    guard self.shouldAcceptITunesTopLoadResult(kind) else { return }
+                    guard self.shouldAcceptITunesTopLoadResult(kind) else {
+                        self.setITunesTopLoading(false, for: kind)
+                        return
+                    }
                     self.setITunesTopLoading(false, for: kind)
                     self.clearITunesTopEntries(for: kind)
                     self.selectedThirdIndex = 0
@@ -1159,5 +1211,113 @@ extension MenuView {
     enum TVShowsSortMode {
         case date
         case show
+    }
+}
+
+/// The iTunes Store charts and their artwork, kept for the session and shared by every menu.
+/// They load in the background soon after launch, so lists and carousels have them before they
+/// are opened. A download always finishes and is kept, even when the menu that asked for it has
+/// moved on (that used to throw it away, so a carousel left half loaded started again from
+/// nothing next time).
+actor ITunesTopStore {
+    static let shared = ITunesTopStore()
+
+    /// Charts change through the day; older than this, they are downloaded again when asked for.
+    private static let chartFreshness: TimeInterval = 15 * 60
+    /// Downloaded (still compressed) artwork kept, least recently used dropped first.
+    private static let artworkByteBudget = 24 * 1024 * 1024
+
+    private var charts: [MenuView.ITunesTopCarouselKind: (entries: MenuView.ITunesTopLoadEntries, loadedAt: Date)] = [:]
+    private var chartDownloads: [MenuView.ITunesTopCarouselKind: Task<MenuView.ITunesTopLoadEntries, Error>] = [:]
+    private var artwork: [URL: Data] = [:]
+    private var artworkUseOrder: [URL] = []
+    private var artworkBytes = 0
+    private var artworkDownloads: [URL: Task<Data?, Never>] = [:]
+    private var hasStartedPreload = false
+
+    /// True the first time only.
+    func beginPreload() -> Bool {
+        defer { hasStartedPreload = true }
+        return !hasStartedPreload
+    }
+
+    func entries(
+        for kind: MenuView.ITunesTopCarouselKind,
+        download: @escaping @Sendable () async throws -> MenuView.ITunesTopLoadEntries,
+    ) async throws -> MenuView.ITunesTopLoadEntries {
+        if let chart = charts[kind], Date().timeIntervalSince(chart.loadedAt) < Self.chartFreshness {
+            return chart.entries
+        }
+        let task: Task<MenuView.ITunesTopLoadEntries, Error>
+        if let running = chartDownloads[kind] {
+            task = running
+        } else {
+            task = Task { try await download() }
+            chartDownloads[kind] = task
+        }
+        do {
+            let entries = try await task.value
+            if chartDownloads[kind] == task { chartDownloads[kind] = nil }
+            if entries.count > 0 {
+                charts[kind] = (entries, Date())
+            }
+            return entries
+        } catch {
+            if chartDownloads[kind] == task { chartDownloads[kind] = nil }
+            // A failed refresh falls back to the chart that loaded last time.
+            if let chart = charts[kind] { return chart.entries }
+            throw error
+        }
+    }
+
+    func artworkData(for url: URL) async -> Data? {
+        if let data = artwork[url] {
+            markUsed(url)
+            return data
+        }
+        let task: Task<Data?, Never>
+        if let running = artworkDownloads[url] {
+            task = running
+        } else {
+            task = Task { await Self.download(url) }
+            artworkDownloads[url] = task
+        }
+        let data = await task.value
+        if artworkDownloads[url] == task { artworkDownloads[url] = nil }
+        if let data, artwork[url] == nil {
+            keep(data, for: url)
+        }
+        return data
+    }
+
+    private static func download(_ url: URL) async -> Data? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse,
+              (200 ..< 300).contains(httpResponse.statusCode),
+              !data.isEmpty
+        else {
+            return nil
+        }
+        return data
+    }
+
+    private func keep(_ data: Data, for url: URL) {
+        artwork[url] = data
+        artworkBytes += data.count
+        artworkUseOrder.append(url)
+        while artworkBytes > Self.artworkByteBudget, artworkUseOrder.count > 1 {
+            let oldest = artworkUseOrder.removeFirst()
+            if let removed = artwork.removeValue(forKey: oldest) {
+                artworkBytes -= removed.count
+            }
+        }
+    }
+
+    private func markUsed(_ url: URL) {
+        guard let index = artworkUseOrder.firstIndex(of: url) else { return }
+        artworkUseOrder.remove(at: index)
+        artworkUseOrder.append(url)
     }
 }

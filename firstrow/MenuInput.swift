@@ -45,6 +45,7 @@ extension MenuView {
     /// timer and the interface sounds.
     func start() {
         beginStartupMusicLibraryPreloadIfNeeded()
+        preloadITunesTopChartsInBackground()
         registerUserInteractionForScreenSaver()
         startScreenSaverIdleMonitor()
         startupSoundWarmUpWorkItem?.cancel()
