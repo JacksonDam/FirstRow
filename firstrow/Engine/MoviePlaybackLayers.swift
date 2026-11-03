@@ -35,15 +35,18 @@ final class MoviePlaybackLayers {
         let showsControls = menu.isMoviePlaybackVisible && menu.areMovieControlsVisible
         controls.layer.isHidden = !showsControls
         guard showsControls else { return }
-        controls.layer.frame = bounds
+        // The bar is laid out on the full-screen canvas, so it keeps its proportions at
+        // every display resolution.
+        let canvas = FullscreenCanvas(screenSize: bounds.size)
+        canvas.apply(to: controls.layer)
         controls.update(
             glyphState: menu.movieControlsGlyphState,
             currentTime: menu.moviePlaybackCurrentSeconds,
             duration: menu.moviePlaybackDurationSeconds,
             isLoading: menu.isMoviePreviewDownloadLoading,
             loadingProgress: menu.moviePreviewDownloadProgress,
-            size: bounds.size,
-            scale: scale,
+            size: canvas.size,
+            scale: canvas.pixelScale(backingScale: scale),
         )
         controls.layer.setOpacity(menu.movieControlsOpacity, pass.animation)
     }

@@ -233,7 +233,7 @@ final class MenuSceneRenderer: TransactionRendering {
         let fullBounds = CGRect(origin: .zero, size: fullscreenContainerSize)
         playback.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         fullscreenScene.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
-        toast.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
+        toast.update(menu: menu, pass: pass, bounds: fullBounds, backingScale: backingScale)
         for (overlay, opacity) in [
             (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),
             (movieTransitionOverlay, menu.movieTransitionOverlayOpacity),

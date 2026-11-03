@@ -6,6 +6,36 @@ import QuartzCore
     import UIKit
 #endif
 
+/// Full-screen views are laid out on a canvas 1080 points tall (and at least 1440 wide),
+/// shaped like the screen and scaled to fill it, so they look the same at every display
+/// resolution, as the menus do.
+struct FullscreenCanvas {
+    let size: CGSize
+    let scale: CGFloat
+
+    init(screenSize: CGSize) {
+        guard screenSize.width > 0, screenSize.height > 0 else {
+            size = screenSize
+            scale = 1
+            return
+        }
+        scale = min(screenSize.height / 1080, screenSize.width / 1440)
+        size = CGSize(width: screenSize.width / scale, height: screenSize.height / scale)
+    }
+
+    /// Spreads `layer` (anchored at its top left) over the screen in canvas points.
+    func apply(to layer: CALayer) {
+        layer.bounds = CGRect(origin: .zero, size: size)
+        layer.position = .zero
+        layer.transform = CATransform3DMakeScale(scale, scale, 1)
+    }
+
+    /// Pixels per canvas point, rounded up a little so cached text is shared between passes.
+    func pixelScale(backingScale: CGFloat) -> CGFloat {
+        max(1, (scale * backingScale * 100).rounded(.up) / 100)
+    }
+}
+
 /// The scene shown over the whole screen: Now Playing, the screen saver, a photo slideshow,
 /// an error or a loading message.
 @MainActor
@@ -51,8 +81,11 @@ final class FullscreenSceneLayer {
                 layer.addSublayer(content.layer)
             }
         }
-        content?.layer.frame = CGRect(origin: .zero, size: bounds.size)
-        content?.update(menu: menu, scene: scene, pass: pass, size: bounds.size, scale: scale)
+        let canvas = FullscreenCanvas(screenSize: bounds.size)
+        if let content {
+            canvas.apply(to: content.layer)
+            content.update(menu: menu, scene: scene, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale))
+        }
         layer.setOpacity(menu.fullscreenSceneOpacity, pass.animation)
     }
 
@@ -577,33 +610,39 @@ final class PhotoSlideshowSceneLayer: FullscreenContent {
 /// The song playing, shown for a while at the bottom left of the screen saver.
 @MainActor
 final class ScreenSaverToastLayer {
+    /// Covers the screen in full-screen canvas points; the toast itself is `box`.
     let layer = SceneLayer()
+    private let box = SceneLayer()
     private let artwork = SceneLayer()
     private let title = SceneLayer()
     private let album = SceneLayer()
     private let artist = SceneLayer()
 
     init() {
-        layer.backgroundColor = CGColor(gray: 0, alpha: 0.5)
-        layer.opacity = 0
+        layer.addSublayer(box)
+        box.backgroundColor = CGColor(gray: 0, alpha: 0.5)
+        box.opacity = 0
         artwork.contentsGravity = .resizeAspectFill
         artwork.masksToBounds = true
         artwork.borderColor = CGColor(gray: 1, alpha: 0.16)
         artwork.borderWidth = 1
-        for sublayer in [artwork, title, album, artist] { layer.addSublayer(sublayer) }
+        for sublayer in [artwork, title, album, artist] { box.addSublayer(sublayer) }
     }
 
-    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
+    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, backingScale: CGFloat) {
         let showing = menu.activeFullscreenScene?.key == menu.screenSaverFullscreenKey
         layer.isHidden = !showing
         guard showing else {
-            layer.opacity = 0
+            box.opacity = 0
             return
         }
+        let canvas = FullscreenCanvas(screenSize: bounds.size)
+        canvas.apply(to: layer)
+        let scale = canvas.pixelScale(backingScale: backingScale)
         let size = menu.screenSaverNowPlayingToastSize
-        layer.frame = CGRect(x: 42, y: bounds.height - 36 - size.height, width: size.width, height: size.height)
-        layer.setOpacity(menu.screenSaverNowPlayingToastOpacity, pass.animation)
-        guard menu.screenSaverNowPlayingToastOpacity > 0 || layer.opacity > 0 else { return }
+        box.frame = CGRect(x: 42, y: canvas.size.height - 36 - size.height, width: size.width, height: size.height)
+        box.setOpacity(menu.screenSaverNowPlayingToastOpacity, pass.animation)
+        guard menu.screenSaverNowPlayingToastOpacity > 0 || box.opacity > 0 else { return }
         let image = menu.musicNowPlayingArtwork ?? menu.musicFallbackImage ?? menu.podcastFallbackImage
         let artworkSize: CGFloat = 130
         artwork.contents = LayerImageCache.cgImage(for: image)
