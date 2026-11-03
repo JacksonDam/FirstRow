@@ -533,13 +533,6 @@ extension MenuView {
     }
     // MARK: - Layout geometry
 
-    func visibleIndices() -> [Int] {
-        let indices = [0, 1, 2, 3, 4, 5, 6].map { offset in
-            (selectedIndex + offset + menuItems.count) % menuItems.count
-        }
-        return indices.reversed()
-    }
-
     func carouselWidth(geometry: GeometryProxy) -> CGFloat {
         min(
             iconSize * CGFloat(menuItems.count) + iconSpacing * CGFloat(menuItems.count - 1),
@@ -715,11 +708,6 @@ extension MenuView {
 
     // MARK: - Carousel item views
 
-    /// The old SwiftUI carousel, kept for side-by-side comparison (`FIRSTROW_SWIFTUI_CAROUSEL=1`, debug only).
-    static var usesSwiftUIRootCarousel: Bool {
-        FirstRowHarness.isActive && ProcessInfo.processInfo.environment["FIRSTROW_SWIFTUI_CAROUSEL"] != nil
-    }
-
     func rootCarouselConfiguration(geometry: GeometryProxy) -> RootCarouselConfiguration {
         RootCarouselConfiguration(
             images: menuItems.map { menuImage(forRootID: $0.id) },
@@ -743,115 +731,6 @@ extension MenuView {
             backgroundTransitionDuration: submenuBackgroundIconTransitionDuration,
             backgroundReturnDuration: submenuBackgroundIconReturnDuration,
         )
-    }
-
-    func carouselItemView(for index: Int, geometry: GeometryProxy) -> some View {
-        let position = CGFloat(index - selectedIndex)
-        let angle = position * .pi / 6
-        var horizontalOffset: CGFloat
-        var verticalOffset: CGFloat
-        var zInd: CGFloat
-        let scale = position == 0 && isIconAnimated ? landedIconScale : (1.0 - (abs(position) * scaleReduction))
-        if position == 0 && isIconAnimated {
-            horizontalOffset = landedSelectedHorizontalOffset(geometry: geometry)
-            verticalOffset = landedSelectedVerticalOffset
-            zInd = 1000
-        } else if position == 0 {
-            horizontalOffset = -1.25 * arcRadius * sin(angle) * 1.5 + restingSelectedHorizontalOffset
-            verticalOffset = restingSelectedVerticalOffset
-            zInd = 0
-        } else if position == 1 || position == 2 || position == 3 {
-            horizontalOffset = -1.25 * arcRadius * sin(angle) * 0.9 - (0.1 * iconSize)
-            verticalOffset = -arcRadius * (1 - cos(angle)) * 0.025 + (position < 2 ? (0.2 * iconSize) : (0.15 * iconSize))
-            zInd = 0
-        } else {
-            horizontalOffset = -1920
-            verticalOffset = 1280
-            zInd = 1000
-        }
-        if isEnteringSubmenu && position != 0 {
-            horizontalOffset -= max(geometry.size.width * 1.15, iconSize * 3.0)
-        }
-        let baseOpacity: CGFloat = position == 0 ? 1.0 : (abs(position) <= 2 ? 1.0 : 1.0 - (abs(position) * 0.4))
-        let opacity = isEnteringSubmenu && position != 0 ? max(0.0, baseOpacity - 0.95) : baseOpacity
-        let isIncoming = position == 0 && !isIconAnimated
-        let entryOffset = selectedCarouselEntryOffset
-        let isBackground = abs(position) > 0
-        let adjustedIconSize: CGFloat =
-            abs(position) == 1 || abs(position) == 2 ? iconSize * 1 : iconSize * selectedCarouselAdjustedSizeMultiplier
-        let reflectionCompensationX =
-            (position == 0 && (isIconAnimated || isEnteringSubmenu))
-                ? (horizontalOffset - restingSelectedHorizontalOffset)
-                : 0
-        let reflectionCompensationY =
-            (position == 0 && (isIconAnimated || isEnteringSubmenu))
-                ? (verticalOffset - restingSelectedVerticalOffset)
-                : 0
-        return Group {
-            if let image = menuImage(forRootID: menuItems[index].id) {
-                standardCarouselIconView(
-                    image: image,
-                    adjustedIconSize: adjustedIconSize,
-                    scale: scale,
-                    opacity: opacity,
-                    horizontalOffset: horizontalOffset,
-                    verticalOffset: verticalOffset,
-                    isIncoming: isIncoming,
-                    entryOffset: entryOffset,
-                    zInd: zInd,
-                    isBackground: isBackground,
-                    showReflection: !(position == 0 && isInSubmenu && !isEnteringSubmenu && !isReturningToRoot),
-                    animateReflection: position == 0 && (!isInSubmenu || isEnteringSubmenu || isReturningToRoot),
-                    reflectionCompensationX: reflectionCompensationX,
-                    reflectionCompensationY: reflectionCompensationY,
-                )
-            }
-        }.padding(.bottom, 100)
-    }
-
-    func standardCarouselIconView(
-        image: NSImage,
-        adjustedIconSize: CGFloat,
-        scale: CGFloat,
-        opacity: CGFloat,
-        horizontalOffset: CGFloat,
-        verticalOffset: CGFloat,
-        isIncoming: Bool,
-        entryOffset: CGFloat,
-        zInd: CGFloat,
-        isBackground: Bool,
-        showReflection: Bool = true,
-        animateReflection: Bool = false,
-        reflectionCompensationX: CGFloat = 0,
-        reflectionCompensationY: CGFloat = 0,
-    ) -> some View {
-        let baseX = horizontalOffset + (isIncoming ? -entryOffset : 0)
-        let baseY = verticalOffset + (isIncoming ? entryOffset : 0)
-        let usesDetachedReflection = animateReflection &&
-            ((isEnteringSubmenu && !isReturningToRoot) || (isReturningToRoot && isIconAnimated))
-        let reflectionX = usesDetachedReflection ? 90.0 : 0.0
-        let reflectionY = usesDetachedReflection ? 920.0 : -(adjustedIconSize * 0.215)
-        let reflectionOpacity = usesDetachedReflection ? 0.22 : 0.34
-        let reflectionBlur = usesDetachedReflection ? 3.0 : 0.0
-        let backgroundIconTransitionDuration =
-            isReturningToRoot
-                ? submenuBackgroundIconReturnDuration
-                : submenuBackgroundIconTransitionDuration
-        return ZStack {
-            if showReflection {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: adjustedIconSize, height: adjustedIconSize).mask(
-                    LinearGradient(
-                        gradient: Gradient(stops: [.init(color: .white, location: 0.0), .init(color: .clear, location: 0.6)]),
-                        startPoint: .bottom,
-                        endPoint: .top,
-                    ),
-                ).scaleEffect(x: 1.0, y: -1.0, anchor: .bottom).opacity(reflectionOpacity).offset(
-                    x: reflectionX - (usesDetachedReflection ? reflectionCompensationX : 0),
-                    y: reflectionY - (usesDetachedReflection ? reflectionCompensationY : 0),
-                ).blur(radius: reflectionBlur).scaleEffect(usesDetachedReflection ? 1.0 : scale)
-            }
-            Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: adjustedIconSize, height: adjustedIconSize).scaleEffect(scale)
-        }.opacity(opacity).offset(x: baseX, y: baseY).zIndex(isIncoming ? 1 : zInd).blur(radius: isBackground ? 10 : 0).animation(.easeInOut(duration: selectionAnimationDuration * 0.85), value: selectedIndex).animation(.easeInOut(duration: backgroundIconTransitionDuration), value: isEnteringSubmenu && isBackground).animation(.easeInOut(duration: iconFlightAnimationDuration), value: isIconAnimated)
     }
 
     // MARK: - Menu item row view
@@ -1582,8 +1461,7 @@ extension MenuView {
     }
 
     func menuScene(geometry: GeometryProxy) -> some View {
-        let revision = renderRevision
-        return ZStack {
+        ZStack {
             VStack {
                 Spacer()
                 headerView(geometry: geometry).offset(y: menuClusterVerticalCompensation)
@@ -1592,19 +1470,8 @@ extension MenuView {
                         if showsSettledLandedIcon, let activeRootItemID, let image = menuImage(forRootID: activeRootItemID) {
                             settledLandedIconView(image: image, geometry: geometry)
                         }
-                        if Self.usesSwiftUIRootCarousel {
-                            ForEach(visibleIndices(), id: \.self) { index in
-                                let _ = revision
-                                self.carouselItemView(for: index, geometry: geometry).opacity(
-                                    self.showsSettledLandedIcon
-                                        ? 0
-                                        : (self.isInSubmenu && !self.isReturningToRoot && index != self.selectedIndex ? 0 : 1),
-                                )
-                            }
-                        } else {
-                            LayerHost<RootCarouselLayerController>(configuration: rootCarouselConfiguration(geometry: geometry))
-                                .frame(width: carouselWidth(geometry: geometry), height: iconSize * selectedCarouselAdjustedSizeMultiplier + 100)
-                        }
+                        LayerHost<RootCarouselLayerController>(configuration: rootCarouselConfiguration(geometry: geometry))
+                            .frame(width: carouselWidth(geometry: geometry), height: iconSize * selectedCarouselAdjustedSizeMultiplier + 100)
                     }.background(Group {
                         if isInSubmenu {
                             detailContentView(sceneSize: geometry.size).opacity(detailContentVisibilityOpacity).animation(.easeInOut(duration: 0.22),
