@@ -753,6 +753,17 @@ extension MenuView {
             }
             return nil
         #else
+            #if os(tvOS)
+                // Apple TV songs are Apple Music streams. Their artwork only loads after a library
+                // request, so look the song up again and use that copy's artwork.
+                if let musicKitSong = song.musicKitSong {
+                    guard #available(tvOS 16.0, *) else { return nil }
+                    var request = MusicLibraryRequest<Song>()
+                    request.filter(matching: \.id, equalTo: musicKitSong.id)
+                    let current = try? await request.response().items.first
+                    return await loadMusicKitArtworkImage((current ?? musicKitSong).artwork)
+                }
+            #endif
             if let artworkURL = song.url?.standardizedFileURL,
                let generatedArtwork = await generateMusicArtworkThumbnail(for: artworkURL)
             {
