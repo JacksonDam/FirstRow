@@ -23,7 +23,7 @@ Here, the Leopard/Snow Leopard version of the interface is used as a reference.
 - Podcast viewing/listening on macOS if podcasts are downloaded on the device via Apple Podcasts
 - iTunes Top Charts and playable previews (movies, TV episodes, songs, music videos) via the iTunes RSS feeds
 - Screen saver with gorgeous floating photos 
-- Keyboard, touch, and game controller driven navigation (Siri Remotes are supported on tvOS)
+- Keyboard, touch, and game controller driven navigation (Siri Remotes are supported on tvOS and on Macs they are paired with)
 
 Playback of movies and TV shows originating from the Apple TV app is not supported due to DRM-protection, but local video content from elsewhere can be played.
 Theatrical Trailers does not work as the original servers for this are gone and I haven't made a substitute yet (contributions welcome).
@@ -50,6 +50,7 @@ Theatrical Trailers does not work as the original servers for this are gone and 
 
 - `Keyboard`: Arrow keys navigate/allow scrubbing media, `Enter` selects, `Esc` or `Delete`/`Backspace` goes back, `Space` toggles playback in fullscreen media views. Cmd+Esc to gracefully quit.
 - `Siri Remote (tvOS)`: Directional pad or swipe gestures navigate/scrub, `Select` chooses, `Menu` goes back, `Play/Pause` toggles playback.
+- `Siri Remote paired with a Mac (macOS 12 or later)`: Clicking the clickpad's ring navigates/scrubs, its centre chooses, `Back` goes back, `Play/Pause` toggles playback. The first Siri Remote navigates with swipes and chooses with a click.
 - `Apple Remote (Macs with an infrared receiver)`: `+`/`-` navigate, `⏮`/`⏭` scrub, the centre button selects and toggles playback, `Menu` goes back.
 - `Game controller`: D-pad or left stick navigates/scrubs, `A` selects, `B` or `Menu` goes back, `X` toggles playback.
 - `Touch (iOS/iPadOS)`: Tap screen quadrants to navigate/scrub, press and hold to repeat navigation, two-finger tap selects, three-finger tap goes back, four-finger tap toggles playback.
