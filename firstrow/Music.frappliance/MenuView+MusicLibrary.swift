@@ -964,13 +964,20 @@ extension MenuView {
                             limit: self.musicTopLevelCarouselArtworkLimit,
                         )
                     #else
-                        let pageArtworks = try fetchMusicTopLevelCarouselArtworks(
+                        let pageArtworks = try self.fetchMusicTopLevelCarouselArtworks(
                             startIndex: resolvedStartIndex,
-                            limit: musicTopLevelCarouselArtworkLimit,
+                            limit: self.musicTopLevelCarouselArtworkLimit,
                         )
                     #endif
                     await MainActor.run {
-                        guard self.musicTopLevelCarouselRequestID == activeRequestID else { return }
+                        guard self.musicTopLevelCarouselRequestID == activeRequestID else {
+                            // Superseded. Don't leave the loading overlay this request raised
+                            // covering the carousel when nothing else is loading.
+                            if showsOverlay, self.musicTopLevelCarouselPageStartsInFlight.isEmpty {
+                                self.musicTopLevelCarouselLoadOverlayOpacity = 0
+                            }
+                            return
+                        }
                         self.musicTopLevelCarouselPageStartsInFlight.remove(resolvedStartIndex)
                         guard let activeSelectedSubmenuID = self.selectedTopLevelMusicCarouselSubmenuID else {
                             self.musicTopLevelCarouselActiveSubmenuID = nil
@@ -992,7 +999,9 @@ extension MenuView {
                             self.musicTopLevelCarouselResolvedArtworkCount = resolvedStartIndex + pageArtworks.count
                         }
                         self.isLoadingMusicTopLevelCarousel = !self.musicTopLevelCarouselPageStartsInFlight.isEmpty
-                        if showsOverlay {
+                        // Covers have arrived, so the loading overlay goes, whichever request raised it
+                        // (the request that raised it may have been superseded by this one).
+                        if self.musicTopLevelCarouselLoadOverlayOpacity > 0, self.musicTopLevelCarouselLoadedArtworkCount > 0 {
                             withAnimation(.easeInOut(duration: 0.22)) {
                                 self.musicTopLevelCarouselLoadOverlayOpacity = 0
                             }
@@ -2144,7 +2153,7 @@ extension MenuView {
                             artworkDataByAlbumKey = self.musicLibraryArtworkDataByAlbumKey
                         }
                     #else
-                        let songs = try fetchMusicLibraryEntries(for: requestedMediaType)
+                        let songs = try self.fetchMusicLibraryEntries(for: requestedMediaType)
                     #endif
                     await MainActor.run {
                         guard self.musicSongsRequestID == requestID else { return }
@@ -2221,7 +2230,7 @@ extension MenuView {
                             if let cachedSongs {
                                 songs = cachedSongs
                             } else {
-                                songs = try fetchMusicLibrarySongs()
+                                songs = try self.fetchMusicLibrarySongs()
                             }
                         #endif
                         categories = self.buildMusicCategoryEntries(from: songs, kind: kind)
@@ -2408,23 +2417,23 @@ extension MenuView {
             #else
                 Task(priority: .userInitiated) {
                     do {
-                        let songs = try fetchMusicLibrarySongsForShuffle()
+                        let songs = try self.fetchMusicLibrarySongsForShuffle()
                         await MainActor.run {
-                            guard musicSongsRequestID == requestID else { return }
-                            musicShuffleSongsCache = songs
-                            applyRootMusicShufflePlayback(
+                            guard self.musicSongsRequestID == requestID else { return }
+                            self.musicShuffleSongsCache = songs
+                            self.applyRootMusicShufflePlayback(
                                 with: songs,
                                 usingExistingBlackout: usingExistingBlackout,
                             )
                         }
                     } catch {
                         await MainActor.run {
-                            guard musicSongsRequestID == requestID else { return }
-                            deferNowPlayingMenuItemUntilAfterFadeOut = false
-                            isLoadingMusicSongs = false
-                            musicSongsThirdMenuItems = []
-                            selectedThirdIndex = 0
-                            musicSongsLoadError = musicLibraryErrorMessage(for: error)
+                            guard self.musicSongsRequestID == requestID else { return }
+                            self.deferNowPlayingMenuItemUntilAfterFadeOut = false
+                            self.isLoadingMusicSongs = false
+                            self.musicSongsThirdMenuItems = []
+                            self.selectedThirdIndex = 0
+                            self.musicSongsLoadError = self.musicLibraryErrorMessage(for: error)
                         }
                     }
                 }

@@ -48,8 +48,16 @@ enum FirstRowHarness {
             NSApplication.shared.setActivationPolicy(.accessory)
         }
 
+        /// Keeps App Nap away: a background app with a covered window gets its display frames
+        /// throttled, which stalls SwiftUI animations (they advance on display frames) half way.
+        private static var appNapActivity: NSObjectProtocol?
+
         static func applicationDidFinishLaunching() {
             guard isActive else { return }
+            appNapActivity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .latencyCritical],
+                reason: "First Row test harness",
+            )
             Task { @MainActor in
                 for _ in 0 ..< 100 {
                     configureWindows()
@@ -129,6 +137,21 @@ enum FirstRowHarness {
         private static func perform(_ command: String) {
             let parts = command.split(separator: ":").map(String.init)
             switch parts.first {
+            case "dumpviews":
+                for window in NSApplication.shared.windows where window.contentView != nil {
+                    var lines: [String] = []
+                    func walk(_ view: NSView, depth: Int) {
+                        guard depth < 40 else { return }
+                        let name = String(describing: type(of: view))
+                        let interesting = name.contains("PlatformView") || name.contains("Flipped") || depth < 3
+                        if interesting {
+                            lines.append(String(repeating: " ", count: depth) + "\(name.prefix(90)) frame=\(view.frame) hidden=\(view.isHidden) alpha=\(view.alphaValue) sublayers=\(view.layer?.sublayers?.count ?? -1)")
+                        }
+                        for sub in view.subviews { walk(sub, depth: depth + 1) }
+                    }
+                    walk(window.contentView!, depth: 0)
+                    fputs("[dumpviews] window \(window.windowNumber) occlusion=\(window.occlusionState.rawValue)\n" + lines.joined(separator: "\n") + "\n", stderr)
+                }
             case "press" where parts.count == 2:
                 guard let key = keyCodes[parts[1]] else { return }
                 post(key, type: .keyDown)
