@@ -34,8 +34,6 @@ final class MenuListLayer {
     private let bottomFade = SceneGradientLayer()
     private var rows: [Int: MenuRowLayer] = [:]
     private var spareRows: [MenuRowLayer] = []
-    private var lastItemsIdentity: ObjectIdentifier?
-    private var lastItems: [MenuListItemConfig] = []
     private var lastSelectedIndex: Int?
     private var lastSelectedRowOffset: CGFloat?
     private var lastScrollOffset: CGFloat?
@@ -121,7 +119,8 @@ final class MenuListLayer {
         let indexChanged = lastSelectedIndex != selectedIndex
         let movement = menu.selectionMovementAnimation
         let selectionAnimation = lastSelectedRowOffset == nil ? nil : pass.animation(movement, when: selectionMoved)
-        let scrollAnimation = lastScrollOffset == nil ? nil : pass.animation(movement, when: indexChanged)
+        let isFreshList = lastScrollOffset == nil
+        let scrollAnimation = isFreshList ? nil : pass.animation(movement, when: indexChanged)
         lastSelectedRowOffset = selectedRowOffset
         lastScrollOffset = scrollOffset
         lastSelectedIndex = selectedIndex
@@ -148,13 +147,23 @@ final class MenuListLayer {
         // Rows scroll inside a box that clips them top and bottom only.
         clip.frame = CGRect(x: -Self.clipOverhang, y: 0, width: menuWidth + Self.clipOverhang * 2, height: viewportHeight)
         rowsContainer.bounds = CGRect(x: 0, y: 0, width: menuWidth, height: max(contentHeight, viewportHeight))
+        // Where the rows are on screen right now, read before the new scroll replaces the one
+        // in flight (afterwards the layer only reports where it's heading). A list shown afresh
+        // starts where it's going, wherever the last list was left.
+        let presentedOffset: CGFloat = if isFreshList {
+            scrollOffset
+        } else if rowsContainer.animation(forKey: "position") != nil {
+            rowsContainer.presentation()?.position.y ?? rowsContainer.position.y
+        } else {
+            rowsContainer.position.y
+        }
         rowsContainer.setPosition(CGPoint(x: Self.clipOverhang, y: scrollOffset), scrollAnimation)
 
-        // Which rows need layers: the visible part, wherever the scroll is now and where it's going.
+        // Which rows need layers: everything the scroll passes over, from where it is on screen
+        // to where it's going, plus a margin.
         let renderRange: Range<Int>
+        let overscan = max(80, rowPitch * (menu.activeDirectionalHoldKey != .none ? 6.0 : 2.5))
         if c.usesUniformRowLayout, !items.isEmpty {
-            let presentedOffset = rowsContainer.animation(forKey: "position") != nil ? (rowsContainer.presentation()?.position.y ?? scrollOffset) : scrollOffset
-            let overscan = max(80, rowPitch * (menu.activeDirectionalHoldKey != .none ? 6.0 : 2.5))
             let top = min(-scrollOffset, -presentedOffset) - overscan
             let bottom = max(-scrollOffset, -presentedOffset) + viewportHeight + overscan
             let first = max(0, Int(floor(top / rowPitch)))
@@ -162,8 +171,6 @@ final class MenuListLayer {
             renderRange = first < last + 1 ? first ..< (last + 1) : 0 ..< 0
         } else if !rowOffsets.isEmpty {
             // Rows sit at increasing offsets: find the first and last near the visible part.
-            let presentedOffset = rowsContainer.animation(forKey: "position") != nil ? (rowsContainer.presentation()?.position.y ?? scrollOffset) : scrollOffset
-            let overscan = max(80, rowPitch * 2.5)
             let top = min(-scrollOffset, -presentedOffset) - overscan
             let bottom = max(-scrollOffset, -presentedOffset) + viewportHeight + overscan
             var low = 0

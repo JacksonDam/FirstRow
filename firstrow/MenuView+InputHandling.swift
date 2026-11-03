@@ -800,7 +800,11 @@ extension MenuView {
 
         isMenuOverflowScrollingUp = true
         isMenuOverflowScrollingDown = true
-        let delay = selectionAnimationDuration + 0.02
+        // While an arrow is held, the next step can come a few milliseconds late on a busy
+        // pass; keep the edge fades up between steps instead of letting them flick off and
+        // on, which made the rows at the top and bottom flash half dark.
+        let holdGrace: TimeInterval = activeDirectionalHoldKey != .none ? 0.25 : 0
+        let delay = selectionAnimationDuration + 0.02 + holdGrace
         overflowFadeWorkItem = Task {
             try? await firstRowSleep(delay)
             guard !Task.isCancelled else { return }
