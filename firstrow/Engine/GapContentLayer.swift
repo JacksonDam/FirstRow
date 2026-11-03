@@ -64,7 +64,8 @@ final class GapContentLayer {
         for key in order where !wantedKeys.contains(key) {
             guard let item = items[key] else { continue }
             items[key] = nil
-            let fade = appearing ? nil : item.removalAnimation
+            // Fades out with its own fade, unless this pass turns animations off.
+            let fade = appearing || context.pass.transaction.disablesAnimations ? nil : item.removalAnimation
             if let fade {
                 item.layer.setOpacity(0, fade)
                 let layerToRemove = item.layer
@@ -99,7 +100,7 @@ final class GapContentLayer {
                 item.layer.setOpacity(spec.opacity, fadeIn)
                 items[spec.key] = item
             }
-            item.removalAnimation = spec.transition
+            item.removalAnimation = spec.fade
             item.layer.frame = CGRect(origin: .zero, size: boxFrame.size)
             newOrder.append(spec.key)
         }
@@ -144,8 +145,10 @@ struct GapItemSpec {
     var opacity: Double = 1
     /// For changes to a piece that stays.
     var animation: Animation?
-    /// Fade used when the piece appears or goes away (nil: it just appears or vanishes).
+    /// Fade used when the piece appears in this pass (nil: it just appears).
     var transition: Animation?
+    /// Fade used whenever the piece goes away (nil: it just vanishes).
+    var fade: Animation?
 }
 
 enum GapItemKind {

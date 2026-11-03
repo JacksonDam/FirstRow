@@ -460,6 +460,7 @@ extension MenuView {
                     opacity: showsPreview ? 1 : 0,
                     animation: animation,
                     transition: animation,
+                    fade: .easeInOut(duration: 0.22),
                 ))
             } else if usesMetadata, let selectedMovie, let descriptor, !showsCarousel {
                 items.append(GapItemSpec(
@@ -478,6 +479,7 @@ extension MenuView {
                     opacity: showsPreview ? 1 : 0,
                     animation: animation,
                     transition: animation,
+                    fade: .easeInOut(duration: 0.22),
                 ))
             } else if let descriptor, !showsCarousel {
                 let isITunes = isInThirdMenu && thirdMenuMode == .moviesITunesTop
@@ -487,6 +489,7 @@ extension MenuView {
                     opacity: showsPreview ? 1 : 0,
                     animation: animation,
                     transition: animation,
+                    fade: .easeInOut(duration: 0.22),
                 ))
             }
             return items
@@ -522,6 +525,7 @@ extension MenuView {
                     opacity: showsPreview ? 1 : 0,
                     animation: animation,
                     transition: animation,
+                    fade: .easeInOut(duration: 0.22),
                 ))
             } else if let descriptor, !showsCarousel {
                 let isITunes = isInThirdMenu && thirdMenuMode == .tvITunesTopEpisodes
@@ -531,6 +535,7 @@ extension MenuView {
                     opacity: showsPreview ? 1 : 0,
                     animation: animation,
                     transition: animation,
+                    fade: .easeInOut(duration: 0.22),
                 ))
             }
             return items
@@ -601,6 +606,7 @@ extension MenuView {
                         reflectionYaw: 9.8,
                     )),
                     transition: fadeAlways,
+                    fade: .easeInOut(duration: 0.22),
                 ))
             }
             if showsMusicCarousel {
@@ -656,6 +662,7 @@ extension MenuView {
                         identity: "podcast_series_metadata:\(series.id)",
                     )),
                     transition: pass.transaction.disablesAnimations ? nil : .easeInOut(duration: 0.2),
+                    fade: .easeInOut(duration: 0.2),
                 ))
             }
             if let episode {
@@ -683,6 +690,7 @@ extension MenuView {
                         animatesTransition: false,
                     )),
                     transition: pass.transaction.disablesAnimations ? nil : .easeInOut(duration: 0.18),
+                    fade: .easeInOut(duration: 0.18),
                 ))
             }
             return items
