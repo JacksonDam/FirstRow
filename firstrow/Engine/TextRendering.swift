@@ -369,7 +369,11 @@ enum SymbolRenderer {
     private static func symbolImage(_ name: String, pointSize: CGFloat, weight: Weight) -> Symbol? {
         let oversample: CGFloat = 4
         #if os(macOS)
-            guard #available(macOS 11.0, *) else { return nil }
+            guard #available(macOS 11.0, *) else {
+                return SymbolFallback.symbol(name, pointSize: pointSize, weight: weight, oversample: oversample).map {
+                    Symbol(image: $0.image, size: $0.size, pixelSize: CGSize(width: $0.image.width, height: $0.image.height))
+                }
+            }
             let nsWeight: NSFont.Weight = switch weight {
             case .regular: .regular
             case .semibold: .semibold
@@ -427,5 +431,111 @@ extension CALayer {
         let frame = graphic.imageFrame(at: origin)
         bounds = CGRect(origin: .zero, size: frame.size)
         position = CGPoint(x: frame.minX + frame.width * anchorPoint.x, y: frame.minY + frame.height * anchorPoint.y)
+    }
+}
+
+/// Simple drawings of the few SF Symbols First Row uses, for macOS 10.15, which has no
+/// symbol images.
+enum SymbolFallback {
+    static func symbol(_ name: String, pointSize: CGFloat, weight: SymbolRenderer.Weight, oversample: CGFloat) -> (image: CGImage, size: CGSize)? {
+        let stroke: CGFloat = switch weight {
+        case .regular: 0.09
+        case .semibold: 0.11
+        case .bold: 0.13
+        case .heavy: 0.16
+        }
+        let p = pointSize
+        let size: CGSize = switch name {
+        case "chevron.right": CGSize(width: p * 0.55, height: p * 0.9)
+        case "play.fill": CGSize(width: p * 0.8, height: p * 0.92)
+        case "pause.fill": CGSize(width: p * 0.72, height: p * 0.9)
+        case "shuffle": CGSize(width: p * 1.15, height: p * 0.82)
+        case "speaker.wave.3.fill": CGSize(width: p * 1.4, height: p * 0.92)
+        case "music.note": CGSize(width: p * 0.62, height: p * 0.98)
+        default: .zero
+        }
+        guard size != .zero else { return nil }
+        let width = Int(ceil(size.width * oversample))
+        let height = Int(ceil(size.height * oversample))
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+        ) else { return nil }
+        // Draw in points with the origin at the top left.
+        context.scaleBy(x: oversample, y: oversample)
+        context.translateBy(x: 0, y: size.height)
+        context.scaleBy(x: 1, y: -1)
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.setStrokeColor(CGColor(gray: 1, alpha: 1))
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        let w = size.width
+        let h = size.height
+        let line = p * stroke
+        switch name {
+        case "chevron.right":
+            context.setLineWidth(line)
+            context.move(to: CGPoint(x: line, y: line))
+            context.addLine(to: CGPoint(x: w - line, y: h * 0.5))
+            context.addLine(to: CGPoint(x: line, y: h - line))
+            context.strokePath()
+        case "play.fill":
+            context.move(to: CGPoint(x: 0, y: 0))
+            context.addLine(to: CGPoint(x: w, y: h * 0.5))
+            context.addLine(to: CGPoint(x: 0, y: h))
+            context.closePath()
+            context.fillPath()
+        case "pause.fill":
+            let bar = w * 0.36
+            context.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: bar, height: h), cornerWidth: bar * 0.2, cornerHeight: bar * 0.2, transform: nil))
+            context.addPath(CGPath(roundedRect: CGRect(x: w - bar, y: 0, width: bar, height: h), cornerWidth: bar * 0.2, cornerHeight: bar * 0.2, transform: nil))
+            context.fillPath()
+        case "shuffle":
+            context.setLineWidth(line)
+            let head = h * 0.22
+            // Two crossing paths ending in arrowheads on the right.
+            context.move(to: CGPoint(x: 0, y: h * 0.22))
+            context.addCurve(to: CGPoint(x: w - head, y: h * 0.78), control1: CGPoint(x: w * 0.45, y: h * 0.22), control2: CGPoint(x: w * 0.45, y: h * 0.78))
+            context.move(to: CGPoint(x: 0, y: h * 0.78))
+            context.addCurve(to: CGPoint(x: w - head, y: h * 0.22), control1: CGPoint(x: w * 0.45, y: h * 0.78), control2: CGPoint(x: w * 0.45, y: h * 0.22))
+            context.strokePath()
+            for y in [h * 0.22, h * 0.78] {
+                context.move(to: CGPoint(x: w, y: y))
+                context.addLine(to: CGPoint(x: w - head * 1.3, y: y - head))
+                context.addLine(to: CGPoint(x: w - head * 1.3, y: y + head))
+                context.closePath()
+                context.fillPath()
+            }
+        case "speaker.wave.3.fill":
+            let body = h * 0.62
+            context.move(to: CGPoint(x: 0, y: h * 0.32))
+            context.addLine(to: CGPoint(x: body * 0.38, y: h * 0.32))
+            context.addLine(to: CGPoint(x: body, y: 0))
+            context.addLine(to: CGPoint(x: body, y: h))
+            context.addLine(to: CGPoint(x: body * 0.38, y: h * 0.68))
+            context.addLine(to: CGPoint(x: 0, y: h * 0.68))
+            context.closePath()
+            context.fillPath()
+            context.setLineWidth(line * 0.8)
+            for (index, radius) in [h * 0.2, h * 0.34, h * 0.48].enumerated() {
+                let center = CGPoint(x: body + h * 0.02, y: h * 0.5)
+                let spread = CGFloat.pi / (index == 2 ? 3.2 : 3.6)
+                context.addArc(center: center, radius: radius, startAngle: -spread, endAngle: spread, clockwise: false)
+                context.strokePath()
+            }
+        case "music.note":
+            let headRadius = w * 0.34
+            context.addEllipse(in: CGRect(x: 0, y: h - headRadius * 1.6, width: headRadius * 2, height: headRadius * 1.6))
+            context.fillPath()
+            context.setLineWidth(line)
+            context.move(to: CGPoint(x: headRadius * 2 - line * 0.5, y: h - headRadius * 0.8))
+            context.addLine(to: CGPoint(x: headRadius * 2 - line * 0.5, y: line * 0.5))
+            context.addLine(to: CGPoint(x: w - line * 0.5, y: h * 0.22))
+            context.strokePath()
+        default:
+            break
+        }
+        guard let image = context.makeImage() else { return nil }
+        return (image, size)
     }
 }

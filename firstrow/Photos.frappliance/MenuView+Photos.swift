@@ -385,17 +385,26 @@ extension MenuView {
             return
         }
         #if canImport(Photos)
-            let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            let status: PHAuthorizationStatus = if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) {
+                PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            } else {
+                PHPhotoLibrary.authorizationStatus()
+            }
             switch status {
             case .authorized, .limited:
                 completion(true)
             case .denied, .restricted:
                 completion(false)
             case .notDetermined:
-                PHPhotoLibrary.requestAuthorization(for: .readWrite) { newStatus in
+                let handler: (PHAuthorizationStatus) -> Void = { newStatus in
                     Task { @MainActor in
                         completion(newStatus == .authorized || newStatus == .limited)
                     }
+                }
+                if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) {
+                    PHPhotoLibrary.requestAuthorization(for: .readWrite, handler: handler)
+                } else {
+                    PHPhotoLibrary.requestAuthorization(handler)
                 }
             @unknown default:
                 completion(false)

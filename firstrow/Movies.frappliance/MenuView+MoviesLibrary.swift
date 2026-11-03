@@ -12,6 +12,14 @@ import UniformTypeIdentifiers
 #endif
 
 extension MenuView {
+    /// File properties read while scanning for movies (content types where the system has them).
+    static var movieScanResourceKeys: Set<URLResourceKey> {
+        if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) {
+            return [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
+        }
+        return [.isDirectoryKey, .isRegularFileKey]
+    }
+
     #if os(iOS)
         var moviesFolderBookmarkDefaultsKey: String {
             "firstRow.movies.bookmarkedFolder"
@@ -68,7 +76,7 @@ extension MenuView {
             }
             let fileManager = FileManager.default
             let documentsDirectory = moviesDocumentsDirectoryURL().standardizedFileURL
-            let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
+            let resourceKeys = Self.movieScanResourceKeys
             let urls: [URL]
             do {
                 urls = try fileManager.contentsOfDirectory(
@@ -301,7 +309,7 @@ extension MenuView {
 
     func moviesFolderContainsNavigableContent(in directoryURL: URL) -> Bool {
         let fileManager = FileManager.default
-        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
+        let resourceKeys = Self.movieScanResourceKeys
         let urls: [URL]
         do {
             urls = try fileManager.contentsOfDirectory(
@@ -327,7 +335,7 @@ extension MenuView {
 
     func scanMoviesFolderEntries(in directoryURL: URL) -> [MoviesFolderEntry] {
         let fileManager = FileManager.default
-        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
+        let resourceKeys = Self.movieScanResourceKeys
         let urls: [URL]
         do {
             urls = try fileManager.contentsOfDirectory(
@@ -383,7 +391,7 @@ extension MenuView {
     func previewMovieFileURLs(in directoryURL: URL, limit: Int) -> [URL] {
         guard limit > 0 else { return [] }
         let fileManager = FileManager.default
-        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
+        let resourceKeys = Self.movieScanResourceKeys
         let urls: [URL]
         do {
             urls = try fileManager.contentsOfDirectory(

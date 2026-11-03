@@ -252,7 +252,11 @@ extension MenuView {
             case .iTunesXML:
                 panel.canChooseFiles = true
                 panel.canChooseDirectories = false
-                panel.allowedContentTypes = [.xml]
+                if #available(macOS 11.0, *) {
+                    panel.allowedContentTypes = [.xml]
+                } else {
+                    panel.allowedFileTypes = ["xml"]
+                }
                 panel.message = "Choose an iTunes library file (iTunes Music Library.xml or iTunes Library.xml). In iTunes or Music, File > Library > Export Library makes one."
             case .iPhoto:
                 panel.canChooseFiles = true

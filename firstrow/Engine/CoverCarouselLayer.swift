@@ -483,7 +483,7 @@ enum CoverArtPlaceholder {
             context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: rect.maxY), end: CGPoint(x: rect.maxX, y: 0), options: [])
         }
         #if os(macOS)
-            if let note = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)?
+            if #available(macOS 11.0, *), let note = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: CGFloat(pixelSide) * 0.26, weight: .regular)),
                 let noteImage = note.cgImage(forProposedRect: nil, context: nil, hints: nil)
             {
@@ -497,6 +497,17 @@ enum CoverArtPlaceholder {
                 context.clip(to: noteRect, mask: noteImage)
                 context.setFillColor(CGColor(gray: 1, alpha: 0.72))
                 context.fill(noteRect)
+                context.restoreGState()
+            } else if let note = SymbolFallback.symbol("music.note", pointSize: CGFloat(pixelSide) * 0.26, weight: .regular, oversample: 1) {
+                let noteRect = CGRect(
+                    x: (CGFloat(pixelSide) - note.size.width) / 2,
+                    y: (CGFloat(pixelSide) - note.size.height) / 2,
+                    width: note.size.width,
+                    height: note.size.height,
+                )
+                context.saveGState()
+                context.setAlpha(0.72)
+                context.draw(note.image, in: noteRect)
                 context.restoreGState()
             }
         #else

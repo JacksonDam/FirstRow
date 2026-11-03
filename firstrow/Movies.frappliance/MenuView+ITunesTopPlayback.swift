@@ -13,6 +13,14 @@ import Foundation
 private struct _SendableImage: @unchecked Sendable { let image: NSImage? }
 
 extension MenuView {
+    nonisolated static func write(_ data: Data, to handle: FileHandle) throws {
+        if #available(macOS 10.15.4, iOS 13.4, tvOS 13.4, *) {
+            try handle.write(contentsOf: data)
+        } else {
+            handle.write(data)
+        }
+    }
+
     private nonisolated func iTunesTopMoviePreviewTemporaryDirectoryURL() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("firstRowITunesTopMoviePreviews", isDirectory: true)
     }
@@ -66,7 +74,7 @@ extension MenuView {
                 func flushChunkBuffer() throws {
                     guard !chunkBuffer.isEmpty else { return }
                     let data = Data(chunkBuffer)
-                    try writeHandle.write(contentsOf: data)
+                    try Self.write(data, to: writeHandle)
                     receivedLength += Int64(chunkBuffer.count)
                     chunkBuffer.removeAll(keepingCapacity: true)
                     guard expectedLength > 0 else { return }
@@ -87,7 +95,7 @@ extension MenuView {
                 else {
                     throw URLError(.badServerResponse)
                 }
-                try writeHandle.write(contentsOf: data)
+                try Self.write(data, to: writeHandle)
             }
             onProgress?(1)
             try writeHandle.close()
