@@ -91,7 +91,7 @@ final class RootCarouselLayerController: LayerController {
     private var phaseTo: Double = 0
     private var phaseStart: CFTimeInterval = 0
     private var phaseDuration: Double = 0
-    private var phaseIsLinear = false
+    private var phaseCurve = TimingCurve.easeInEaseOut
 
     func update(_ configuration: RootCarouselConfiguration, bounds: CGSize) {
         guard bounds.width > 0, bounds.height > 0 else { return }
@@ -182,22 +182,19 @@ final class RootCarouselLayerController: LayerController {
     private func presentedPhase(at time: CFTimeInterval) -> Double {
         guard phaseDuration > 0 else { return phaseTo }
         let t = min(1, max(0, (time - phaseStart) / phaseDuration))
-        return phaseFrom + (phaseTo - phaseFrom) * (phaseIsLinear ? t : Self.easeInEaseOut(t))
+        return phaseFrom + (phaseTo - phaseFrom) * phaseCurve.value(at: t)
+    }
+
+    /// How fast the selection is turning (slots per second).
+    private func phaseVelocity(at time: CFTimeInterval) -> Double {
+        guard phaseDuration > 0 else { return 0 }
+        let t = (time - phaseStart) / phaseDuration
+        return (phaseTo - phaseFrom) * phaseCurve.slope(at: t) / phaseDuration
     }
 
     /// Core Animation's ease-in-ease-out timing (cubic Bézier with control points 0.42,0 and 0.58,1).
     static func easeInEaseOut(_ x: Double) -> Double {
-        func bezier(_ t: Double, _ p1: Double, _ p2: Double) -> Double {
-            let u = 1 - t
-            return 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t
-        }
-        var low = 0.0
-        var high = 1.0
-        for _ in 0 ..< 30 {
-            let mid = (low + high) / 2
-            if bezier(mid, 0.42, 0.58) < x { low = mid } else { high = mid }
-        }
-        return bezier((low + high) / 2, 0, 1)
+        TimingCurve.easeInEaseOut.value(at: x)
     }
 
     /// Where icon `index` is when the selection stands at `phase` (between two slots, part way
@@ -217,11 +214,18 @@ final class RootCarouselLayerController: LayerController {
         let start = phaseDuration > 0 ? presentedPhase(at: now) : Double(old.selectedIndex)
         let target = Double(c.selectedIndex)
         let duration = c.selectionDuration * 0.85
+        // A press while the carousel is still turning carries on at the speed it was going
+        // (starting again from a standstill made each press stall, then lurch).
+        var curve = c.usesLinearSweep ? TimingCurve.linear : TimingCurve.easeInEaseOut
+        if !c.usesLinearSweep, target != start {
+            let slope = phaseVelocity(at: now) * duration / (target - start)
+            curve = .easeInOut(startingSlope: slope)
+        }
         phaseFrom = start
         phaseTo = target
         phaseStart = now
         phaseDuration = duration
-        phaseIsLinear = c.usesLinearSweep
+        phaseCurve = curve
         // Key frames wherever an icon passes through a slot, so the path between them is exact.
         var phases = [start]
         if target > start {
@@ -234,7 +238,7 @@ final class RootCarouselLayerController: LayerController {
         phases.append(target)
         let span = abs(target - start)
         let keyTimes = phases.map { NSNumber(value: span > 0 ? abs($0 - start) / span : 1) }
-        let timing = CAMediaTimingFunction(name: c.usesLinearSweep ? .linear : .easeInEaseOut)
+        let timing = curve.function
         let space = LayerSpace(height: bounds.height)
         for (index, icon) in icons.enumerated() {
             let states = phases.map { state(for: index, phase: $0, configuration: c, bounds: bounds) }
@@ -247,6 +251,9 @@ final class RootCarouselLayerController: LayerController {
                 animation.calculationMode = .linear
                 animation.timingFunction = timing
                 animation.duration = duration
+                // From the moment the start was worked out, so later work in this pass can't
+                // delay it and leave the first frame behind where the last turn had got to.
+                animation.beginTime = layer.convertTime(now, from: nil)
                 withoutLayerActions { layer.setValue(last, forKeyPath: keyPath) }
                 layer.add(animation, forKey: keyPath)
             }

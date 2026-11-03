@@ -153,8 +153,154 @@ struct RenderPass {
     }
 }
 
+/// A cubic Bézier timing curve from (0, 0) to (1, 1), evaluated the way Core Animation does,
+/// so code can tell where an animation has got to and how fast it is going.
+struct TimingCurve: Equatable {
+    var c1: CGPoint
+    var c2: CGPoint
+
+    static let easeInEaseOut = TimingCurve(c1: CGPoint(x: 0.42, y: 0), c2: CGPoint(x: 0.58, y: 1))
+    static let linear = TimingCurve(c1: .zero, c2: CGPoint(x: 1, y: 1))
+
+    init(c1: CGPoint, c2: CGPoint) {
+        self.c1 = c1
+        self.c2 = c2
+    }
+
+    init(_ function: CAMediaTimingFunction) {
+        var first: [Float] = [0, 0]
+        var second: [Float] = [0, 0]
+        function.getControlPoint(at: 1, values: &first)
+        function.getControlPoint(at: 2, values: &second)
+        c1 = CGPoint(x: CGFloat(first[0]), y: CGFloat(first[1]))
+        c2 = CGPoint(x: CGFloat(second[0]), y: CGFloat(second[1]))
+    }
+
+    var function: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: Float(c1.x), Float(c1.y), Float(c2.x), Float(c2.y))
+    }
+
+    /// An ease in and out that starts at `slope` (progress per unit of time, 1 being the
+    /// average speed) instead of from a standstill, so a move that takes over from another
+    /// carries on at the speed things were already going.
+    static func easeInOut(startingSlope slope: Double) -> TimingCurve {
+        guard slope > 0.001 else { return .easeInEaseOut }
+        // The first handle's direction sets the starting speed (rise over run).
+        let x1 = min(0.42, 1 / slope)
+        return TimingCurve(c1: CGPoint(x: x1, y: CGFloat(slope) * x1), c2: CGPoint(x: 0.58, y: 1))
+    }
+
+    private static func bezier(_ t: Double, _ p1: Double, _ p2: Double) -> Double {
+        let u = 1 - t
+        return 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t
+    }
+
+    private static func derivative(_ t: Double, _ p1: Double, _ p2: Double) -> Double {
+        let u = 1 - t
+        return 3 * u * u * p1 + 6 * u * t * (p2 - p1) + 3 * t * t * (1 - p2)
+    }
+
+    private func parameter(forTime x: Double) -> Double {
+        var low = 0.0
+        var high = 1.0
+        for _ in 0 ..< 32 {
+            let mid = (low + high) / 2
+            if Self.bezier(mid, Double(c1.x), Double(c2.x)) < x { low = mid } else { high = mid }
+        }
+        return (low + high) / 2
+    }
+
+    /// Progress (0 to 1) at time fraction `x`.
+    func value(at x: Double) -> Double {
+        if x <= 0 { return 0 }
+        if x >= 1 { return 1 }
+        return Self.bezier(parameter(forTime: x), Double(c1.y), Double(c2.y))
+    }
+
+    /// Rate of progress at time fraction `x` (1 is the average rate).
+    func slope(at x: Double) -> Double {
+        guard x >= 0, x < 1 else { return 0 }
+        let t = parameter(forTime: x)
+        let dx = Self.derivative(t, Double(c1.x), Double(c2.x))
+        let dy = Self.derivative(t, Double(c1.y), Double(c2.y))
+        return dx > 1e-6 ? dy / dx : 0
+    }
+}
+
+/// Where a running basic animation is and how fast it is moving, worked out from the
+/// animation itself rather than read back from the screen.
+private struct AnimationMotion {
+    let value: [Double]
+    let velocity: [Double]
+
+    init?(_ animation: CABasicAnimation, at time: CFTimeInterval) {
+        guard animation.beginTime > 0, animation.duration > 0, animation.repeatCount == 0,
+              animation.speed == 1, animation.timeOffset == 0,
+              let from = animation.fromValue.flatMap(Self.components),
+              let to = animation.toValue.flatMap(Self.components), from.count == to.count
+        else { return nil }
+        let curve = TimingCurve(animation.timingFunction ?? CAMediaTimingFunction(name: .linear))
+        let x = (time - animation.beginTime) / animation.duration
+        let progress = curve.value(at: x)
+        let rate = curve.slope(at: x) / animation.duration
+        value = zip(from, to).map { $0 + ($1 - $0) * progress }
+        velocity = zip(from, to).map { ($1 - $0) * rate }
+    }
+
+    /// How fast, as a curve's starting slope, a move to `target` taking `duration` would have
+    /// to start to keep this motion's speed along its own direction.
+    func startingSlope(toward target: [Double], duration: Double) -> Double? {
+        guard target.count == value.count else { return nil }
+        let delta = zip(value, target).map { $1 - $0 }
+        let distance = delta.reduce(0) { $0 + $1 * $1 }.squareRoot()
+        guard distance > 1e-6 else { return nil }
+        let along = zip(velocity, delta).reduce(0) { $0 + $1.0 * $1.1 } / distance
+        let slope = along * duration / distance
+        return slope > 0.01 ? slope : nil
+    }
+
+    static func components(_ value: Any) -> [Double]? {
+        if let number = value as? NSNumber {
+            return [number.doubleValue]
+        }
+        guard let boxed = value as? NSValue else { return nil }
+        let type = String(cString: boxed.objCType)
+        if type.hasPrefix("{CGPoint") || type.hasPrefix("{_NSPoint") {
+            let point = boxed.layerPointValue
+            return [Double(point.x), Double(point.y)]
+        }
+        if type.hasPrefix("{CGRect") || type.hasPrefix("{_NSRect") {
+            let rect = boxed.layerRectValue
+            return [Double(rect.minX), Double(rect.minY), Double(rect.width), Double(rect.height)]
+        }
+        return nil
+    }
+
+    /// The motion's current value, boxed like `template`.
+    func boxed(like template: Any) -> Any? {
+        if template is NSNumber, value.count == 1 {
+            return NSNumber(value: value[0])
+        }
+        guard let boxed = template as? NSValue else { return nil }
+        let type = String(cString: boxed.objCType)
+        if value.count == 2, type.hasPrefix("{CGPoint") || type.hasPrefix("{_NSPoint") {
+            return NSValue.layerPoint(CGPoint(x: value[0], y: value[1]))
+        }
+        if value.count == 4, type.hasPrefix("{CGRect") || type.hasPrefix("{_NSRect") {
+            return NSValue.layerRect(CGRect(x: value[0], y: value[1], width: value[2], height: value[3]))
+        }
+        return nil
+    }
+}
+
 extension CALayer {
     /// Sets a property, animating from what is on screen now when `animation` is given.
+    ///
+    /// A move that takes over from one still running starts where that one has got to and,
+    /// for ease-in-out moves, at the speed it was going, the way SwiftUI blended interrupted
+    /// animations (starting again from a standstill made quick presses stutter). Every move
+    /// starts at the moment it is set, so work later in the same pass can't hold it back and
+    /// make the first frame land behind where the previous move had already reached.
     func set(_ keyPath: String, to newValue: Any, unchanged: Bool, animation: Animation?) {
         if unchanged {
             return
@@ -164,18 +310,32 @@ extension CALayer {
             setValue(newValue, forKeyPath: keyPath)
             return
         }
-        let isAnimating = self.animation(forKey: keyPath) != nil
-        let fromValue = isAnimating
-            ? (presentation()?.value(forKeyPath: keyPath) ?? value(forKeyPath: keyPath))
-            : value(forKeyPath: keyPath)
+        let now = convertTime(CACurrentMediaTime(), from: nil)
+        var fromValue = value(forKeyPath: keyPath)
+        var curve = TimingCurve(animation.timingFunction)
+        if let running = self.animation(forKey: keyPath) {
+            if let basic = running as? CABasicAnimation, let motion = AnimationMotion(basic, at: now),
+               let current = motion.boxed(like: newValue)
+            {
+                fromValue = current
+                if animation.curve == .easeInOut, animation.delay == 0, !animation.repeatsForever,
+                   let target = AnimationMotion.components(newValue),
+                   let slope = motion.startingSlope(toward: target, duration: animation.duration)
+                {
+                    curve = .easeInOut(startingSlope: slope)
+                }
+            } else {
+                fromValue = presentation()?.value(forKeyPath: keyPath) ?? fromValue
+            }
+        }
         setValue(newValue, forKeyPath: keyPath)
         let basic = CABasicAnimation(keyPath: keyPath)
         basic.fromValue = fromValue
         basic.toValue = newValue
         basic.duration = animation.duration
-        basic.timingFunction = animation.timingFunction
+        basic.timingFunction = curve.function
+        basic.beginTime = now + animation.delay
         if animation.delay > 0 {
-            basic.beginTime = CACurrentMediaTime() + animation.delay
             basic.fillMode = .backwards
         }
         if animation.repeatsForever {

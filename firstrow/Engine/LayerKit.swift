@@ -120,6 +120,14 @@ extension NSValue {
             cgPointValue
         #endif
     }
+
+    var layerRectValue: CGRect {
+        #if os(macOS)
+            rectValue
+        #else
+            cgRectValue
+        #endif
+    }
 }
 
 /// Converts SwiftUI-style coordinates (origin top left, y down) to layer coordinates.
