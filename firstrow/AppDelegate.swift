@@ -74,6 +74,7 @@
         }
 
         func applicationWillResignActive(_: Notification) {
+            isCommandKeyDown = false
             AppleRemoteInput.shared.stop()
             NSApplication.shared.presentationOptions = []
         }
@@ -208,7 +209,10 @@
                     else {
                         return noErr
                     }
-                    NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
+                    // Not while First Row's file picker is in front.
+                    if !(NSApplication.shared.keyWindow is NSPanel) {
+                        NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
+                    }
                     return noErr
                 },
                 1,

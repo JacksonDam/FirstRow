@@ -192,9 +192,10 @@ final class FirstRowAppController {
                 }
             }
             remote.onKeyUp = { [weak menu] key in menu?.handleDirectionalPressEnded(key) }
+            remote.claimsFirstResponder = !isLaunchToggleWindowActive
             hostView.addSubview(remote)
             remoteInput = remote
-            if !isLaunchToggleWindowActive { remote.makePrimaryResponderIfPossible() }
+            remote.makePrimaryResponderIfPossible()
         #endif
     }
 
@@ -280,6 +281,7 @@ final class FirstRowAppController {
         #if os(tvOS)
             launchRemoteInput?.removeFromSuperview()
             launchRemoteInput = nil
+            remoteInput?.claimsFirstResponder = true
             remoteInput?.makePrimaryResponderIfPossible()
         #endif
     }

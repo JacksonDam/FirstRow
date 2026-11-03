@@ -18,6 +18,7 @@ extension MenuView {
             return
         }
         if deferForStartupMusicLibraryPreload(key) { return }
+        isMusicEntryWaitingForStartupPreload = false
         registerUserInteractionForScreenSaver()
         if isFullscreenSceneTransitioning {
             return
@@ -816,6 +817,7 @@ extension MenuView {
         _ key: KeyCode,
         modifiers: NSEvent.ModifierFlags = [],
     ) {
+        if isChoosingMediaSource { return }
         guard isDirectionalNavigationKey(key) else {
             handleKeyInput(key, isRepeat: false, modifiers: modifiers)
             return

@@ -23,6 +23,8 @@ import Foundation
     final class RemotePressCapturingView: UIView {
         var onKeyDown: ((KeyCode) -> Void)?
         var onKeyUp: ((KeyCode) -> Void)?
+        /// Off while another view (the launch-time Menu hold) should get the presses.
+        var claimsFirstResponder = true
 
         override var canBecomeFirstResponder: Bool {
             true
@@ -39,7 +41,7 @@ import Foundation
         }
 
         func makePrimaryResponderIfPossible() {
-            guard window != nil else { return }
+            guard claimsFirstResponder, window != nil else { return }
             guard !isFirstResponder else { return }
             _ = becomeFirstResponder()
         }
