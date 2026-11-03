@@ -128,6 +128,8 @@ extension MenuView {
             isLoadingPodcasts &&
                 podcastEpisodesThirdMenuItems.isEmpty &&
                 podcastsLoadError == nil
+        case .mediaFolders:
+            false
         default:
             false
         }
@@ -292,6 +294,8 @@ extension MenuView {
                     alignsTextToDividerStart: false,
                 )
             }
+        case .mediaFolders:
+            return mediaFoldersListItems()
         case .none:
             return []
         }

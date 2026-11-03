@@ -115,7 +115,10 @@ final class MenuView: ObservableObject {
             object: nil,
             queue: .main,
         ) { [weak self] _ in
-            Task { @MainActor in self?.reloadMediaAfterSourcesChange() }
+            Task { @MainActor in
+                self?.mediaSourcesRevision &+= 1
+                self?.reloadMediaAfterSourcesChange()
+            }
         }
         #if os(macOS)
             unavailableTracksObserver = NotificationCenter.default.addObserver(
@@ -130,6 +133,13 @@ final class MenuView: ObservableObject {
 
     private var unavailableTracksObserver: NSObjectProtocol?
     var photoSourceAlbumsRequestID = 0
+
+    // MARK: - Media folders state
+
+    @Published var mediaFoldersPages: [MediaFoldersPageState] = []
+    /// Bumped whenever the chosen folders or libraries change, to redraw lists that show them.
+    @Published var mediaSourcesRevision = 0
+    var isChoosingMediaSource = false
 
     // MARK: - Navigation state
 

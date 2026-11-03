@@ -504,7 +504,7 @@ extension MenuView {
         #if os(macOS)
             if activeRootItemID == "settings", item.id == "settings_media_folders" {
                 playSound(named: "Selection")
-                MediaSourcesWindowController.shared.show()
+                enterMediaFoldersMenu()
                 return
             }
         #endif
@@ -591,6 +591,8 @@ extension MenuView {
                 return
             }
             startPodcastEpisodePlayback(episode)
+        case .mediaFolders:
+            triggerMediaFoldersAction()
         case .none:
             return
         }

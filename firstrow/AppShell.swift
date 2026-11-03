@@ -320,8 +320,6 @@ final class FirstRowAppController {
 extension FirstRowAppController {
     /// Settings > Media Folders (Command-comma on the Mac).
     func showMediaFolders() {
-        #if os(macOS)
-            MediaSourcesWindowController.shared.show()
-        #endif
+        menu?.showMediaFoldersFromShortcut()
     }
 }

@@ -4,9 +4,9 @@
 https://github.com/user-attachments/assets/2ff954c0-50fe-403b-b0b7-39557c937d62
 
 
-A SwiftUI recreation of Apple's **Front Row**, the beautiful media frontend that shipped in Mac OS X Tiger through Snow Leopard. Front Row allowed users to navigate their media with an eye-catching and slick UI, and gave Mac users a living-room worthy experience that also featured in the first-generation Apple TV.
+A recreation of Apple's **Front Row**, the beautiful media frontend that shipped in Mac OS X Tiger through Snow Leopard. Front Row allowed users to navigate their media with an eye-catching and slick UI, and gave Mac users a living-room worthy experience that also featured in the first-generation Apple TV.
 
-This project brings it back. The full menu system, animations, transitions, and overall experience are all faithfully recreated in modern Swift and SwiftUI, running on macOS 11.5+, and experimentally: iOS 15.6+, iPadOS 15.6+, tvOS 15.6+ (with limitations), and visionOS 1.0+.
+This project brings it back. The full menu system, animations, transitions, and overall experience are all faithfully recreated in modern Swift, drawn with Core Animation in AppKit and UIKit windows, running on macOS 11.5+, and experimentally: iOS 15.6+, iPadOS 15.6+, tvOS 15.6+ (with limitations), and visionOS 1.0+.
 
 Here, the Leopard/Snow Leopard version of the interface is used as a reference.
 
@@ -19,7 +19,7 @@ Here, the Leopard/Snow Leopard version of the interface is used as a reference.
 - Photo slideshows (Apple Photos library) with background music from your library and a Ken Burns Effect
 - Local movie playback from macOS Movies folder `Users/<username>/Movies` (or iOS/iPadOS/visionOS file system) via AVFoundation
 - Basic support for music and movies on external volumes / network shares (under a `Movies` or `Music` folder in the root of any volumes)
-- Your own folders of movies, music and photos, an iTunes library file (`iTunes Music Library.xml`) and an iPhoto library, added on macOS in Settings (`Cmd+,`, or Settings > Media Folders inside First Row)
+- Your own folders of movies, music and photos, an iTunes library file (`iTunes Music Library.xml`) and an iPhoto library, added on macOS in Settings > Media Folders inside First Row (`Cmd+,` jumps there)
 - Podcast viewing/listening on macOS if podcasts are downloaded on the device via Apple Podcasts
 - iTunes Top Charts and playable previews (movies, TV episodes, songs, music videos) via the iTunes RSS feeds
 - Screen saver with gorgeous floating photos 
@@ -59,9 +59,13 @@ Theatrical Trailers does not work as the original servers for this are gone and 
 
 ```
 firstrow/
-├── AppShell.swift                     App entry point
-├── MenuView.swift                     Core state container (all @State/@AppStorage/let)
-├── MenuView+*.swift                   Domain extensions (navigation, rendering, input..., internal reusable components)
+├── FirstRowMain.swift                 App entry point
+├── AppDelegate.swift                  macOS window, menu bar and Command-Escape
+├── IOSAppDelegate.swift               iOS/tvOS window
+├── AppShell.swift                     Launch flow, intro movie, key routing and quit fade
+├── MenuView.swift                     Core state container (@Published state, constants)
+├── MenuView+*.swift                   Domain extensions (navigation, layout, input...)
+├── Engine/                            Core Animation renderer: scene, menu lists, previews, carousels, full-screen scenes, text
 ├── MenuFeatures.swift                 MenuFeatureConfiguration protocol + typealiases
 ├── MenuConfiguration.swift            Feature registry - add new features here
 ├── MenuCatalog.swift                  Structures to represent menu/submenu items and their actions
@@ -71,9 +75,8 @@ firstrow/
 ├── PlatformCompatibility.swift        Cross-platform shims
 ├── PlaybackTimeFormatting.swift       Shared time formatting
 ├── SoundEffectPlayer.swift            AVAudioPlayer wrapper
-├── ReflectedGapContentIconView.swift  Fallback icon view for left side of the interface
-├── FullscreenSceneSupport.swift       FullscreenScenePresentation type + builder alias
-├── FeatureErrorFullscreenView.swift   Shared error fullscreen
+├── FullscreenSceneSupport.swift       FullscreenScenePresentation type
+├── FeatureErrorFullscreenView.swift   Error screen wording
 ├── TVRemoteInputOverlay.swift         Siri Remote input handling
 ├── TouchNavigationInputOverlay.swift  Experimental touch input handling
 │
@@ -82,7 +85,7 @@ firstrow/
 ├── Music.frappliance/                 Music library, playback, and Now Playing UI
 ├── Podcasts.frappliance/              Podcast series and episode browsing
 ├── Photos.frappliance/                Photo library browsing and slideshows
-├── FRSettings.frappliance/            Settings screen + screen saver
+├── FRSettings.frappliance/            Settings screen, Media Folders + screen saver
 ├── FRSources.frappliance/             Sources screen + Connect to iTunes
 │
 ├── Assets.xcassets/                   All image assets
@@ -193,9 +196,9 @@ Any submenu item whose action is not handled here will print a `TODO` log line.
 
 ### Gap content (left-side preview)
 
-The left half of the screen shows contextual content while the user scrolls through the menu. To add gap content for your feature, open `MenuView+GapContent.swift` and extend `gapContentView(for:sceneSize:)` with a new branch.
+The left half of the screen shows contextual content while the user scrolls through the menu. To add gap content for your feature, open `MenuView+GapContent.swift` and add a branch to `gapContentItems(sceneSize:pass:memo:)` that returns the pieces to show (each a `GapItemSpec` with an identity, a kind and how it fades).
 
-The simplest option is the default reflected menu icon (already shown automatically from `iconAssetName`). For richer previews, artwork carousels, video thumbnails, etc., follow the pattern in `Movies.frappliance/MoviePreviewGapContentView.swift` or `Music.frappliance/MusicTopLevelCarouselGapContentView.swift`.
+The simplest option is the default reflected menu icon (already shown automatically from `iconAssetName`). For richer previews, artwork carousels, video thumbnails, etc., use the existing kinds (`.moviePreview`, `.musicPreview`, `.metadata`, `.coverCarousel`) or add one in `Engine/GapContentLayer.swift`.
 
 ### Optional: submenus of menu options ("third" menus)
 

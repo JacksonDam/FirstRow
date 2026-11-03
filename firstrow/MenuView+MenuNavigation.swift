@@ -17,6 +17,7 @@ extension MenuView {
         case musicSongs
         case photosDateAlbums
         case podcastsEpisodes
+        case mediaFolders
     }
 }
 
@@ -60,7 +61,7 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos:
             true
-        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .none:
+        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .none:
             false
         }
         if isExitingMusicThirdMenu {
@@ -162,6 +163,9 @@ extension MenuView {
         case .photosDateAlbums:
             playSound(named: "Exit")
             exitPhotosThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
+        case .mediaFolders:
+            playSound(named: "Exit")
+            navigateUpInMediaFolders()
         case .moviesFolder:
             guard let currentURL = thirdMenuCurrentURL else {
                 exitMoviesThirdMenuToSecondLevelWithSwap()

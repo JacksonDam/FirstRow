@@ -26,6 +26,8 @@ extension MenuView {
     /// A key (or remote button) going down. Arrows start a press that can turn into a hold;
     /// everything else acts straight away.
     func handleKeyDown(_ key: KeyCode, isRepeat: Bool = false, modifiers: NSEvent.ModifierFlags = []) {
+        // The file picker is answering keys of its own.
+        if isChoosingMediaSource { return }
         if key == .upArrow || key == .downArrow || key == .leftArrow || key == .rightArrow {
             if isRepeat { return }
             handleDirectionalPressBegan(key, modifiers: modifiers)

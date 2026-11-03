@@ -153,13 +153,6 @@ enum FirstRowHarness {
                     walk(window.contentView!, depth: 0)
                     fputs("[dumpviews] window \(window.windowNumber) occlusion=\(window.occlusionState.rawValue)\n" + lines.joined(separator: "\n") + "\n", stderr)
                 }
-            case "settingswindow":
-                // Shows the Settings window behind everything (never activating) for a screenshot.
-                guard let window = MediaSourcesWindowController.shared.window else { return }
-                MediaSourcesWindowController.shared.reloadForHarness()
-                window.setFrameOrigin(NSPoint(x: 40, y: 360))
-                window.orderBack(nil)
-                fputs("[harness] settings window \(window.windowNumber)\n", stderr)
             case "source" where parts.count == 3:
                 // source:movies|music|photos:/path/to/folder
                 guard let kind = MediaSources.FolderKind(rawValue: parts[1]) else { return }

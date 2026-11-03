@@ -95,7 +95,6 @@
 		F57F5C2FDEF703D3CEA23C34 /* LayerKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5FD4A1D9F2FA9ED06D30B1E /* LayerKit.swift */; };
 		012F4C1B83C28FA7B0A5BE09 /* CoverCarouselLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23DE04BBBBB68BB54DCB30D6 /* CoverCarouselLayer.swift */; };
 		44AED348DDD49FA849CA760E /* MediaSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A3C5C46415705C3597FD27 /* MediaSources.swift */; };
-		5121AE16787486D9E470CEE2 /* MediaSourcesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 867D7C3813699D4C4068E075 /* MediaSourcesWindow.swift */; };
 		A516DA6EAF2DD34DF9910801 /* ITunesLibraryXML.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */; };
 		84B81E61DCCF2640C3D43B4C /* PhotoSourceAlbums.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE605EE0DFC89FB84A25401D /* PhotoSourceAlbums.swift */; };
 		966707EFDE8CA87E77C585B3 /* AppleRemoteInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0133167D30CE00D7FEBEBEA /* AppleRemoteInput.swift */; };
@@ -111,6 +110,7 @@
 		099F29735E0A9D3747686E80 /* MoviePlaybackLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E44528C2E0BAA59065CDCC87 /* MoviePlaybackLayers.swift */; };
 		17E42F7C552D8439E00D62BC /* MenuView+SceneLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 041BD18E34BB81CF5869D66C /* MenuView+SceneLayout.swift */; };
 		9B478C5FFEAECEAE013838B4 /* FirstRowMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 694828879CE0237F9751EE79 /* FirstRowMain.swift */; };
+		0FDEDCC7287D2A0897F3CDDC /* MenuView+MediaFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91FA96CF633C107507E42E8 /* MenuView+MediaFolders.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -221,7 +221,6 @@
 		B5FD4A1D9F2FA9ED06D30B1E /* LayerKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayerKit.swift; sourceTree = "<group>"; };
 		23DE04BBBBB68BB54DCB30D6 /* CoverCarouselLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverCarouselLayer.swift; sourceTree = "<group>"; };
 		F6A3C5C46415705C3597FD27 /* MediaSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaSources.swift; sourceTree = "<group>"; };
-		867D7C3813699D4C4068E075 /* MediaSourcesWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaSourcesWindow.swift; sourceTree = "<group>"; };
 		E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ITunesLibraryXML.swift; sourceTree = "<group>"; };
 		CE605EE0DFC89FB84A25401D /* PhotoSourceAlbums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSourceAlbums.swift; sourceTree = "<group>"; };
 		D0133167D30CE00D7FEBEBEA /* AppleRemoteInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleRemoteInput.swift; sourceTree = "<group>"; };
@@ -237,6 +236,7 @@
 		E44528C2E0BAA59065CDCC87 /* MoviePlaybackLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviePlaybackLayers.swift; sourceTree = "<group>"; };
 		041BD18E34BB81CF5869D66C /* MenuView+SceneLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+SceneLayout.swift"; sourceTree = "<group>"; };
 		694828879CE0237F9751EE79 /* FirstRowMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstRowMain.swift; sourceTree = "<group>"; };
+		F91FA96CF633C107507E42E8 /* MenuView+MediaFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MediaFolders.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -275,7 +275,7 @@
 		7A73DE282F5776A20021C281 /* FRSettings.frappliance */ = {
 			isa = PBXGroup;
 			children = (
-				867D7C3813699D4C4068E075 /* MediaSourcesWindow.swift */,
+				F91FA96CF633C107507E42E8 /* MenuView+MediaFolders.swift */,
 				7A73DE242F5776A20021C281 /* MenuView+ScreenSaverIdle.swift */,
 				7A73DE252F5776A20021C281 /* MenuView+ScreenSaverNowPlaying.swift */,
 				7A73DE262F5776A20021C281 /* ScreenSaverFullscreenView.swift */,
@@ -684,6 +684,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0FDEDCC7287D2A0897F3CDDC /* MenuView+MediaFolders.swift in Sources */,
 				9B478C5FFEAECEAE013838B4 /* FirstRowMain.swift in Sources */,
 				17E42F7C552D8439E00D62BC /* MenuView+SceneLayout.swift in Sources */,
 				099F29735E0A9D3747686E80 /* MoviePlaybackLayers.swift in Sources */,
@@ -699,7 +700,6 @@
 				966707EFDE8CA87E77C585B3 /* AppleRemoteInput.swift in Sources */,
 				84B81E61DCCF2640C3D43B4C /* PhotoSourceAlbums.swift in Sources */,
 				A516DA6EAF2DD34DF9910801 /* ITunesLibraryXML.swift in Sources */,
-				5121AE16787486D9E470CEE2 /* MediaSourcesWindow.swift in Sources */,
 				44AED348DDD49FA849CA760E /* MediaSources.swift in Sources */,
 				012F4C1B83C28FA7B0A5BE09 /* CoverCarouselLayer.swift in Sources */,
 				F57F5C2FDEF703D3CEA23C34 /* LayerKit.swift in Sources */,
