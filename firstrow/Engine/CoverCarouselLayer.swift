@@ -345,7 +345,10 @@ final class CoverCarouselLayerController: LayerController {
         let delay = max(0.01, nextWrap - elapsed) + 0.03
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolatedIfPossible {
+                // One transaction, so the new pictures, sizes and order reach the screen together.
+                CATransaction.begin()
                 self?.refreshLaneImages()
+                CATransaction.commit()
                 self?.scheduleWrapTimer()
             }
         }

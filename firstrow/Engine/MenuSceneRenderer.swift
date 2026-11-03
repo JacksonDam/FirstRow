@@ -166,13 +166,23 @@ final class MenuSceneRenderer: TransactionRendering {
         guard isDirty, containerSize != .zero else { return }
         isDirty = false
         carouselNeedsUpdate = true
+        CATransaction.begin()
+        defer { CATransaction.commit() }
         update(RenderPass(transaction: transaction), includesCarousel: false)
     }
 
     /// The end of a run loop pass: draws plain changes, and turns the carousel, which takes
     /// a pass's changes together (its timings depend on which of them happened at once).
+    ///
+    /// Each pass is one transaction. Without one, when nothing else in the run loop pass had
+    /// opened a transaction, the first change made in a nested `withoutLayerActions` was
+    /// committed on its own, and on iOS it reached the screen a frame before the animations that
+    /// go with it (the icon leaving the front of the carousel vanished for a frame, and one
+    /// arriving showed at the front over the selected icon).
     private func renderAtEndOfRunLoopPass() {
         guard containerSize != .zero else { return }
+        CATransaction.begin()
+        defer { CATransaction.commit() }
         if isDirty {
             isDirty = false
             update(RenderPass(transaction: Transaction()), includesCarousel: true)
