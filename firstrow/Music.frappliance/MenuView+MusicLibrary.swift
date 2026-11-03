@@ -1728,12 +1728,13 @@ extension MenuView {
                     guard let entry = makeMusicLibrarySongEntry(from: item, includeArtwork: includeArtwork) else { continue }
                     songs.append(entry)
                     itemIndices[entry.id] = index
-                    if let artworkData = item.artwork?.imageData as Data? {
-                        for artworkAlbumKey in musicTopLevelCarouselAlbumKeyAliases(for: item)
-                            where artworkDataByAlbumKey[artworkAlbumKey] == nil
-                        {
-                            artworkDataByAlbumKey[artworkAlbumKey] = artworkData
-                        }
+                    // Each artwork read copies the picture from the library service, so read one
+                    // per album rather than one per song.
+                    let albumKeysWithoutArtwork = musicTopLevelCarouselAlbumKeyAliases(for: item)
+                        .filter { artworkDataByAlbumKey[$0] == nil }
+                    guard !albumKeysWithoutArtwork.isEmpty, let artworkData = item.artwork?.imageData as Data? else { continue }
+                    for artworkAlbumKey in albumKeysWithoutArtwork {
+                        artworkDataByAlbumKey[artworkAlbumKey] = artworkData
                     }
                 }
                 return (songs: songs, itemIndices: itemIndices, artworkDataByAlbumKey: artworkDataByAlbumKey)
@@ -2297,12 +2298,16 @@ extension MenuView {
                     } else {
                         let songs: [MusicLibrarySongEntry]
                         #if canImport(iTunesLibrary)
-                            let itemIndices: [String: Int]
-                            let artworkDataByAlbumKey: [String: Data]
-                            let result = try await self.fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
-                            songs = result.songs
-                            itemIndices = result.itemIndices
-                            artworkDataByAlbumKey = result.artworkDataByAlbumKey
+                            // The songs read at launch, as the Songs list uses; reading the whole
+                            // library again took as long as launch did.
+                            var fresh: (itemIndices: [String: Int], artworkDataByAlbumKey: [String: Data])?
+                            if let cachedSongs = self.musicAllSongsCache {
+                                songs = cachedSongs
+                            } else {
+                                let result = try await self.fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
+                                songs = result.songs
+                                fresh = (result.itemIndices, result.artworkDataByAlbumKey)
+                            }
                         #else
                             let cachedSongs = self.musicAllSongsCache
                             if let cachedSongs {
@@ -2315,8 +2320,10 @@ extension MenuView {
                         await MainActor.run {
                             self.musicAllSongsCache = songs
                             #if canImport(iTunesLibrary)
-                                self.musicLibraryItemIndexBySongID = itemIndices
-                                self.musicLibraryArtworkDataByAlbumKey = artworkDataByAlbumKey
+                                if let fresh {
+                                    self.musicLibraryItemIndexBySongID = fresh.itemIndices
+                                    self.musicLibraryArtworkDataByAlbumKey = fresh.artworkDataByAlbumKey
+                                }
                             #endif
                         }
                     }
