@@ -35,9 +35,10 @@ let package = Package(
             swiftSettings: portableSettings,
         ),
         .target(name: "Photos", dependencies: ["FirstRowPortable", "CoreGraphics"], path: "Portable/Sources/Photos", swiftSettings: portableSettings),
+        .target(name: "iTunesLibrary", dependencies: ["FirstRowPortable"], path: "Portable/Sources/iTunesLibrary", swiftSettings: portableSettings),
         .executableTarget(
             name: "FirstRow",
-            dependencies: ["FirstRowPortable", "Photos", "QuartzCore", "CoreGraphics", "CoreText", "CoreImage", "ImageIO", "Combine", "AVFoundation"],
+            dependencies: ["FirstRowPortable", "Photos", "iTunesLibrary", "QuartzCore", "CoreGraphics", "CoreText", "CoreImage", "ImageIO", "Combine", "AVFoundation"],
             path: "firstrow",
             exclude: [
                 "Assets.xcassets", "Preview Content", "Sounds", "Videos", "ScreenSaverDefaultPhotos",

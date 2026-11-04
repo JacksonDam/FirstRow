@@ -344,7 +344,8 @@ final class VideoSurface: ExternalTextureProviding {
 
     func currentTexture() -> ExternalTexture? {
         guard hasFrame, texture != 0 else { return nil }
-        return ExternalTexture(id: texture, width: size.0, height: size.1, bottomUp: true)
+        // With FLIP_Y off, mpv draws the picture's top row first, like an image.
+        return ExternalTexture(id: texture, width: size.0, height: size.1, bottomUp: false)
     }
 
     /// Draws mpv's latest frame, if there is a new one.
