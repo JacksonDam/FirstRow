@@ -103,7 +103,8 @@ public enum AppResources {
         if let custom = ProcessInfo.processInfo.environment["FIRSTROW_RESOURCES"] {
             roots.append(URL(fileURLWithPath: custom, isDirectory: true))
         }
-        let executable = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
+        let executablePath = Bundle.main.executablePath ?? CommandLine.arguments[0]
+        let executable = URL(fileURLWithPath: executablePath).resolvingSymlinksInPath().deletingLastPathComponent()
         roots.append(executable.appendingPathComponent("Resources", isDirectory: true))
         roots.append(executable)
         // A development build sits in .build/<config>/ inside the checkout.

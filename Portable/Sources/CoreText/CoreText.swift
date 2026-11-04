@@ -75,11 +75,8 @@ public enum FontRegistry {
     /// What a requested name falls back to when the machine doesn't have it.
     static let substitutes: [String: [String]] = [
         "lucida grande": ["Lucida Grande", "Lucida Sans Unicode", "Lucida Sans", "Lucida Sans Regular", "DejaVu Sans", "Verdana", "Arial"],
-        "lucida grande bold": ["Lucida Grande Bold", "Lucida Sans Demibold", "Lucida Sans Demibold Roman", "Lucida Sans Bold", "DejaVu Sans Bold", "Verdana Bold", "Arial Bold"],
         "helvetica neue": ["Helvetica Neue", "Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"],
-        "helvetica neue bold": ["Helvetica Neue Bold", "Helvetica Bold", "Arial Bold", "Liberation Sans Bold", "DejaVu Sans Bold"],
         "helvetica": ["Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"],
-        "helvetica bold": ["Helvetica Bold", "Arial Bold", "Liberation Sans Bold", "DejaVu Sans Bold"],
     ]
 
     static let fallbackNames = [
@@ -153,22 +150,26 @@ public enum FontRegistry {
     static func face(named name: String) -> (FontFace, syntheticBold: Bool)? {
         lock.lock()
         defer { lock.unlock() }
-        let key = normalized(name)
+        return resolve(normalized(name), original: name)
+    }
+
+    private static func resolve(_ key: String, original: String) -> (FontFace, syntheticBold: Bool)? {
         if let cached = facesByName[key] {
             return (cached, key.contains("bold") && !cached.isBold)
         }
         let faces = allFaces()
-        let candidates = substitutes[key] ?? [name]
         var found: FontFace?
-        for candidate in candidates {
-            if let face = exact(candidate, in: faces) {
-                found = face
-                break
+        if let face = exact(original, in: faces) ?? exact(key, in: faces) {
+            found = face
+        } else if key.contains("bold") {
+            // Keep bold text in the same family as the regular text: its own bold if it has
+            // one, otherwise the regular face thickened.
+            let regularKey = key.replacingOccurrences(of: " bold", with: "")
+            if let (regular, _) = resolve(regularKey, original: regularKey) {
+                found = faces.first { $0.family == regular.family && $0.isBold && !$0.style.lowercased().contains("italic") } ?? regular
             }
-        }
-        if found == nil, key.contains("bold") {
-            let regular = key.replacingOccurrences(of: " bold", with: "")
-            for candidate in substitutes[regular] ?? [regular] {
+        } else {
+            for candidate in substitutes[key] ?? [] {
                 if let face = exact(candidate, in: faces) {
                     found = face
                     break

@@ -99,6 +99,8 @@ public enum PortableApplication {
         setlocale(LC_ALL, "C")
         let environment = ProcessInfo.processInfo.environment
         let headless = environment["SDL_VIDEO_DRIVER"] == "offscreen"
+        // Swift provides main itself, so SDL's own entry point never ran.
+        SDL_SetMainReady()
         guard SDL_Init(UInt32(SDL_INIT_VIDEO) | UInt32(SDL_INIT_GAMEPAD) | UInt32(SDL_INIT_EVENTS)) else {
             fail("SDL could not start: \(String(cString: SDL_GetError()))")
         }

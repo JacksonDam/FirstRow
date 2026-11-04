@@ -1,0 +1,68 @@
+# Builds the Linux and Windows versions and draws the main menu headlessly on each, so a
+# screenshot from every run can be compared with the Mac's.
+name: Linux and Windows
+
+on:
+  push:
+    branches: [linux-windows]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    container: swift:6.4.2-resolute
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL 3, libmpv and Mesa
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y libsdl3-dev libmpv-dev libgl-dev libegl-dev libgl1-mesa-dri fonts-dejavu-core
+      - name: Build
+        run: Portable/scripts/build-linux.sh
+      - name: Draw the main menu
+        run: |
+          printf 'wait 5\nshot %s/menu.png\ndown\nwait 1.5\nshot %s/tv.png\nquit\n' "$PWD" "$PWD" > script.txt
+          SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy FIRSTROW_NO_AUDIO=1 FIRSTROW_HARNESS=1 \
+            FIRSTROW_WINDOW_SIZE=1280x720 FIRSTROW_SCALE=1 FIRSTROW_SCRIPT=script.txt \
+            timeout 120 dist/linux/FirstRow/first-row
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            menu.png
+            tv.png
+            dist/linux/FirstRow
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build
+        shell: pwsh
+        run: Portable/scripts/build-windows.ps1
+      - name: Draw the main menu with Mesa's software OpenGL
+        shell: pwsh
+        run: |
+          $release = Invoke-RestMethod "https://api.github.com/repos/pal1000/mesa-dist-win/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -like "mesa3d-*-release-msvc.7z" } | Select-Object -First 1
+          Invoke-WebRequest $asset.browser_download_url -OutFile mesa.7z
+          7z x mesa.7z -omesa -y | Out-Null
+          Copy-Item mesa\x64\*.dll dist\windows\FirstRow\
+          "wait 5`nshot $PWD\menu.png`ndown`nwait 1.5`nshot $PWD\tv.png`nquit" | Set-Content script.txt
+          $env:FIRSTROW_HARNESS = "1"; $env:FIRSTROW_NO_AUDIO = "1"; $env:SDL_AUDIO_DRIVER = "dummy"
+          $env:FIRSTROW_WINDOW_SIZE = "1280x720"; $env:FIRSTROW_SCALE = "1"; $env:FIRSTROW_SCRIPT = "$PWD\script.txt"
+          $env:FIRSTROW_WINDOWED = "1"; $env:GALLIUM_DRIVER = "llvmpipe"
+          $process = Start-Process "dist\windows\FirstRow\First Row.exe" -PassThru
+          if (-not $process.WaitForExit(120000)) { $process.Kill(); throw "First Row did not finish" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            menu.png
+            tv.png
+            dist/windows/FirstRow
