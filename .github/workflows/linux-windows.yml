@@ -27,7 +27,7 @@ jobs:
           SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy FIRSTROW_NO_AUDIO=1 FIRSTROW_HARNESS=1 \
             FIRSTROW_WINDOW_SIZE=1280x720 FIRSTROW_SCALE=1 FIRSTROW_SCRIPT=script.txt \
             timeout 120 dist/linux/FirstRow/first-row
-          test -f menu.png
+          test -f menu.png && test -f tv.png
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -62,9 +62,11 @@ jobs:
           $env:FIRSTROW_HARNESS = "1"; $env:FIRSTROW_NO_AUDIO = "1"; $env:SDL_AUDIO_DRIVER = "dummy"
           $env:FIRSTROW_WINDOW_SIZE = "1280x720"; $env:FIRSTROW_SCALE = "1"; $env:FIRSTROW_SCRIPT = "$PWD\script.txt"
           $env:FIRSTROW_WINDOWED = "1"; $env:GALLIUM_DRIVER = "llvmpipe"
-          $process = Start-Process "smoke\First Row.exe" -PassThru
+          $process = Start-Process "smoke\First Row.exe" -PassThru -RedirectStandardError stderr.txt -RedirectStandardOutput stdout.txt
           if (-not $process.WaitForExit(120000)) { $process.Kill(); throw "First Row did not finish" }
-          if (-not (Test-Path menu.png)) { throw "First Row drew nothing" }
+          Get-Content stdout.txt, stderr.txt
+          "Exit code: 0x{0:X8}" -f $process.ExitCode
+          if (-not (Test-Path menu.png) -or -not (Test-Path tv.png)) { throw "First Row didn't draw both screens" }
       - uses: actions/upload-artifact@v4
         with:
           name: windows
