@@ -1853,7 +1853,7 @@ extension MenuView {
                 let playlist = collection as? MPMediaPlaylist
                 let title = normalizedMusicLibraryText(playlist?.name, fallback: "Untitled Playlist")
                 let persistentID = playlist.map { "\($0.persistentID)" } ?? title.lowercased()
-                let songs = sortedMusicLibraryEntries(collection.items.compactMap { makeMusicLibrarySongEntry(from: $0) })
+                let songs = sortedMusicLibraryEntries(collection.items.compactMap { makeMusicLibrarySongEntry(from: $0, includeArtwork: false) })
                 guard !songs.isEmpty else { return nil }
                 return MusicCategoryEntry(
                     id: "playlist::ios::\(persistentID)",
@@ -1947,10 +1947,12 @@ extension MenuView {
 
     #if os(iOS)
         func makeMusicLibrarySongEntry(from item: MPMediaItem, includeArtwork: Bool = true) -> MusicLibrarySongEntry? {
-            guard let locationURL = item.assetURL else { return nil }
+            // Apple Music and cloud songs have no file and play through the system player, which can't show video.
+            let locationURL = item.assetURL
+            if locationURL == nil, item.mediaType.contains(.anyVideo) { return nil }
             let title = normalizedMusicLibraryText(
                 item.title,
-                fallback: locationURL.deletingPathExtension().lastPathComponent,
+                fallback: locationURL?.deletingPathExtension().lastPathComponent ?? "Unknown Song",
             )
             let artist = normalizedMusicLibraryText(item.artist, fallback: "Unknown Artist")
             let album = normalizedMusicLibraryText(item.albumTitle, fallback: "Unknown Album")
@@ -1969,6 +1971,7 @@ extension MenuView {
                 artworkAlbumKey: musicTopLevelCarouselAlbumKey(for: item),
                 url: locationURL,
                 artwork: includeArtwork ? item.artwork?.image(at: CGSize(width: 800, height: 800)) : nil,
+                prefersSystemMusicPlayerPlayback: locationURL == nil,
             )
         }
     #endif

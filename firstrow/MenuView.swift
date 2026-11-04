@@ -404,9 +404,13 @@ final class MenuView: ObservableObject {
     #if os(tvOS) || os(macOS)
         @Published var musicKitScrubGlyphResetWorkItem: Task<Void, Never>?
     #endif
-    #if os(tvOS)
+    #if os(tvOS) || os(iOS)
         @Published var musicKitProgressTimer: Timer?
         @Published var musicKitDidHandleTrackEnd = false
+    #endif
+    #if os(iOS)
+        @Published var isCurrentMusicPlaybackUsingMediaPlayer = false
+        var musicMediaPlayerWasPlaying = false
     #endif
     @Published var isCurrentMusicPlaybackManagedByFirstRow = false
     @Published var musicAppleScriptCurrentTrackPersistentIDHex: String?
