@@ -417,7 +417,6 @@ extension MenuView {
         sortedSongs: [MusicLibrarySongEntry],
         shuffleSongs: [MusicLibrarySongEntry],
         itemIndices: [String: Int],
-        artworkDataByAlbumKey: [String: Data],
     ) {
         #if canImport(iTunesLibrary)
             let result = try await fetchMusicLibrarySongsForShuffleWithItemIndices()
@@ -425,7 +424,6 @@ extension MenuView {
                 sortedSongs: sortedMusicLibraryEntries(result.songs),
                 shuffleSongs: result.songs,
                 itemIndices: result.itemIndices,
-                artworkDataByAlbumKey: result.artworkDataByAlbumKey,
             )
         #else
             let songs = try await fetchMusicLibrarySongsForShuffle()
@@ -433,7 +431,6 @@ extension MenuView {
                 sortedSongs: sortedMusicLibraryEntries(songs),
                 shuffleSongs: songs,
                 itemIndices: [:],
-                artworkDataByAlbumKey: [:],
             )
         #endif
     }
@@ -471,7 +468,6 @@ extension MenuView {
                         self.musicShuffleSongsCache = snapshot.shuffleSongs
                         #if canImport(iTunesLibrary)
                             self.musicLibraryItemIndexBySongID = snapshot.itemIndices
-                            self.musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
                         #endif
                         self.finishStartupMusicLibraryPreload()
                     }
@@ -517,16 +513,19 @@ extension MenuView {
             self.musicShuffleSongsCache = snapshot.shuffleSongs
             #if canImport(iTunesLibrary)
                 self.musicLibraryItemIndexBySongID = snapshot.itemIndices
-                self.musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
             #endif
-            _ = self.incrementRequestID(&self.musicTopLevelCarouselRequestID)
-            self.musicTopLevelCarouselArtworksByIndex = [:]
-            self.musicTopLevelCarouselLoadedArtworkCount = 0
-            self.musicTopLevelCarouselResolvedArtworkCount = nil
-            self.musicTopLevelCarouselPageStartsInFlight.removeAll()
-            self.isLoadingMusicTopLevelCarousel = false
-            self.refreshDetailPreviewForCurrentContext()
+            self.reloadMusicTopLevelCarousel()
         }
+    }
+
+    func reloadMusicTopLevelCarousel() {
+        _ = incrementRequestID(&musicTopLevelCarouselRequestID)
+        musicTopLevelCarouselArtworksByIndex = [:]
+        musicTopLevelCarouselLoadedArtworkCount = 0
+        musicTopLevelCarouselResolvedArtworkCount = nil
+        musicTopLevelCarouselPageStartsInFlight.removeAll()
+        isLoadingMusicTopLevelCarousel = false
+        refreshDetailPreviewForCurrentContext()
     }
 
     func resetMusicCategoryStateForNonMusicITunesTop() {
@@ -674,14 +673,19 @@ extension MenuView {
             let normalizedSongAlbum = normalizedComparisonText(song.album)
             let cachedIndex = musicLibraryItemIndexBySongID[song.id]
 
-            func cachedArtworkData(for item: ITLibMediaItem) -> Data? {
-                guard let artworkData = item.artwork?.imageData as Data? else { return nil }
-                for artworkAlbumKey in musicTopLevelCarouselAlbumKeyAliases(for: item)
-                    where musicLibraryArtworkDataByAlbumKey[artworkAlbumKey] == nil
-                {
-                    musicLibraryArtworkDataByAlbumKey[artworkAlbumKey] = artworkData
+            // While the cover pass runs its library is open, so read just this song's cover.
+            if let library = musicLibraryArtworkLibrary, let cachedIndex,
+               library.allMediaItems.indices.contains(cachedIndex),
+               "\(library.allMediaItems[cachedIndex].persistentID)" == song.id
+            {
+                if let albumKey = song.artworkAlbumKey {
+                    musicLibraryArtworkAttemptsByAlbumKey[albumKey, default: 0] += 1
                 }
-                return artworkData
+                return storeMusicLibraryArtwork(from: library.allMediaItems[cachedIndex])
+            }
+            // The pass already tried this album, and opening the whole library again is slow.
+            if let albumKey = song.artworkAlbumKey, musicLibraryArtworkAttemptsByAlbumKey[albumKey] != nil {
+                return nil
             }
 
             func itemMatchesRequestedSong(_ item: ITLibMediaItem) -> Bool {
@@ -709,21 +713,21 @@ extension MenuView {
                 {
                     let indexedItem = library.allMediaItems[cachedIndex]
                     if itemMatchesRequestedSong(indexedItem),
-                       let artworkData = cachedArtworkData(for: indexedItem)
+                       let artworkData = storeMusicLibraryArtwork(from: indexedItem)
                     {
                         return artworkData
                     }
                 }
 
                 if let directLibraryMatch = library.allMediaItems.first(where: itemMatchesRequestedSong),
-                   let artworkData = cachedArtworkData(for: directLibraryMatch)
+                   let artworkData = storeMusicLibraryArtwork(from: directLibraryMatch)
                 {
                     return artworkData
                 }
 
                 for playlist in library.allPlaylists {
                     if let playlistMatch = playlist.items.first(where: itemMatchesRequestedSong),
-                       let artworkData = cachedArtworkData(for: playlistMatch)
+                       let artworkData = storeMusicLibraryArtwork(from: playlistMatch)
                     {
                         return artworkData
                     }
@@ -1212,6 +1216,13 @@ extension MenuView {
 
         /// A carousel page from the startup song cache, one distinct cover per album, or nil if empty.
         func fetchMusicTopLevelCarouselArtworksFromSongCache(startIndex: Int, limit: Int) async -> [NSImage?]? {
+            guard (musicShuffleSongsCache ?? musicAllSongsCache) != nil else { return nil }
+            await waitForMusicLibraryArtwork(timeout: 8)
+            // Still going: show what's there now and rebuild once every cover is in.
+            let isArtworkStillLoading = isLoadingMusicLibraryArtwork
+            if isArtworkStillLoading {
+                musicTopLevelCarouselNeedsReloadAfterArtwork = true
+            }
             guard let songs = musicShuffleSongsCache ?? musicAllSongsCache, !songs.isEmpty else { return nil }
             let libraryArtworkData = musicLibraryArtworkDataByAlbumKey
             let resolvedStartIndex = max(0, startIndex)
@@ -1238,7 +1249,7 @@ extension MenuView {
                 }
             }
             if resolvedStartIndex == 0, pageSources.isEmpty {
-                return nil
+                return isArtworkStillLoading ? [] : nil
             }
             var artworks: [NSImage?] = []
             artworks.reserveCapacity(pageSources.count)
@@ -1725,32 +1736,27 @@ extension MenuView {
         ) async throws -> (
             songs: [MusicLibrarySongEntry],
             itemIndices: [String: Int],
-            artworkDataByAlbumKey: [String: Data],
         ) {
-            typealias LibrarySnapshot = (songs: [MusicLibrarySongEntry], itemIndices: [String: Int], artworkDataByAlbumKey: [String: Data])
+            typealias LibrarySnapshot = (songs: [MusicLibrarySongEntry], itemIndices: [String: Int], library: ITLibrary?)
             let libraryResult: Result<LibrarySnapshot, Error> = FirstRowHarness.isActive
-                ? .success(([], [:], [:]))
+                ? .success(([], [:], nil))
                 : Result { try withITLibrary { library in
                 var songs: [MusicLibrarySongEntry] = []
                 var itemIndices: [String: Int] = [:]
-                var artworkDataByAlbumKey: [String: Data] = [:]
                 for (index, item) in library.allMediaItems.enumerated() {
                     guard musicLibraryMediaKindMatches(item.mediaKind, requested: .songs) else { continue }
                     guard let entry = makeMusicLibrarySongEntry(from: item, includeArtwork: includeArtwork) else { continue }
                     songs.append(entry)
                     itemIndices[entry.id] = index
-                    // Each artwork read copies the picture from the library service, so read one
-                    // per album rather than one per song.
-                    let albumKeysWithoutArtwork = musicTopLevelCarouselAlbumKeyAliases(for: item)
-                        .filter { artworkDataByAlbumKey[$0] == nil }
-                    guard !albumKeysWithoutArtwork.isEmpty, let artworkData = item.artwork?.imageData as Data? else { continue }
-                    for artworkAlbumKey in albumKeysWithoutArtwork {
-                        artworkDataByAlbumKey[artworkAlbumKey] = artworkData
-                    }
                 }
-                return (songs: songs, itemIndices: itemIndices, artworkDataByAlbumKey: artworkDataByAlbumKey)
+                return (songs: songs, itemIndices: itemIndices, library: library)
             } }
-            var (songs, itemIndices, artworkDataByAlbumKey) = (try? libraryResult.get()) ?? ([], [:], [:])
+            let snapshot: LibrarySnapshot = (try? libraryResult.get()) ?? ([], [:], nil)
+            var songs = snapshot.songs
+            // Covers come afterwards, so they never hold up the songs.
+            if let library = snapshot.library {
+                startMusicLibraryArtworkPass(library: library)
+            }
             // Add folder, drive and iTunes XML songs, even when the Music library can't be read.
             var knownPaths = Set(songs.compactMap { $0.url?.standardizedFileURL.path })
             for entry in await fetchExternalMusicSongEntries() where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
@@ -1766,15 +1772,72 @@ extension MenuView {
             }
             return (
                 songs: shouldSort ? sortedMusicLibraryEntries(songs) : songs,
-                itemIndices: itemIndices,
-                artworkDataByAlbumKey: artworkDataByAlbumKey,
+                itemIndices: snapshot.itemIndices,
             )
+        }
+
+        /// Reads one cover per album after the songs are in. Each cover is its own request to the
+        /// library service, and an Apple Music library's covers took most of a minute that way.
+        func startMusicLibraryArtworkPass(library: ITLibrary) {
+            let requestID = incrementRequestID(&musicLibraryArtworkPassRequestID)
+            musicLibraryArtworkLibrary = library
+            isLoadingMusicLibraryArtwork = true
+            Task {
+                let startDate = Date()
+                var albumCount = 0
+                for (index, item) in library.allMediaItems.enumerated() {
+                    if index % 500 == 499 {
+                        try? await Task.sleep(nanoseconds: 8_000_000)
+                    }
+                    guard self.musicLibraryArtworkPassRequestID == requestID else { return }
+                    guard self.musicLibraryMediaKindMatches(item.mediaKind, requested: .songs),
+                          self.isMusicLibraryItemAuthorizedForPlayback(item) else { continue }
+                    let albumKey = self.musicTopLevelCarouselAlbumKey(for: item)
+                    guard self.musicLibraryArtworkDataByAlbumKey[albumKey] == nil else { continue }
+                    // Each album's first song, then a couple more that say they have a cover.
+                    let attempts = self.musicLibraryArtworkAttemptsByAlbumKey[albumKey, default: 0]
+                    guard attempts == 0 || (attempts < 3 && item.hasArtworkAvailable) else { continue }
+                    self.musicLibraryArtworkAttemptsByAlbumKey[albumKey] = attempts + 1
+                    let readStartDate = Date()
+                    if self.storeMusicLibraryArtwork(from: item) != nil {
+                        albumCount += 1
+                    }
+                    // Reads block the main thread, so give it back for a while after each one.
+                    let readSeconds = Date().timeIntervalSince(readStartDate)
+                    try? await Task.sleep(nanoseconds: UInt64(max(0.008, readSeconds / 2) * 1_000_000_000))
+                }
+                guard self.musicLibraryArtworkPassRequestID == requestID else { return }
+                print("[Music] read \(albumCount) album covers in \(String(format: "%.1f", Date().timeIntervalSince(startDate))) s")
+                self.musicLibraryArtworkLibrary = nil
+                self.isLoadingMusicLibraryArtwork = false
+                if self.musicTopLevelCarouselNeedsReloadAfterArtwork {
+                    self.musicTopLevelCarouselNeedsReloadAfterArtwork = false
+                    self.reloadMusicTopLevelCarousel()
+                }
+            }
+        }
+
+        /// Keeps an item's cover under each of its album's keys.
+        @discardableResult
+        func storeMusicLibraryArtwork(from item: ITLibMediaItem) -> Data? {
+            guard let artworkData = item.artwork?.imageData as Data? else { return nil }
+            let newKeys = musicTopLevelCarouselAlbumKeyAliases(for: item)
+                .filter { musicLibraryArtworkDataByAlbumKey[$0] == nil }
+            musicLibraryArtworkDataByAlbumKey.merge(newKeys.map { ($0, artworkData) }) { current, _ in current }
+            return artworkData
+        }
+
+        /// Waits for the cover pass, but no longer than `timeout` seconds.
+        func waitForMusicLibraryArtwork(timeout: TimeInterval) async {
+            let deadline = Date().addingTimeInterval(timeout)
+            while isLoadingMusicLibraryArtwork, Date() < deadline {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
         }
 
         func fetchMusicLibrarySongsForShuffleWithItemIndices() async throws -> (
             songs: [MusicLibrarySongEntry],
             itemIndices: [String: Int],
-            artworkDataByAlbumKey: [String: Data],
         ) {
             try await fetchMusicLibrarySongsWithItemIndices(
                 includeArtwork: false,
@@ -2234,16 +2297,13 @@ extension MenuView {
                     #if canImport(iTunesLibrary)
                         let songs: [MusicLibrarySongEntry]
                         let itemIndices: [String: Int]
-                        let artworkDataByAlbumKey: [String: Data]
                         if requestedMediaType == .songs {
                             let result = try await self.fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
                             songs = result.songs
                             itemIndices = result.itemIndices
-                            artworkDataByAlbumKey = result.artworkDataByAlbumKey
                         } else {
                             songs = try await self.fetchMusicLibraryEntries(for: requestedMediaType)
                             itemIndices = [:]
-                            artworkDataByAlbumKey = self.musicLibraryArtworkDataByAlbumKey
                         }
                     #else
                         let songs = try await self.fetchMusicLibraryEntries(for: requestedMediaType)
@@ -2257,7 +2317,6 @@ extension MenuView {
                         if requestedMediaType == .songs {
                             #if canImport(iTunesLibrary)
                                 self.musicLibraryItemIndexBySongID = itemIndices
-                                self.musicLibraryArtworkDataByAlbumKey = artworkDataByAlbumKey
                             #endif
                             self.musicAllSongsCache = songs
                         }
@@ -2314,13 +2373,13 @@ extension MenuView {
                         #if canImport(iTunesLibrary)
                             // The songs read at launch, as the Songs list uses; reading the whole
                             // library again took as long as launch did.
-                            var fresh: (itemIndices: [String: Int], artworkDataByAlbumKey: [String: Data])?
+                            var freshItemIndices: [String: Int]?
                             if let cachedSongs = self.musicAllSongsCache {
                                 songs = cachedSongs
                             } else {
                                 let result = try await self.fetchMusicLibrarySongsWithItemIndices(includeArtwork: false)
                                 songs = result.songs
-                                fresh = (result.itemIndices, result.artworkDataByAlbumKey)
+                                freshItemIndices = result.itemIndices
                             }
                         #else
                             let cachedSongs = self.musicAllSongsCache
@@ -2334,9 +2393,8 @@ extension MenuView {
                         await MainActor.run {
                             self.musicAllSongsCache = songs
                             #if canImport(iTunesLibrary)
-                                if let fresh {
-                                    self.musicLibraryItemIndexBySongID = fresh.itemIndices
-                                    self.musicLibraryArtworkDataByAlbumKey = fresh.artworkDataByAlbumKey
+                                if let freshItemIndices {
+                                    self.musicLibraryItemIndexBySongID = freshItemIndices
                                 }
                             #endif
                         }
@@ -2486,7 +2544,6 @@ extension MenuView {
                         await MainActor.run {
                             guard self.musicSongsRequestID == requestID else { return }
                             self.musicLibraryItemIndexBySongID = result.itemIndices
-                            self.musicLibraryArtworkDataByAlbumKey = result.artworkDataByAlbumKey
                             self.musicShuffleSongsCache = result.songs
                             guard self.activeMusicPlaybackSongID == seedSong.id else { return }
                             let shuffleRequestID = self.incrementRequestID(&self.musicShuffleRequestID)

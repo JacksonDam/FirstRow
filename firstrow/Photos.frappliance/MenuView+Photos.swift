@@ -552,7 +552,6 @@ extension MenuView {
                     sortedSongs: [MusicLibrarySongEntry],
                     shuffleSongs: [MusicLibrarySongEntry],
                     itemIndices: [String: Int],
-                    artworkDataByAlbumKey: [String: Data],
                 )?
                 do {
                     let loadedSnapshot = try await self.loadStartupMusicLibrarySnapshot()
@@ -569,7 +568,6 @@ extension MenuView {
                         self.musicShuffleSongsCache = snapshot.shuffleSongs
                         #if canImport(iTunesLibrary)
                             self.musicLibraryItemIndexBySongID = snapshot.itemIndices
-                            self.musicLibraryArtworkDataByAlbumKey = snapshot.artworkDataByAlbumKey
                         #endif
                     }
                     self.photoSlideshowResolvedMusicEntry = resolvedSong

@@ -5,6 +5,9 @@ import Foundation
 #else
     import UIKit
 #endif
+#if canImport(iTunesLibrary)
+    import iTunesLibrary
+#endif
 
 /// The menu system's navigation, library and playback state. Its logic is in the `MenuView+*` files.
 @MainActor
@@ -291,7 +294,16 @@ final class MenuView: ObservableObject {
     @Published var musicPreviewRefreshWorkItem: Task<Void, Never>?
     /// Song covers near the selection. Not published, since filling it doesn't change the screen.
     let musicPreviewCache = LRUCache<String, NSImage>(maxEntryCount: 32)
-    @Published var musicLibraryArtworkDataByAlbumKey: [String: Data] = [:]
+    /// Library covers by album, filled after launch. Not published either.
+    var musicLibraryArtworkDataByAlbumKey: [String: Data] = [:]
+    #if canImport(iTunesLibrary)
+        /// The library the cover pass reads from, held only while it runs.
+        var musicLibraryArtworkLibrary: ITLibrary?
+        var musicLibraryArtworkAttemptsByAlbumKey: [String: Int] = [:]
+        var musicLibraryArtworkPassRequestID = 0
+        var isLoadingMusicLibraryArtwork = false
+        var musicTopLevelCarouselNeedsReloadAfterArtwork = false
+    #endif
     @Published var musicTopLevelCarouselActiveSubmenuID: String?
     @Published var musicTopLevelCarouselArtworksByIndex: [Int: NSImage?] = [:]
     @Published var musicTopLevelCarouselLoadedArtworkCount = 0
