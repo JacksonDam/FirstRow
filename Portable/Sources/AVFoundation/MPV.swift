@@ -39,6 +39,7 @@ final class MPVCore {
             return nil
         }
         observe("eof-reached", MPV_FORMAT_FLAG, id: 1)
+        if Self.debugEnabled { mpv_request_log_messages(handle, "v") }
         Self.live[ObjectIdentifier(self)] = self
         Self.debug("core created (video \(video))")
     }
@@ -115,6 +116,12 @@ final class MPVCore {
         while true {
             guard let event = mpv_wait_event(handle, 0) else { return }
             if event.pointee.event_id == MPV_EVENT_NONE { return }
+            if event.pointee.event_id == MPV_EVENT_LOG_MESSAGE {
+                if let message = event.pointee.data?.assumingMemoryBound(to: mpv_event_log_message.self).pointee {
+                    Self.debug("log \(String(cString: message.prefix)): \(String(cString: message.text).trimmingCharacters(in: .newlines))")
+                }
+                continue
+            }
             Self.debug("event \(String(cString: mpv_event_name(event.pointee.event_id)))")
             onEvent?(event)
         }
@@ -128,10 +135,25 @@ final class MPVCore {
 
     nonisolated(unsafe) static var procAddress: ((String) -> UnsafeMutableRawPointer?)?
 
+    /// Set when frames are drawn into memory because this libmpv has no OpenGL renderer
+    /// (the Windows on Arm builds, for one).
+    private(set) var softwareRendering = false
+
     /// Creates the render context that draws frames into our textures. Needs a current GL context.
     func makeRenderContext() -> OpaquePointer? {
         if let renderContext { return renderContext }
         guard Self.procAddress != nil else { return nil }
+        var status = makeOpenGLContext()
+        if renderContext == nil {
+            Self.debug("OpenGL render context failed: \(String(cString: mpv_error_string(status)))")
+            status = makeSoftwareContext()
+            softwareRendering = renderContext != nil
+        }
+        Self.debug("render context \(renderContext == nil ? "failed: \(String(cString: mpv_error_string(status)))" : softwareRendering ? "made (software)" : "made")")
+        return renderContext
+    }
+
+    private func makeOpenGLContext() -> Int32 {
         var initParams = mpv_opengl_init_params(
             get_proc_address: { _, name in
                 guard let name else { return nil }
@@ -143,6 +165,7 @@ final class MPVCore {
         let apiType = strdup(MPV_RENDER_API_TYPE_OPENGL)
         defer { free(apiType) }
         var advanced: Int32 = 0
+        var status: Int32 = 0
         withUnsafeMutablePointer(to: &initParams) { initPointer in
             withUnsafeMutablePointer(to: &advanced) { advancedPointer in
                 var params = [
@@ -151,12 +174,24 @@ final class MPVCore {
                     mpv_render_param(type: MPV_RENDER_PARAM_ADVANCED_CONTROL, data: UnsafeMutableRawPointer(advancedPointer)),
                     mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
                 ]
-                _ = mpv_render_context_create(&context, handle, &params)
+                status = mpv_render_context_create(&context, handle, &params)
             }
         }
         renderContext = context
-        Self.debug("render context \(context == nil ? "failed" : "made")")
-        return context
+        return status
+    }
+
+    private func makeSoftwareContext() -> Int32 {
+        var context: OpaquePointer?
+        let apiType = strdup(MPV_RENDER_API_TYPE_SW)
+        defer { free(apiType) }
+        var params = [
+            mpv_render_param(type: MPV_RENDER_PARAM_API_TYPE, data: UnsafeMutableRawPointer(apiType)),
+            mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
+        ]
+        let status = mpv_render_context_create(&context, handle, &params)
+        renderContext = context
+        return status
     }
 }
 

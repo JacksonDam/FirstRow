@@ -37,7 +37,7 @@ Portable\scripts\build-windows.ps1            # or -Arch arm64
 & "dist\windows\FirstRow\First Row.exe"
 ```
 
-The script downloads SDL 3 and libmpv the first time and copies their DLLs and the Swift runtime next to the app.
+The script downloads SDL 3 and libmpv the first time and copies their DLLs and the Swift runtime next to the app. The Arm libmpv build has no OpenGL renderer, so on Windows on Arm video frames are converted on the processor and uploaded, which costs more processor time with large videos.
 
 First Row needs OpenGL 3.3, which every current graphics driver provides. A machine or virtual machine without one can use Mesa's software renderer instead: put `opengl32.dll`, `libgallium_wgl.dll` and the DLLs they load (MSYS2's `mingw-w64-clang-x86_64-mesa` or `mingw-w64-clang-aarch64-mesa` package) next to `First Row.exe`.
 

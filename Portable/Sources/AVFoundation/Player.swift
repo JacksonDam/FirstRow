@@ -322,6 +322,9 @@ final class VideoSurface: ExternalTextureProviding {
     private var texture: GLuint = 0
     private var size = (0, 0)
     private var hasFrame = false
+    /// Where the software renderer draws, when mpv can't draw with OpenGL.
+    private var pixels: UnsafeMutableRawPointer?
+    private var stride = 0
 
     nonisolated(unsafe) static var all: [ObjectIdentifier: Weak] = [:]
 
@@ -340,6 +343,7 @@ final class VideoSurface: ExternalTextureProviding {
         var tex = texture
         if fbo != 0 { glDeleteFramebuffers(1, &fbo) }
         if tex != 0 { glDeleteTextures(1, &tex) }
+        pixels?.deallocate()
     }
 
     func currentTexture() -> ExternalTexture? {
@@ -358,6 +362,10 @@ final class VideoSurface: ExternalTextureProviding {
         if size != (width, height) {
             resize(width, height)
         } else if flags & UInt64(MPV_RENDER_UPDATE_FRAME.rawValue) == 0, hasFrame {
+            return
+        }
+        if core.softwareRendering {
+            renderInMemory(context, width, height)
             return
         }
         var fbo = mpv_opengl_fbo(fbo: Int32(framebuffer), w: Int32(width), h: Int32(height), internal_format: 0)
@@ -392,6 +400,39 @@ final class VideoSurface: ExternalTextureProviding {
         glBindFramebuffer(GL_FRAMEBUFFER, framebuffer)
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0)
         size = (width, height)
+        if player?.core?.softwareRendering == true {
+            // The software renderer leaves the fourth byte undefined, so the picture is opaque.
+            glTexParameteri(GL_TEXTURE_2D, GLenum(0x8E45), 1) // GL_TEXTURE_SWIZZLE_A, GL_ONE
+            pixels?.deallocate()
+            stride = (width * 4 + 63) & ~63
+            pixels = UnsafeMutableRawPointer.allocate(byteCount: stride * height, alignment: 64)
+        }
+    }
+
+    private func renderInMemory(_ context: OpaquePointer, _ width: Int, _ height: Int) {
+        guard let pixels else { return }
+        var surfaceSize: [Int32] = [Int32(width), Int32(height)]
+        var rowBytes = stride
+        let format = strdup("rgb0")
+        defer { free(format) }
+        surfaceSize.withUnsafeMutableBufferPointer { sizePointer in
+            withUnsafeMutablePointer(to: &rowBytes) { stridePointer in
+                var params = [
+                    mpv_render_param(type: MPV_RENDER_PARAM_SW_SIZE, data: UnsafeMutableRawPointer(sizePointer.baseAddress)),
+                    mpv_render_param(type: MPV_RENDER_PARAM_SW_FORMAT, data: UnsafeMutableRawPointer(format)),
+                    mpv_render_param(type: MPV_RENDER_PARAM_SW_STRIDE, data: UnsafeMutableRawPointer(stridePointer)),
+                    mpv_render_param(type: MPV_RENDER_PARAM_SW_POINTER, data: pixels),
+                    mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
+                ]
+                _ = mpv_render_context_render(context, &params)
+            }
+        }
+        glBindTexture(GL_TEXTURE_2D, texture)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4)
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, GLint(stride / 4))
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, GLsizei(width), GLsizei(height), GL_RGBA, GL_UNSIGNED_BYTE, pixels)
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0)
+        hasFrame = true
     }
 }
 
