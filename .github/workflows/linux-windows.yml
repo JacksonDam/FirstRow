@@ -1,5 +1,5 @@
-# Builds the Linux and Windows versions and draws the main menu headlessly on each, so a
-# screenshot from every run can be compared with the Mac's.
+# Builds and packages the Linux and Windows versions and draws the main menu headlessly on
+# each, so a screenshot from every run can be compared with the Mac's.
 name: Linux and Windows
 
 on:
@@ -18,20 +18,23 @@ jobs:
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y libsdl3-dev libmpv-dev libgl-dev libegl-dev libgl1-mesa-dri fonts-dejavu-core
       - name: Build
-        run: Portable/scripts/build-linux.sh
+        run: |
+          Portable/scripts/build-linux.sh
+          tar -C dist/linux -czf "FirstRow-linux-$(uname -m).tar.gz" FirstRow
       - name: Draw the main menu
         run: |
           printf 'wait 5\nshot %s/menu.png\ndown\nwait 1.5\nshot %s/tv.png\nquit\n' "$PWD" "$PWD" > script.txt
           SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy FIRSTROW_NO_AUDIO=1 FIRSTROW_HARNESS=1 \
             FIRSTROW_WINDOW_SIZE=1280x720 FIRSTROW_SCALE=1 FIRSTROW_SCRIPT=script.txt \
             timeout 120 dist/linux/FirstRow/first-row
+          test -f menu.png
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: |
             menu.png
             tv.png
-            dist/linux/FirstRow
+            FirstRow-linux-*.tar.gz
 
   windows:
     runs-on: windows-latest
@@ -44,23 +47,28 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Build
         shell: pwsh
-        run: Portable/scripts/build-windows.ps1
+        run: |
+          Portable/scripts/build-windows.ps1
+          Portable/scripts/check-windows-dlls.ps1
+          Compress-Archive dist\windows\FirstRow FirstRow-windows-x64.zip
       - name: Draw the main menu with Mesa's software OpenGL
         shell: pwsh
         run: |
-          # The runner has no GPU, so use llvmpipe from MSYS2's Mesa.
+          # The runner has no GPU, so a copy of the app gets llvmpipe from MSYS2's Mesa.
+          Copy-Item dist\windows\FirstRow smoke -Recurse
           C:\msys64\usr\bin\pacman.exe -S --noconfirm --needed mingw-w64-clang-x86_64-mesa | Out-Null
-          Copy-Item C:\msys64\clang64\bin\*.dll dist\windows\FirstRow\ -Exclude SDL3.dll
+          Copy-Item C:\msys64\clang64\bin\*.dll smoke\ -Exclude SDL3.dll
           "wait 5`nshot $PWD\menu.png`ndown`nwait 1.5`nshot $PWD\tv.png`nquit" | Set-Content script.txt
           $env:FIRSTROW_HARNESS = "1"; $env:FIRSTROW_NO_AUDIO = "1"; $env:SDL_AUDIO_DRIVER = "dummy"
           $env:FIRSTROW_WINDOW_SIZE = "1280x720"; $env:FIRSTROW_SCALE = "1"; $env:FIRSTROW_SCRIPT = "$PWD\script.txt"
           $env:FIRSTROW_WINDOWED = "1"; $env:GALLIUM_DRIVER = "llvmpipe"
-          $process = Start-Process "dist\windows\FirstRow\First Row.exe" -PassThru
+          $process = Start-Process "smoke\First Row.exe" -PassThru
           if (-not $process.WaitForExit(120000)) { $process.Kill(); throw "First Row did not finish" }
+          if (-not (Test-Path menu.png)) { throw "First Row drew nothing" }
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
             menu.png
             tv.png
-            dist/windows/FirstRow
+            FirstRow-windows-x64.zip

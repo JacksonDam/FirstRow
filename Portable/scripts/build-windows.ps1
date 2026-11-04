@@ -74,9 +74,20 @@ New-Item -ItemType Directory -Force -Path (Join-Path $out "Resources") | Out-Nul
 Copy-Item (Join-Path $root ".build\release\FirstRow.exe") (Join-Path $out "First Row.exe")
 Copy-Item (Join-Path $sdlLib "SDL3.dll") $out
 Get-ChildItem $mpv -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1 | Copy-Item -Destination $out
-# The Swift runtime the app was built against.
-$runtime = Get-ChildItem "$env:LOCALAPPDATA\Programs\Swift\Runtimes" -Directory | Sort-Object Name -Descending | Select-Object -First 1
-if ($runtime) { Copy-Item (Join-Path $runtime.FullName "usr\bin\*.dll") $out }
+# The Swift runtime the app was built against, wherever the installer put it.
+# The toolchain's own folder has a swiftCore.dll too, so only a Runtimes folder will do.
+$swiftCore = @(cmd /c "where swiftCore.dll 2>nul") | Where-Object { $_ -match "\\Runtimes\\" } | Select-Object -First 1
+if (-not $swiftCore) {
+    $swiftCore = Get-ChildItem "$env:LOCALAPPDATA\Programs\Swift\Runtimes", "$env:ProgramFiles\Swift\Runtimes" -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending | ForEach-Object { Join-Path $_.FullName "usr\bin\swiftCore.dll" } |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $swiftCore) { throw "The Swift runtime (swiftCore.dll) wasn't found" }
+Copy-Item (Join-Path (Split-Path $swiftCore) "*.dll") $out
+# The Visual C++ runtime, which a fresh Windows may not have yet.
+$crt = if ($env:VCToolsRedistDir) { Get-ChildItem (Join-Path $env:VCToolsRedistDir $Arch) -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue | Select-Object -First 1 }
+if (-not $crt) { throw "The Visual C++ runtime wasn't found: run this from a Developer PowerShell" }
+Copy-Item (Join-Path $crt.FullName "*.dll") $out
 foreach ($folder in "Assets.xcassets", "Sounds", "ScreenSaverDefaultPhotos", "Videos") {
     $source = Join-Path $root "firstrow\$folder"
     if (Test-Path $source) { Copy-Item $source (Join-Path $out "Resources") -Recurse }
