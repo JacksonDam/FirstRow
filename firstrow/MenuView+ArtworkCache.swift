@@ -4,8 +4,10 @@ import ImageIO
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 final class DecodedDisplayArtworkCache {

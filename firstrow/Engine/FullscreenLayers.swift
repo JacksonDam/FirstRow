@@ -2,8 +2,10 @@ import AVFoundation
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 /// A screen-shaped canvas 1080 pt tall and at least 1440 wide, scaled to fill the screen.
@@ -550,7 +552,7 @@ final class ScreenSaverSceneLayer: FullscreenContent {
 
     override init() {
         super.init()
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             space.isGeometryFlipped = true
         #endif
         layer.addSublayer(space)
@@ -574,7 +576,7 @@ final class PhotoSlideshowSceneLayer: FullscreenContent {
 
     override init() {
         super.init()
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             space.isGeometryFlipped = true
         #endif
         layer.addSublayer(space)

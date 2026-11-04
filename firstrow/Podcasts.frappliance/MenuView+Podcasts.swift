@@ -2,8 +2,10 @@ import AVFoundation
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 #if canImport(CryptoKit)
     import CryptoKit
@@ -1191,11 +1193,17 @@ extension MenuView {
     func truncatedPodcastSeriesHeaderTitle(_ title: String) -> String {
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedTitle.isEmpty else { return "Podcasts" }
-        let font = NSFont(name: firstRowBoldFontName, size: 60) ?? NSFont.boldSystemFont(ofSize: 60)
         let maxWidth: CGFloat = 720
-        func measuredWidth(_ value: String) -> CGFloat {
-            ceil((value as NSString).size(withAttributes: [.font: font]).width)
-        }
+        #if FIRSTROW_PORTABLE
+            func measuredWidth(_ value: String) -> CGFloat {
+                FontMetrics.width(value, fontName: firstRowBoldFontName, size: 60)
+            }
+        #else
+            let font = NSFont(name: firstRowBoldFontName, size: 60) ?? NSFont.boldSystemFont(ofSize: 60)
+            func measuredWidth(_ value: String) -> CGFloat {
+                ceil((value as NSString).size(withAttributes: [.font: font]).width)
+            }
+        #endif
         if measuredWidth(normalizedTitle) <= maxWidth {
             return normalizedTitle
         }

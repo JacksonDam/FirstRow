@@ -1,8 +1,10 @@
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 /// Full-screen slideshow: each photo pans and zooms (Ken Burns), then crossfades into the next.
@@ -182,7 +184,7 @@ final class PhotoSlideshowLayerController: LayerController {
         let zoom = zoomStart + 0.16 * p
         let panX = directionX * bounds.width * 0.06 * (p - 0.5)
         var panY = directionY * bounds.height * 0.045 * (p - 0.5)
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             panY = -panY
         #endif
         return CATransform3DConcat(CATransform3DMakeScale(zoom, zoom, 1), CATransform3DMakeTranslation(panX, panY, 0))

@@ -2,6 +2,8 @@ import Foundation
 #if os(macOS)
     import AppKit
     import UniformTypeIdentifiers
+#elseif FIRSTROW_PORTABLE
+    import FirstRowPortable
 #endif
 
 /// Settings > Media Folders: pages for the extra folders and library files First Row reads.
@@ -235,6 +237,18 @@ extension MenuView {
                 }
                 self.mediaSourcesRevision &+= 1
             }
+        #elseif FIRSTROW_PORTABLE
+            guard !isChoosingMediaSource else { return }
+            isChoosingMediaSource = true
+            PortableFilePicker.chooseFolders(allowMany: true) { [weak self] urls in
+                guard let self else { return }
+                self.isChoosingMediaSource = false
+                guard !urls.isEmpty else { return }
+                for url in urls {
+                    MediaSources.shared.addFolder(url, kind: kind)
+                }
+                self.mediaSourcesRevision &+= 1
+            }
         #endif
     }
 
@@ -264,6 +278,23 @@ extension MenuView {
                 MediaSources.shared.setLibrary(url, kind: kind)
                 self.mediaSourcesRevision &+= 1
                 self.navigateUpInMediaFolders()
+            }
+        #elseif FIRSTROW_PORTABLE
+            guard !isChoosingMediaSource else { return }
+            isChoosingMediaSource = true
+            let finish: @MainActor ([URL]) -> Void = { [weak self] urls in
+                guard let self else { return }
+                self.isChoosingMediaSource = false
+                guard let url = urls.first else { return }
+                MediaSources.shared.setLibrary(url, kind: kind)
+                self.mediaSourcesRevision &+= 1
+                self.navigateUpInMediaFolders()
+            }
+            switch kind {
+            case .iTunesXML:
+                PortableFilePicker.chooseFile(filters: [("iTunes library file", "xml")], completion: finish)
+            case .iPhoto:
+                PortableFilePicker.chooseFolders(allowMany: false, completion: finish)
             }
         #endif
     }

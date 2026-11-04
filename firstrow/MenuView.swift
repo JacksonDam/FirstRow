@@ -2,8 +2,10 @@ import AVFoundation
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary

@@ -18,7 +18,7 @@ final class SoundEffectPlayer: NSObject, AVAudioPlayerDelegate {
         Task { @MainActor in
             for name in soundNames {
                 guard self.preparedPlayers[name] == nil else { continue }
-                guard let url = Bundle.main.url(forResource: name, withExtension: fileExtension) else { continue }
+                guard let url = bundledResourceURL(name, fileExtension) else { continue }
                 self.cachedURLs[name] = url
                 guard let player = try? AVAudioPlayer(contentsOf: url) else { continue }
                 player.prepareToPlay()
@@ -42,7 +42,7 @@ final class SoundEffectPlayer: NSObject, AVAudioPlayerDelegate {
             let url: URL
             if let cachedURL = self.cachedURLs[fileName] {
                 url = cachedURL
-            } else if let resolvedURL = Bundle.main.url(forResource: fileName, withExtension: fileExtension) {
+            } else if let resolvedURL = bundledResourceURL(fileName, fileExtension) {
                 self.cachedURLs[fileName] = resolvedURL
                 url = resolvedURL
             } else {

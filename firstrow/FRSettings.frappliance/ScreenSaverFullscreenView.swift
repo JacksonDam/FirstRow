@@ -1,8 +1,10 @@
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 /// The floating photos screen saver: photos rise and wrap, and the stream spins once a minute.
@@ -138,7 +140,7 @@ final class ScreenSaverLayerController: LayerController {
                 card.shadowOpacity = 0.55
                 card.shadowRadius = min(26, max(8, restingWidth * 0.03)) / restingPerspective
                 let shadowDrop = min(16, max(4, restingHeight * 0.025)) / restingPerspective
-                #if os(macOS)
+                #if os(macOS) || FIRSTROW_PORTABLE
                     card.shadowOffset = CGSize(width: 0, height: -shadowDrop)
                 #else
                     card.shadowOffset = CGSize(width: 0, height: shadowDrop)
@@ -317,7 +319,7 @@ enum ScreenSaverPhotoStream {
             }
         }
         var urls: [URL] = []
-        if let bundledFolder = Bundle.main.resourceURL?.appendingPathComponent("ScreenSaverDefaultPhotos", isDirectory: true) {
+        if let bundledFolder = bundledResourceFolderURL?.appendingPathComponent("ScreenSaverDefaultPhotos", isDirectory: true) {
             urls.append(contentsOf: images(in: bundledFolder, extensions: fullImageExtensions))
         }
         let currentDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
@@ -329,7 +331,7 @@ enum ScreenSaverPhotoStream {
             urls.append(contentsOf: images(in: folder, extensions: fullImageExtensions))
         }
         if urls.isEmpty {
-            urls.append(contentsOf: images(in: Bundle.main.resourceURL, extensions: fallbackRootExtensions))
+            urls.append(contentsOf: images(in: bundledResourceFolderURL, extensions: fallbackRootExtensions))
         }
         var seen: Set<String> = []
         let deduped = urls.filter { url in

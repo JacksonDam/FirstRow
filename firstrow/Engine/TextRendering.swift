@@ -2,8 +2,10 @@ import CoreText
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 // Text and SF Symbols rendered into cached bitmaps, with line boxes measured as AppKit does.
@@ -109,6 +111,8 @@ enum FontMetrics {
         #if os(macOS)
             if let font = NSFont(name: name, size: size) { return font as CTFont }
             return NSFont.systemFont(ofSize: size) as CTFont
+        #elseif FIRSTROW_PORTABLE
+            return CTFontCreateWithName(name as CFString, size, nil)
         #else
             if let font = UIFont(name: name, size: size) { return font as CTFont }
             return UIFont.systemFont(ofSize: size) as CTFont
@@ -392,6 +396,11 @@ enum SymbolRenderer {
             var rect = CGRect(x: 0, y: 0, width: size.width * oversample, height: size.height * oversample)
             guard let cgImage = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return nil }
             return Symbol(image: cgImage, size: size, pixelSize: CGSize(width: cgImage.width, height: cgImage.height))
+        #elseif FIRSTROW_PORTABLE
+            // SF Symbols are Apple's alone, so these are the hand-drawn stand-ins macOS 10.15 uses.
+            return SymbolFallback.symbol(name, pointSize: pointSize, weight: weight, oversample: oversample).map {
+                Symbol(image: $0.image, size: $0.size, pixelSize: CGSize(width: $0.image.width, height: $0.image.height))
+            }
         #else
             let uiWeight: UIImage.SymbolWeight = switch weight {
             case .regular: .regular

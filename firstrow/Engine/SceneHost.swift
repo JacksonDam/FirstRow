@@ -1,8 +1,10 @@
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 extension MainActor {
@@ -25,6 +27,22 @@ extension MainActor {
     }
 }
 
+#if FIRSTROW_PORTABLE
+    /// Calls `body` once per frame, just before layer changes are committed and drawn.
+    @MainActor
+    final class RunLoopFlushObserver {
+        private var token: Int?
+
+        init(_ body: @escaping @MainActor () -> Void) {
+            token = FrameObservers.add(body)
+        }
+
+        func invalidate() {
+            if let token { FrameObservers.remove(token) }
+            token = nil
+        }
+    }
+#else
 /// Calls `body` once per run loop pass, just before Core Animation commits what was drawn.
 @MainActor
 final class RunLoopFlushObserver {
@@ -48,6 +66,7 @@ final class RunLoopFlushObserver {
         observer = nil
     }
 }
+#endif
 
 #if os(macOS)
     /// The view First Row draws into: it hosts a layer tree (origin top left) and passes on
@@ -130,6 +149,36 @@ final class RunLoopFlushObserver {
 
         override func hitTest(_ point: NSPoint) -> NSView? {
             bounds.contains(convert(point, from: superview)) ? self : nil
+        }
+    }
+#elseif FIRSTROW_PORTABLE
+    /// What First Row draws into on Linux and Windows: a layer tree laid out like the Mac's
+    /// view (origin bottom left), with the scene flipped to lay out from the top left.
+    @MainActor
+    final class SceneHostView {
+        let hostLayer = CALayer()
+        let sceneLayer = SceneLayer()
+        var onLayout: ((CGSize, CGFloat) -> Void)?
+        private(set) var bounds: CGRect
+        private var lastLayout: (CGSize, CGFloat)?
+
+        init(frame: CGRect) {
+            bounds = CGRect(origin: .zero, size: frame.size)
+            hostLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
+            hostLayer.masksToBounds = true
+            sceneLayer.isGeometryFlipped = true
+            hostLayer.addSublayer(sceneLayer)
+        }
+
+        func layout(size: CGSize, scale: CGFloat) {
+            bounds = CGRect(origin: .zero, size: size)
+            withoutLayerActions {
+                hostLayer.frame = bounds
+                sceneLayer.frame = bounds
+            }
+            if let lastLayout, lastLayout.0 == size, lastLayout.1 == scale { return }
+            lastLayout = (size, scale)
+            onLayout?(size, scale)
         }
     }
 #else

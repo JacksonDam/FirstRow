@@ -1,8 +1,10 @@
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 extension MenuView {
@@ -182,7 +184,7 @@ extension MenuView {
                 }
             } else if !movieLibraryRootURLs.isEmpty {
                 rememberCurrentMoviesFolderSelectionIndex()
-                #if os(macOS)
+                #if os(macOS) || FIRSTROW_PORTABLE
                     transitionMenuForFolderSwap {
                         self.loadMoviesRootSelectorEntries(resetSelection: false)
                     }

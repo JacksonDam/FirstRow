@@ -2,8 +2,10 @@ import Foundation
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 private let iTunesTopArtworkParallelismLimit = 4

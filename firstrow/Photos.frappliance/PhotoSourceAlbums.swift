@@ -2,8 +2,10 @@ import Foundation
 import ImageIO
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 /// Albums from Settings folders and iPhoto, keyed by file URL and loaded through ImageIO.

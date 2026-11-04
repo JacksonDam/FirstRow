@@ -1,8 +1,10 @@
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 /// A poster or cover with its details underneath (iTunes Top items, podcasts, songs).

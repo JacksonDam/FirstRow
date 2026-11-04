@@ -1,8 +1,10 @@
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 /// Fills the space left of a section's menu: its icon, a preview, details or a stream of covers.
@@ -439,7 +441,7 @@ final class CoverCarouselItemLayer: GapItemLayer {
 
     override init() {
         super.init()
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             space.isGeometryFlipped = true
         #endif
         layer.addSublayer(space)

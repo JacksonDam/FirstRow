@@ -2,8 +2,10 @@ import AVFoundation
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 extension Notification.Name {
@@ -80,7 +82,7 @@ final class FirstRowAppController {
 
     func start() {
         beginLaunchToggleWindow()
-        if introMovieEnabled, let url = Bundle.main.url(forResource: "Intro", withExtension: "mov") {
+        if introMovieEnabled, let url = bundledResourceURL("Intro", "mov") {
             playIntro(url)
         } else {
             showMenu(fadingIn: true)
@@ -237,6 +239,18 @@ final class FirstRowAppController {
             if key == .delete { handleLaunchBackPressEnded() }
             menu?.handleKeyUp(key)
         }
+    #elseif FIRSTROW_PORTABLE
+        func handleKeyDown(_ key: KeyCode, isRepeat: Bool) {
+            if isLaunchToggleWindowActive, key == .delete, !isRepeat {
+                handleLaunchBackPressBegan()
+            }
+            menu?.handleKeyDown(key, isRepeat: isRepeat)
+        }
+
+        func handleKeyUp(_ key: KeyCode) {
+            if key == .delete { handleLaunchBackPressEnded() }
+            menu?.handleKeyUp(key)
+        }
     #endif
 
     // MARK: - Intro switch at launch
@@ -311,6 +325,10 @@ final class FirstRowAppController {
         #if os(macOS)
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.appQuitFadeDuration + Self.appQuitHoldDuration) {
                 NSApplication.shared.terminate(nil)
+            }
+        #elseif FIRSTROW_PORTABLE
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.appQuitFadeDuration + Self.appQuitHoldDuration) {
+                PortableApplication.quit()
             }
         #endif
     }

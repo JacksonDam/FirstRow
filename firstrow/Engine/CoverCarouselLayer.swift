@@ -1,8 +1,10 @@
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 /// Album covers drifting across the Music menu and iTunes Top, in four lanes a quarter cycle apart.
@@ -488,6 +490,19 @@ enum CoverArtPlaceholder {
                 context.fill(noteRect)
                 context.restoreGState()
             } else if let note = SymbolFallback.symbol("music.note", pointSize: CGFloat(pixelSide) * 0.26, weight: .regular, oversample: 1) {
+                let noteRect = CGRect(
+                    x: (CGFloat(pixelSide) - note.size.width) / 2,
+                    y: (CGFloat(pixelSide) - note.size.height) / 2,
+                    width: note.size.width,
+                    height: note.size.height,
+                )
+                context.saveGState()
+                context.setAlpha(0.72)
+                context.draw(note.image, in: noteRect)
+                context.restoreGState()
+            }
+        #elseif FIRSTROW_PORTABLE
+            if let note = SymbolFallback.symbol("music.note", pointSize: CGFloat(pixelSide) * 0.26, weight: .regular, oversample: 1) {
                 let noteRect = CGRect(
                     x: (CGFloat(pixelSide) - note.size.width) / 2,
                     y: (CGFloat(pixelSide) - note.size.height) / 2,

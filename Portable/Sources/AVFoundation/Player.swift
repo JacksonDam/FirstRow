@@ -1,0 +1,413 @@
+import CMPV
+import CoreGraphics
+import CPortable
+import Foundation
+import QuartzCore
+
+public extension Notification.Name {
+    static let AVPlayerItemDidPlayToEndTime = Notification.Name("AVPlayerItemDidPlayToEndTimeNotification")
+    static let AVPlayerItemFailedToPlayToEndTime = Notification.Name("AVPlayerItemFailedToPlayToEndTimeNotification")
+}
+
+public final class AVPlayerItem: NSObject, @unchecked Sendable {
+    public enum Status: Int {
+        case unknown, readyToPlay, failed
+    }
+
+    public let asset: AVAsset
+    public internal(set) var status: Status = .unknown
+    weak var player: AVPlayer?
+    var loadedDuration: Double?
+
+    public init(url: URL) {
+        asset = AVURLAsset(url: url)
+    }
+
+    public init(asset: AVAsset) {
+        self.asset = asset
+    }
+
+    public var duration: CMTime {
+        if let loadedDuration, loadedDuration > 0 { return CMTime(seconds: loadedDuration, preferredTimescale: 600) }
+        if let known = asset.info.duration, known > 0 { return CMTime(seconds: known, preferredTimescale: 600) }
+        return .indefinite
+    }
+
+    public func currentTime() -> CMTime {
+        player?.currentTime() ?? .zero
+    }
+
+    public func seek(to time: CMTime, completionHandler: ((Bool) -> Void)? = nil) {
+        player?.seek(to: time, completionHandler: completionHandler ?? { _ in })
+    }
+}
+
+/// AVFoundation's player, playing through libmpv.
+open class AVPlayer: NSObject, @unchecked Sendable {
+    public enum TimeControlStatus: Int {
+        case paused, waitingToPlayAtSpecifiedRate, playing
+    }
+
+    public enum ActionAtItemEnd: Int {
+        case advance, pause, none
+    }
+
+    public private(set) var currentItem: AVPlayerItem?
+    public var automaticallyWaitsToMinimizeStalling = true
+    public var actionAtItemEnd: ActionAtItemEnd = .pause
+    public var allowsExternalPlayback = false
+    public var preventsDisplaySleepDuringVideoPlayback = true
+
+    var core: MPVCore?
+    private var wantsVideo = false
+    private var pendingLoad = false
+    private var playing = false
+    private var lastTime: Double = 0
+    private var timeObservers: [ObjectIdentifier: TimeObserver] = [:]
+
+    public var volume: Float = 1 { didSet { core?.setProperty("volume", Double(volume) * 100) } }
+    public var isMuted = false { didSet { core?.setFlag("mute", isMuted) } }
+
+    public var rate: Float {
+        get { playing ? 1 : 0 }
+        set { newValue > 0 ? play() : pause() }
+    }
+
+    public var timeControlStatus: TimeControlStatus { playing ? .playing : .paused }
+
+    override public init() {
+        super.init()
+    }
+
+    public convenience init(url: URL) {
+        self.init(playerItem: AVPlayerItem(url: url))
+    }
+
+    public init(playerItem: AVPlayerItem?) {
+        super.init()
+        replaceCurrentItem(with: playerItem)
+    }
+
+    deinit {
+        core?.close()
+    }
+
+    public func replaceCurrentItem(with item: AVPlayerItem?) {
+        currentItem?.player = nil
+        currentItem = item
+        item?.player = self
+        lastTime = 0
+        guard item != nil else {
+            core?.command(["stop"])
+            return
+        }
+        // Loaded at the end of this run loop pass, so a player layer attached right after
+        // creation gets its video from the first frame.
+        pendingLoad = true
+        DispatchQueue.main.async { [weak self] in self?.loadIfNeeded() }
+    }
+
+    /// Video needs a render context; asked for by AVPlayerLayer.
+    func enableVideo() -> MPVCore? {
+        if !wantsVideo {
+            wantsVideo = true
+            if core != nil {
+                // Rebuild with video output on and reload what was playing.
+                core?.close()
+                core = nil
+                if currentItem != nil { pendingLoad = true }
+            }
+        }
+        let core = ensureCore()
+        if pendingLoad { DispatchQueue.main.async { [weak self] in self?.loadIfNeeded() } }
+        return core
+    }
+
+    private func ensureCore() -> MPVCore? {
+        if let core { return core }
+        guard let made = MPVCore(video: wantsVideo) else { return nil }
+        made.setProperty("volume", Double(volume) * 100)
+        made.setFlag("mute", isMuted)
+        made.setFlag("pause", !playing)
+        made.onEvent = { [weak self] event in self?.handle(event) }
+        if wantsVideo { _ = made.makeRenderContext() }
+        core = made
+        return made
+    }
+
+    private func loadIfNeeded() {
+        guard pendingLoad, let item = currentItem, let core = ensureCore() else { return }
+        pendingLoad = false
+        core.setFlag("pause", !playing)
+        let url = item.asset.url
+        core.command(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace"])
+        if lastTime > 0 {
+            core.command(["seek", String(lastTime), "absolute", "exact"])
+        }
+    }
+
+    private func handle(_ event: UnsafeMutablePointer<mpv_event>) {
+        switch event.pointee.event_id {
+        case MPV_EVENT_FILE_LOADED:
+            currentItem?.status = .readyToPlay
+            currentItem?.loadedDuration = core?.double("duration")
+        case MPV_EVENT_PROPERTY_CHANGE:
+            guard let data = event.pointee.data?.assumingMemoryBound(to: mpv_event_property.self).pointee,
+                  let name = data.name.map({ String(cString: $0) }), name == "eof-reached",
+                  data.format == MPV_FORMAT_FLAG, let flag = data.data?.assumingMemoryBound(to: Int32.self).pointee, flag != 0
+            else { return }
+            playing = false
+            core?.setFlag("pause", true)
+            if let item = currentItem {
+                NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: item)
+            }
+        case MPV_EVENT_END_FILE:
+            if let data = event.pointee.data?.assumingMemoryBound(to: mpv_event_end_file.self).pointee, data.reason == MPV_END_FILE_REASON_ERROR {
+                currentItem?.status = .failed
+                if let item = currentItem {
+                    NotificationCenter.default.post(name: .AVPlayerItemFailedToPlayToEndTime, object: item)
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    public func play() {
+        playing = true
+        ensureCore()?.setFlag("pause", false)
+        if pendingLoad { loadIfNeeded() }
+        fireObservers()
+    }
+
+    public func pause() {
+        playing = false
+        core?.setFlag("pause", true)
+        lastTime = currentTime().seconds.isFinite ? currentTime().seconds : lastTime
+        fireObservers()
+    }
+
+    public func playImmediately(atRate rate: Float) {
+        if rate > 0 { play() } else { pause() }
+    }
+
+    public func currentTime() -> CMTime {
+        if let position = core?.double("time-pos"), position.isFinite {
+            lastTime = position
+        }
+        return CMTime(seconds: lastTime, preferredTimescale: 600)
+    }
+
+    public func seek(to time: CMTime) {
+        seek(to: time, toleranceBefore: .indefinite, toleranceAfter: .indefinite, completionHandler: { _ in })
+    }
+
+    public func seek(to time: CMTime, completionHandler: @escaping (Bool) -> Void) {
+        seek(to: time, toleranceBefore: .indefinite, toleranceAfter: .indefinite, completionHandler: completionHandler)
+    }
+
+    public func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime) {
+        seek(to: time, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter, completionHandler: { _ in })
+    }
+
+    public func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter _: CMTime, completionHandler: @escaping (Bool) -> Void) {
+        let seconds = max(0, time.seconds.isFinite ? time.seconds : 0)
+        lastTime = seconds
+        let exact = toleranceBefore == .zero
+        if pendingLoad {
+            loadIfNeeded()
+        } else {
+            core?.command(["seek", String(seconds), "absolute", exact ? "exact" : "keyframes"])
+        }
+        fireObservers()
+        DispatchQueue.main.async { completionHandler(true) }
+    }
+
+    // MARK: Time observers
+
+    final class TimeObserver {
+        let interval: Double
+        let block: (CMTime) -> Void
+        var timer: Timer?
+
+        init(interval: Double, block: @escaping (CMTime) -> Void) {
+            self.interval = interval
+            self.block = block
+        }
+    }
+
+    public func addPeriodicTimeObserver(forInterval interval: CMTime, queue _: DispatchQueue?, using block: @escaping (CMTime) -> Void) -> Any {
+        let observer = TimeObserver(interval: max(0.01, interval.seconds.isFinite ? interval.seconds : 0.5), block: block)
+        let timer = Timer(timeInterval: observer.interval, repeats: true) { [weak self, weak observer] _ in
+            guard let self, let observer, self.playing else { return }
+            observer.block(self.currentTime())
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        observer.timer = timer
+        timeObservers[ObjectIdentifier(observer)] = observer
+        return observer
+    }
+
+    public func removeTimeObserver(_ observer: Any) {
+        guard let observer = observer as? TimeObserver else { return }
+        observer.timer?.invalidate()
+        timeObservers.removeValue(forKey: ObjectIdentifier(observer))
+    }
+
+    private func fireObservers() {
+        let time = currentTime()
+        for observer in timeObservers.values { observer.block(time) }
+    }
+
+    /// Delivers mpv events for every player; the host calls this once a frame.
+    public static func pumpEvents() {
+        MPVCore.pumpAll()
+    }
+
+    /// Where mpv's renderer finds OpenGL functions; set by the host.
+    public static func setOpenGLLoader(_ loader: @escaping (String) -> UnsafeMutableRawPointer?) {
+        MPVCore.procAddress = loader
+    }
+}
+
+public final class AVQueuePlayer: AVPlayer, @unchecked Sendable {}
+
+public struct AVLayerVideoGravity: RawRepresentable, Hashable, Sendable {
+    public let rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public static let resizeAspect = AVLayerVideoGravity(rawValue: "AVLayerVideoGravityResizeAspect")
+    public static let resizeAspectFill = AVLayerVideoGravity(rawValue: "AVLayerVideoGravityResizeAspectFill")
+    public static let resize = AVLayerVideoGravity(rawValue: "AVLayerVideoGravityResize")
+}
+
+/// The texture an mpv render context draws video frames into.
+final class VideoSurface: ExternalTextureProviding {
+    weak var player: AVPlayer?
+    private var framebuffer: GLuint = 0
+    private var texture: GLuint = 0
+    private var size = (0, 0)
+    private var hasFrame = false
+
+    nonisolated(unsafe) static var all: [ObjectIdentifier: Weak] = [:]
+
+    final class Weak {
+        weak var surface: VideoSurface?
+        init(_ surface: VideoSurface) { self.surface = surface }
+    }
+
+    init() {
+        Self.all[ObjectIdentifier(self)] = Weak(self)
+    }
+
+    deinit {
+        Self.all.removeValue(forKey: ObjectIdentifier(self))
+        var fbo = framebuffer
+        var tex = texture
+        if fbo != 0 { glDeleteFramebuffers(1, &fbo) }
+        if tex != 0 { glDeleteTextures(1, &tex) }
+    }
+
+    func currentTexture() -> ExternalTexture? {
+        guard hasFrame, texture != 0 else { return nil }
+        return ExternalTexture(id: texture, width: size.0, height: size.1, bottomUp: true)
+    }
+
+    /// Draws mpv's latest frame, if there is a new one.
+    func update() {
+        guard let player, let core = player.core, let context = core.renderContext else { return }
+        let flags = mpv_render_context_update(context)
+        let width = core.int("dwidth") ?? 0
+        let height = core.int("dheight") ?? 0
+        guard width > 0, height > 0 else { return }
+        if size != (width, height) {
+            resize(width, height)
+        } else if flags & UInt64(MPV_RENDER_UPDATE_FRAME.rawValue) == 0, hasFrame {
+            return
+        }
+        var fbo = mpv_opengl_fbo(fbo: Int32(framebuffer), w: Int32(width), h: Int32(height), internal_format: 0)
+        var flip: Int32 = 0
+        withUnsafeMutablePointer(to: &fbo) { fboPointer in
+            withUnsafeMutablePointer(to: &flip) { flipPointer in
+                var params = [
+                    mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_FBO, data: UnsafeMutableRawPointer(fboPointer)),
+                    mpv_render_param(type: MPV_RENDER_PARAM_FLIP_Y, data: UnsafeMutableRawPointer(flipPointer)),
+                    mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
+                ]
+                _ = mpv_render_context_render(context, &params)
+            }
+        }
+        hasFrame = true
+    }
+
+    private func resize(_ width: Int, _ height: Int) {
+        if texture == 0 { glGenTextures(1, &texture) }
+        if framebuffer == 0 { glGenFramebuffers(1, &framebuffer) }
+        glBindTexture(GL_TEXTURE_2D, texture)
+        glTexImage2D(GL_TEXTURE_2D, 0, GLint(GL_RGBA8), GLsizei(width), GLsizei(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, nil)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GLint(GL_LINEAR))
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GLint(GL_LINEAR))
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GLint(GL_CLAMP_TO_EDGE))
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GLint(GL_CLAMP_TO_EDGE))
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer)
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0)
+        size = (width, height)
+    }
+}
+
+/// Shows an AVPlayer's video.
+open class AVPlayerLayer: CALayer {
+    private let surface = VideoSurface()
+
+    public var player: AVPlayer? {
+        didSet {
+            surface.player = player
+            _ = player?.enableVideo()
+            contents = player == nil ? nil : surface
+        }
+    }
+
+    public var videoGravity: AVLayerVideoGravity = .resizeAspect {
+        didSet {
+            contentsGravity = switch videoGravity {
+            case .resizeAspectFill: .resizeAspectFill
+            case .resize: .resize
+            default: .resizeAspect
+            }
+        }
+    }
+
+    public var isReadyForDisplay: Bool { surface.currentTexture() != nil }
+
+    override public init() {
+        super.init()
+        contentsGravity = .resizeAspect
+    }
+
+    override public init(layer: Any) {
+        super.init(layer: layer)
+    }
+
+    public convenience init(player: AVPlayer?) {
+        self.init()
+        self.player = player
+        surface.player = player
+        _ = player?.enableVideo()
+        contents = player == nil ? nil : surface
+    }
+
+    public required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
+    /// True while some player layer shows a playing video, so frames keep coming.
+    public static var hasActiveVideo: Bool {
+        VideoSurface.all.values.contains { $0.surface?.player?.rate ?? 0 > 0 }
+    }
+
+    /// Draws new video frames into their textures. The host calls this before compositing.
+    public static func renderVideoFrames() {
+        for entry in VideoSurface.all.values {
+            entry.surface?.update()
+        }
+    }
+}

@@ -140,18 +140,29 @@ final class MediaSources: @unchecked Sendable {
     private func libraryKey(_ kind: LibraryKind) -> String { "mediaSources.library.\(kind.rawValue)" }
 
     private static func bookmark(for url: URL) -> Data? {
+        #if FIRSTROW_PORTABLE
+            // No bookmarks or sandbox here: the path is the bookmark.
+            return Data(url.standardizedFileURL.path.utf8)
+        #endif
         #if os(macOS)
             // Unsandboxed dev builds can't make security-scoped bookmarks, so fall back to a plain one.
             if let scoped = try? url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil) {
                 return scoped
             }
         #endif
-        return try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        #if !FIRSTROW_PORTABLE
+            return try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        #endif
     }
 
     /// The bookmark's folder, plus a fresh bookmark to store when the old one has gone stale.
     /// Never mounts anything: a network share that isn't connected just counts as unavailable.
     private func resolveLocked(_ bookmark: Data) -> (URL, Data?)? {
+        #if FIRSTROW_PORTABLE
+            let path = String(decoding: bookmark, as: UTF8.self)
+            guard !path.isEmpty, FileManager.default.fileExists(atPath: path) else { return nil }
+            return (URL(fileURLWithPath: path), nil)
+        #else
         var isStale = false
         #if os(macOS)
             let options: URL.BookmarkResolutionOptions = [.withoutUI, .withoutMounting]
@@ -165,11 +176,16 @@ final class MediaSources: @unchecked Sendable {
             openedScopes.insert(url)
         }
         return (url, isStale ? Self.bookmark(for: url) : nil)
+        #endif
     }
 
     /// Where a bookmark pointed when it was made, without resolving it.
     private static func storedPath(of bookmark: Data) -> String? {
-        URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: bookmark)?.path
+        #if FIRSTROW_PORTABLE
+            String(decoding: bookmark, as: UTF8.self)
+        #else
+            URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: bookmark)?.path
+        #endif
     }
 
     /// Gives back access to folders that are no longer chosen.
@@ -179,9 +195,11 @@ final class MediaSources: @unchecked Sendable {
         let unused = openedScopes.subtracting(inUse)
         openedScopes.subtract(unused)
         lock.unlock()
-        for url in unused {
-            url.stopAccessingSecurityScopedResource()
-        }
+        #if !FIRSTROW_PORTABLE
+            for url in unused {
+                url.stopAccessingSecurityScopedResource()
+            }
+        #endif
     }
 
     /// Coalesces a burst of changes into one notification.

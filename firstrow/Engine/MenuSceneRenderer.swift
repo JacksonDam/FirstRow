@@ -2,8 +2,10 @@ import AVFoundation
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 /// Draws First Row's whole interface from `MenuView`'s state with Core Animation layers.
@@ -100,7 +102,7 @@ final class MenuSceneRenderer: TransactionRendering {
         sceneContent.addSublayer(carouselBox)
         carouselBox.addSublayer(detailContent.layer)
         carouselBox.addSublayer(carouselSpace)
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             carouselSpace.isGeometryFlipped = true
         #endif
         carouselSpace.addSublayer(rootCarousel.rootLayer)

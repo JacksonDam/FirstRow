@@ -1,7 +1,9 @@
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 @main
@@ -14,8 +16,10 @@ enum FirstRowMain {
             withExtendedLifetime(delegate) {
                 application.run()
             }
-        #else
+        #elseif canImport(UIKit)
             UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(IOSAppDelegate.self))
+        #else
+            PortableApplication.run { PortableAppHost() }
         #endif
     }
 }

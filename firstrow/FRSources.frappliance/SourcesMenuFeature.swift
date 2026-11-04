@@ -9,6 +9,8 @@ struct SourcesMenuFeature: MenuFeatureConfiguration {
     init() {
         #if os(macOS)
             let deviceName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        #elseif FIRSTROW_PORTABLE
+            let deviceName = portableDeviceName
         #else
             let deviceName = UIDevice.current.name
         #endif

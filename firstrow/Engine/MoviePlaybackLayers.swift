@@ -3,8 +3,10 @@ import CoreImage
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 /// Movie playback: the video itself and the transport bar shown over it.

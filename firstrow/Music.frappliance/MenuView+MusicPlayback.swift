@@ -3,8 +3,10 @@ import AVFoundation
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 #if os(iOS)
     import MediaPlayer
@@ -15,7 +17,9 @@ import Foundation
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
-import Darwin
+#if canImport(Darwin)
+    import Darwin
+#endif
 
 private let mediaTrackFlagsCache = BoundedCache<String, (hasVideo: Bool, hasAudio: Bool)>(maxEntryCount: 800)
 
@@ -375,7 +379,7 @@ extension MenuView {
                 } else {
                     return
                 }
-            #else
+            #elseif !FIRSTROW_PORTABLE
                 if song.url == nil {
                     performPlayback = {
                         self.startMusicPlaybackUsingMediaPlayer(song)
@@ -391,6 +395,17 @@ extension MenuView {
                     }
                 } else {
                     return
+                }
+            #else
+                // Songs here always come from files.
+                guard let songURL = song.url?.standardizedFileURL else { return }
+                performPlayback = {
+                    let player = AVPlayer(url: songURL)
+                    player.isMuted = FirstRowHarness.isActive
+                    player.automaticallyWaitsToMinimizeStalling = false
+                    self.configureMusicPlaybackObservation(for: player)
+                    self.musicAudioPlayer = player
+                    player.playImmediately(atRate: 1.0)
                 }
             #endif
         #endif
@@ -1348,23 +1363,25 @@ extension MenuView {
                 object: currentItem,
                 queue: .main,
             ) { _ in
-                guard self.observedMusicAudioPlayer === player else { return }
-                let resolvedDuration = self.resolvedMusicDurationSeconds(for: player)
-                self.musicNowPlayingDurationSeconds = max(self.musicNowPlayingDurationSeconds, resolvedDuration)
-                self.musicNowPlayingElapsedSeconds = self.musicNowPlayingDurationSeconds
-                self.stopMusicScrubbing(showPauseGlyph: false)
-                self.musicNowPlayingLeadingGlyphState = nil
-                if self.musicNowPlayingArtist == "iTunes Top Songs" {
-                    if self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey {
-                        self.dismissFullscreenScene(preserveMusicPlayback: false)
+                MainActor.assumeIsolatedIfPossible {
+                    guard self.observedMusicAudioPlayer === player else { return }
+                    let resolvedDuration = self.resolvedMusicDurationSeconds(for: player)
+                    self.musicNowPlayingDurationSeconds = max(self.musicNowPlayingDurationSeconds, resolvedDuration)
+                    self.musicNowPlayingElapsedSeconds = self.musicNowPlayingDurationSeconds
+                    self.stopMusicScrubbing(showPauseGlyph: false)
+                    self.musicNowPlayingLeadingGlyphState = nil
+                    if self.musicNowPlayingArtist == "iTunes Top Songs" {
+                        if self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey {
+                            self.dismissFullscreenScene(preserveMusicPlayback: false)
+                        } else {
+                            // Finished off screen: end the session so the Music menu drops its Now Playing row.
+                            self.stopMusicPlaybackSession(clearDisplayState: false)
+                        }
                     } else {
-                        // Finished off screen: end the session so the Music menu drops its Now Playing row.
-                        self.stopMusicPlaybackSession(clearDisplayState: false)
+                        self.switchMusicNowPlayingTrack(direction: 1)
                     }
-                } else {
-                    self.switchMusicNowPlayingTrack(direction: 1)
+                    self.updateMusicNowPlayingFlipTimerState()
                 }
-                self.updateMusicNowPlayingFlipTimerState()
             }
         }
         let interval = CMTime(seconds: 1.0 / 20.0, preferredTimescale: 600)
@@ -1736,7 +1753,9 @@ extension MenuView {
         }
         guard musicNowPlayingFlipTimer == nil else { return }
         let timer = Timer(timeInterval: musicNowPlayingFlipInterval, repeats: true) { _ in
-            self.performMusicNowPlayingFlip()
+            MainActor.assumeIsolatedIfPossible {
+                self.performMusicNowPlayingFlip()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         musicNowPlayingFlipTimer = timer
@@ -2153,7 +2172,9 @@ extension MenuView {
     func startMusicScrubTimerIfNeeded() {
         guard musicScrubTimer == nil else { return }
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
-            self.handleMusicScrubTick()
+            MainActor.assumeIsolatedIfPossible {
+                self.handleMusicScrubTick()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         musicScrubTimer = timer

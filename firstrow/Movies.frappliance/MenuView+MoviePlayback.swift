@@ -1,11 +1,15 @@
 import AVFoundation
 import AVFoundation
-import Darwin
+#if canImport(Darwin)
+    import Darwin
+#endif
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 #if os(macOS)
     import AppKit
@@ -435,7 +439,9 @@ extension MenuView {
     func startMovieScrubTimerIfNeeded() {
         guard movieScrubTimer == nil else { return }
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
-            self.handleMovieScrubTick()
+            MainActor.assumeIsolatedIfPossible {
+                self.handleMovieScrubTick()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         movieScrubTimer = timer
@@ -560,13 +566,15 @@ extension MenuView {
                 object: currentItem,
                 queue: .main,
             ) { _ in
-                guard self.observedMoviePlayer === player else { return }
-                guard self.isMoviePlaybackVisible else { return }
-                guard !self.isMovieTransitioning else { return }
-                let resolvedDuration = self.resolvedMovieDurationSeconds(for: player)
-                self.moviePlaybackDurationSeconds = max(self.moviePlaybackDurationSeconds, resolvedDuration)
-                self.moviePlaybackCurrentSeconds = self.moviePlaybackDurationSeconds
-                self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
+                MainActor.assumeIsolatedIfPossible {
+                    guard self.observedMoviePlayer === player else { return }
+                    guard self.isMoviePlaybackVisible else { return }
+                    guard !self.isMovieTransitioning else { return }
+                    let resolvedDuration = self.resolvedMovieDurationSeconds(for: player)
+                    self.moviePlaybackDurationSeconds = max(self.moviePlaybackDurationSeconds, resolvedDuration)
+                    self.moviePlaybackCurrentSeconds = self.moviePlaybackDurationSeconds
+                    self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
+                }
             }
         }
         let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)

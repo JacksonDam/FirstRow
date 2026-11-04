@@ -1,10 +1,14 @@
 import AVFoundation
-import Photos
+#if canImport(Photos)
+    import Photos
+#endif
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 #if os(iOS)
     import UIKit
@@ -671,9 +675,11 @@ extension MenuView {
                 object: currentItem,
                 queue: .main,
             ) { _ in
-                guard self.observedPhotoSlideshowMusicPlayer === player else { return }
-                player.seek(to: .zero)
-                player.playImmediately(atRate: 1.0)
+                MainActor.assumeIsolatedIfPossible {
+                    guard self.observedPhotoSlideshowMusicPlayer === player else { return }
+                    player.seek(to: .zero)
+                    player.playImmediately(atRate: 1.0)
+                }
             }
         }
         player.playImmediately(atRate: 1.0)
@@ -700,7 +706,7 @@ extension MenuView {
     }
 
     func defaultPhotoSlideshowMusicURL() -> URL? {
-        if let bundled = Bundle.main.url(forResource: "default", withExtension: "mp3") {
+        if let bundled = bundledResourceURL("default", "mp3") {
             return bundled
         }
         let fileManager = FileManager.default
@@ -1046,6 +1052,10 @@ extension MenuView {
 
 extension MenuView {
     func loadPhotoLibraryAlbums() -> (dateAlbums: [PhotoLibraryAlbumEntry], lastTwelveMonths: PhotoLibraryAlbumEntry?) {
+        #if FIRSTROW_PORTABLE
+            // No system photo library on Linux or Windows.
+            return ([], nil)
+        #else
         let fetchOptions = PHFetchOptions()
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         let assets = PHAsset.fetchAssets(with: .image, options: fetchOptions)
@@ -1118,6 +1128,7 @@ extension MenuView {
             dateGroupDay: nil,
         )
         return (dateAlbums: dateAlbums, lastTwelveMonths: lastTwelveMonthsAlbum)
+        #endif
     }
 
     func requestPhotoImage(

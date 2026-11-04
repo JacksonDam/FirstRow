@@ -1,8 +1,10 @@
 import QuartzCore
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 #if os(macOS)
     import AppKit
@@ -140,7 +142,7 @@ final class RootCarouselLayerController: LayerController {
             withoutLayerActions {
                 icon.image.contents = LayerImageCache.cgImage(for: image)
                 icon.reflection.contents = CarouselReflectionCache.reflection(for: image)
-                #if !os(macOS)
+                #if !os(macOS) && !FIRSTROW_PORTABLE
                     let blurred = (icon.image.contents as! CGImage?).flatMap(BlurredPictureCache.blurred)
                     icon.blurredImage.contents = blurred?.image
                     icon.blurMargin = blurred?.margin ?? 0
@@ -263,7 +265,7 @@ final class RootCarouselLayerController: LayerController {
             run(icon.image, "bounds", states.map { NSValue.layerRect(CGRect(x: 0, y: 0, width: $0.size, height: $0.size)) })
             run(icon.reflection, "bounds", states.map { NSValue.layerRect(CGRect(x: 0, y: 0, width: $0.reflectionSize, height: $0.reflectionSize)) })
             run(icon.reflection, "position", states.map { NSValue.layerPoint(Self.reflectionPosition($0)) })
-            #if os(macOS)
+            #if os(macOS) || FIRSTROW_PORTABLE
                 run(icon.reflection, "opacity", states.map { NSNumber(value: $0.showsReflection ? $0.reflectionOpacity : 0) })
                 run(icon.container, "filters.blur.inputRadius", states.map { NSNumber(value: Double($0.blurRadius)) })
                 run(icon.reflection, "filters.blur.inputRadius", states.map { NSNumber(value: Double($0.reflectionBlur)) })
@@ -285,7 +287,7 @@ final class RootCarouselLayerController: LayerController {
 
     private static func reflectionPosition(_ state: IconState) -> CGPoint {
         // Relative to the icon's centre (the container's origin).
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             CGPoint(x: state.reflectionCenter.x, y: -state.reflectionCenter.y)
         #else
             state.reflectionCenter
@@ -309,7 +311,7 @@ final class RootCarouselLayerController: LayerController {
         icon.reflection.contentsGravity = .resizeAspect
         icon.container.addSublayer(icon.reflection)
         icon.container.addSublayer(icon.image)
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             icon.container.masksToBounds = false
             if let blur = CIFilter(name: "CIGaussianBlur") {
                 blur.name = "blur"
@@ -457,7 +459,7 @@ final class RootCarouselLayerController: LayerController {
         animate(icon.reflection, "bounds", to: NSValue.layerRect(CGRect(origin: .zero, size: reflectionSize)), duration: duration)
         animate(icon.reflection, "position", to: NSValue.layerPoint(reflectionPosition), duration: duration)
         let reflectionDuration = target.showsReflection ? duration : 0
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             animate(icon.reflection, "opacity", to: NSNumber(value: target.showsReflection ? target.reflectionOpacity : 0), duration: reflectionDuration)
             animate(icon.container, "filters.blur.inputRadius", to: NSNumber(value: Double(target.blurRadius)), duration: duration)
             animate(icon.reflection, "filters.blur.inputRadius", to: NSNumber(value: Double(target.reflectionBlur)), duration: duration)
@@ -543,7 +545,7 @@ enum CarouselReflectionCache {
 
 extension NSValue {
     static func layerRect(_ rect: CGRect) -> NSValue {
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             NSValue(rect: rect)
         #else
             NSValue(cgRect: rect)
@@ -551,7 +553,7 @@ extension NSValue {
     }
 }
 
-#if !os(macOS)
+#if !os(macOS) && !FIRSTROW_PORTABLE
     import CoreImage
 
     /// Small blurred copies of pictures, for platforms whose layers have no filters.

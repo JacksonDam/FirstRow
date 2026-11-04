@@ -1,8 +1,10 @@
 import CoreGraphics
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 
 enum MenuVirtualScenePreset {

@@ -3,8 +3,10 @@ import AVFoundation
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
@@ -502,7 +504,7 @@ extension MenuView {
             }
             return
         }
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             if activeRootItemID == "settings", item.id == "settings_media_folders" {
                 playSound(named: "Selection")
                 enterMediaFoldersMenu()

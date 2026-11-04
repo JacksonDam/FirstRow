@@ -1,12 +1,18 @@
 import AVFoundation
-import Darwin
+#if canImport(Darwin)
+    import Darwin
+#endif
 import Foundation
 #if os(macOS)
     import AppKit
-#else
+#elseif canImport(UIKit)
     import UIKit
+#else
+    import FirstRowPortable
 #endif
-import UniformTypeIdentifiers
+#if canImport(UniformTypeIdentifiers)
+    import UniformTypeIdentifiers
+#endif
 #if os(iOS)
     import UIKit
 #endif
@@ -14,9 +20,11 @@ import UniformTypeIdentifiers
 extension MenuView {
     /// File properties read while scanning for movies (content types where the system has them).
     static var movieScanResourceKeys: Set<URLResourceKey> {
-        if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) {
-            return [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
-        }
+        #if canImport(UniformTypeIdentifiers)
+            if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) {
+                return [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
+            }
+        #endif
         return [.isDirectoryKey, .isRegularFileKey]
     }
 
@@ -150,22 +158,31 @@ extension MenuView {
     #endif
 
     nonisolated func realUserHomeDirectoryURL() -> URL? {
-        let username = NSUserName()
-        guard !username.isEmpty else { return nil }
-        return URL(fileURLWithPath: "/Users/\(username)", isDirectory: true)
+        #if FIRSTROW_PORTABLE
+            return FileManager.default.homeDirectoryForCurrentUser
+        #else
+            let username = NSUserName()
+            guard !username.isEmpty else { return nil }
+            return URL(fileURLWithPath: "/Users/\(username)", isDirectory: true)
+        #endif
     }
 
-    #if os(macOS)
+    #if os(macOS) || FIRSTROW_PORTABLE
         nonisolated func externalVolumeRootURLs() -> [URL] {
-            guard !FirstRowHarness.isActive else { return [] }
-            guard let volumes = FileManager.default.mountedVolumeURLs(
-                includingResourceValuesForKeys: [],
-                options: [.skipHiddenVolumes]
-            ) else { return [] }
-            return volumes.filter { url in
-                let path = url.standardizedFileURL.path
-                return path != "/" && path.hasPrefix("/Volumes/")
-            }
+            #if FIRSTROW_PORTABLE
+                return portableExternalVolumeURLs()
+            #endif
+            #if !FIRSTROW_PORTABLE
+                guard !FirstRowHarness.isActive else { return [] }
+                guard let volumes = FileManager.default.mountedVolumeURLs(
+                    includingResourceValuesForKeys: [],
+                    options: [.skipHiddenVolumes]
+                ) else { return [] }
+                return volumes.filter { url in
+                    let path = url.standardizedFileURL.path
+                    return path != "/" && path.hasPrefix("/Volumes/")
+                }
+            #endif
         }
 
         nonisolated func externalMoviesRootURLs() -> [URL] {
@@ -186,7 +203,11 @@ extension MenuView {
             let internalPath = realUserHomeDirectoryURL()?
                 .appendingPathComponent("Movies").standardizedFileURL.path
             if url.standardizedFileURL.path == internalPath {
-                return "My Mac"
+                #if FIRSTROW_PORTABLE
+                    return portableComputerTitle
+                #else
+                    return "My Mac"
+                #endif
             }
             // Folders chosen in Settings go by their own names; drives by the drive's name.
             let chosenFolderPaths = MediaSources.shared.folders(.movies).map(\.standardizedFileURL.path)
@@ -279,7 +300,11 @@ extension MenuView {
             if let harnessMoviesFolder = FirstRowHarness.moviesFolderOverride {
                 return harnessMoviesFolder
             }
-            return realUserHomeDirectoryURL()!.appendingPathComponent("Movies", isDirectory: true)
+            #if FIRSTROW_PORTABLE
+                return portableUserFolder(named: "Movies", standardName: "Videos", xdgKey: "XDG_VIDEOS_DIR")
+            #else
+                return realUserHomeDirectoryURL()!.appendingPathComponent("Movies", isDirectory: true)
+            #endif
         #endif
     }
 
@@ -700,7 +725,7 @@ extension MenuView {
             #if os(iOS)
                 self.promptForMoviesFolderPickerIfNeeded()
             #endif
-            #if os(macOS)
+            #if os(macOS) || FIRSTROW_PORTABLE
                 let roots = self.allMoviesRootURLs()
                 self.movieLibraryRootURLs = roots.count > 1 ? roots : []
                 if roots.count > 1 {

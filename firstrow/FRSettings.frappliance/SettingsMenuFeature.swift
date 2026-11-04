@@ -9,6 +9,8 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
     init() {
         #if os(macOS)
             let deviceName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        #elseif FIRSTROW_PORTABLE
+            let deviceName = portableDeviceName
         #else
             let deviceName = UIDevice.current.name
         #endif
@@ -18,7 +20,7 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
             .init(id: "settings_screensaver", title: "Screen Saver", trailingText: "On"),
             .init(id: "settings_soundeffects", title: "Sound Effects", trailingText: "On"),
         ]
-        #if os(macOS)
+        #if os(macOS) || FIRSTROW_PORTABLE
             submenuItems.append(.init(id: "settings_media_folders", title: "Media Folders", trailingText: "..."))
         #endif
     }
