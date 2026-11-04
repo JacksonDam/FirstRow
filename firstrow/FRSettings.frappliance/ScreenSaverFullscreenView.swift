@@ -167,6 +167,7 @@ final class ScreenSaverLayerController: LayerController {
             rise.timeOffset = Double((currentWorldY - lowerY) / photo.riseSpeed)
             rise.beginTime = motionStartsIn > 0 ? card.convertTime(CACurrentMediaTime(), from: nil) + motionStartsIn : 0
             rise.fillMode = .backwards
+            rise.isRemovedOnCompletion = false
             card.add(rise, forKey: "rise")
 
             // The spin: perspective scale on the holder, sideways swing and card turn on the card.
@@ -197,7 +198,7 @@ final class ScreenSaverLayerController: LayerController {
                 reveal.calculationMode = .discrete
                 reveal.duration = revealIn
                 reveal.beginTime = 0
-                reveal.isRemovedOnCompletion = true
+                reveal.isRemovedOnCompletion = false
                 card.add(reveal, forKey: "reveal")
             }
         }
@@ -211,6 +212,8 @@ final class ScreenSaverLayerController: LayerController {
         animation.calculationMode = .linear
         animation.duration = Self.spinCycle
         animation.repeatCount = .infinity
+        // Otherwise iOS drops it when the app goes to the background.
+        animation.isRemovedOnCompletion = false
         if startsIn > 0 {
             animation.beginTime = rootLayer.convertTime(CACurrentMediaTime(), from: nil) + startsIn
         } else {
