@@ -26,7 +26,7 @@ extension MenuView {
 
     func startScreenSaverIdleMonitor() {
         stopScreenSaverIdleMonitor()
-        let timer = Timer(timeInterval: screenSaverIdleCheckInterval, repeats: true) { [weak self] _ in
+        let timer = Timer(after: screenSaverIdleCheckInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolatedIfPossible { self?.evaluateScreenSaverIdleActivation() }
         }
         RunLoop.main.add(timer, forMode: .common)

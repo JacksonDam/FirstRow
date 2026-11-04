@@ -775,7 +775,7 @@ extension MenuView {
 
         func startMusicAppleScriptProgressTimerIfNeeded() {
             if musicAppleScriptProgressTimer == nil {
-                let timer = Timer(timeInterval: 0.25, repeats: true) { _ in
+                let timer = Timer(after: 0.25, repeats: true) { _ in
                     self.refreshMusicPlaybackViaAppleScriptIfNeeded()
                 }
                 RunLoop.main.add(timer, forMode: .common)
@@ -1497,7 +1497,7 @@ extension MenuView {
         #if os(tvOS) || os(iOS)
         func startMusicKitProgressTimerIfNeeded() {
             guard musicKitProgressTimer == nil else { return }
-            let timer = Timer(timeInterval: 1.0 / 10.0, repeats: true) { _ in
+            let timer = Timer(after: 1.0 / 10.0, repeats: true) { _ in
                 self.refreshMusicKitPlaybackProgress()
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -1752,7 +1752,7 @@ extension MenuView {
             return
         }
         guard musicNowPlayingFlipTimer == nil else { return }
-        let timer = Timer(timeInterval: musicNowPlayingFlipInterval, repeats: true) { _ in
+        let timer = Timer(after: musicNowPlayingFlipInterval, repeats: true) { _ in
             MainActor.assumeIsolatedIfPossible {
                 self.performMusicNowPlayingFlip()
             }

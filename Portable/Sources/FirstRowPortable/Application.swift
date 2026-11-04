@@ -148,8 +148,11 @@ public enum PortableApplication {
                 if SDL_WaitEventTimeout(&event, 8) { handle(event) }
             }
             while SDL_PollEvent(&event) { handle(event) }
-            // Timers, dispatched blocks and main-actor tasks.
-            RunLoop.main.run(mode: .default, before: Date())
+            // Timers, dispatched blocks and main-actor tasks. Each pass services one source,
+            // and a due timer can hide the main queue, so take a few passes.
+            for _ in 0 ..< 8 {
+                RunLoop.main.run(mode: .default, before: Date())
+            }
             AVPlayer.pumpEvents()
             AVAudioPlayer.pumpEvents()
             Harness.tick()
@@ -166,6 +169,7 @@ public enum PortableApplication {
         exit(0)
     }
 
+    private static let debugFrames = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_FRAMES"] == "1"
     private static var hasVideo: Bool { AVPlayerLayer.hasActiveVideo }
 
     private static func windowSize(_ environment: [String: String]) -> CGSize {
@@ -206,12 +210,19 @@ public enum PortableApplication {
         CATransaction.flush()
         let (_, _, pixelWidth, pixelHeight) = metrics()
         guard pixelWidth > 0, pixelHeight > 0 else { return }
+        let start = CACurrentMediaTime()
         AVPlayerLayer.renderVideoFrames()
+        let videoDone = CACurrentMediaTime()
         var framebuffer: GLuint = 0
         if forcedScale != nil {
             framebuffer = offscreenTarget(width: pixelWidth, height: pixelHeight)
         }
         compositor.render(root: host.rootLayer, pixelWidth: pixelWidth, pixelHeight: pixelHeight, time: CACurrentMediaTime(), framebuffer: framebuffer)
+        if debugFrames {
+            glFinish()
+            let end = CACurrentMediaTime()
+            FileHandle.standardError.write(Data(String(format: "[frame] video %.1f ms, layers %.1f ms\n", (videoDone - start) * 1000, (end - videoDone) * 1000).utf8))
+        }
         Harness.frameDrawn(compositor: compositor, width: pixelWidth, height: pixelHeight, framebuffer: framebuffer)
         if framebuffer != 0 {
             // Show the scaled frame in the window too.

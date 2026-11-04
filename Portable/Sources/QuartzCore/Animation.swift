@@ -83,12 +83,15 @@ open class CAAnimation: NSObject, CAMediaTiming, CAAction, NSCopying {
         (anObject as? CALayer)?.add(self, forKey: event)
     }
 
+    /// Set on an animation inside a group: a duration of 0 then means the group's.
+    var inheritedDuration: Double?
+
     func phase(at layerTime: Double) -> TimingPhase {
-        TimingModel.phase(parentTime: layerTime, beginTime: beginTime, duration: duration, speed: speed, timeOffset: timeOffset,
+        TimingModel.phase(parentTime: layerTime, beginTime: beginTime, duration: effectiveDuration, speed: speed, timeOffset: timeOffset,
                           repeatCount: repeatCount, repeatDuration: repeatDuration, autoreverses: autoreverses, fillMode: fillMode)
     }
 
-    var effectiveDuration: Double { duration > 0 ? duration : 0.25 }
+    var effectiveDuration: Double { duration > 0 ? duration : (inheritedDuration ?? 0.25) }
 
     /// Applies the animation to `state` at `layerTime` and says whether it has finished.
     func apply(to _: inout LayerState, at _: Double, base _: LayerState) -> Bool { true }
@@ -243,6 +246,7 @@ open class CAAnimationGroup: CAAnimation {
         }
         // Children run on the group's clock and are cut off at its duration.
         for child in animations ?? [] {
+            child.inheritedDuration = effectiveDuration
             let childPhase = child.phase(at: local)
             if childPhase.active || child.fillMode.fillsForwards || child.fillMode.fillsBackwards {
                 child.capturedFrom = child.capturedFrom ?? capturedFrom

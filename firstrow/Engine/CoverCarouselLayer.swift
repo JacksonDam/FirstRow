@@ -331,7 +331,7 @@ final class CoverCarouselLayerController: LayerController {
         let quarter = Self.cycleDuration / Double(Self.laneCount)
         let nextWrap = (floor(elapsed / quarter) + 1) * quarter
         let delay = max(0.01, nextWrap - elapsed) + 0.03
-        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+        let timer = Timer(after: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolatedIfPossible {
                 // One transaction, so the new pictures, sizes and order reach the screen together.
                 CATransaction.begin()

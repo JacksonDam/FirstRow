@@ -25,9 +25,14 @@ final class MPVCore {
         set("input-vo-keyboard", "no")
         set("osc", "no")
         set("hwdec", "no")
+        // Frames are drawn at their own size and scaled by the compositor, like AVPlayerLayer,
+        // so mpv's expensive scalers would only cost time.
+        set("profile", "fast")
         set("audio-client-name", "First Row")
         set("msg-level", "all=error")
         set("ytdl", "no")
+        // Cover art in audio files is not a video to show.
+        set("audio-display", "no")
         if Self.silent { set("ao", "null") }
         guard mpv_initialize(handle) >= 0 else {
             mpv_terminate_destroy(handle)
@@ -35,6 +40,15 @@ final class MPVCore {
         }
         observe("eof-reached", MPV_FORMAT_FLAG, id: 1)
         Self.live[ObjectIdentifier(self)] = self
+        Self.debug("core created (video \(video))")
+    }
+
+    static let debugEnabled = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_MPV"] == "1"
+
+    static func debug(_ message: @autoclosure () -> String) {
+        guard debugEnabled else { return }
+        let stamp = String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
+        FileHandle.standardError.write(Data("[mpv] \(stamp) \(message())\n".utf8))
     }
 
     deinit {
@@ -43,6 +57,7 @@ final class MPVCore {
     }
 
     func close() {
+        Self.debug("core closed")
         Self.live.removeValue(forKey: ObjectIdentifier(self))
     }
 
@@ -100,6 +115,7 @@ final class MPVCore {
         while true {
             guard let event = mpv_wait_event(handle, 0) else { return }
             if event.pointee.event_id == MPV_EVENT_NONE { return }
+            Self.debug("event \(String(cString: mpv_event_name(event.pointee.event_id)))")
             onEvent?(event)
         }
     }
@@ -139,6 +155,7 @@ final class MPVCore {
             }
         }
         renderContext = context
+        Self.debug("render context \(context == nil ? "failed" : "made")")
         return context
     }
 }

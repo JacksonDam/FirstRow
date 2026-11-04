@@ -718,7 +718,7 @@ final class VolumeOverlayLayer {
             layer.isHidden = false
             place()
         }
-        let fade = Timer(timeInterval: 3, repeats: false) { [weak self] _ in
+        let fade = Timer(after: 3, repeats: false) { [weak self] _ in
             MainActor.assumeIsolatedIfPossible { self?.fadeOut() }
         }
         RunLoop.main.add(fade, forMode: .common)
@@ -727,7 +727,7 @@ final class VolumeOverlayLayer {
 
     private func fadeOut() {
         layer.setOpacity(0, .linear(duration: 1))
-        let hide = Timer(timeInterval: 1.05, repeats: false) { [weak self] _ in
+        let hide = Timer(after: 1.05, repeats: false) { [weak self] _ in
             MainActor.assumeIsolatedIfPossible { self?.layer.isHidden = true }
         }
         RunLoop.main.add(hide, forMode: .common)

@@ -96,6 +96,15 @@ var bundledResourceFolderURL: URL? {
     }
 #endif
 
+extension Timer {
+    /// A timer that first fires one interval from now on every platform. Foundation on Linux
+    /// and Windows fires `Timer(timeInterval:repeats:block:)` timers straight away.
+    convenience init(after interval: TimeInterval, repeats: Bool, block: @escaping (Timer) -> Void) {
+        nonisolated(unsafe) let body = block
+        self.init(fire: Date(timeIntervalSinceNow: interval), interval: interval, repeats: repeats) { body($0) }
+    }
+}
+
 func firstRowSleep(_ seconds: Double) async throws {
     if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
         try await Task.sleep(for: .seconds(seconds))

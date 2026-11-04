@@ -89,6 +89,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     }
 
     deinit {
+        MPVCore.debug("player released")
         core?.close()
     }
 
@@ -101,31 +102,25 @@ open class AVPlayer: NSObject, @unchecked Sendable {
             core?.command(["stop"])
             return
         }
-        // Loaded at the end of this run loop pass, so a player layer attached right after
-        // creation gets its video from the first frame.
         pendingLoad = true
-        DispatchQueue.main.async { [weak self] in self?.loadIfNeeded() }
+        loadWaitStarted = CACurrentMediaTime()
+        scheduleLoad()
     }
 
     /// Video needs a render context; asked for by AVPlayerLayer.
     func enableVideo() -> MPVCore? {
-        if !wantsVideo {
-            wantsVideo = true
-            if core != nil {
-                // Rebuild with video output on and reload what was playing.
-                core?.close()
-                core = nil
-                if currentItem != nil { pendingLoad = true }
-            }
-        }
+        MPVCore.debug("enableVideo")
+        wantsVideo = true
         let core = ensureCore()
-        if pendingLoad { DispatchQueue.main.async { [weak self] in self?.loadIfNeeded() } }
+        if let core, core.renderContext == nil { _ = core.makeRenderContext() }
+        if pendingLoad { scheduleLoad() }
         return core
     }
 
+    /// Every player can show video, so a layer attached after creation still gets frames.
     private func ensureCore() -> MPVCore? {
         if let core { return core }
-        guard let made = MPVCore(video: wantsVideo) else { return nil }
+        guard let made = MPVCore(video: true) else { return nil }
         made.setProperty("volume", Double(volume) * 100)
         made.setFlag("mute", isMuted)
         made.setFlag("pause", !playing)
@@ -135,14 +130,40 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         return made
     }
 
+    private var loadWaitStarted: CFTimeInterval = 0
+    private var loadScheduled = false
+
+    private func scheduleLoad() {
+        guard !loadScheduled else { return }
+        loadScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+            guard let self else { return }
+            self.loadScheduled = false
+            self.loadIfNeeded()
+        }
+    }
+
     private func loadIfNeeded() {
-        guard pendingLoad, let item = currentItem, let core = ensureCore() else { return }
+        MPVCore.debug("loadIfNeeded pending \(pendingLoad) item \(currentItem != nil) render \(core?.renderContext != nil)")
+        guard pendingLoad, let item = currentItem else { return }
+        // A file with pictures waits a moment for its player layer, which is usually attached
+        // in the same pass that created the player.
+        let needsLayer = item.asset.info.hasVideo && core?.renderContext == nil
+        if needsLayer, CACurrentMediaTime() - loadWaitStarted < 0.25 {
+            scheduleLoad()
+            return
+        }
+        guard let core = ensureCore() else { return }
+        MPVCore.debug("loadfile \(item.asset.url.lastPathComponent) playing \(playing) render \(core.renderContext != nil)")
         pendingLoad = false
         core.setFlag("pause", !playing)
         let url = item.asset.url
-        core.command(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace"])
-        if lastTime > 0 {
-            core.command(["seek", String(lastTime), "absolute", "exact"])
+        var options: [String] = []
+        if lastTime > 0 { options.append("start=\(lastTime)") }
+        if options.isEmpty {
+            core.command(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace"])
+        } else {
+            core.command(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace", "-1", options.joined(separator: ",")])
         }
     }
 
@@ -174,13 +195,14 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     }
 
     public func play() {
+        MPVCore.debug("play()")
         playing = true
         ensureCore()?.setFlag("pause", false)
-        if pendingLoad { loadIfNeeded() }
         fireObservers()
     }
 
     public func pause() {
+        MPVCore.debug("pause()")
         playing = false
         core?.setFlag("pause", true)
         lastTime = currentTime().seconds.isFinite ? currentTime().seconds : lastTime
@@ -214,9 +236,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         let seconds = max(0, time.seconds.isFinite ? time.seconds : 0)
         lastTime = seconds
         let exact = toleranceBefore == .zero
-        if pendingLoad {
-            loadIfNeeded()
-        } else {
+        if !pendingLoad {
             core?.command(["seek", String(seconds), "absolute", exact ? "exact" : "keyframes"])
         }
         fireObservers()
@@ -262,7 +282,22 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     /// Delivers mpv events for every player; the host calls this once a frame.
     public static func pumpEvents() {
         MPVCore.pumpAll()
+        if debugLog {
+            let now = Date()
+            if now.timeIntervalSince(lastDebug) > 1 {
+                lastDebug = now
+                for core in MPVCore.live.values {
+                    let position = core.double("time-pos") ?? -1
+                    let paused = core.flag("pause") ?? false
+                    let core_idle = core.flag("core-idle") ?? false
+                    FileHandle.standardError.write(Data("[mpv] time-pos \(position) pause \(paused) core-idle \(core_idle) vo-configured \(core.flag("vo-configured") ?? false)\n".utf8))
+                }
+            }
+        }
     }
+
+    nonisolated(unsafe) private static var lastDebug = Date.distantPast
+    private static let debugLog = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_MPV"] == "1"
 
     /// Where mpv's renderer finds OpenGL functions; set by the host.
     public static func setOpenGLLoader(_ loader: @escaping (String) -> UnsafeMutableRawPointer?) {
@@ -326,14 +361,19 @@ final class VideoSurface: ExternalTextureProviding {
         }
         var fbo = mpv_opengl_fbo(fbo: Int32(framebuffer), w: Int32(width), h: Int32(height), internal_format: 0)
         var flip: Int32 = 0
+        // Never wait for the frame's display time: the interface draws on this thread too.
+        var block: Int32 = 0
         withUnsafeMutablePointer(to: &fbo) { fboPointer in
             withUnsafeMutablePointer(to: &flip) { flipPointer in
-                var params = [
-                    mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_FBO, data: UnsafeMutableRawPointer(fboPointer)),
-                    mpv_render_param(type: MPV_RENDER_PARAM_FLIP_Y, data: UnsafeMutableRawPointer(flipPointer)),
-                    mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
-                ]
-                _ = mpv_render_context_render(context, &params)
+                withUnsafeMutablePointer(to: &block) { blockPointer in
+                    var params = [
+                        mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_FBO, data: UnsafeMutableRawPointer(fboPointer)),
+                        mpv_render_param(type: MPV_RENDER_PARAM_FLIP_Y, data: UnsafeMutableRawPointer(flipPointer)),
+                        mpv_render_param(type: MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, data: UnsafeMutableRawPointer(blockPointer)),
+                        mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
+                    ]
+                    _ = mpv_render_context_render(context, &params)
+                }
             }
         }
         hasFrame = true

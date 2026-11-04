@@ -159,7 +159,7 @@ final class PhotoSlideshowLayerController: LayerController {
     }
 
     private func scheduleRefresh(after delay: Double) {
-        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+        let timer = Timer(after: delay, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
         RunLoop.main.add(timer, forMode: .common)
