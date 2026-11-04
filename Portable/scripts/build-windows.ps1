@@ -3,7 +3,10 @@
 # "Developer PowerShell for VS" prompt. SDL 3 and libmpv are downloaded on the first run.
 param(
     [ValidateSet("x64", "arm64")] [string] $Arch = "x64",
-    [string] $SdlVersion = "3.4.2"
+    # The newest SDL 3 release unless one is named.
+    [string] $SdlVersion = "",
+    # Includes the test harness's folder overrides, as Debug builds on the Mac do.
+    [switch] $Harness
 )
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path "$PSScriptRoot\..\.."
@@ -11,6 +14,9 @@ $deps = Join-Path $root ".build\windows-deps\$Arch"
 New-Item -ItemType Directory -Force -Path $deps | Out-Null
 
 # SDL 3: the official Visual C++ development package.
+if (-not $SdlVersion) {
+    $SdlVersion = (Invoke-RestMethod "https://api.github.com/repos/libsdl-org/SDL/releases/latest").tag_name -replace "^release-", ""
+}
 $sdl = Join-Path $deps "SDL3-$SdlVersion"
 if (-not (Test-Path $sdl)) {
     $zip = Join-Path $deps "sdl.zip"
@@ -29,8 +35,16 @@ if (-not (Test-Path (Join-Path $mpv "mpv.lib"))) {
     Invoke-WebRequest $asset.browser_download_url -OutFile $archive
     New-Item -ItemType Directory -Force -Path $mpv | Out-Null
     & 7z x $archive "-o$mpv" -y | Out-Null
-    $def = Get-ChildItem $mpv -Recurse -Filter "*.def" | Select-Object -First 1
     $machine = if ($Arch -eq "x64") { "X64" } else { "ARM64" }
+    $def = Get-ChildItem $mpv -Recurse -Filter "*.def" | Select-Object -First 1
+    if (-not $def) {
+        # No .def in the package: list the DLL's exports to make one.
+        $dll = Get-ChildItem $mpv -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1
+        $exports = & dumpbin.exe /exports $dll.FullName | Select-String "^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)" | ForEach-Object { $_.Matches[0].Groups[1].Value }
+        $defPath = Join-Path $mpv "mpv.def"
+        Set-Content $defPath (@("LIBRARY libmpv-2.dll", "EXPORTS") + $exports)
+        $def = Get-Item $defPath
+    }
     & lib.exe "/def:$($def.FullName)" "/name:libmpv-2.dll" "/out:$(Join-Path $mpv 'mpv.lib')" "/machine:$machine" | Out-Null
 }
 
@@ -39,14 +53,19 @@ $sdlLib = Join-Path $sdl "lib\$Arch"
 $mpvInclude = Join-Path $mpv "include"
 
 Push-Location $root
+# Swift prints warnings on stderr, which Windows PowerShell would otherwise treat as fatal.
+$ErrorActionPreference = "Continue"
 try {
-    swift build -c release --product FirstRow `
+    $extra = @()
+    if ($Harness) { $extra += @("-Xswiftc", "-DFIRSTROW_HARNESS_BUILD") }
+    swift build -c release --product FirstRow @extra `
         -Xcc "-I$sdlInclude" -Xcc "-I$mpvInclude" `
         -Xlinker "/LIBPATH:$sdlLib" -Xlinker "/LIBPATH:$mpv" `
         -Xlinker /SUBSYSTEM:WINDOWS -Xlinker /ENTRY:mainCRTStartup
     if ($LASTEXITCODE -ne 0) { throw "swift build failed" }
 } finally {
     Pop-Location
+    $ErrorActionPreference = "Stop"
 }
 
 $out = Join-Path $root "dist\windows\FirstRow"

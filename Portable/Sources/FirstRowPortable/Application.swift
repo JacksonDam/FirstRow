@@ -260,7 +260,7 @@ public enum PortableApplication {
     // MARK: Events
 
     private static func handle(_ event: SDL_Event) {
-        let type = SDL_EventType(rawValue: event.type)
+        let type = SDL_EventType(rawValue: numericCast(event.type))
         switch type {
         case SDL_EVENT_QUIT, SDL_EVENT_WINDOW_CLOSE_REQUESTED:
             if host?.shouldQuitImmediately() ?? true { running = false }

@@ -200,8 +200,12 @@ extension MenuView {
         }
 
         nonisolated func moviesRootDisplayTitle(for url: URL) -> String {
-            let internalPath = realUserHomeDirectoryURL()?
-                .appendingPathComponent("Movies").standardizedFileURL.path
+            #if FIRSTROW_PORTABLE
+                let internalPath: String? = portableUserFolder(named: "Movies", standardName: "Videos", xdgKey: "XDG_VIDEOS_DIR").standardizedFileURL.path
+            #else
+                let internalPath = realUserHomeDirectoryURL()?
+                    .appendingPathComponent("Movies").standardizedFileURL.path
+            #endif
             if url.standardizedFileURL.path == internalPath {
                 #if FIRSTROW_PORTABLE
                     return portableComputerTitle

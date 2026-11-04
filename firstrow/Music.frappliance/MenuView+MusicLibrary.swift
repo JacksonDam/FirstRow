@@ -1624,7 +1624,18 @@ extension MenuView {
             if let harnessMusicFolder = FirstRowHarness.musicFolderOverride {
                 return [harnessMusicFolder] + MediaSources.shared.folders(.music)
             }
-            return MediaSources.shared.folders(.music) + externalVolumeRootURLs().compactMap { volumeURL in
+            var chosenFolders = MediaSources.shared.folders(.music)
+            #if FIRSTROW_PORTABLE
+                // With no Music app here, the user's own Music folder is the library.
+                let ownMusic = portableUserFolder(named: "Music", standardName: "Music", xdgKey: "XDG_MUSIC_DIR")
+                var isOwnMusicFolder: ObjCBool = false
+                if FileManager.default.fileExists(atPath: ownMusic.path, isDirectory: &isOwnMusicFolder), isOwnMusicFolder.boolValue,
+                   !chosenFolders.contains(where: { $0.standardizedFileURL.path == ownMusic.standardizedFileURL.path })
+                {
+                    chosenFolders.insert(ownMusic, at: 0)
+                }
+            #endif
+            return chosenFolders + externalVolumeRootURLs().compactMap { volumeURL in
                 let musicURL = volumeURL.appendingPathComponent("Music", isDirectory: true)
                 var isDir: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: musicURL.path, isDirectory: &isDir),

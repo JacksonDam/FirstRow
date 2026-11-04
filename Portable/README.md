@@ -39,6 +39,8 @@ Portable\scripts\build-windows.ps1            # or -Arch arm64
 
 The script downloads SDL 3 and libmpv the first time and copies their DLLs and the Swift runtime next to the app.
 
+First Row needs OpenGL 3.3, which every current graphics driver provides. A machine or virtual machine without one can use Mesa's software renderer instead: put `opengl32.dll`, `libgallium_wgl.dll` and the DLLs they load (MSYS2's `mingw-w64-clang-x86_64-mesa` or `mingw-w64-clang-aarch64-mesa` package) next to `First Row.exe`.
+
 ## Fonts
 
 First Row's interface is set in Lucida Grande, which is Apple's and can't be included. First Row looks for it in this order:
@@ -53,7 +55,7 @@ If Lucida Grande is installed (copied from a Mac you own, for example), the text
 - Arrow keys move, Return selects, Escape or Backspace goes back, Space plays and pauses.
 - Ctrl+Q, Alt+F4 or closing the window quits with the fade. Ctrl+, opens Settings > Media Folders.
 - Game controllers: D-pad or left stick moves, A selects, B, Back or Start goes back, X plays and pauses.
-- Movies come from your Movies or Videos folder, music from Music, plus any folders and iTunes library files added in Settings > Media Folders, and drives under `/media`, `/run/media` and `/mnt` (other drive letters on Windows).
+- Movies come from your Movies or Videos folder and music from your Music folder, plus any folders, iTunes library files and iPhoto libraries added in Settings > Media Folders (where photo folders are added too), and drives under `/media`, `/run/media` and `/mnt` (other drive letters on Windows).
 - `FIRSTROW_WINDOWED=1` or `--windowed` opens a window instead of filling the screen. `FIRSTROW_WINDOW_SIZE=1280x720` sets its size.
 
 ## What differs from the Mac

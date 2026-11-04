@@ -48,11 +48,9 @@ jobs:
       - name: Draw the main menu with Mesa's software OpenGL
         shell: pwsh
         run: |
-          $release = Invoke-RestMethod "https://api.github.com/repos/pal1000/mesa-dist-win/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -like "mesa3d-*-release-msvc.7z" } | Select-Object -First 1
-          Invoke-WebRequest $asset.browser_download_url -OutFile mesa.7z
-          7z x mesa.7z -omesa -y | Out-Null
-          Copy-Item mesa\x64\*.dll dist\windows\FirstRow\
+          # The runner has no GPU, so use llvmpipe from MSYS2's Mesa.
+          C:\msys64\usr\bin\pacman.exe -S --noconfirm --needed mingw-w64-clang-x86_64-mesa | Out-Null
+          Copy-Item C:\msys64\clang64\bin\*.dll dist\windows\FirstRow\ -Exclude SDL3.dll
           "wait 5`nshot $PWD\menu.png`ndown`nwait 1.5`nshot $PWD\tv.png`nquit" | Set-Content script.txt
           $env:FIRSTROW_HARNESS = "1"; $env:FIRSTROW_NO_AUDIO = "1"; $env:SDL_AUDIO_DRIVER = "dummy"
           $env:FIRSTROW_WINDOW_SIZE = "1280x720"; $env:FIRSTROW_SCALE = "1"; $env:FIRSTROW_SCRIPT = "$PWD\script.txt"
