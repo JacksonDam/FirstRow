@@ -18,14 +18,33 @@ final class FontFace: @unchecked Sendable {
     let fullName: String
     let family: String
     let style: String
+    /// The family and style that group a big family's faces, when the font names them.
+    let typographicFamily: String
+    let typographicStyle: String
     let postScriptName: String
     let unitsPerEm: Int
     let ascent: Float
     let descent: Float
     let lineGap: Float
 
-    init?(path: String, index: Int) {
+    convenience init?(path: String, index: Int) {
         guard let handle = plutovg_font_face_load_from_file(path, Int32(index)) else { return nil }
+        self.init(handle: handle, path: path, index: index)
+    }
+
+    /// A face from font bytes, such as a TrueType font kept inside a Mac .dfont file.
+    convenience init?(data: Data, path: String, index: Int) {
+        guard !data.isEmpty, data.count < Int(UInt32.max) else { return nil }
+        let bytes = UnsafeMutableRawPointer.allocate(byteCount: data.count, alignment: 16)
+        data.copyBytes(to: bytes.assumingMemoryBound(to: UInt8.self), count: data.count)
+        guard let handle = plutovg_font_face_load_from_data(bytes, UInt32(data.count), 0, { $0?.deallocate() }, bytes) else {
+            bytes.deallocate()
+            return nil
+        }
+        self.init(handle: handle, path: path, index: index)
+    }
+
+    private init(handle: OpaquePointer, path: String, index: Int) {
         self.handle = handle
         self.path = path
         self.index = index
@@ -37,6 +56,8 @@ final class FontFace: @unchecked Sendable {
         }
         family = name(1)
         style = name(2)
+        typographicFamily = name(16)
+        typographicStyle = name(17)
         let full = name(4)
         fullName = full.isEmpty ? "\(family) \(style)" : full
         postScriptName = name(6)
@@ -74,7 +95,7 @@ public enum FontRegistry {
 
     /// What a requested name falls back to when the machine doesn't have it.
     static let substitutes: [String: [String]] = [
-        "lucida grande": ["Lucida Grande", "Lucida Sans Unicode", "Lucida Sans", "Lucida Sans Regular", "DejaVu Sans", "Verdana", "Arial"],
+        "lucida grande": ["Lucida Grande", "LucidaGrande", ".Lucida Grande UI", "Lucida Grande UI", "Lucida Sans Unicode", "Lucida Sans", "Lucida Sans Regular", "DejaVu Sans", "Verdana", "Arial"],
         "helvetica neue": ["Helvetica Neue", "Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"],
         "helvetica": ["Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"],
     ]
@@ -112,38 +133,141 @@ public enum FontRegistry {
         if let scanned { return scanned }
         var faces: [FontFace] = []
         var seen = Set<String>()
-        for dir in directories() {
-            guard let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil) else { continue }
-            for case let url as URL in walker {
-                let ext = url.pathExtension.lowercased()
-                guard ext == "ttf" || ext == "ttc" || ext == "otf" || ext == "dfont" else { continue }
-                let path = url.path
-                guard seen.insert(path).inserted, let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { continue }
-                let count = data.withUnsafeBytes { raw in
-                    raw.baseAddress.map { Int(plutovg_font_data_face_count($0)) } ?? 0
+        func add(_ url: URL) {
+            let ext = url.pathExtension.lowercased()
+            guard ext == "ttf" || ext == "ttc" || ext == "otf" || ext == "otc" || ext == "dfont" else { return }
+            let path = url.resolvingSymlinksInPath().path
+            guard seen.insert(path).inserted, let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe) else { return }
+            if ext == "dfont" {
+                for (index, font) in MacResourceFork.sfntResources(in: data).enumerated() {
+                    if let face = FontFace(data: font, path: path, index: index) { faces.append(face) }
                 }
-                for index in 0 ..< max(1, count) {
-                    if let face = FontFace(path: path, index: index) {
-                        faces.append(face)
-                    }
+                return
+            }
+            let count = data.withUnsafeBytes { raw in
+                raw.baseAddress.map { Int(plutovg_font_data_face_count($0)) } ?? 0
+            }
+            for index in 0 ..< max(1, count) {
+                if let face = FontFace(path: path, index: index) {
+                    faces.append(face)
                 }
             }
         }
+        for dir in directories() {
+            // Folder links are followed, which the enumerator alone doesn't do.
+            var pending = [dir.resolvingSymlinksInPath()]
+            var visited = Set<String>()
+            while let folder = pending.popLast() {
+                guard visited.insert(folder.path).inserted, visited.count < 2000,
+                      let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isSymbolicLinkKey])
+                else { continue }
+                for case let url as URL in walker {
+                    if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+                        var isFolder: ObjCBool = false
+                        let target = url.resolvingSymlinksInPath()
+                        if FileManager.default.fileExists(atPath: target.path, isDirectory: &isFolder), isFolder.boolValue {
+                            pending.append(target)
+                            continue
+                        }
+                    }
+                    add(url)
+                }
+            }
+        }
+        // Whatever else fontconfig knows of, such as folders added in its own settings.
+        let listed = fontconfigFiles()
+        for path in listed {
+            add(URL(fileURLWithPath: path))
+        }
         scanned = faces
+        if debugFonts {
+            FileHandle.standardError.write(Data("[fonts] \(faces.count) faces found, \(listed.count) files listed by fontconfig\n".utf8))
+            if ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_FONTS_LIST"] == "1" {
+                for face in faces {
+                    FileHandle.standardError.write(Data("[fonts]   \(face.path) #\(face.index): \(face.family) / \(face.style) / \(face.fullName) / \(face.postScriptName)\n".utf8))
+                }
+            }
+        }
         return faces
+    }
+
+    static let debugFonts = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_FONTS"] == "1"
+
+    /// The font files fontconfig lists, on systems that have it.
+    private static func fontconfigFiles() -> [String] {
+        #if os(Windows)
+            return []
+        #else
+            let candidates = ["/usr/bin/fc-list", "/bin/fc-list", "/usr/local/bin/fc-list"]
+            guard let tool = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return [] }
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: tool)
+            process.arguments = ["--format", "%{file}\\n"]
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+            } catch {
+                return []
+            }
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init)
+        #endif
     }
 
     private static func normalized(_ name: String) -> String {
         name.lowercased().replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "  ", with: " ").trimmingCharacters(in: .whitespaces)
     }
 
+    /// A name with case, spaces, hyphens and underscores dropped, so "LucidaGrande-Bold" and
+    /// "Lucida Grande Bold" agree.
+    private static func compact(_ name: String) -> String {
+        String(name.lowercased().unicodeScalars.filter { !" -_".unicodeScalars.contains($0) })
+    }
+
+    private static let regularStyles: Set<String> = ["regular", "roman", "normal", "book", "plain", "standard", ""]
+
     private static func exact(_ name: String, in faces: [FontFace]) -> FontFace? {
-        let wanted = normalized(name)
-        if let face = faces.first(where: { normalized($0.fullName) == wanted || normalized($0.postScriptName) == wanted }) {
+        let wanted = compact(name)
+        if let face = faces.first(where: { compact($0.fullName) == wanted || compact($0.postScriptName) == wanted }) {
             return face
         }
         // A bare family name means its regular style.
-        return faces.first { normalized($0.family) == wanted && ["regular", "roman", "normal", "book", ""].contains($0.style.lowercased()) }
+        func isRegular(_ style: String) -> Bool { regularStyles.contains(compact(style)) }
+        if let face = faces.first(where: { compact($0.family) == wanted && isRegular($0.style) }) {
+            return face
+        }
+        if let face = faces.first(where: { compact($0.typographicFamily) == wanted && isRegular($0.typographicStyle) }) {
+            return face
+        }
+        // Family plus style, as in "Lucida Grande Bold" for a family that names its faces apart.
+        return faces.first { face in
+            [(face.family, face.style), (face.typographicFamily, face.typographicStyle)].contains { family, style in
+                !family.isEmpty && compact(family + style) == wanted
+            }
+        }
+    }
+
+    /// Plain sans-serif faces to stand in for anything the machine doesn't have, most alike first.
+    private static let lastResorts = [
+        "DejaVu Sans", "Lucida Sans Unicode", "Lucida Sans", "Verdana", "Bitstream Vera Sans", "Noto Sans", "Liberation Sans",
+        "Arimo", "Arial", "Helvetica", "Segoe UI", "Tahoma", "Open Sans", "Roboto", "Ubuntu", "Cantarell", "Adwaita Sans",
+        "Inter", "FreeSans", "Nimbus Sans", "Nimbus Sans L",
+    ]
+
+    /// The likeliest plain upright sans-serif face when none of the known names is there.
+    private static func plainFace(in faces: [FontFace]) -> FontFace? {
+        for name in lastResorts {
+            if let face = exact(name, in: faces) { return face }
+        }
+        let avoid = ["mono", "serif", "italic", "oblique", "symbol", "emoji", "math", "dingbat", "cond", "narrow"]
+        let plain = faces.filter { face in
+            let words = compact(face.fullName + face.family + face.style)
+            return regularStyles.contains(compact(face.style)) && !avoid.contains { words.contains($0) }
+        }
+        return plain.min { $0.fullName < $1.fullName } ?? faces.first
     }
 
     /// The face for a font name, or the closest substitute, and whether bold had to be faked.
@@ -177,10 +301,13 @@ public enum FontRegistry {
             }
         }
         if found == nil {
-            found = exact("DejaVu Sans", in: faces) ?? faces.first
+            found = plainFace(in: faces)
         }
         guard let face = found else { return nil }
         facesByName[key] = face
+        if debugFonts {
+            FileHandle.standardError.write(Data("[fonts] \(original) -> \(face.fullName) (\(face.path) #\(face.index))\n".utf8))
+        }
         return (face, key.contains("bold") && !face.isBold)
     }
 
@@ -575,4 +702,36 @@ public func CTTypesetterSuggestLineBreak(_ typesetter: CTTypesetter, _ start: CF
 
 public func CTTypesetterCreateLine(_ typesetter: CTTypesetter, _ range: CFRange) -> CTLine {
     Shaper.shape(typesetter.attributed, range: range)
+}
+
+/// Reads the TrueType fonts out of a Mac resource fork kept as a file, as in a .dfont.
+enum MacResourceFork {
+    static func sfntResources(in data: Data) -> [Data] {
+        let bytes = [UInt8](data)
+        func u32(_ at: Int) -> Int? {
+            guard at >= 0, at + 4 <= bytes.count else { return nil }
+            return Int(bytes[at]) << 24 | Int(bytes[at + 1]) << 16 | Int(bytes[at + 2]) << 8 | Int(bytes[at + 3])
+        }
+        func u16(_ at: Int) -> Int? {
+            guard at >= 0, at + 2 <= bytes.count else { return nil }
+            return Int(bytes[at]) << 8 | Int(bytes[at + 1])
+        }
+        guard let dataOffset = u32(0), let mapOffset = u32(4), let typeListOffset = u16(mapOffset + 24),
+              let typeCountMinusOne = u16(mapOffset + typeListOffset) else { return [] }
+        let typeList = mapOffset + typeListOffset
+        var fonts: [Data] = []
+        for type in 0 ... min(typeCountMinusOne, 255) {
+            let entry = typeList + 2 + type * 8
+            guard entry + 8 <= bytes.count, String(decoding: bytes[entry ..< entry + 4], as: UTF8.self) == "sfnt",
+                  let countMinusOne = u16(entry + 4), let referencesOffset = u16(entry + 6) else { continue }
+            for index in 0 ... min(countMinusOne, 255) {
+                let reference = typeList + referencesOffset + index * 12
+                guard let attributes = u32(reference + 4) else { continue }
+                let start = dataOffset + (attributes & 0xFFFFFF)
+                guard let length = u32(start), start + 4 + length <= bytes.count else { continue }
+                fonts.append(Data(bytes[start + 4 ..< start + 4 + length]))
+            }
+        }
+        return fonts
+    }
 }

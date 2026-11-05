@@ -47,8 +47,9 @@ First Row's interface is set in Lucida Grande, which is Apple's and can't be inc
 
 1. A folder named in `FIRSTROW_FONTS`
 2. The user's and system's font folders (`~/.local/share/fonts`, `/usr/share/fonts`, `C:\Windows\Fonts` and so on)
+3. Any other font fontconfig knows of, on Linux
 
-If Lucida Grande is installed (copied from a Mac you own, for example), the text matches the Mac exactly. Otherwise First Row uses Lucida Sans Unicode, which is close and comes with Windows, then DejaVu Sans. Bold is drawn from the regular face when no bold one is found.
+TrueType and OpenType files, collections (`.ttc`) and old Mac `.dfont` files all work. If Lucida Grande is installed (copied from a Mac you own, for example), the text matches the Mac exactly. Otherwise First Row uses Lucida Sans Unicode, which is close and comes with Windows, then DejaVu Sans, then another plain sans-serif font such as Noto Sans or Liberation Sans. Bold is drawn from the regular face when no bold one is found. `FIRSTROW_DEBUG_FONTS=1` prints which font file each name was given, and `FIRSTROW_DEBUG_FONTS_LIST=1` adds every face found.
 
 ## Using it
 

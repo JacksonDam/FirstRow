@@ -1083,47 +1083,68 @@ int plutovg_font_face_units_per_em(plutovg_font_face_t* face)
     return ttUSHORT(face->info.data + head + 18);
 }
 
-/* Copies a name table entry as UTF-8 and returns its length, or -1 when it is missing. */
+/* Copies a name table entry as UTF-8 and returns its length, or -1 when it is missing.
+   Prefers Windows US English, then any English, then Unicode, then Mac English, then anything. */
 int plutovg_font_face_name(plutovg_font_face_t* face, int name_id, char* out, int capacity)
 {
-    static const int platforms[][3] = {
-        { STBTT_PLATFORM_ID_MICROSOFT, STBTT_MS_EID_UNICODE_BMP, STBTT_MS_LANG_ENGLISH },
-        { STBTT_PLATFORM_ID_UNICODE, 3, 0 },
-        { STBTT_PLATFORM_ID_MAC, STBTT_MAC_EID_ROMAN, STBTT_MAC_LANG_ENGLISH },
-    };
-    for(int p = 0; p < 3; p++) {
-        int length = 0;
-        const char* name = stbtt_GetFontNameString(&face->info, &length, platforms[p][0], platforms[p][1], platforms[p][2], name_id);
-        if(name == NULL || length <= 0)
+    stbtt_uint8* data = face->info.data;
+    stbtt_uint32 table = stbtt__find_table(data, face->info.fontstart, "name");
+    if(table == 0 || capacity < 1)
+        return -1;
+    int count = ttUSHORT(data + table + 2);
+    stbtt_uint32 strings = table + ttUSHORT(data + table + 4);
+    int best = -1, best_score = 0;
+    for(int i = 0; i < count; i++) {
+        stbtt_uint32 record = table + 6 + 12 * i;
+        if(ttUSHORT(data + record + 6) != name_id)
             continue;
-        int written = 0;
-        if(platforms[p][0] == STBTT_PLATFORM_ID_MAC) {
-            for(int i = 0; i < length && written < capacity - 1; i++) {
-                unsigned char c = (unsigned char)name[i];
-                out[written++] = c < 128 ? (char)c : '?';
-            }
-        } else {
-            for(int i = 0; i + 1 < length; i += 2) {
-                unsigned int c = ((unsigned char)name[i] << 8) | (unsigned char)name[i + 1];
-                if(c < 0x80) {
-                    if(written + 1 >= capacity) break;
-                    out[written++] = (char)c;
-                } else if(c < 0x800) {
-                    if(written + 2 >= capacity) break;
-                    out[written++] = (char)(0xC0 | (c >> 6));
-                    out[written++] = (char)(0x80 | (c & 0x3F));
-                } else {
-                    if(written + 3 >= capacity) break;
-                    out[written++] = (char)(0xE0 | (c >> 12));
-                    out[written++] = (char)(0x80 | ((c >> 6) & 0x3F));
-                    out[written++] = (char)(0x80 | (c & 0x3F));
-                }
+        int platform = ttUSHORT(data + record);
+        int encoding = ttUSHORT(data + record + 2);
+        int language = ttUSHORT(data + record + 4);
+        int score = 0;
+        if(platform == STBTT_PLATFORM_ID_MICROSOFT && (encoding == 1 || encoding == 10 || encoding == 0))
+            score = language == 0x0409 ? 7 : ((language & 0xFF) == 0x09 ? 6 : 2);
+        else if(platform == STBTT_PLATFORM_ID_UNICODE)
+            score = 5;
+        else if(platform == STBTT_PLATFORM_ID_MAC && encoding == STBTT_MAC_EID_ROMAN)
+            score = language == STBTT_MAC_LANG_ENGLISH ? 4 : 1;
+        if(score > best_score) {
+            best_score = score;
+            best = i;
+        }
+    }
+    if(best < 0)
+        return -1;
+    stbtt_uint32 record = table + 6 + 12 * best;
+    int platform = ttUSHORT(data + record);
+    int length = ttUSHORT(data + record + 8);
+    const stbtt_uint8* name = data + strings + ttUSHORT(data + record + 10);
+    int written = 0;
+    if(platform == STBTT_PLATFORM_ID_MAC) {
+        for(int i = 0; i < length && written < capacity - 1; i++) {
+            unsigned char c = name[i];
+            out[written++] = c < 128 ? (char)c : '?';
+        }
+    } else {
+        for(int i = 0; i + 1 < length; i += 2) {
+            unsigned int c = ((unsigned int)name[i] << 8) | name[i + 1];
+            if(c < 0x80) {
+                if(written + 1 >= capacity) break;
+                out[written++] = (char)c;
+            } else if(c < 0x800) {
+                if(written + 2 >= capacity) break;
+                out[written++] = (char)(0xC0 | (c >> 6));
+                out[written++] = (char)(0x80 | (c & 0x3F));
+            } else {
+                if(written + 3 >= capacity) break;
+                out[written++] = (char)(0xE0 | (c >> 12));
+                out[written++] = (char)(0x80 | ((c >> 6) & 0x3F));
+                out[written++] = (char)(0x80 | (c & 0x3F));
             }
         }
-        out[written] = 0;
-        return written;
     }
-    return -1;
+    out[written] = 0;
+    return written;
 }
 
 int plutovg_font_data_face_count(const void* data)
