@@ -29,6 +29,7 @@ final class RenderTarget {
     init(width: Int, height: Int) {
         self.width = width
         self.height = height
+        RenderStats.targetsCreated += 1
         var tex: GLuint = 0
         glGenTextures(1, &tex)
         glBindTexture(GL_TEXTURE_2D, tex)
@@ -211,6 +212,7 @@ final class GLDevice {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GLint(GL_CLAMP_TO_EDGE))
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GLint(GL_CLAMP_TO_EDGE))
         let box = TextureBox(texture: tex, width: source.width, height: source.height)
+        RenderStats.textureUploads += 1
         image.rendererResource = box
         return box
     }

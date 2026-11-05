@@ -14,7 +14,7 @@ public final class Compositor {
     private var defaultFramebuffer: GLuint = 0
     /// Layers drawn this frame, whose finished animations are retired afterwards.
     private var visited: [CALayer] = []
-    private var shadowCache: [String: CGImage] = [:]
+    private var shadowCache = ShadowCache()
     private var time: CFTimeInterval = 0
     /// Points to pixels on screen, for picking offscreen resolutions.
     private var screenScale: CGFloat = 1
@@ -77,6 +77,19 @@ public final class Compositor {
     /// Marks every layer as drawn and retires finished animations, hidden layers included.
     private func finishFrame(_ layer: CALayer, animating: inout Bool) {
         layer.hasBeenRendered = true
+        if SnapCheck.enabled {
+            // Filters are shared objects, so keep their values as they were drawn.
+            var model = layer.modelState
+            for case let filter as CIFilter in model.filters ?? [] {
+                let key = "\(filter.name).inputRadius"
+                if model.filterValues[key] == nil, let value = model.filterParameter(filter.name, "inputRadius") {
+                    model.filterValues[key] = value
+                }
+            }
+            layer.lastDrawnModel = model
+        }
+        RenderStats.layersVisited += 1
+        RenderStats.animations += layer.animationList.count
         if layer.hasAnimations {
             if layer.isAnimating(at: time) { animating = true }
             layer.retireAnimations(at: time)
@@ -218,9 +231,14 @@ public final class Compositor {
         layerToSuperTransform(child).then(sublayerSpaceTransform(parent)).flattened
     }
 
-    private func draw(_ layer: CALayer, state s: LayerState, toClip: CATransform3D, opacity: Float, time: Double) {
+    private func draw(_ layer: CALayer, state: LayerState, toClip: CATransform3D, opacity: Float, time: Double) {
         visited.append(layer)
-        guard !s.isHidden else { return }
+        RenderStats.layersDrawn += 1
+        guard !state.isHidden else { return }
+        // An animation can pass through a negative size, which draws like the same box the
+        // right way round, as the bounds setter stores it.
+        var s = state
+        if s.bounds.size.width < 0 || s.bounds.size.height < 0 { s.bounds = s.bounds.standardized }
         let alpha = opacity * s.opacity
         guard alpha > 0.0005 else { return }
         if needsGroup(layer, s, alpha: alpha) {
@@ -488,13 +506,17 @@ public final class Compositor {
 
     private func drawShadowPath(_ layer: CALayer, _ s: LayerState, toClip: CATransform3D, opacity: Float) {
         guard s.shadowOpacity > 0, let path = s.shadowPath, let shadowColor = s.shadowColor, shadowColor.alpha > 0 else { return }
-        let density = max(0.5, min(2, pixelDensity(toClip, at: CGPoint(x: s.bounds.midX, y: s.bounds.midY))))
+        // In whole doublings, so a moving or zooming layer keeps its shadow rather than having
+        // a new one blurred on the processor every frame. A soft shadow scales well.
+        let rawDensity = max(0.5, min(2, pixelDensity(toClip, at: CGPoint(x: s.bounds.midX, y: s.bounds.midY))))
+        let densityStep = Int(log2(rawDensity).rounded())
+        let density = pow(2, CGFloat(densityStep))
         let sigma = s.shadowRadius / 2 * density
         let margin = ceil(sigma * 3) + 2
         let box = path.boundingBox
         guard box.width > 0, box.height > 0 else { return }
-        let key = "\(path.elements)|\(s.shadowRadius)|\(density)"
-        var image = shadowCache[key]
+        let key = ShadowKey(path: ObjectIdentifier(path), radius: s.shadowRadius, densityStep: densityStep)
+        var image = shadowCache.image(for: key, path: path)
         if image == nil {
             let width = Int(ceil(box.width * density + margin * 2)), height = Int(ceil(box.height * density + margin * 2))
             guard width > 0, height > 0, width < 8192, height < 8192,
@@ -508,8 +530,8 @@ public final class Compositor {
             context.fillPath()
             guard let shape = context.makeImage() else { return }
             fr_blur_bgra(shape.storage.bytes, Int32(shape.width), Int32(shape.height), Int32(shape.bytesPerRow), Float(sigma))
-            if shadowCache.count > 64 { shadowCache.removeAll() }
-            shadowCache[key] = shape
+            RenderStats.shadowRasters += 1
+            shadowCache.insert(shape, for: key, path: path)
             image = shape
         }
         guard let image, let texture = device.texture(for: image) else { return }
@@ -571,6 +593,7 @@ public final class Compositor {
     }
 
     private func drawGroup(_ layer: CALayer, state s: LayerState, toClip: CATransform3D, opacity: Float, time: Double) {
+        RenderStats.groups += 1
         var extent = contentExtent(layer, s, time: time)
         if let mask = layer.mask {
             let ms = mask.presentationState(at: time)
@@ -717,4 +740,60 @@ public struct ExternalTexture {
 
 public protocol ExternalTextureProviding: AnyObject {
     func currentTexture() -> ExternalTexture?
+}
+
+/// Counters behind the FIRSTROW_DEBUG_FRAMES summaries.
+public enum RenderStats {
+    nonisolated(unsafe) public static var layersDrawn = 0
+    nonisolated(unsafe) public static var layersVisited = 0
+    nonisolated(unsafe) public static var animations = 0
+    nonisolated(unsafe) public static var groups = 0
+    nonisolated(unsafe) public static var shadowRasters = 0
+    nonisolated(unsafe) public static var textureUploads = 0
+    nonisolated(unsafe) public static var targetsCreated = 0
+
+    /// One line of counts, then zeroes them.
+    public static func takeSummary(frames: Int) -> String {
+        let n = max(1, frames)
+        let line = "layers \(layersDrawn / n) drawn of \(layersVisited / n), animations \(animations / n), groups \(groups / n), "
+            + "shadow rasters \(shadowRasters), texture uploads \(textureUploads), new targets \(targetsCreated)"
+        layersDrawn = 0; layersVisited = 0; animations = 0; groups = 0; shadowRasters = 0; textureUploads = 0; targetsCreated = 0
+        return line
+    }
+}
+
+private struct ShadowKey: Hashable {
+    let path: ObjectIdentifier
+    let radius: CGFloat
+    let densityStep: Int
+}
+
+/// Blurred shadow shapes, the oldest dropped once they pass a memory budget.
+private struct ShadowCache {
+    private var entries: [ShadowKey: (path: CGPath, image: CGImage)] = [:]
+    private var order: [ShadowKey] = []
+    private var bytes = 0
+    private let budget = 48 * 1024 * 1024
+
+    /// Checks the path is the same object, since a freed path's identifier can be reused.
+    func image(for key: ShadowKey, path: CGPath) -> CGImage? {
+        guard let entry = entries[key], entry.path === path else { return nil }
+        return entry.image
+    }
+
+    mutating func insert(_ image: CGImage, for key: ShadowKey, path: CGPath) {
+        if let old = entries.removeValue(forKey: key) {
+            bytes -= old.image.bytesPerRow * old.image.height
+            order.removeAll { $0 == key }
+        }
+        entries[key] = (path, image)
+        order.append(key)
+        bytes += image.bytesPerRow * image.height
+        while bytes > budget, order.count > 1 {
+            let oldest = order.removeFirst()
+            if let dropped = entries.removeValue(forKey: oldest) {
+                bytes -= dropped.image.bytesPerRow * dropped.image.height
+            }
+        }
+    }
 }

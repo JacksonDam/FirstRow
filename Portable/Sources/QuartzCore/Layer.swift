@@ -56,6 +56,8 @@ open class CALayer: NSObject, CAMediaTiming {
     private var sublayerList: [CALayer] = []
     /// Set once the layer has been drawn, so later changes may animate implicitly.
     var hasBeenRendered = false
+    /// The model as of the last frame, kept while checking for jumps (FIRSTROW_DEBUG_SNAPS).
+    var lastDrawnModel: LayerState?
     private var needsLayoutFlag = false
     private var anonymousAnimationCount = 0
 
@@ -390,6 +392,8 @@ open class CALayer: NSObject, CAMediaTiming {
 
     public func add(_ anim: CAAnimation, forKey key: String?) {
         let copy = anim.copy() as! CAAnimation
+        let snapCheck = SnapCheck(layer: self, animation: anim)
+        defer { snapCheck?.finish(added: copy) }
         let name: String
         if let key {
             name = key
@@ -478,12 +482,16 @@ open class CALayer: NSObject, CAMediaTiming {
     }
 
     /// The layer's state with its animations applied at `time` (host time).
-    func presentationState(at time: CFTimeInterval, excluding excluded: String? = nil) -> LayerState {
-        guard !animationList.isEmpty else { return modelState }
+    func presentationState(at time: CFTimeInterval, excluding excluded: String? = nil, model: LayerState? = nil,
+                           animations: [(key: String, animation: CAAnimation)]? = nil) -> LayerState
+    {
+        let model = model ?? modelState
+        let list = animations ?? animationList
+        guard !list.isEmpty else { return model }
         let local = convertTime(time, from: nil)
-        var state = modelState
-        for entry in animationList where entry.key != excluded {
-            _ = entry.animation.apply(to: &state, at: local, base: modelState)
+        var state = model
+        for entry in list where entry.key != excluded {
+            _ = entry.animation.apply(to: &state, at: local, base: model)
         }
         return state
     }
@@ -772,4 +780,57 @@ func sublayerSpaceTransform(_ s: LayerState) -> CATransform3D {
             .then(CATransform3DMakeTranslation(anchorX, anchorY, s.anchorPointZ))
     }
     return t
+}
+
+/// With FIRSTROW_DEBUG_SNAPS=1, reports animations whose first frame doesn't continue from
+/// what was on screen, which shows up as a jump.
+struct SnapCheck {
+    static let enabled = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_SNAPS"] == "1"
+
+    let layer: CALayer
+    let keyPath: String
+    let key: AnimatableKey
+    /// The last frame's model and the animations running then: the model may already hold
+    /// the value being animated to.
+    let model: LayerState
+    let animations: [(key: String, animation: CAAnimation)]
+
+    init?(layer: CALayer, animation: CAAnimation) {
+        guard Self.enabled, let property = animation as? CAPropertyAnimation, !property.isAdditive,
+              let keyPath = property.keyPath, let key = AnimatableKey(keyPath) else { return nil }
+        self.layer = layer
+        self.keyPath = keyPath
+        self.key = key
+        model = layer.lastDrawnModel ?? layer.modelState
+        animations = layer.animationList
+    }
+
+    /// Compares old and new where the new animation begins, so a change of speed isn't
+    /// mistaken for a jump.
+    func finish(added: CAAnimation) {
+        let time = max(layer.convertTime(added.beginTime, to: nil), CACurrentMediaTime() - 1) + 0.0001
+        let before = key.get(layer.presentationState(at: time, model: model, animations: animations))
+        let after = key.get(layer.presentationState(at: time))
+        let jump = Self.distance(before, after)
+        guard jump > 0.5 else { return }
+        let label = layer.name ?? "\(type(of: layer))@\(String(UInt(bitPattern: ObjectIdentifier(layer).hashValue), radix: 16))"
+        FileHandle.standardError.write(Data(String(format: "[snap] %.3f %@ %@ jumped %.2f: %@ -> %@\n", time, label, keyPath, jump, "\(before)", "\(after)").utf8))
+        if ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_SNAPS_STACK"] == "1" {
+            let frames = Thread.callStackSymbols.dropFirst(2).prefix(10).joined(separator: "\n    ")
+            FileHandle.standardError.write(Data("    \(frames)\n".utf8))
+        }
+    }
+
+    static func distance(_ a: AnimValue, _ b: AnimValue) -> Double {
+        switch (a, b) {
+        case let (.scalar(x), .scalar(y)): return abs(x - y) * (abs(x) <= 1 && abs(y) <= 1 ? 100 : 1)
+        case let (.point(p), .point(q)): return Double(max(abs(p.x - q.x), abs(p.y - q.y)))
+        case let (.size(p), .size(q)): return Double(max(abs(p.width - q.width), abs(p.height - q.height)))
+        case let (.rect(p), .rect(q)):
+            // Boxes with negative sizes draw the same as their normalized form.
+            let a = p.standardized, b = q.standardized
+            return Double([a.minX - b.minX, a.minY - b.minY, a.width - b.width, a.height - b.height].map(abs).max() ?? 0)
+        default: return 0
+        }
+    }
 }

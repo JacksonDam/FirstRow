@@ -149,6 +149,7 @@ public enum PortableApplication {
             if idle {
                 if SDL_WaitEventTimeout(&event, 8) { handle(event) }
             }
+            let loopStart = CACurrentMediaTime()
             while SDL_PollEvent(&event) { handle(event) }
             // Timers, dispatched blocks and main-actor tasks. Each pass services one source,
             // and a due timer can hide the main queue, so take a few passes.
@@ -159,10 +160,12 @@ public enum PortableApplication {
             AVAudioPlayer.pumpEvents()
             Harness.tick()
             let now = CACurrentMediaTime()
+            if debugFrames { timings.events += now - loopStart }
             let shouldDraw = needsFrame || (compositor?.isAnimating ?? false) || now - lastFrame > 0.5 || hasVideo
             guard shouldDraw else { continue }
             needsFrame = false
             drawFrame()
+            if debugFrames { timings.frameDone(interval: now - lastFrame) }
             lastFrame = now
         }
         SDL_GL_DestroyContext(context)
@@ -208,6 +211,7 @@ public enum PortableApplication {
 
     private static func drawFrame() {
         guard let host, let compositor, let window else { return }
+        let flushStart = CACurrentMediaTime()
         FrameObservers.run()
         CATransaction.flush()
         let (_, _, pixelWidth, pixelHeight) = metrics()
@@ -223,7 +227,9 @@ public enum PortableApplication {
         if debugFrames {
             glFinish()
             let end = CACurrentMediaTime()
-            FileHandle.standardError.write(Data(String(format: "[frame] video %.1f ms, layers %.1f ms\n", (videoDone - start) * 1000, (end - videoDone) * 1000).utf8))
+            timings.flush += start - flushStart
+            timings.video += videoDone - start
+            timings.layers += end - videoDone
         }
         Harness.frameDrawn(compositor: compositor, width: pixelWidth, height: pixelHeight, framebuffer: framebuffer)
         if framebuffer != 0 {
@@ -235,9 +241,37 @@ public enum PortableApplication {
             glBlitFramebuffer(0, 0, GLint(pixelWidth), GLint(pixelHeight), 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR)
             glBindFramebuffer(GL_FRAMEBUFFER, 0)
         }
+        let swapStart = CACurrentMediaTime()
         SDL_GL_SwapWindow(window)
+        if debugFrames { timings.swap += CACurrentMediaTime() - swapStart }
         CATransaction.runCompletions()
     }
+
+    /// Where frame time goes, printed every five seconds with FIRSTROW_DEBUG_FRAMES=1.
+    private struct FrameTimings {
+        var frames = 0
+        var longest: Double = 0
+        var events: Double = 0
+        var flush: Double = 0
+        var video: Double = 0
+        var layers: Double = 0
+        var swap: Double = 0
+        var since = CACurrentMediaTime()
+
+        mutating func frameDone(interval: Double) {
+            frames += 1
+            longest = max(longest, interval)
+            let now = CACurrentMediaTime()
+            guard now - since >= 5 else { return }
+            let n = Double(max(1, frames))
+            let line = String(format: "[frames] %.1f fps, longest %.0f ms; per frame: events %.1f, updates %.1f, video %.1f, layers %.1f, swap %.1f ms; ",
+                              n / (now - since), longest * 1000, events / n * 1000, flush / n * 1000, video / n * 1000, layers / n * 1000, swap / n * 1000)
+            FileHandle.standardError.write(Data((line + RenderStats.takeSummary(frames: frames) + "\n").utf8))
+            self = FrameTimings()
+        }
+    }
+
+    private static var timings = FrameTimings()
 
     private static func offscreenTarget(width: Int, height: Int) -> GLuint {
         if let offscreen, offscreen.width == width, offscreen.height == height { return offscreen.framebuffer }

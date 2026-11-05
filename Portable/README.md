@@ -68,6 +68,6 @@ TrueType and OpenType files, collections (`.ttc`) and old Mac `.dfont` files all
 
 ## Testing
 
-`FIRSTROW_HARNESS=1` turns on the test harness, which takes the same commands as the Mac one (`down`, `enter`, `escape`, `press:down`, `source:music:/path` and so on) from the FIFO in `FIRSTROW_HARNESS_FIFO` or a script file in `FIRSTROW_SCRIPT`, plus `wait 1.5`, `shot /path/file.png` and `quit`. With `SDL_VIDEO_DRIVER=offscreen` it runs without a display, and `FIRSTROW_SCALE=2` renders at Retina scale. `FIRSTROW_DEBUG_MPV=1` and `FIRSTROW_DEBUG_FRAMES=1` log playback and frame times.
+`FIRSTROW_HARNESS=1` turns on the test harness, which takes the same commands as the Mac one (`down`, `enter`, `escape`, `press:down`, `source:music:/path` and so on) from the FIFO in `FIRSTROW_HARNESS_FIFO` or a script file in `FIRSTROW_SCRIPT`, plus `wait 1.5`, `shot /path/file.png` and `quit`. With `SDL_VIDEO_DRIVER=offscreen` it runs without a display, and `FIRSTROW_SCALE=2` renders at Retina scale. `FIRSTROW_DEBUG_MPV=1` and `FIRSTROW_DEBUG_FRAMES=1` log playback and where frame time goes, every five seconds. `FIRSTROW_DEBUG_SNAPS=1` reports animations that start somewhere other than where the layer was drawn, which shows up as a jump, and `FIRSTROW_DEBUG_SNAPS_STACK=1` adds the code that added them.
 
 The workflow in `.github/workflows/linux-windows.yml` builds both versions and saves a screenshot of the main menu from each.
