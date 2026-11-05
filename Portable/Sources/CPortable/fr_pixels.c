@@ -157,14 +157,15 @@ void fr_rgba_to_premultiplied_bgra(const uint8_t* src, uint8_t* dst, int width, 
 
 void fr_tint_bgra(uint8_t* pixels, int width, int height, int stride, const float color[4])
 {
+    /* Premultiplied: the colour's own alpha scales its channels too. */
     for(int y = 0; y < height; y++) {
         uint8_t* p = pixels + (size_t)y * stride;
         for(int x = 0; x < width; x++) {
-            float a = p[3] / 255.0f;
+            float a = p[3] / 255.0f * color[3];
             p[0] = (uint8_t)(color[0] * a * 255.0f + 0.5f);
             p[1] = (uint8_t)(color[1] * a * 255.0f + 0.5f);
             p[2] = (uint8_t)(color[2] * a * 255.0f + 0.5f);
-            p[3] = (uint8_t)(color[3] * a * 255.0f + 0.5f);
+            p[3] = (uint8_t)(a * 255.0f + 0.5f);
             p += 4;
         }
     }

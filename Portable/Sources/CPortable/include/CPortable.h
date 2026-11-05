@@ -29,7 +29,7 @@ void fr_resize_bgra(const uint8_t* src, int src_width, int src_height, int src_s
 /* Converts straight RGBA (as image decoders return it) to premultiplied BGRA. */
 void fr_rgba_to_premultiplied_bgra(const uint8_t* src, uint8_t* dst, int width, int height, int src_stride, int dst_stride);
 
-/* Fills every pixel's colour with `color` (premultiplied BGRA) scaled by the pixel's alpha. */
+/* Fills every pixel with `color` (straight BGRA), premultiplied and scaled by the pixel's alpha. */
 void fr_tint_bgra(uint8_t* pixels, int width, int height, int stride, const float color[4]);
 
 /* Multiplies every channel by an 8-bit mask. */
