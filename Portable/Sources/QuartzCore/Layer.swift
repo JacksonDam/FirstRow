@@ -119,7 +119,11 @@ open class CALayer: NSObject, CAMediaTiming {
 
     public var bounds: CGRect {
         get { modelState.bounds }
-        set { change("bounds", modelState.bounds, newValue) { $0.bounds = newValue } }
+        // Stored with a positive size, as Core Animation does.
+        set {
+            let rect = newValue.standardized
+            change("bounds", modelState.bounds, rect) { $0.bounds = rect }
+        }
     }
 
     public var position: CGPoint {

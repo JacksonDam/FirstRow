@@ -24,8 +24,10 @@ enum AnimValue {
         case let (.size(p), .size(q)):
             return .size(CGSize(width: mix(Double(p.width), Double(q.width), t), height: mix(Double(p.height), Double(q.height), t)))
         case let (.rect(p), .rect(q)):
-            return .rect(CGRect(x: mix(Double(p.minX), Double(q.minX), t), y: mix(Double(p.minY), Double(q.minY), t),
-                                width: mix(Double(p.width), Double(q.width), t), height: mix(Double(p.height), Double(q.height), t)))
+            // Field by field, as Core Animation does: minX would move the origin of a rectangle
+            // with a negative size.
+            return .rect(CGRect(x: mix(Double(p.origin.x), Double(q.origin.x), t), y: mix(Double(p.origin.y), Double(q.origin.y), t),
+                                width: mix(Double(p.size.width), Double(q.size.width), t), height: mix(Double(p.size.height), Double(q.size.height), t)))
         case let (.transform(p), .transform(q)): return .transform(interpolateTransform(p, q, t))
         case let (.color(p), .color(q)): return .color(mixColor(p, q, t))
         case let (.colors(p), .colors(q)) where p.count == q.count:
@@ -49,7 +51,7 @@ enum AnimValue {
         case let (.scalar(x), .scalar(y)): .scalar(x + y)
         case let (.point(p), .point(q)): .point(CGPoint(x: p.x + q.x, y: p.y + q.y))
         case let (.size(p), .size(q)): .size(CGSize(width: p.width + q.width, height: p.height + q.height))
-        case let (.rect(p), .rect(q)): .rect(CGRect(x: p.minX + q.minX, y: p.minY + q.minY, width: p.width + q.width, height: p.height + q.height))
+        case let (.rect(p), .rect(q)): .rect(CGRect(x: p.origin.x + q.origin.x, y: p.origin.y + q.origin.y, width: p.size.width + q.size.width, height: p.size.height + q.size.height))
         case let (.transform(p), .transform(q)): .transform(q.then(p))
         default: b
         }
@@ -60,7 +62,7 @@ enum AnimValue {
         case let (.scalar(x), .scalar(y)): .scalar(x - y)
         case let (.point(p), .point(q)): .point(CGPoint(x: p.x - q.x, y: p.y - q.y))
         case let (.size(p), .size(q)): .size(CGSize(width: p.width - q.width, height: p.height - q.height))
-        case let (.rect(p), .rect(q)): .rect(CGRect(x: p.minX - q.minX, y: p.minY - q.minY, width: p.width - q.width, height: p.height - q.height))
+        case let (.rect(p), .rect(q)): .rect(CGRect(x: p.origin.x - q.origin.x, y: p.origin.y - q.origin.y, width: p.size.width - q.size.width, height: p.size.height - q.size.height))
         case let (.transform(p), .transform(q)): .transform(CATransform3DInvert(q).then(p))
         default: a
         }
@@ -207,8 +209,8 @@ struct AnimatableKey {
                 if case let .size(s) = value { state.bounds.size = s }
             })
         case "bounds.origin": return point({ $0.bounds.origin }, { $0.bounds.origin = $1 })
-        case "bounds.size.width": return scalar({ Double($0.bounds.width) }, { $0.bounds.size.width = CGFloat($1) })
-        case "bounds.size.height": return scalar({ Double($0.bounds.height) }, { $0.bounds.size.height = CGFloat($1) })
+        case "bounds.size.width": return scalar({ Double($0.bounds.size.width) }, { $0.bounds.size.width = CGFloat($1) })
+        case "bounds.size.height": return scalar({ Double($0.bounds.size.height) }, { $0.bounds.size.height = CGFloat($1) })
         case "shadowOffset":
             return AnimatableKey(kind: .size, get: { .size($0.shadowOffset) }, set: { state, value in
                 if case let .size(s) = value { state.shadowOffset = s }
@@ -263,7 +265,8 @@ struct AnimatableKey {
             let parts = keyPath.split(separator: ".").map(String.init)
             if parts.count == 3, parts[0] == "filters" {
                 let key = parts[1] + "." + parts[2]
-                return scalar({ $0.filterValues[key] ?? 0 }, { $0.filterValues[key] = $1 })
+                // A value set without animation lives on the filter itself.
+                return scalar({ $0.filterValues[key] ?? $0.filterParameter(parts[1], parts[2]) ?? 0 }, { $0.filterValues[key] = $1 })
             }
             return nil
         }
@@ -331,6 +334,15 @@ struct LayerState {
     var instanceDelay: Double = 0
     var instanceColor: CGColor?
     var instanceAlphaOffset: Float = 0
+
+    /// A filter parameter as the filter object holds it.
+    func filterParameter(_ name: String, _ parameter: String) -> Double? {
+        for case let filter as CIFilter in filters ?? [] where filter.name == name {
+            guard let value = filter.value(forKey: parameter) else { return nil }
+            return (value as? NSNumber)?.doubleValue ?? (value as? Double) ?? (value as? CGFloat).map(Double.init)
+        }
+        return nil
+    }
 
     /// The blur radius of a named Gaussian blur filter, animated or not.
     func blurRadius() -> CGFloat {
