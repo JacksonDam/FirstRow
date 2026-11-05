@@ -448,107 +448,133 @@ extension CALayer {
     }
 }
 
-/// Hand-drawn stand-ins for the SF Symbols First Row uses, for macOS 10.15.
+/// Hand-drawn stand-ins for the SF Symbols First Row uses, for macOS 10.15, Linux and Windows.
+/// Each one keeps the symbol's box, margins and stroke as measured at the size First Row draws
+/// it, so whatever is laid out around it lands in the same place.
 enum SymbolFallback {
+    private struct Shape {
+        /// The point size the measurements below are for.
+        let referenceSize: CGFloat
+        let box: CGSize
+        let draw: (CGContext) -> Void
+    }
+
     static func symbol(_ name: String, pointSize: CGFloat, weight: SymbolRenderer.Weight, oversample: CGFloat) -> (image: CGImage, size: CGSize)? {
-        let stroke: CGFloat = switch weight {
-        case .regular: 0.09
-        case .semibold: 0.11
-        case .bold: 0.13
-        case .heavy: 0.16
-        }
-        let p = pointSize
-        let size: CGSize = switch name {
-        case "chevron.right": CGSize(width: p * 0.55, height: p * 0.9)
-        case "play.fill": CGSize(width: p * 0.8, height: p * 0.92)
-        case "pause.fill": CGSize(width: p * 0.72, height: p * 0.9)
-        case "shuffle": CGSize(width: p * 1.15, height: p * 0.82)
-        case "speaker.wave.3.fill": CGSize(width: p * 1.4, height: p * 0.92)
-        case "music.note": CGSize(width: p * 0.62, height: p * 0.98)
-        default: .zero
-        }
-        guard size != .zero else { return nil }
+        guard let shape = shape(name, weight: weight) else { return nil }
+        let scale = pointSize / shape.referenceSize
+        let size = CGSize(width: shape.box.width * scale, height: shape.box.height * scale)
         let width = Int(ceil(size.width * oversample))
         let height = Int(ceil(size.height * oversample))
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
         ) else { return nil }
-        // Draw in points with the origin at the top left.
+        // Draw in the reference size's points with the origin at the top left.
         context.scaleBy(x: oversample, y: oversample)
         context.translateBy(x: 0, y: size.height)
-        context.scaleBy(x: 1, y: -1)
+        context.scaleBy(x: scale, y: -scale)
         context.setFillColor(CGColor(gray: 1, alpha: 1))
         context.setStrokeColor(CGColor(gray: 1, alpha: 1))
         context.setLineCap(.round)
         context.setLineJoin(.round)
-        let w = size.width
-        let h = size.height
-        let line = p * stroke
-        switch name {
-        case "chevron.right":
-            context.setLineWidth(line)
-            context.move(to: CGPoint(x: line, y: line))
-            context.addLine(to: CGPoint(x: w - line, y: h * 0.5))
-            context.addLine(to: CGPoint(x: line, y: h - line))
-            context.strokePath()
-        case "play.fill":
-            context.move(to: CGPoint(x: 0, y: 0))
-            context.addLine(to: CGPoint(x: w, y: h * 0.5))
-            context.addLine(to: CGPoint(x: 0, y: h))
-            context.closePath()
-            context.fillPath()
-        case "pause.fill":
-            let bar = w * 0.36
-            context.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: bar, height: h), cornerWidth: bar * 0.2, cornerHeight: bar * 0.2, transform: nil))
-            context.addPath(CGPath(roundedRect: CGRect(x: w - bar, y: 0, width: bar, height: h), cornerWidth: bar * 0.2, cornerHeight: bar * 0.2, transform: nil))
-            context.fillPath()
-        case "shuffle":
-            context.setLineWidth(line)
-            let head = h * 0.22
-            // Two crossing paths ending in arrowheads on the right.
-            context.move(to: CGPoint(x: 0, y: h * 0.22))
-            context.addCurve(to: CGPoint(x: w - head, y: h * 0.78), control1: CGPoint(x: w * 0.45, y: h * 0.22), control2: CGPoint(x: w * 0.45, y: h * 0.78))
-            context.move(to: CGPoint(x: 0, y: h * 0.78))
-            context.addCurve(to: CGPoint(x: w - head, y: h * 0.22), control1: CGPoint(x: w * 0.45, y: h * 0.78), control2: CGPoint(x: w * 0.45, y: h * 0.22))
-            context.strokePath()
-            for y in [h * 0.22, h * 0.78] {
-                context.move(to: CGPoint(x: w, y: y))
-                context.addLine(to: CGPoint(x: w - head * 1.3, y: y - head))
-                context.addLine(to: CGPoint(x: w - head * 1.3, y: y + head))
-                context.closePath()
-                context.fillPath()
-            }
-        case "speaker.wave.3.fill":
-            let body = h * 0.62
-            context.move(to: CGPoint(x: 0, y: h * 0.32))
-            context.addLine(to: CGPoint(x: body * 0.38, y: h * 0.32))
-            context.addLine(to: CGPoint(x: body, y: 0))
-            context.addLine(to: CGPoint(x: body, y: h))
-            context.addLine(to: CGPoint(x: body * 0.38, y: h * 0.68))
-            context.addLine(to: CGPoint(x: 0, y: h * 0.68))
-            context.closePath()
-            context.fillPath()
-            context.setLineWidth(line * 0.8)
-            for (index, radius) in [h * 0.2, h * 0.34, h * 0.48].enumerated() {
-                let center = CGPoint(x: body + h * 0.02, y: h * 0.5)
-                let spread = CGFloat.pi / (index == 2 ? 3.2 : 3.6)
-                context.addArc(center: center, radius: radius, startAngle: -spread, endAngle: spread, clockwise: false)
-                context.strokePath()
-            }
-        case "music.note":
-            let headRadius = w * 0.34
-            context.addEllipse(in: CGRect(x: 0, y: h - headRadius * 1.6, width: headRadius * 2, height: headRadius * 1.6))
-            context.fillPath()
-            context.setLineWidth(line)
-            context.move(to: CGPoint(x: headRadius * 2 - line * 0.5, y: h - headRadius * 0.8))
-            context.addLine(to: CGPoint(x: headRadius * 2 - line * 0.5, y: line * 0.5))
-            context.addLine(to: CGPoint(x: w - line * 0.5, y: h * 0.22))
-            context.strokePath()
-        default:
-            break
-        }
+        shape.draw(context)
         guard let image = context.makeImage() else { return nil }
         return (image, size)
+    }
+
+    private static func shape(_ name: String, weight: SymbolRenderer.Weight) -> Shape? {
+        switch name {
+        case "play.fill":
+            return Shape(referenceSize: 23, box: CGSize(width: 22, height: 25)) { context in
+                context.addPath(roundedPolygon([(3, 0.44, 2.2), (24.04, 12.56, 2.2), (3, 24.68, 2.2)]))
+                context.fillPath()
+            }
+        case "pause.fill":
+            return Shape(referenceSize: 23, box: CGSize(width: 22, height: 25)) { context in
+                for x: CGFloat in [3, 12.38] {
+                    context.addPath(CGPath(roundedRect: CGRect(x: x, y: 2, width: 6.62, height: 21), cornerWidth: 1.6, cornerHeight: 1.6, transform: nil))
+                }
+                context.fillPath()
+            }
+        case "chevron.right":
+            // The arms run from round caps in the ink's left corners to a round join at its right.
+            let (box, ink, stroke): (CGSize, CGRect, CGFloat) = switch weight {
+            case .regular: (CGSize(width: 23, height: 32), CGRect(x: 6, y: 3.125, width: 15, height: 25.875), 2.8)
+            case .semibold: (CGSize(width: 24, height: 33), CGRect(x: 6, y: 3.125, width: 16, height: 26.875), 4.09)
+            case .bold: (CGSize(width: 24, height: 33), CGRect(x: 6, y: 3, width: 15.875, height: 27), 4.61)
+            case .heavy: (CGSize(width: 25, height: 34), CGRect(x: 6, y: 3.125, width: 16.875, height: 27.875), 5.74)
+            }
+            return Shape(referenceSize: 30, box: box) { context in
+                let half = stroke / 2
+                context.setLineWidth(stroke)
+                context.move(to: CGPoint(x: ink.minX + half, y: ink.minY + half))
+                context.addLine(to: CGPoint(x: ink.maxX - half, y: ink.midY))
+                context.addLine(to: CGPoint(x: ink.minX + half, y: ink.maxY - half))
+                context.strokePath()
+            }
+        case "shuffle":
+            if weight == .regular {
+                return shuffle(referenceSize: 25, box: CGSize(width: 35, height: 27), stroke: 2.2, strands: (6.7, 20.3),
+                               leadIn: 4.1, curve: (8, 10.4, 19.1, 21.5), arrowBase: 25.4, arrowTip: 32.1, arrowHalf: 4.8, arrowRadius: 0.7)
+            }
+            return shuffle(referenceSize: 34, box: CGSize(width: 49, height: 39), stroke: 3.9, strands: (10.3, 28.7),
+                           leadIn: 5.95, curve: (11.1, 14.5, 26.8, 30.2), arrowBase: 35.6, arrowTip: 45.4, arrowHalf: 7.5, arrowRadius: 0.9)
+        case "speaker.wave.3.fill":
+            return Shape(referenceSize: 34, box: CGSize(width: 58, height: 41)) { context in
+                // The box and the cone flaring out of it, then three arcs about a point left of them.
+                context.addPath(roundedPolygon([(5, 13.1, 2.8), (13.87, 13.1, 1), (25.75, 1.79, 2.2), (25.75, 39.21, 2.2), (13.87, 27.9, 1), (5, 27.9, 2.8)]))
+                context.fillPath()
+                context.setLineWidth(3.6)
+                for (center, radius, degrees) in [(20.94, 13.56, 27.0), (19.13, 23.68, 25.5), (20.74, 30.39, 29.5)] as [(CGFloat, CGFloat, CGFloat)] {
+                    let spread = degrees * .pi / 180
+                    context.addArc(center: CGPoint(x: center, y: 20.5), radius: radius, startAngle: -spread, endAngle: spread, clockwise: false)
+                    context.strokePath()
+                }
+            }
+        case "music.note":
+            return Shape(referenceSize: 40, box: CGSize(width: 34, height: 46)) { context in
+                context.addEllipse(in: CGRect(x: 5, y: 31.2, width: 12.7, height: 12))
+                context.addPath(CGPath(roundedRect: CGRect(x: 15.12, y: 5.5, width: 2.63, height: 31.5), cornerWidth: 0.6, cornerHeight: 0.6, transform: nil))
+                context.addPath(roundedPolygon([(15.12, 6.3, 0.8), (29, 3.1, 1.3), (29, 12.9, 1.3), (16, 16.1, 0.8)]))
+                context.fillPath()
+            }
+        default:
+            return nil
+        }
+    }
+
+    /// Two strands that cross between straight ends, with an arrowhead on each right end.
+    private static func shuffle(
+        referenceSize: CGFloat, box: CGSize, stroke: CGFloat, strands: (top: CGFloat, bottom: CGFloat), leadIn: CGFloat,
+        curve: (start: CGFloat, control1: CGFloat, control2: CGFloat, end: CGFloat),
+        arrowBase: CGFloat, arrowTip: CGFloat, arrowHalf: CGFloat, arrowRadius: CGFloat,
+    ) -> Shape {
+        Shape(referenceSize: referenceSize, box: box) { context in
+            context.setLineWidth(stroke)
+            for (from, to) in [(strands.top, strands.bottom), (strands.bottom, strands.top)] {
+                context.move(to: CGPoint(x: leadIn, y: from))
+                context.addLine(to: CGPoint(x: curve.start, y: from))
+                context.addCurve(to: CGPoint(x: curve.end, y: to), control1: CGPoint(x: curve.control1, y: from), control2: CGPoint(x: curve.control2, y: to))
+                context.addLine(to: CGPoint(x: arrowBase + stroke, y: to))
+                context.strokePath()
+            }
+            for y in [strands.top, strands.bottom] {
+                context.addPath(roundedPolygon([(arrowBase, y - arrowHalf, arrowRadius), (arrowTip, y, arrowRadius), (arrowBase, y + arrowHalf, arrowRadius)]))
+            }
+            context.fillPath()
+        }
+    }
+
+    /// A closed polygon whose corners are rounded with their own radii.
+    private static func roundedPolygon(_ corners: [(x: CGFloat, y: CGFloat, radius: CGFloat)]) -> CGPath {
+        let path = CGMutablePath()
+        guard let last = corners.last, let first = corners.first else { return path }
+        path.move(to: CGPoint(x: (last.x + first.x) / 2, y: (last.y + first.y) / 2))
+        for (index, corner) in corners.enumerated() {
+            let next = corners[(index + 1) % corners.count]
+            path.addArc(tangent1End: CGPoint(x: corner.x, y: corner.y), tangent2End: CGPoint(x: next.x, y: next.y), radius: corner.radius)
+        }
+        path.closeSubpath()
+        return path
     }
 }
