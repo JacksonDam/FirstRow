@@ -152,9 +152,10 @@ public enum PortableApplication {
             let loopStart = CACurrentMediaTime()
             while SDL_PollEvent(&event) { handle(event) }
             // Timers, dispatched blocks and main-actor tasks. Each pass services one source,
-            // and a due timer can hide the main queue, so take a few passes.
+            // and a due timer can hide the main queue, so take a few passes. The deadline is in
+            // the past: on Windows a deadline of now still waits for the next 16 ms timer tick.
             for _ in 0 ..< 8 {
-                RunLoop.main.run(mode: .default, before: Date())
+                _ = RunLoop.main.run(mode: .default, before: .distantPast)
             }
             AVPlayer.pumpEvents()
             AVAudioPlayer.pumpEvents()
