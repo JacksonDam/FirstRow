@@ -150,6 +150,10 @@ enum FirstRowHarness {
                     lines.sort { (Int($0.prefix { $0.isNumber }) ?? 0) > (Int($1.prefix { $0.isNumber }) ?? 0) }
                     fputs("[dumplayers] window \(window.windowNumber): \(lines.count) pictures, shown \(shownBytes / 1_048_576) MB, hidden \(hiddenBytes / 1_048_576) MB\n" + lines.joined(separator: "\n") + "\n", stderr)
                 }
+            case "shot" where parts.count == 2:
+                // shot:/path/to/file.png draws the window's layers to a picture (blurs and
+                // other filters are left out), with no need for screen recording.
+                saveLayerPicture(to: URL(fileURLWithPath: parts[1]))
             case "source" where parts.count == 3:
                 // source:movies|music|photos:/path/to/folder
                 guard let kind = MediaSources.FolderKind(rawValue: parts[1]) else { return }
@@ -176,6 +180,37 @@ enum FirstRowHarness {
 
         private static func post(_ key: KeyCode, type: NSEvent.EventType) {
             SyntheticKeyEvents.post(key, down: type == .keyDown)
+        }
+
+        @MainActor
+        private static func saveLayerPicture(to url: URL) {
+            guard let window = NSApplication.shared.windows.first(where: { $0 is FirstRowWindow }),
+                  let layer = window.contentView?.layer
+            else { return }
+            let scale = window.backingScaleFactor
+            let size = layer.bounds.size
+            guard let context = CGContext(
+                data: nil,
+                width: Int(size.width * scale),
+                height: Int(size.height * scale),
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+            ) else { return }
+            context.setFillColor(CGColor(gray: 0, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale))
+            context.scaleBy(x: scale, y: scale)
+            if layer.isGeometryFlipped == false, window.contentView?.isFlipped == true {
+                context.translateBy(x: 0, y: size.height)
+                context.scaleBy(x: 1, y: -1)
+            }
+            layer.render(in: context)
+            guard let image = context.makeImage(),
+                  let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)
+            else { return }
+            CGImageDestinationAddImage(destination, image, nil)
+            CGImageDestinationFinalize(destination)
         }
     }
 #elseif os(macOS)
