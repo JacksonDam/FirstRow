@@ -163,6 +163,12 @@ final class FirstRowAppController {
         )
         controllers.startMonitoringControllersIfNeeded()
         gameControllers = controllers
+        #if os(macOS)
+            AppleRemoteInput.shared.tapsChangeSong = { [weak menu] in
+                guard let menu else { return false }
+                return menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey
+            }
+        #endif
         #if os(iOS)
             let touch = TouchNavigationInputView(frame: hostView.bounds)
             touch.onArrowKeyDown = { [weak menu] key in menu?.handleDirectionalPressBegan(key) }

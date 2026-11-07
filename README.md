@@ -52,7 +52,7 @@ Theatrical Trailers does not work as the original servers for this are gone and 
 - `Keyboard`: Arrow keys navigate/allow scrubbing media, `Enter` selects, `Esc` or `Delete`/`Backspace` goes back, `Space` toggles playback in fullscreen media views. Cmd+Esc to gracefully quit.
 - `Siri Remote (tvOS)`: Directional pad or swipe gestures navigate/scrub, `Select` chooses, `Menu` goes back, `Play/Pause` toggles playback.
 - `Siri Remote paired with a Mac`: Clicking the clickpad's ring navigates/scrubs, its centre chooses, `Back` goes back, `Play/Pause` toggles playback, and the volume buttons set the Mac's volume. First Row takes over the remote while it's in front.
-- `Apple Remote (Macs with an infrared receiver)`: `+`/`-` navigate, `⏮`/`⏭` scrub, the centre button selects and toggles playback, `Menu` goes back.
+- `Apple Remote (Macs with an infrared receiver)`: `+`/`-` navigate, `⏮`/`⏭` move left and right (in Now Playing, tap them to change song and hold them to scrub), the centre button selects and toggles playback, `Menu` goes back.
 - `Game controller`: D-pad or left stick navigates/scrubs, `A` selects, `B` or `Menu` goes back, `X` toggles playback.
 - `Touch (iOS/iPadOS)`: Tap screen quadrants to navigate/scrub, press and hold to repeat navigation, two-finger tap selects, three-finger tap goes back, four-finger tap toggles playback.
 - `Fullscreen media player`: `Up`/`Down` switches songs or podcast episodes, `Left`/`Right` scrubs through the current item.

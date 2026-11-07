@@ -37,8 +37,14 @@
     final class AppleRemoteInput {
         static let shared = AppleRemoteInput()
 
+        /// Set by the app: whether a quick tap of ⏮ or ⏭ should change song (music's Now Playing)
+        /// instead of moving left or right.
+        var tapsChangeSong: @MainActor () -> Bool = { false }
+
         private var devices: [IOHIDDevice] = []
         private var pressedKeys: Set<UInt16> = []
+        /// The key each held button sent, so its release lifts the same key.
+        private var keyForButton: [UInt32: KeyCode] = [:]
 
         func start() {
             guard devices.isEmpty else { return }
@@ -83,26 +89,46 @@
                 }
             }
             pressedKeys.removeAll()
+            keyForButton.removeAll()
         }
 
         private func handle(page: UInt32, usage: UInt32, pressed: Bool) {
-            guard let key = Self.key(page: page, usage: usage) else { return }
+            let button = page << 16 | usage
             if pressed {
+                guard var key = Self.key(page: page, usage: usage) else { return }
+                // Tap ⏮/⏭ to change song; holding them (sent as Rewind/Fast Forward) still scrubs.
+                if Self.isSkipTap(page: page, usage: usage), tapsChangeSong() {
+                    key = key == .rightArrow ? .downArrow : .upArrow
+                }
                 guard pressedKeys.insert(key.rawValue).inserted else { return }
+                keyForButton[button] = key
+                SyntheticKeyEvents.post(key, down: true)
             } else {
-                guard pressedKeys.remove(key.rawValue) != nil else { return }
+                guard let key = keyForButton.removeValue(forKey: button) else { return }
+                pressedKeys.remove(key.rawValue)
+                SyntheticKeyEvents.post(key, down: false)
             }
-            SyntheticKeyEvents.post(key, down: pressed)
+        }
+
+        /// A quick press of ⏮ or ⏭; the receiver reports holding them as Rewind or Fast Forward instead.
+        static func isSkipTap(page: UInt32, usage: UInt32) -> Bool {
+            switch (Int(page), Int(usage)) {
+            case (kHIDPage_GenericDesktop, kHIDUsage_GD_SystemMenuLeft), (kHIDPage_GenericDesktop, kHIDUsage_GD_SystemMenuRight),
+                 (kHIDPage_Consumer, kHIDUsage_Csmr_ScanPreviousTrack), (kHIDPage_Consumer, kHIDUsage_Csmr_ScanNextTrack):
+                true
+            default:
+                false
+            }
         }
 
         /// The remote reports Consumer page usages (or Generic Desktop menu usages on some receivers).
+        /// Since macOS 10.13.6 the receiver sends System Menu Up/Down alongside every Volume +/- press,
+        /// so those two are left out or each press would move twice.
         static func key(page: UInt32, usage: UInt32) -> KeyCode? {
             switch (Int(page), Int(usage)) {
-            case (kHIDPage_Consumer, kHIDUsage_Csmr_VolumeIncrement), (kHIDPage_Consumer, kHIDUsage_Csmr_MenuUp),
-                 (kHIDPage_GenericDesktop, kHIDUsage_GD_SystemMenuUp):
+            case (kHIDPage_Consumer, kHIDUsage_Csmr_VolumeIncrement), (kHIDPage_Consumer, kHIDUsage_Csmr_MenuUp):
                 .upArrow
-            case (kHIDPage_Consumer, kHIDUsage_Csmr_VolumeDecrement), (kHIDPage_Consumer, kHIDUsage_Csmr_MenuDown),
-                 (kHIDPage_GenericDesktop, kHIDUsage_GD_SystemMenuDown):
+            case (kHIDPage_Consumer, kHIDUsage_Csmr_VolumeDecrement), (kHIDPage_Consumer, kHIDUsage_Csmr_MenuDown):
                 .downArrow
             case (kHIDPage_Consumer, kHIDUsage_Csmr_ScanPreviousTrack), (kHIDPage_Consumer, kHIDUsage_Csmr_Rewind),
                  (kHIDPage_Consumer, kHIDUsage_Csmr_MenuLeft), (kHIDPage_GenericDesktop, kHIDUsage_GD_SystemMenuLeft):
