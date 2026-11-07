@@ -46,6 +46,13 @@ void fr_image_free(uint8_t* pixels);
 /* Writes straight RGBA as PNG. */
 int fr_png_write(const char* path, const uint8_t* rgba, int width, int height, int stride);
 
+/* Blocking TCP to 127.0.0.1, for talking to a browser's DevTools. Sockets are -1 on failure;
+   receive returns 0 once the other end has closed. */
+int64_t fr_tcp_connect_loopback(int port);
+int64_t fr_tcp_send(int64_t socket, const void* bytes, int64_t length);
+int64_t fr_tcp_receive(int64_t socket, void* buffer, int64_t capacity);
+void fr_tcp_close(int64_t socket);
+
 #ifdef __cplusplus
 }
 #endif

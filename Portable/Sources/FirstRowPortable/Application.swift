@@ -95,6 +95,9 @@ public enum PortableApplication {
         running = false
     }
 
+    /// Run once the main loop has ended, before the window closes and First Row exits.
+    public static var quitHandlers: [@MainActor () -> Void] = []
+
     public static func run(makeHost: () -> PortableHost) -> Never {
         setlocale(LC_ALL, "C")
         let environment = ProcessInfo.processInfo.environment
@@ -168,6 +171,9 @@ public enum PortableApplication {
             drawFrame()
             if debugFrames { timings.frameDone(interval: now - lastFrame) }
             lastFrame = now
+        }
+        for handler in quitHandlers {
+            handler()
         }
         SDL_GL_DestroyContext(context)
         SDL_DestroyWindow(created)
