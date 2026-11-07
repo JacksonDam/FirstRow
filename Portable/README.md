@@ -56,6 +56,7 @@ TrueType and OpenType files, collections (`.ttc`) and old Mac `.dfont` files all
 - Arrow keys move, Return selects, Escape or Backspace goes back, Space plays and pauses.
 - Ctrl+Q, Alt+F4 or closing the window quits with the fade. Ctrl+, opens Settings > Media Folders.
 - Game controllers: D-pad or left stick moves, A selects, B, Back or Start goes back, X plays and pauses.
+- The play/pause media key plays and pauses, and remotes that send Select and Back keys work too. A Siri Remote doesn't send keys outside Apple's own systems; on Linux a helper such as [siriremote](https://code.zanneth.com/zanneth/siriremote) can turn it into them.
 - Movies come from your Movies or Videos folder and music from your Music folder, plus any folders, iTunes library files and iPhoto libraries added in Settings > Media Folders (where photo folders are added too), and drives under `/media`, `/run/media` and `/mnt` (other drive letters on Windows).
 - `FIRSTROW_WINDOWED=1` or `--windowed` opens a window instead of filling the screen. `FIRSTROW_WINDOW_SIZE=1280x720` sets its size.
 

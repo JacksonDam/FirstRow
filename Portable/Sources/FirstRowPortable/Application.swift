@@ -378,6 +378,10 @@ public enum PortableApplication {
         case SDL_Keycode(SDLK_ESCAPE): .escape
         case SDL_Keycode(SDLK_BACKSPACE), SDL_Keycode(SDLK_DELETE): .delete
         case SDL_Keycode(SDLK_SPACE): .space
+        // Media keys and remotes that send keys (a Siri Remote through a helper, say).
+        case SDL_Keycode(SDLK_MEDIA_PLAY_PAUSE): .space
+        case SDL_Keycode(SDLK_SELECT): .enter
+        case SDL_Keycode(SDLK_AC_BACK): .escape
         default: .other(key)
         }
     }
