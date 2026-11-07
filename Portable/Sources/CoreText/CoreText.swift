@@ -100,6 +100,20 @@ public enum FontRegistry {
         "helvetica": ["Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"],
     ]
 
+    /// Line metrics (ascent, descent and line gap, in ems) of fonts the layouts were made with,
+    /// measured with Core Text on a Mac. A stand-in uses these instead of its own, so lines keep
+    /// the same height: Windows' Lucida Sans Unicode, for one, has far taller lines.
+    static let lineMetrics: [String: LineMetrics] = [
+        "lucida grande": LineMetrics(ascent: 0.966796875, descent: 0.2109375, lineGap: 0),
+    ]
+
+    /// The line metrics a face standing in for `name` should use, if it is a stand-in.
+    static func standInLineMetrics(for name: String, face: FontFace) -> LineMetrics? {
+        let family = normalized(name).replacingOccurrences(of: " bold", with: "")
+        guard let metrics = lineMetrics[family], compact(face.family) != compact(family) else { return nil }
+        return metrics
+    }
+
     static let fallbackNames = [
         "Lucida Grande", "Lucida Sans Unicode", "DejaVu Sans", "Noto Sans", "Segoe UI", "Arial Unicode MS", "Arial",
         "Noto Sans CJK JP", "Noto Sans CJK SC", "Microsoft YaHei", "Yu Gothic", "Meiryo", "Malgun Gothic", "Noto Sans Arabic",
@@ -335,23 +349,37 @@ public enum FontRegistry {
     }
 }
 
+/// A font's ascent, descent and line gap in ems.
+struct LineMetrics: Hashable {
+    let ascent: Float
+    let descent: Float
+    let lineGap: Float
+}
+
 public final class CTFont: @unchecked Sendable, Hashable {
     let face: FontFace
     public let size: CGFloat
     public let name: String
     let syntheticBold: Bool
+    /// Set when the face stands in for a font whose line height the layouts expect.
+    let standInMetrics: LineMetrics?
 
-    init(face: FontFace, size: CGFloat, name: String, syntheticBold: Bool) {
+    init(face: FontFace, size: CGFloat, name: String, syntheticBold: Bool, standInMetrics: LineMetrics? = nil) {
         self.face = face
         self.size = size
         self.name = name
         self.syntheticBold = syntheticBold
+        self.standInMetrics = standInMetrics
     }
 
     var scale: CGFloat { size / CGFloat(max(1, face.unitsPerEm)) }
 
+    var ascent: CGFloat { standInMetrics.map { CGFloat($0.ascent) * size } ?? CGFloat(face.ascent) * scale }
+    var descent: CGFloat { standInMetrics.map { CGFloat($0.descent) * size } ?? CGFloat(face.descent) * scale }
+    var lineGap: CGFloat { standInMetrics.map { CGFloat($0.lineGap) * size } ?? CGFloat(face.lineGap) * scale }
+
     public static func == (lhs: CTFont, rhs: CTFont) -> Bool {
-        lhs.face === rhs.face && lhs.size == rhs.size && lhs.syntheticBold == rhs.syntheticBold
+        lhs.face === rhs.face && lhs.size == rhs.size && lhs.syntheticBold == rhs.syntheticBold && lhs.standInMetrics == rhs.standInMetrics
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -359,7 +387,7 @@ public final class CTFont: @unchecked Sendable, Hashable {
         hasher.combine(size)
     }
 
-    /// The same face at another size.
+    /// Another face (for characters this one lacks) at the same size, with its own line metrics.
     func withFace(_ other: FontFace) -> CTFont {
         CTFont(face: other, size: size, name: name, syntheticBold: syntheticBold && !other.isBold)
     }
@@ -407,19 +435,20 @@ public typealias CTFontDescriptor = CTFont
 public func CTFontCreateWithName(_ name: CFString, _ size: CGFloat, _: UnsafePointer<CGAffineTransform>?) -> CTFont {
     let pointSize = size > 0 ? size : 12
     if let (face, synthetic) = FontRegistry.face(named: name) {
-        return CTFont(face: face, size: pointSize, name: name, syntheticBold: synthetic)
+        let metrics = FontRegistry.standInLineMetrics(for: name as String, face: face)
+        return CTFont(face: face, size: pointSize, name: name, syntheticBold: synthetic, standInMetrics: metrics)
     }
     fatalError("No usable font was found. Install DejaVu Sans or set FIRSTROW_FONTS to a folder of TrueType fonts.")
 }
 
 public func CTFontCreateCopyWithAttributes(_ font: CTFont, _ size: CGFloat, _: UnsafePointer<CGAffineTransform>?, _: CTFontDescriptor?) -> CTFont {
-    CTFont(face: font.face, size: size > 0 ? size : font.size, name: font.name, syntheticBold: font.syntheticBold)
+    CTFont(face: font.face, size: size > 0 ? size : font.size, name: font.name, syntheticBold: font.syntheticBold, standInMetrics: font.standInMetrics)
 }
 
 public func CTFontGetSize(_ font: CTFont) -> CGFloat { font.size }
-public func CTFontGetAscent(_ font: CTFont) -> CGFloat { CGFloat(font.face.ascent) * font.scale }
-public func CTFontGetDescent(_ font: CTFont) -> CGFloat { CGFloat(font.face.descent) * font.scale }
-public func CTFontGetLeading(_ font: CTFont) -> CGFloat { CGFloat(font.face.lineGap) * font.scale }
+public func CTFontGetAscent(_ font: CTFont) -> CGFloat { font.ascent }
+public func CTFontGetDescent(_ font: CTFont) -> CGFloat { font.descent }
+public func CTFontGetLeading(_ font: CTFont) -> CGFloat { font.lineGap }
 public func CTFontGetUnitsPerEm(_ font: CTFont) -> UInt32 { UInt32(font.face.unitsPerEm) }
 public func CTFontCopyPostScriptName(_ font: CTFont) -> CFString { font.face.postScriptName }
 public func CTFontCopyFamilyName(_ font: CTFont) -> CFString { font.face.family }
