@@ -16,6 +16,7 @@ Here, the Leopard/Snow Leopard version of the interface is used as a reference.
 - Features a meticulous recreation of Front Row's 3D icon carousel on the main menu
 - Highly accurate recreations of key components like 3D artwork carousels that characterised the beauty of the original UI
 - Music playback (Apple Music + local library) with a fantastic view of cover art and small details (like the player flipping around for burn-in protection)
+- Spotify: your Liked Songs, playlists, albums and artists under Music > Spotify, playing in the same Now Playing view. Sign in once on Spotify's own page and Spotify's web player does the playing out of sight (macOS, plus Linux and Windows with Chrome or Edge installed)
 - Photo slideshows (Apple Photos library) with background music from your library and a Ken Burns Effect
 - Local movie playback from macOS Movies folder `Users/<username>/Movies` (or iOS/iPadOS/visionOS file system) via AVFoundation
 - Basic support for music and movies on external volumes / network shares (under a `Movies` or `Music` folder in the root of any volumes)
