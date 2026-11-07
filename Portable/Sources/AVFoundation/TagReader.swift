@@ -312,7 +312,8 @@ enum TagReader {
                 let header = reader.read(offset, 16)
                 guard header.count >= 8 else { return }
                 var size = UInt64(be32(header, 0))
-                let type = String(decoding: header[4 ..< 8], as: Unicode.ASCII.self)
+                // Byte for byte, so the © (0xA9) of ©nam, ©ART and ©alb survives.
+                let type = String(String.UnicodeScalarView(header[4 ..< 8].map { Unicode.Scalar($0) }))
                 var bodyStart = offset + 8
                 if size == 1 {
                     size = be64(header, 8)
