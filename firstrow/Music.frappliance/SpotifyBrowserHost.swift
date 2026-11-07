@@ -184,7 +184,7 @@
             Task { @MainActor in
                 // Waiting for browsers to close happens off the main thread.
                 await Task.detached {
-                    previous?.waitUntilExit()
+                    if let previous { Self.finishClosing(previous) }
                     try? FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
                     Self.closeLeftoverBrowser(portFile: portFile)
                     try? FileManager.default.removeItem(at: portFile)
@@ -285,7 +285,9 @@
             socket.close()
         }
 
-        /// Stops the browser, returning its process to wait for if it was still running.
+        /// Asks the browser to close, returning its process to wait for if it was still running.
+        /// It is asked rather than stopped so it saves its cookies first: a sign-in that has just
+        /// finished isn't on disk yet, and on Windows stopping a process gives it no chance to save.
         @discardableResult
         private func stopBrowser() -> Process? {
             heartbeat?.invalidate()
@@ -294,18 +296,34 @@
             socket?.close()
             socket = nil
             commandReplies.removeAll()
-            var stopped: Process?
+            var closing: Process?
             if let process, process.isRunning {
                 process.terminationHandler = nil
-                process.terminate()
-                stopped = process
+                closing = process
             }
             process = nil
             spotifyBrowserProcessID = 0
-            spotifyBrowserControl?.send(#"{"id":1,"method":"Browser.close"}"#)
-            spotifyBrowserControl?.close()
+            if let control = spotifyBrowserControl {
+                control.send(#"{"id":1,"method":"Browser.close"}"#)
+                control.close()
+            } else {
+                // Not connected yet, so there is nothing to ask.
+                closing?.terminate()
+            }
             spotifyBrowserControl = nil
-            return stopped
+            return closing
+        }
+
+        /// Waits up to five seconds for a browser that was asked to close, then stops it. Blocks.
+        private nonisolated static func finishClosing(_ process: Process) {
+            let deadline = Date().addingTimeInterval(5)
+            while process.isRunning, Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if process.isRunning {
+                process.terminate()
+            }
+            process.waitUntilExit()
         }
 
         private func browserExited(launchID id: Int) {
