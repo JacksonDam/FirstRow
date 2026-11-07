@@ -466,7 +466,7 @@ extension MenuView {
             stopMovieScrubbing(revertToPause: true, scheduleAutoHide: true)
             return
         }
-        if now.timeIntervalSince(lastInput) > movieScrubReleaseGracePeriod {
+        if !isHoldingScrubKey(direction: movieScrubDirection), now.timeIntervalSince(lastInput) > movieScrubReleaseGracePeriod {
             stopMovieScrubbing(revertToPause: true, scheduleAutoHide: true)
             return
         }

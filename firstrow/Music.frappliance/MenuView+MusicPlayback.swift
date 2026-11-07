@@ -2223,7 +2223,7 @@ extension MenuView {
             stopMusicScrubbing(showPauseGlyph: true)
             return
         }
-        if now.timeIntervalSince(lastInput) > movieScrubReleaseGracePeriod {
+        if !isHoldingScrubKey(direction: musicScrubDirection), now.timeIntervalSince(lastInput) > movieScrubReleaseGracePeriod {
             stopMusicScrubbing(showPauseGlyph: true)
             return
         }

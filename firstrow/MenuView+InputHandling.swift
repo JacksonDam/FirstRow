@@ -873,6 +873,12 @@ extension MenuView {
         }
     }
 
+    /// Whether the arrow for this scrub direction is still down. Holds only start repeating after
+    /// half a second, so scrubbing goes by the key itself rather than stopping in that gap.
+    func isHoldingScrubKey(direction: Int) -> Bool {
+        direction != 0 && activeDirectionalHoldKey == (direction > 0 ? .rightArrow : .leftArrow)
+    }
+
     func handleDirectionalPressEnded(_ key: KeyCode) {
         guard isDirectionalNavigationKey(key) else { return }
         guard activeDirectionalHoldKey == key else { return }
