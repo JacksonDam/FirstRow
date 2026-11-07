@@ -165,6 +165,10 @@ enum FirstRowHarness {
             case "volume" where parts.count == 2:
                 // volume:0.5 shows the volume overlay at that level.
                 NotificationCenter.default.post(name: .firstRowVolumeChanged, object: nil, userInfo: ["volume": Double(parts[1]) ?? 0])
+            case "irremote" where parts.count == 4:
+                // irremote:<usage page>:<usage>:<1|0> in hex, as the infrared receiver sends them.
+                guard let page = UInt32(parts[1], radix: 16), let usage = UInt32(parts[2], radix: 16) else { return }
+                AppleRemoteInput.shared.handle(page: page, usage: usage, pressed: parts[3] == "1")
             case "press" where parts.count == 2:
                 guard let key = keyCodes[parts[1]] else { return }
                 post(key, type: .keyDown)

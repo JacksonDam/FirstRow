@@ -40,11 +40,17 @@
         /// Set by the app: whether a quick tap of ⏮ or ⏭ should change song (music's Now Playing)
         /// instead of moving left or right.
         var tapsChangeSong: @MainActor () -> Bool = { false }
+        /// Set by the app: whether + and - should change the volume instead of moving up and down
+        /// (on the playback screens, which don't use up and down).
+        var plusMinusChangeVolume: @MainActor () -> Bool = { false }
 
         private var devices: [IOHIDDevice] = []
         private var pressedKeys: Set<UInt16> = []
         /// The key each held button sent, so its release lifts the same key.
         private var keyForButton: [UInt32: KeyCode] = [:]
+        /// The + or - buttons held down for the volume (one press can arrive as two usages).
+        private var volumeButtons: Set<UInt32> = []
+        private let volumeHold = VolumeButtonHold()
 
         func start() {
             guard devices.isEmpty else { return }
@@ -90,12 +96,20 @@
             }
             pressedKeys.removeAll()
             keyForButton.removeAll()
+            volumeButtons.removeAll()
+            volumeHold.end()
         }
 
-        private func handle(page: UInt32, usage: UInt32, pressed: Bool) {
+        func handle(page: UInt32, usage: UInt32, pressed: Bool) {
             let button = page << 16 | usage
             if pressed {
                 guard var key = Self.key(page: page, usage: usage) else { return }
+                if key == .upArrow || key == .downArrow, plusMinusChangeVolume() {
+                    let direction = key == .upArrow ? 1 : -1
+                    if volumeHold.direction != direction { volumeHold.begin(direction) }
+                    volumeButtons.insert(button)
+                    return
+                }
                 // Tap ⏮/⏭ to change song; holding them (sent as Rewind/Fast Forward) still scrubs.
                 if Self.isSkipTap(page: page, usage: usage), tapsChangeSong() {
                     key = key == .rightArrow ? .downArrow : .upArrow
@@ -104,6 +118,10 @@
                 keyForButton[button] = key
                 SyntheticKeyEvents.post(key, down: true)
             } else {
+                if volumeButtons.remove(button) != nil {
+                    if volumeButtons.isEmpty { volumeHold.end() }
+                    return
+                }
                 guard let key = keyForButton.removeValue(forKey: button) else { return }
                 pressedKeys.remove(key.rawValue)
                 SyntheticKeyEvents.post(key, down: false)
@@ -157,7 +175,7 @@
         private var manager: IOHIDManager?
         private var remotes: [IOHIDDevice] = []
         private var pressedKeys: Set<UInt16> = []
-        private var volumeRepeat: Timer?
+        private let volumeHold = VolumeButtonHold()
 
         func start() {
             guard manager == nil else { return }
@@ -224,17 +242,16 @@
                 }
             }
             pressedKeys.removeAll()
-            volumeRepeat?.invalidate()
-            volumeRepeat = nil
+            volumeHold.end()
         }
 
         private func handle(page: UInt32, usage: UInt32, pressed: Bool) {
             switch (Int(page), Int(usage)) {
             case (kHIDPage_Consumer, kHIDUsage_Csmr_VolumeIncrement):
-                repeatVolumeStep(pressed ? 1 : 0)
+                if pressed { volumeHold.begin(1) } else { volumeHold.end() }
                 return
             case (kHIDPage_Consumer, kHIDUsage_Csmr_VolumeDecrement):
-                repeatVolumeStep(pressed ? -1 : 0)
+                if pressed { volumeHold.begin(-1) } else { volumeHold.end() }
                 return
             case (kHIDPage_Consumer, kHIDUsage_Csmr_Mute):
                 if pressed {
@@ -254,24 +271,6 @@
             SyntheticKeyEvents.post(key, down: pressed)
         }
 
-        /// Steps the volume now, then keeps stepping while the button is held, like the Mac's keys.
-        private func repeatVolumeStep(_ direction: Int) {
-            volumeRepeat?.invalidate()
-            volumeRepeat = nil
-            guard direction != 0 else { return }
-            SystemOutputVolume.step(by: direction)
-            SystemOutputVolume.announce()
-            let timer = Timer(timeInterval: 0.12, repeats: true) { _ in
-                MainActor.assumeIsolatedIfPossible {
-                    SystemOutputVolume.step(by: direction)
-                    SystemOutputVolume.announce()
-                }
-            }
-            timer.fireDate = Date().addingTimeInterval(0.45)
-            RunLoop.main.add(timer, forMode: .common)
-            volumeRepeat = timer
-        }
-
         static func key(page: UInt32, usage: UInt32) -> KeyCode? {
             switch (Int(page), Int(usage)) {
             case (kHIDPage_Consumer, kHIDUsage_Csmr_MenuUp): .upArrow
@@ -287,12 +286,49 @@
         }
     }
 
+    /// A remote's volume button: steps the volume on press, then keeps stepping while it's held,
+    /// like the Mac's volume keys.
+    @MainActor
+    final class VolumeButtonHold {
+        private(set) var direction = 0
+        private var timer: Timer?
+
+        func begin(_ direction: Int) {
+            end()
+            guard direction != 0 else { return }
+            self.direction = direction
+            SystemOutputVolume.step(by: direction)
+            SystemOutputVolume.announce()
+            let timer = Timer(timeInterval: 0.12, repeats: true) { _ in
+                MainActor.assumeIsolatedIfPossible {
+                    SystemOutputVolume.step(by: direction)
+                    SystemOutputVolume.announce()
+                }
+            }
+            timer.fireDate = Date().addingTimeInterval(0.45)
+            RunLoop.main.add(timer, forMode: .common)
+            self.timer = timer
+        }
+
+        func end() {
+            timer?.invalidate()
+            timer = nil
+            direction = 0
+        }
+    }
+
     /// The default output device's volume, in sixteenths like the Mac's volume keys.
     enum SystemOutputVolume {
         // kAudioHardwareServiceDeviceProperty_VirtualMainVolume, which needs macOS 12 by name.
         private static let virtualMainVolume: AudioObjectPropertySelector = 0x766D_7663
+        /// The harness keeps its own level, so tests leave the Mac's volume alone.
+        private static var harnessVolume: Float32 = 0.5
 
         static func step(by direction: Int) {
+            if FirstRowHarness.isActive {
+                harnessVolume = min(1, max(0, ((harnessVolume * 16).rounded() + Float32(direction)) / 16))
+                return
+            }
             guard let device = defaultOutputDevice() else { return }
             var address = AudioObjectPropertyAddress(mSelector: virtualMainVolume, mScope: kAudioDevicePropertyScopeOutput, mElement: 0)
             var volume: Float32 = 0
@@ -307,6 +343,10 @@
 
         /// Tells the volume overlay the current level.
         static func announce() {
+            if FirstRowHarness.isActive {
+                NotificationCenter.default.post(name: .firstRowVolumeChanged, object: nil, userInfo: ["volume": Double(harnessVolume)])
+                return
+            }
             guard let device = defaultOutputDevice() else { return }
             var volumeAddress = AudioObjectPropertyAddress(mSelector: virtualMainVolume, mScope: kAudioDevicePropertyScopeOutput, mElement: 0)
             var volume: Float32 = 0
@@ -320,7 +360,7 @@
         }
 
         static func toggleMute() {
-            guard let device = defaultOutputDevice() else { return }
+            guard !FirstRowHarness.isActive, let device = defaultOutputDevice() else { return }
             var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: 0)
             var muted: UInt32 = 0
             var size = UInt32(MemoryLayout<UInt32>.size)

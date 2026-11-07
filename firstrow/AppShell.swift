@@ -168,6 +168,13 @@ final class FirstRowAppController {
                 guard let menu else { return false }
                 return menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey
             }
+            AppleRemoteInput.shared.plusMinusChangeVolume = { [weak menu] in
+                guard let menu, !menu.isMovieResumePromptVisible else { return false }
+                if let scene = menu.activeFullscreenScene {
+                    return scene.key == menu.musicNowPlayingFullscreenKey || scene.key == menu.photoSlideshowFullscreenKey
+                }
+                return menu.isMoviePlaybackVisible
+            }
         #endif
         #if os(iOS)
             let touch = TouchNavigationInputView(frame: hostView.bounds)
