@@ -266,6 +266,9 @@ extension MenuView {
         if musicAudioPlayer != nil {
             return true
         }
+        if isCurrentMusicPlaybackUsingSpotify {
+            return activeMusicPlaybackSongID != nil
+        }
         #if os(macOS)
             return activeMusicPlaybackSongID != nil
         #elseif os(tvOS)
@@ -280,6 +283,9 @@ extension MenuView {
     func isMusicPlaybackRunning() -> Bool {
         if let musicAudioPlayer {
             return musicAudioPlayer.rate > 0.01
+        }
+        if isCurrentMusicPlaybackUsingSpotify {
+            return spotifyIsPlaying && activeMusicPlaybackSongID != nil
         }
         #if os(macOS)
             if isCurrentMusicPlaybackUsingAppleScript {
@@ -316,12 +322,14 @@ extension MenuView {
             clearMusicSongSwitchTransitionState()
         }
         #if os(macOS)
-            let willUseAppleScriptPlayback = song.prefersSystemMusicPlayerPlayback || song.url == nil
+            let willUseAppleScriptPlayback = song.spotify == nil && (song.prefersSystemMusicPlayerPlayback || song.url == nil)
         #endif
         let hadActiveSession = hasActiveMusicPlaybackSession()
+        // Spotify going from song to song is told what to play next, not stopped first.
+        let staysOnSpotify = isCurrentMusicPlaybackUsingSpotify && song.spotify != nil
         stopMusicPlaybackSession(
             clearDisplayState: false,
-            pauseSystemMusicPlayback: {
+            pauseSystemMusicPlayback: !staysOnSpotify && {
                 #if os(macOS)
                     !(isCurrentMusicPlaybackUsingAppleScript && willUseAppleScriptPlayback)
                 #elseif os(tvOS)
@@ -344,6 +352,11 @@ extension MenuView {
         hasPendingExternalMusicRestore = false
         let playbackRequestID = incrementRequestID(&musicPlaybackRequestID)
         let performPlayback: () -> Void
+        if song.spotify != nil {
+            performPlayback = {
+                self.startMusicPlaybackViaSpotify(song, playbackRequestID: playbackRequestID)
+            }
+        } else {
         #if os(tvOS)
             if let musicKitSong = song.musicKitSong {
                 performPlayback = {
@@ -409,6 +422,7 @@ extension MenuView {
                 }
             #endif
         #endif
+        }
         isCurrentMusicPlaybackUsingAppleScript = false
         musicAppleScriptCurrentTrackPersistentIDHex = nil
         musicAppleScriptDidHandleTrackBoundary = false
@@ -1626,6 +1640,7 @@ extension MenuView {
         _ = incrementRequestID(&musicPlaybackRequestID)
         _ = incrementRequestID(&musicNowPlayingArtworkRequestID)
         musicAudioPlayer?.pause()
+        stopSpotifyPlayback(pause: pauseSystemMusicPlayback && !preserveSystemMusicPlayback)
         #if os(macOS)
             stopMusicAppleScriptProgressTimer()
             if isCurrentMusicPlaybackUsingAppleScript,
@@ -1942,7 +1957,9 @@ extension MenuView {
         musicSongTransitionOutgoingOpacityProgress = 0
         musicSongTransitionIncomingProgress = 0
         isMusicSongTransitioning = true
-        selectedThirdIndex = thirdMenuSelectionIndex(forMusicSongIndex: targetIndex)
+        if thirdMenuMode != .spotify {
+            selectedThirdIndex = thirdMenuSelectionIndex(forMusicSongIndex: targetIndex)
+        }
         startMusicPlayback(
             from: targetSong,
             trackIndex: targetIndex,
@@ -2012,6 +2029,10 @@ extension MenuView {
     }
 
     func handleMusicSpacebarPressed() {
+        if musicAudioPlayer == nil, isCurrentMusicPlaybackUsingSpotify, activeMusicPlaybackSongID != nil {
+            toggleSpotifyPlayback()
+            return
+        }
         #if os(tvOS)
             if musicAudioPlayer == nil,
                activeMusicPlaybackSongID != nil,
@@ -2111,6 +2132,9 @@ extension MenuView {
     func beginMusicScrubbing(direction: Int, isRepeat: Bool) {
         guard direction != 0 else { return }
         guard !isMusicSongTransitioning else { return }
+        if musicAudioPlayer == nil, isCurrentMusicPlaybackUsingSpotify, activeMusicPlaybackSongID != nil, musicScrubDirection != direction {
+            pauseSpotifyForScrubbing()
+        }
         #if os(tvOS) || os(macOS)
             #if os(macOS)
                 if musicAudioPlayer == nil,
@@ -2242,6 +2266,8 @@ extension MenuView {
     }
 
     func stopMusicScrubbing(showPauseGlyph: Bool) {
+        let wasSpotifyScrubbing = musicScrubDirection != 0 && musicAudioPlayer == nil &&
+            isCurrentMusicPlaybackUsingSpotify && activeMusicPlaybackSongID != nil
         #if os(macOS)
             let wasAppleScriptScrubbing =
                 musicScrubDirection != 0 &&
@@ -2279,6 +2305,9 @@ extension MenuView {
                 }
             }
         #endif
+        if wasSpotifyScrubbing {
+            seekSpotify(toSeconds: musicNowPlayingElapsedSeconds)
+        }
         if showPauseGlyph {
             musicNowPlayingLeadingGlyphState = .pause
         }

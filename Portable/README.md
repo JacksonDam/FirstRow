@@ -59,9 +59,16 @@ TrueType and OpenType files, collections (`.ttc`) and old Mac `.dfont` files all
 - Movies come from your Movies or Videos folder and music from your Music folder, plus any folders, iTunes library files and iPhoto libraries added in Settings > Media Folders (where photo folders are added too), and drives under `/media`, `/run/media` and `/mnt` (other drive letters on Windows).
 - `FIRSTROW_WINDOWED=1` or `--windowed` opens a window instead of filling the screen. `FIRSTROW_WINDOW_SIZE=1280x720` sets its size.
 
+## Spotify
+
+Music > Spotify plays your Spotify account through Spotify's web player, which First Row runs out of sight in Google Chrome, Microsoft Edge or Chromium (whichever it finds; `FIRSTROW_SPOTIFY_BROWSER` names another). The browser gets a profile of its own, in `~/.local/share/first-row/spotify` or `%LOCALAPPDATA%\First Row\Spotify`, so it leaves your own browsing alone, and it closes when First Row does. Sign In opens Spotify's sign-in page in a browser window; after that the browser runs without one.
+
+Spotify's songs are protected, so the browser must be able to play protected audio: Google Chrome and Edge can, but some Chromium builds can't, and nothing on Arm Linux can. `FIRSTROW_SPOTIFY_BROWSER_WINDOW=1` shows the browser's window, and `FIRSTROW_DEBUG_SPOTIFY=1` logs what the page and First Row say to each other.
+
 ## What differs from the Mac
 
 - Apple Music, the Music app's library, Apple Photos and the Podcasts app aren't available, so those parts show what a Mac without them shows.
+- Spotify needs one of the browsers above; the Mac plays it in a web view of its own.
 - SF Symbols can only ship on Apple platforms, so the few interface symbols (the chevron, play, pause, shuffle) are the hand-drawn versions the app uses on macOS 10.15.
 - Colours are not colour-managed: on a wide-gamut display, saturated colours look stronger than on a Mac, which converts them.
 - Movies with DRM can't play, as on the Mac.

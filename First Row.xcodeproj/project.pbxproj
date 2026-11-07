@@ -39,6 +39,10 @@
 		7A73DEAC2F5776A20021C281 /* MenuView+FullscreenTransitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE742F5776A20021C281 /* MenuView+FullscreenTransitions.swift */; };
 		7A73DEAD2F5776A20021C281 /* MenuFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE6F2F5776A20021C281 /* MenuFeatures.swift */; };
 		7A73DEAE2F5776A20021C281 /* firstrowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE842F5776A20021C281 /* firstrowUITests.swift */; };
+		AA1B57C3E588CE6CCEDD429E /* SpotifyBridgeScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5F5538C0D903316634E77F /* SpotifyBridgeScript.swift */; };
+		45D4D9E48A9FC65AC6A6DD02 /* SpotifySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607D2D229658691231123B0C /* SpotifySession.swift */; };
+		EFB0E862A46FB2241F2BF0EF /* SpotifyWebViewHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = C88EC8D0BA314E4F7FC351CC /* SpotifyWebViewHost.swift */; };
+		E58C34AF2F399623609BBA16 /* MenuView+Spotify.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F76359225FD780F4BAE345 /* MenuView+Spotify.swift */; };
 		7A73DEAF2F5776A20021C281 /* MusicMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */; };
 		7A73DEB02F5776A20021C281 /* MenuCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE6D2F5776A20021C281 /* MenuCatalog.swift */; };
 		7A73DEB12F5776A20021C281 /* PodcastsMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A73DE412F5776A20021C281 /* PodcastsMenuFeature.swift */; };
@@ -145,6 +149,10 @@
 		7A73DE332F5776A20021C281 /* MoviesMenuFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviesMenuFeature.swift; sourceTree = "<group>"; };
 		7A73DE352F5776A20021C281 /* MenuView+MusicLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MusicLibrary.swift"; sourceTree = "<group>"; };
 		7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MusicPlayback.swift"; sourceTree = "<group>"; };
+		DA5F5538C0D903316634E77F /* SpotifyBridgeScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyBridgeScript.swift; sourceTree = "<group>"; };
+		607D2D229658691231123B0C /* SpotifySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifySession.swift; sourceTree = "<group>"; };
+		C88EC8D0BA314E4F7FC351CC /* SpotifyWebViewHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyWebViewHost.swift; sourceTree = "<group>"; };
+		08F76359225FD780F4BAE345 /* MenuView+Spotify.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Spotify.swift"; sourceTree = "<group>"; };
 		7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicMenuFeature.swift; sourceTree = "<group>"; };
 		7A73DE3C2F5776A20021C281 /* MenuView+Photos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Photos.swift"; sourceTree = "<group>"; };
 		7A73DE3D2F5776A20021C281 /* PhotoSlideshowFullscreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSlideshowFullscreenView.swift; sourceTree = "<group>"; };
@@ -314,6 +322,10 @@
 				7A73DE352F5776A20021C281 /* MenuView+MusicLibrary.swift */,
 				7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */,
 				7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */,
+				DA5F5538C0D903316634E77F /* SpotifyBridgeScript.swift */,
+				607D2D229658691231123B0C /* SpotifySession.swift */,
+				C88EC8D0BA314E4F7FC351CC /* SpotifyWebViewHost.swift */,
+				08F76359225FD780F4BAE345 /* MenuView+Spotify.swift */,
 			);
 			path = Music.frappliance;
 			sourceTree = "<group>";
@@ -735,6 +747,10 @@
 				7A73DEAC2F5776A20021C281 /* MenuView+FullscreenTransitions.swift in Sources */,
 				7A73DEAD2F5776A20021C281 /* MenuFeatures.swift in Sources */,
 				7A73DEAF2F5776A20021C281 /* MusicMenuFeature.swift in Sources */,
+				AA1B57C3E588CE6CCEDD429E /* SpotifyBridgeScript.swift in Sources */,
+				45D4D9E48A9FC65AC6A6DD02 /* SpotifySession.swift in Sources */,
+				EFB0E862A46FB2241F2BF0EF /* SpotifyWebViewHost.swift in Sources */,
+				E58C34AF2F399623609BBA16 /* MenuView+Spotify.swift in Sources */,
 				7A73DEB02F5776A20021C281 /* MenuCatalog.swift in Sources */,
 				7A73DEB12F5776A20021C281 /* PodcastsMenuFeature.swift in Sources */,
 				7A73DEB22F5776A20021C281 /* SourcesMenuFeature.swift in Sources */,

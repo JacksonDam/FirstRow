@@ -429,6 +429,11 @@ extension MenuView {
             )
             return
         }
+        if activeRootItemID == "music", item.id == Self.spotifyMenuItemID {
+            playSound(named: "Selection")
+            enterSpotifyMenu()
+            return
+        }
         if activeRootItemID == "music", item.id == "music_shuffle_songs" {
             playSound(named: "Selection")
             startMusicShufflePlaybackFromLibrary()
@@ -596,6 +601,8 @@ extension MenuView {
             startPodcastEpisodePlayback(episode)
         case .mediaFolders:
             triggerMediaFoldersAction()
+        case .spotify:
+            triggerSpotifyMenuAction()
         case .none:
             return
         }

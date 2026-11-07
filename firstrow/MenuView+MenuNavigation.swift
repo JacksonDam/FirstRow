@@ -20,6 +20,7 @@ extension MenuView {
         case photosDateAlbums
         case podcastsEpisodes
         case mediaFolders
+        case spotify
     }
 }
 
@@ -61,7 +62,7 @@ extension MenuView {
 
     func exitThirdMenuToSecondLevel() {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
-        case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos:
+        case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos, .spotify:
             true
         case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .none:
             false
@@ -131,6 +132,11 @@ extension MenuView {
     }
 
     func navigateUpInThirdMenuOrExit() {
+        if thirdMenuMode == .musicSongs, spotifySongsReturnPages != nil {
+            playSound(named: "Exit")
+            returnFromSpotifySongs()
+            return
+        }
         if thirdMenuMode == .musicSongs, isMusicSongsCategoryScoped {
             playSound(named: "Exit")
             transitionMenuForFolderSwap {
@@ -168,6 +174,9 @@ extension MenuView {
         case .mediaFolders:
             playSound(named: "Exit")
             navigateUpInMediaFolders()
+        case .spotify:
+            playSound(named: "Exit")
+            navigateUpInSpotifyMenu()
         case .moviesFolder:
             guard let currentURL = thirdMenuCurrentURL else {
                 exitMoviesThirdMenuToSecondLevelWithSwap()

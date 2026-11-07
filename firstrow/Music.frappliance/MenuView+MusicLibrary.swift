@@ -617,6 +617,9 @@ extension MenuView {
 
     func resolveMusicPreviewTargetSong() -> MusicLibrarySongEntry? {
         guard activeRootItemID == "music", isInSubmenu, isInThirdMenu else { return nil }
+        if thirdMenuMode == .spotify {
+            return spotifyCollectionPreviewEntry()
+        }
         if isShowingMusicAlbumsList {
             guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
             let albumSongs = musicCategoryThirdMenuItems[selectedThirdIndex].songs
@@ -744,6 +747,9 @@ extension MenuView {
         for song: MusicLibrarySongEntry,
         cacheKey: String,
     ) async -> NSImage? {
+        if song.spotify != nil {
+            return await loadSpotifyArtwork(for: song, cacheKey: cacheKey)
+        }
         #if canImport(iTunesLibrary)
             if let libraryArtworkData = await MainActor.run(body: {
                 self.loadMusicLibraryArtworkData(for: song)
@@ -2738,6 +2744,8 @@ extension MenuView {
         let artwork: NSImage?
         let prefersSystemMusicPlayerPlayback: Bool
         let sourcePlaylistPersistentIDHex: String?
+        /// Set for songs that play through Spotify.
+        let spotify: SpotifyTrackReference?
         #if os(tvOS)
             let musicKitSong: Song?
         #endif
@@ -2758,6 +2766,7 @@ extension MenuView {
                 artwork: NSImage?,
                 prefersSystemMusicPlayerPlayback: Bool = false,
                 sourcePlaylistPersistentIDHex: String? = nil,
+                spotify: SpotifyTrackReference? = nil,
                 musicKitSong: Song? = nil,
             ) {
                 self.id = id
@@ -2774,6 +2783,7 @@ extension MenuView {
                 self.artwork = artwork
                 self.prefersSystemMusicPlayerPlayback = prefersSystemMusicPlayerPlayback
                 self.sourcePlaylistPersistentIDHex = sourcePlaylistPersistentIDHex
+                self.spotify = spotify
                 self.musicKitSong = musicKitSong
             }
         #else
@@ -2792,6 +2802,7 @@ extension MenuView {
                 artwork: NSImage?,
                 prefersSystemMusicPlayerPlayback: Bool = false,
                 sourcePlaylistPersistentIDHex: String? = nil,
+                spotify: SpotifyTrackReference? = nil,
             ) {
                 self.id = id
                 self.title = title
@@ -2807,6 +2818,7 @@ extension MenuView {
                 self.artwork = artwork
                 self.prefersSystemMusicPlayerPlayback = prefersSystemMusicPlayerPlayback
                 self.sourcePlaylistPersistentIDHex = sourcePlaylistPersistentIDHex
+                self.spotify = spotify
             }
         #endif
     }

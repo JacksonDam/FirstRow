@@ -438,6 +438,28 @@ final class MenuView: ObservableObject {
     @Published var musicAppleScriptLastSyncDate: Date?
     @Published var musicSystemPlayerObserverTokens: [NSObjectProtocol] = []
 
+    // MARK: - Spotify state
+
+    @Published var spotifyMenuPages: [SpotifyMenuPageState] = []
+    @Published var spotifyCollections: [SpotifyCollection] = []
+    @Published var isLoadingSpotifyMenu = false
+    @Published var spotifyMenuError: String?
+    @Published var spotifyRevision = 0
+    var spotifyMenuRequestID = 0
+    /// The Spotify pages to go back to from the songs list they opened.
+    var spotifySongsReturnPages: [SpotifyMenuPageState]?
+    var spotifySessionObserver: NSObjectProtocol?
+    @Published var isCurrentMusicPlaybackUsingSpotify = false
+    var spotifyIsPlaying = false
+    var spotifyShowsAdvert = false
+    /// The song Spotify was asked to play and hasn't reported yet.
+    var spotifyPendingTrackURI: String?
+    var spotifyPendingSince: Date?
+    var spotifyLastTrackPositionSeconds: Double = 0
+    /// Where a seek was sent, until Spotify reports being there.
+    var spotifySeekTarget: (seconds: Double, date: Date)?
+    var spotifyProgressTimer: Timer?
+
     // MARK: - Fullscreen / transitions state
 
     @Published var activeFullscreenScene: FullscreenScenePresentation?

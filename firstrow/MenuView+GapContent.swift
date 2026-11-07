@@ -178,7 +178,7 @@ extension MenuView {
     var shouldShowMusicPreviewContent: Bool {
         activeRootItemID == "music" &&
             isInThirdMenu &&
-            (thirdMenuMode == .musicSongs || isShowingMusicAlbumsList) &&
+            (thirdMenuMode == .musicSongs || isShowingMusicAlbumsList || isShowingSpotifyCollectionCovers) &&
             musicPreviewTargetSongID != nil
     }
 
@@ -226,6 +226,19 @@ extension MenuView {
             return "Unknown"
         }
         return trimmed
+    }
+
+    func musicSongMetadataLines(for song: MusicLibrarySongEntry) -> [MetadataPreviewSpec.Line] {
+        var lines: [MetadataPreviewSpec.Line] = [
+            .init(label: "Album", value: normalizedMusicMetadataValue(song.album)),
+            .init(label: "Artist", value: normalizedMusicMetadataValue(song.artist)),
+        ]
+        // Spotify doesn't give songs a genre.
+        if song.spotify == nil {
+            lines.append(.init(label: "Genre", value: normalizedMusicMetadataValue(song.genre)))
+        }
+        lines.append(.init(label: "Length", value: musicSongMetadataLengthText(song.durationSeconds)))
+        return lines
     }
 
     func musicSongMetadataLengthText(_ durationSeconds: Double) -> String {
@@ -565,12 +578,7 @@ extension MenuView {
                     sizeScale: 0.92,
                     title: song.title,
                     description: nil,
-                    lines: [
-                        .init(label: "Album", value: normalizedMusicMetadataValue(song.album)),
-                        .init(label: "Artist", value: normalizedMusicMetadataValue(song.artist)),
-                        .init(label: "Genre", value: normalizedMusicMetadataValue(song.genre)),
-                        .init(label: "Length", value: musicSongMetadataLengthText(song.durationSeconds)),
-                    ],
+                    lines: musicSongMetadataLines(for: song),
                     baseIconSize: iconSize,
                     offsetX: musicGapPreviewHorizontalOffset - 56,
                     offsetY: gapContentVerticalOffset - 8,

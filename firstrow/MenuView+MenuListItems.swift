@@ -152,6 +152,8 @@ extension MenuView {
                 podcastsLoadError == nil
         case .mediaFolders:
             false
+        case .spotify:
+            shouldHideSpotifyMenuUntilLoaded
         default:
             false
         }
@@ -318,6 +320,8 @@ extension MenuView {
             }
         case .mediaFolders:
             return mediaFoldersListItems()
+        case .spotify:
+            return spotifyMenuListItems()
         case .none:
             return []
         }

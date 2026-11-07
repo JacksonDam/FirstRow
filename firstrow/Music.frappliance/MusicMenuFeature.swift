@@ -2,7 +2,15 @@ import Foundation
 
 struct MusicMenuFeature: MenuFeatureConfiguration {
     let rootItem = RootMenuItemConfig(id: "music", title: "Music", iconAssetName: "music")
-    let submenuItems: [SubmenuItemConfig] = [
+    var submenuItems: [SubmenuItemConfig] {
+        var items = Self.libraryItems
+        if SpotifySessionSupport.isAvailable {
+            items.append(.init(id: "music_spotify", title: "Spotify", leadsToMenu: true, showsTopDivider: true))
+        }
+        return items
+    }
+
+    private static let libraryItems: [SubmenuItemConfig] = [
         .init(id: "music_itunes_top_songs", title: "iTunes Top Songs", leadsToMenu: true, trailingText: "•••"),
         .init(id: "music_itunes_top_music_videos", title: "iTunes Top Music Videos", leadsToMenu: true, trailingText: "•••"),
         .init(id: "music_shuffle_songs", title: "Shuffle Songs", trailingSymbolName: "shuffle", showsTopDivider: true),
