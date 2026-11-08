@@ -18,10 +18,12 @@ final class PointerInputState {
 
     weak var hitTester: (any PointerHitTesting)?
     /// A list scrolled by the pointer stays put until the arrows take over again.
-    fileprivate(set) var pin: (identity: String, offset: CGFloat)?
+    var pin: (identity: String, offset: CGFloat)?
+    /// The pin follows a finger: no nudging to show the selected row, and no easing.
+    var tracksFinger = false
     fileprivate(set) var location: CGPoint?
     fileprivate var pressTarget: PointerTarget?
-    fileprivate var drag: Drag?
+    var drag: Drag?
     fileprivate var screenSaverWakeOrigin: CGPoint?
     fileprivate var wheelAccumulator: CGFloat = 0
     fileprivate var lastWheelDate = Date.distantPast
@@ -38,6 +40,11 @@ final class PointerInputState {
         guard let pin, pin.identity == identity else { return nil }
         let minOffset = min(0, viewportHeight - contentHeight)
         var offset = max(minOffset, min(0, pin.offset))
+        // A list moved by a finger stays where it was left, wherever the selection is.
+        if tracksFinger { return offset }
+        #if os(iOS)
+            if AppSettings.isTouchEnabled { return offset }
+        #endif
         // Scrolled just enough to show the whole selected row, if it's cut off at an edge.
         let top = selectedRowTop + offset
         if top < 0 {
@@ -70,6 +77,7 @@ final class PointerInputState {
 
     func clearPin() {
         pin = nil
+        tracksFinger = false
     }
 }
 
@@ -300,7 +308,7 @@ extension MenuView {
     // MARK: - Menus
 
     /// Times when nothing should react to the pointer, as keys are held off then.
-    private var isPointerInputPaused: Bool {
+    var isPointerInputPaused: Bool {
         isFullscreenSceneTransitioning || isMenuFolderSwapTransitioning || isMovieTransitioning ||
             (isMovieResumePromptVisible && isMovieResumePromptConfirming)
     }
@@ -313,7 +321,7 @@ extension MenuView {
         }
     }
 
-    private func pointerListItemCount(for level: MenuListLevel) -> Int {
+    func pointerListItemCount(for level: MenuListLevel) -> Int {
         switch level {
         case .root: rootListItems().count
         case .submenu: submenuListItems().count
@@ -375,7 +383,7 @@ extension MenuView {
         }
     }
 
-    private func selectResumeOptionFromPointer(_ index: Int) {
+    func selectResumeOptionFromPointer(_ index: Int) {
         guard isMovieResumePromptVisible, !isMovieResumePromptConfirming, index != movieResumePromptSelectedIndex else { return }
         withAnimation(.easeInOut(duration: 0.16)) {
             movieResumePromptSelectedIndex = index
@@ -385,7 +393,7 @@ extension MenuView {
 
     // MARK: - Progress bars
 
-    private func beginMovieProgressDrag(at fraction: Double) {
+    func beginMovieProgressDrag(at fraction: Double) {
         guard let player = moviePlayer, !isMovieTransitioning else { return }
         let duration = moviePlaybackDurationSeconds
         guard duration.isFinite, duration > 0 else { return }
@@ -401,7 +409,7 @@ extension MenuView {
         seekMovie(toFraction: fraction, exact: false)
     }
 
-    private func beginMusicProgressDrag(at fraction: Double) {
+    func beginMusicProgressDrag(at fraction: Double) {
         guard !isMusicSongTransitioning, musicAudioPlayer != nil || activeMusicPlaybackSongID != nil else { return }
         let duration = musicNowPlayingDurationSeconds
         guard duration.isFinite, duration > 0 else { return }
@@ -417,7 +425,7 @@ extension MenuView {
         updateMusicNowPlayingFlipTimerState()
     }
 
-    private func continueProgressDrag(at point: CGPoint) {
+    func continueProgressDrag(at point: CGPoint) {
         guard let drag = pointer.drag, let fraction = pointer.hitTester?.progressBarFraction(at: point) else { return }
         switch drag {
         case .movie:
@@ -435,7 +443,7 @@ extension MenuView {
         }
     }
 
-    private func finishProgressDrag(at point: CGPoint) {
+    func finishProgressDrag(at point: CGPoint) {
         guard let drag = pointer.drag else { return }
         let fraction = pointer.hitTester?.progressBarFraction(at: point)
         pointer.drag = nil

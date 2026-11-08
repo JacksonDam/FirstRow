@@ -123,6 +123,11 @@ final class MenuView: ObservableObject {
     private var mediaSourcesObserver: NSObjectProtocol?
     /// Mouse and trackpad state (Settings > Mouse).
     let pointer = PointerInputState()
+    /// A finger is choosing a row in touch mode, so the selection shows.
+    @Published var isTouchSelecting = false
+    #if os(iOS)
+        let touch = TouchInputState()
+    #endif
 
     init() {
         mediaSourcesObserver = NotificationCenter.default.addObserver(

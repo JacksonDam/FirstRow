@@ -4,6 +4,7 @@ import Foundation
 extension MenuView {
     static let settingsThemeItemID = "settings_theme"
     static let settingsMouseItemID = "settings_mouse"
+    static let settingsTouchItemID = "settings_touch"
     static let settingsScreenSaverItemID = "settings_screensaver"
     static let settingsSoundEffectsItemID = "settings_soundeffects"
     private static let screenSaverPreviewItemID = "screensaver_preview"
@@ -16,6 +17,7 @@ extension MenuView {
         case Self.settingsScreenSaverItemID: AppSettings.screenSaverDelayTitle(AppSettings.screenSaverDelay)
         case Self.settingsThemeItemID: AppSettings.theme.title
         case Self.settingsMouseItemID: AppSettings.isMouseEnabled ? "On" : "Off"
+        case Self.settingsTouchItemID: AppSettings.isTouchEnabled ? "On" : "Off"
         default: nil
         }
     }
@@ -34,6 +36,12 @@ extension MenuView {
             switchTheme(to: AppSettings.theme == .classic ? .modern : .classic)
         case Self.settingsMouseItemID:
             AppSettings.isMouseEnabled.toggle()
+            objectWillChange.send()
+            playSound(named: "Selection")
+        case Self.settingsTouchItemID:
+            AppSettings.isTouchEnabled.toggle()
+            pointer.clearPin()
+            isTouchSelecting = false
             objectWillChange.send()
             playSound(named: "Selection")
         default:

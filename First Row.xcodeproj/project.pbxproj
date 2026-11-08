@@ -136,6 +136,8 @@
 		5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 041DE320020DD1375929D2AC /* JellyfinDiscovery.swift */; };
 		2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557F8BF378B6E180EA71AD23 /* MenuView+Jellyfin.swift */; };
 		144C9904B8443DC88EC09F31 /* MenuView+JellyfinPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B5C932D575304CBC8EDCB7 /* MenuView+JellyfinPlayback.swift */; };
+		7F6EEAF55AB82D16473103DC /* MenuView+Touch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FAC8B622BFB186235A2E4AD /* MenuView+Touch.swift */; };
+		781A33AC847A1B379B9B7A18 /* TouchHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2E5BC75E266992AE5994D7 /* TouchHarness.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -287,6 +289,8 @@
 		041DE320020DD1375929D2AC /* JellyfinDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinDiscovery.swift; sourceTree = "<group>"; };
 		557F8BF378B6E180EA71AD23 /* MenuView+Jellyfin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Jellyfin.swift"; sourceTree = "<group>"; };
 		D6B5C932D575304CBC8EDCB7 /* MenuView+JellyfinPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+JellyfinPlayback.swift"; sourceTree = "<group>"; };
+		5FAC8B622BFB186235A2E4AD /* MenuView+Touch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Touch.swift"; sourceTree = "<group>"; };
+		AC2E5BC75E266992AE5994D7 /* TouchHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchHarness.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -473,6 +477,8 @@
 		7A73DE812F5776A20021C281 /* firstrow */ = {
 			isa = PBXGroup;
 			children = (
+				AC2E5BC75E266992AE5994D7 /* TouchHarness.swift */,
+				5FAC8B622BFB186235A2E4AD /* MenuView+Touch.swift */,
 				B18E6D1B66D0C9E0F6B346B4 /* SystemMediaControls.swift */,
 				FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */,
 				4454071ADDA5A57F6B671555 /* MenuView+TextEntry.swift */,
@@ -764,6 +770,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				781A33AC847A1B379B9B7A18 /* TouchHarness.swift in Sources */,
+				7F6EEAF55AB82D16473103DC /* MenuView+Touch.swift in Sources */,
 				E8EAE09511FF3A54B6FDB6A1 /* MenuView+MovieOptions.swift in Sources */,
 				4306DCDBFF1D3C125FF51D1B /* SystemMediaControls.swift in Sources */,
 				1E8230663BC561B608D79CC1 /* MovieResumeStore.swift in Sources */,

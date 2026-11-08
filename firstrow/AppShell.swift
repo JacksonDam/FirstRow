@@ -209,6 +209,10 @@ final class FirstRowAppController {
                 menu.dismissScreenSaverForUserInteraction()
                 return true
             }
+            touch.onTouch = { [weak menu] phase, point, time in menu?.handleTouch(phase, at: point, time: time) }
+            #if DEBUG || FIRSTROW_HARNESS_BUILD
+                FirstRowHarness.startTouchHarness(menu: menu, touchView: touch)
+            #endif
             hostView.insertSubview(touch, at: 0)
             touchInput = touch
             folderPickerObservation = menu.objectWillChange.sink { [weak self] _ in

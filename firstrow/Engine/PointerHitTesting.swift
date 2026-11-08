@@ -63,6 +63,9 @@ protocol PointerHitTesting: AnyObject {
     func menuRowIndex(_ level: MenuListLevel, at windowPoint: CGPoint, scrollOffset: CGFloat) -> Int?
     /// How far along the showing progress bar `windowPoint` is, however far above or below it.
     func progressBarFraction(at windowPoint: CGPoint) -> Double?
+    /// The movie options panel's row at `windowPoint`: its index, -1 on the panel between rows,
+    /// or nil off the panel.
+    func movieOptionsRow(at windowPoint: CGPoint) -> Int?
 }
 
 /// Where a list's rows were laid out, in the list's box (origin top left, before scrolling).

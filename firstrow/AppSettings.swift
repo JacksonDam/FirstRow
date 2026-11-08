@@ -20,6 +20,7 @@ enum AppSettings {
 
     private static let themeKey = "interfaceTheme"
     private static let mouseKey = "isMouseEnabled"
+    private static let touchKey = "isTouchEnabled"
     private static let screenSaverDelayKey = "screenSaverStartAfterSeconds"
     private static let legacyScreenSaverKey = "isScreenSaverEnabled"
 
@@ -36,6 +37,16 @@ enum AppSettings {
         get { UserDefaults.standard.object(forKey: mouseKey) as? Bool ?? false }
         set {
             UserDefaults.standard.set(newValue, forKey: mouseKey)
+            NotificationCenter.default.post(name: didChangeNotification, object: nil)
+        }
+    }
+
+    /// Direct touch on iPhone and iPad: touching a row selects it, sliding moves the selection,
+    /// lifting chooses, and lists scroll with a drag.
+    static var isTouchEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: touchKey) as? Bool ?? false }
+        set {
+            UserDefaults.standard.set(newValue, forKey: touchKey)
             NotificationCenter.default.post(name: didChangeNotification, object: nil)
         }
     }
