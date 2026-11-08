@@ -22,6 +22,7 @@ extension MenuView {
         case mediaFolders
         case screenSaverSettings
         case spotify
+        case jellyfin
     }
 }
 
@@ -56,6 +57,8 @@ extension MenuView {
             refreshPodcastsForCurrentContext()
         case "photos":
             refreshPhotosForCurrentContext()
+        case "sources":
+            refreshJellyfinPreviewForCurrentContext()
         default:
             break
         }
@@ -65,7 +68,7 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos, .spotify:
             true
-        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .screenSaverSettings, .none:
+        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .screenSaverSettings, .jellyfin, .none:
             false
         }
         if isExitingMusicThirdMenu {
@@ -138,6 +141,11 @@ extension MenuView {
             returnFromSpotifySongs()
             return
         }
+        if thirdMenuMode == .musicSongs, jellyfin.songsReturnPages != nil {
+            playSound(named: "Exit")
+            returnFromJellyfinSongs()
+            return
+        }
         if thirdMenuMode == .musicSongs, isMusicSongsCategoryScoped {
             playSound(named: "Exit")
             transitionMenuForFolderSwap {
@@ -181,6 +189,9 @@ extension MenuView {
         case .spotify:
             playSound(named: "Exit")
             navigateUpInSpotifyMenu()
+        case .jellyfin:
+            playSound(named: "Exit")
+            navigateUpInJellyfinMenu()
         case .moviesFolder:
             if isShowingContinueWatching {
                 playSound(named: "Exit")

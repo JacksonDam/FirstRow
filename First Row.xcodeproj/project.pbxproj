@@ -130,6 +130,12 @@
 		FC4A6FD84E72A96516329813 /* MenuView+Pointer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */; };
 		4306DCDBFF1D3C125FF51D1B /* SystemMediaControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18E6D1B66D0C9E0F6B346B4 /* SystemMediaControls.swift */; };
 		E8EAE09511FF3A54B6FDB6A1 /* MenuView+MovieOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CD21A839770C8E3C2D3CA9B /* MenuView+MovieOptions.swift */; };
+		34C08700935AD78AD8F7AA1B /* MenuView+TextEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4454071ADDA5A57F6B671555 /* MenuView+TextEntry.swift */; };
+		9100A1AFC638A6202FC7EFA0 /* TextEntryLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CC4268D716ADD0D5CD68B44 /* TextEntryLayer.swift */; };
+		FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF882D5A5C8E6D47EE6E2847 /* JellyfinClient.swift */; };
+		5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 041DE320020DD1375929D2AC /* JellyfinDiscovery.swift */; };
+		2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557F8BF378B6E180EA71AD23 /* MenuView+Jellyfin.swift */; };
+		144C9904B8443DC88EC09F31 /* MenuView+JellyfinPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B5C932D575304CBC8EDCB7 /* MenuView+JellyfinPlayback.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -275,6 +281,12 @@
 		FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Pointer.swift"; sourceTree = "<group>"; };
 		B18E6D1B66D0C9E0F6B346B4 /* SystemMediaControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMediaControls.swift; sourceTree = "<group>"; };
 		8CD21A839770C8E3C2D3CA9B /* MenuView+MovieOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MovieOptions.swift"; sourceTree = "<group>"; };
+		4454071ADDA5A57F6B671555 /* MenuView+TextEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+TextEntry.swift"; sourceTree = "<group>"; };
+		1CC4268D716ADD0D5CD68B44 /* TextEntryLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEntryLayer.swift; sourceTree = "<group>"; };
+		BF882D5A5C8E6D47EE6E2847 /* JellyfinClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinClient.swift; sourceTree = "<group>"; };
+		041DE320020DD1375929D2AC /* JellyfinDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinDiscovery.swift; sourceTree = "<group>"; };
+		557F8BF378B6E180EA71AD23 /* MenuView+Jellyfin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Jellyfin.swift"; sourceTree = "<group>"; };
+		D6B5C932D575304CBC8EDCB7 /* MenuView+JellyfinPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+JellyfinPlayback.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -326,6 +338,10 @@
 		7A73DE2B2F5776A20021C281 /* FRSources.frappliance */ = {
 			isa = PBXGroup;
 			children = (
+				D6B5C932D575304CBC8EDCB7 /* MenuView+JellyfinPlayback.swift */,
+				557F8BF378B6E180EA71AD23 /* MenuView+Jellyfin.swift */,
+				041DE320020DD1375929D2AC /* JellyfinDiscovery.swift */,
+				BF882D5A5C8E6D47EE6E2847 /* JellyfinClient.swift */,
 				F6A3C5C46415705C3597FD27 /* MediaSources.swift */,
 				7A73DE2A2F5776A20021C281 /* SourcesMenuFeature.swift */,
 			);
@@ -459,6 +475,7 @@
 			children = (
 				B18E6D1B66D0C9E0F6B346B4 /* SystemMediaControls.swift */,
 				FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */,
+				4454071ADDA5A57F6B671555 /* MenuView+TextEntry.swift */,
 				8D4F326CA84EB1E7A13354E6 /* AppSettings.swift */,
 				694828879CE0237F9751EE79 /* FirstRowMain.swift */,
 				041BD18E34BB81CF5869D66C /* MenuView+SceneLayout.swift */,
@@ -554,6 +571,7 @@
 				175661ABA5C3D2DB7A570244 /* ModernMenuRowLayer.swift */,
 				6848BC75830F2ECA0E0230DC /* ModernTheme.swift */,
 				0E9E40ACF710D67D04BA3E9A /* PointerHitTesting.swift */,
+				1CC4268D716ADD0D5CD68B44 /* TextEntryLayer.swift */,
 				E44528C2E0BAA59065CDCC87 /* MoviePlaybackLayers.swift */,
 				7C2B85D63C210DF7938822F2 /* FullscreenLayers.swift */,
 				FEF55A9E3A2B28D43783747D /* MetadataPreviewLayer.swift */,
@@ -754,6 +772,12 @@
 				416B372B6FEC6A31DFCD77A0 /* ModernTheme.swift in Sources */,
 				FC4A6FD84E72A96516329813 /* MenuView+Pointer.swift in Sources */,
 				BC1792E2B28C5716761A048F /* PointerHitTesting.swift in Sources */,
+				144C9904B8443DC88EC09F31 /* MenuView+JellyfinPlayback.swift in Sources */,
+				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
+				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
+				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				9100A1AFC638A6202FC7EFA0 /* TextEntryLayer.swift in Sources */,
+				34C08700935AD78AD8F7AA1B /* MenuView+TextEntry.swift in Sources */,
 				E23A15D2B8390FBD221D10A8 /* MenuView+Settings.swift in Sources */,
 				3F11956CC34E36784FAD18F4 /* AppSettings.swift in Sources */,
 				0FDEDCC7287D2A0897F3CDDC /* MenuView+MediaFolders.swift in Sources */,
@@ -1034,6 +1058,7 @@
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "First Row controls Music for Apple Music playback.";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "First Row uses your Music library to browse and play songs.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "First Row looks for Jellyfin servers on your network and plays from them.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "First Row uses your Photos library to browse and play photo slideshows.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -1108,6 +1133,7 @@
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "First Row controls Music for Apple Music playback.";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "First Row uses your Music library to browse and play songs.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "First Row looks for Jellyfin servers on your network and plays from them.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "First Row uses your Photos library to browse and play photo slideshows.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

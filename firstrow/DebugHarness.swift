@@ -221,6 +221,9 @@ enum FirstRowHarness {
             case "theme" where parts.count == 2:
                 // theme:classic|modern
                 AppSettings.theme = InterfaceTheme(rawValue: parts[1]) ?? .classic
+            case "type" where parts.count >= 2:
+                // type:<text> types it as if from a keyboard (into a text field).
+                NotificationCenter.default.post(name: .firstRowHarnessTypeText, object: nil, userInfo: ["text": String(command.dropFirst("type:".count))])
             case "volume" where parts.count == 2:
                 // volume:0.5 shows the volume overlay at that level.
                 NotificationCenter.default.post(name: .firstRowVolumeChanged, object: nil, userInfo: ["volume": Double(parts[1]) ?? 0])

@@ -43,12 +43,15 @@ public protocol PortableHost: AnyObject {
     func pointerButton(_ button: PortablePointerButton, pressed: Bool, at point: CGPoint)
     /// Wheel notches (fractions from trackpads); positive `dy` scrolls towards the top.
     func pointerScrolled(dx: CGFloat, dy: CGFloat, at point: CGPoint)
+    /// Text typed while text input is on (see `PortableApplication.setTextInputActive`).
+    func textInput(_ text: String)
 }
 
 public extension PortableHost {
     func pointerMoved(to _: CGPoint) {}
     func pointerButton(_: PortablePointerButton, pressed _: Bool, at _: CGPoint) {}
     func pointerScrolled(dx _: CGFloat, dy _: CGFloat, at _: CGPoint) {}
+    func textInput(_: String) {}
 }
 
 /// Work to run once per frame, just before layer changes are committed and drawn.
@@ -103,6 +106,12 @@ public enum PortableApplication {
 
     public static func hideCursorIfFullscreen() {
         if let window, SDL_GetWindowFlags(window) & WindowFlag.fullscreen != 0 { SDL_HideCursor() }
+    }
+
+    /// Turns typed text events on while something on screen takes typing.
+    public static func setTextInputActive(_ active: Bool) {
+        guard let window else { return }
+        _ = active ? SDL_StartTextInput(window) : SDL_StopTextInput(window)
     }
 
     /// Ends the main loop after the current frame.
@@ -331,6 +340,10 @@ public enum PortableApplication {
             host?.keyDown(key, isRepeat: event.key.repeat, modifiers: modifiers, character: character(event.key.key))
         case SDL_EVENT_KEY_UP:
             host?.keyUp(portableKey(event.key.key))
+        case SDL_EVENT_TEXT_INPUT:
+            if let text = event.text.text {
+                host?.textInput(String(cString: text))
+            }
         case SDL_EVENT_MOUSE_MOTION:
             SDL_ShowCursor()
             pointerLocation = CGPoint(x: CGFloat(event.motion.x), y: CGFloat(event.motion.y))

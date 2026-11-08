@@ -453,6 +453,7 @@ extension MenuView {
             )
         }
         performPlayback()
+        jellyfinMusicPlaybackDidStart(song)
         updateMusicNowPlayingFlipTimerState()
         triggerScreenSaverNowPlayingToastIfNeeded()
     }
@@ -1637,6 +1638,7 @@ extension MenuView {
     ) {
         stopMusicScrubbing(showPauseGlyph: false)
         cancelScreenSaverMusicTrackSwitchQueue()
+        endJellyfinMusicReporting()
         _ = incrementRequestID(&musicPlaybackRequestID)
         _ = incrementRequestID(&musicNowPlayingArtworkRequestID)
         musicAudioPlayer?.pause()

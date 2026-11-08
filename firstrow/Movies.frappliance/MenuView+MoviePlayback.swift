@@ -304,6 +304,7 @@ extension MenuView {
             showMovieControlsInstantly()
             scheduleMovieControlsAutoHide()
         }
+        jellyfinMoviePlaybackDidActivate(url: url, startSeconds: clampedStart)
     }
 
     func captureLastClosedMoviePlaybackPosition() {
@@ -334,6 +335,7 @@ extension MenuView {
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         clearMovieControlsVisibilityInstantly()
         moviePlayer?.pause()
+        jellyfinMoviePlaybackWillEnd()
         let shouldCaptureResumePosition = captureResumePosition && !isCurrentMoviePlaybackEphemeralPreview
         if shouldCaptureResumePosition {
             captureLastClosedMoviePlaybackPosition()
@@ -621,6 +623,7 @@ extension MenuView {
                         MovieResumeStore.remove(url)
                         self.refreshContinueWatchingIfShown()
                     }
+                    if self.jellyfinPlayNextEpisodeAtEnd() { return }
                     self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
                 }
             }

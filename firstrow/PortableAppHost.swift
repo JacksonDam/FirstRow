@@ -22,6 +22,10 @@
                     return true
                 case "setting":
                     return FirstRowHarness.performSettingCommand(parts)
+                case "type":
+                    // type:<text> types it as if from a keyboard.
+                    NotificationCenter.default.post(name: .firstRowHarnessTypeText, object: nil, userInfo: ["text": String(command.dropFirst("type:".count))])
+                    return true
                 default:
                     return false
                 }
@@ -59,6 +63,10 @@
         func keyUp(_ key: PortableKey) {
             guard let code = key.keyCode else { return }
             controller.handleKeyUp(code)
+        }
+
+        func textInput(_ text: String) {
+            controller.menu?.handleTypedText(text)
         }
 
         func gamepad(_ button: GamepadButton, pressed: Bool) {
