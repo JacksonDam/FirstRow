@@ -188,6 +188,7 @@ extension MenuSceneRenderer: PointerHitTesting {
             rowPitch: MenuView.nowPlayingQueueRowPitch * scale,
             canvasPerPoint: 1 / scale,
             scrollLimit: queue.scrollLimit,
+            travel: max(1, size.width - window(queue.panelFrame).minX),
         )
     }
 

@@ -1730,18 +1730,19 @@ extension MenuView {
     #if os(iOS) || os(tvOS)
         /// The system player's stop waits on the media server, often for a few hundred
         /// milliseconds. First Row's own state is cleared already; this runs once whatever the
-        /// stop belongs to (a menu moving on, say) has started on screen, unless something has
-        /// started playing since.
+        /// stop belongs to (a menu moving on, say) has started on screen. It's skipped only when
+        /// the system player has been given a new song meanwhile (its new queue replaces the
+        /// old); a song that plays from its file instead still needs the old one stopped.
         private func stopSystemMusicPlayerSoon() {
-            let generation = musicPlaybackRequestID
             Task { @MainActor in
                 try? await firstRowSleep(0.05)
-                guard self.musicPlaybackRequestID == generation else { return }
                 #if os(iOS)
                     guard !self.isCurrentMusicPlaybackUsingMediaPlayer else { return }
                     MPMusicPlayerController.applicationQueuePlayer.stop()
                     try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
                 #else
+                    let systemPlayerHasNewSong = self.activeMusicPlaybackSongID != nil && self.musicAudioPlayer == nil
+                    guard !systemPlayerHasNewSong else { return }
                     ApplicationMusicPlayer.shared.stop()
                 #endif
             }
@@ -1823,7 +1824,7 @@ extension MenuView {
 
     func performMusicNowPlayingFlip() {
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
-        guard !isNowPlayingQueueVisible, !isNowPlayingLyricsVisible else { return }
+        guard !isNowPlayingQueueVisible, nowPlayingQueueReveal <= 0, !isNowPlayingLyricsVisible else { return }
         guard isMusicPlaybackRunning() else { return }
         guard !isMusicSongTransitioning else { return }
         guard !isMusicNowPlayingFlipAnimating else { return }

@@ -64,6 +64,10 @@ final class MenuSceneRenderer: TransactionRendering {
     private var lastCardUpdate: CFTimeInterval = 0
     private var isCardRefreshScheduled = false
     private var wasSweeping = false
+    private var shownCardContent: ModernCardContent?
+    private var glyphHoldStart: CFTimeInterval?
+    private var isGlyphHoldRefreshScheduled = false
+    private static let cardGlyphHold: CFTimeInterval = 0.7
 
     /// Values from the previous pass, for the parts that animate when one particular value changes.
     private struct RenderMemo {
@@ -289,9 +293,34 @@ final class MenuSceneRenderer: TransactionRendering {
             wasSweeping = sweeping
             if !sweeping || sweepStarts || now - lastCardUpdate > 0.25 || themeChanged {
                 let layout = ModernTheme.layout(sceneSize: sceneSize, menuHeight: frames.menuFrame.height)
-                let content = menu.modernCardContent(sceneSize: sceneSize, pass: pass)
+                var content = menu.modernCardContent(sceneSize: sceneSize, pass: pass)
+                // A menu's own picture (a list's first cover, say) can take a moment to load.
+                // Rather than flash the section's symbol meanwhile, the picture before stays a
+                // little while for it.
+                if case .glyph = content, menu.isInSubmenu, !menu.isReturningToRoot, let shown = shownCardContent, !shown.isGlyph {
+                    let since = glyphHoldStart ?? now
+                    glyphHoldStart = since
+                    if now - since < Self.cardGlyphHold {
+                        content = shown
+                        if !isGlyphHoldRefreshScheduled {
+                            isGlyphHoldRefreshScheduled = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + Self.cardGlyphHold + 0.02) { [weak self] in
+                                MainActor.assumeIsolatedIfPossible {
+                                    self?.isGlyphHoldRefreshScheduled = false
+                                    self?.lastCardUpdate = 0
+                                    self?.isDirty = true
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    glyphHoldStart = nil
+                }
+                shownCardContent = content
                 modernCard.layer.frame = CGRect(origin: .zero, size: sceneSize)
-                modernCard.update(content, frame: layout.cardFrame, scale: scale, animated: !themeChanged && !pass.transaction.disablesAnimations)
+                // Always a crossfade, even when the menus change in an instant pass (going back
+                // swaps the list in one), so the picture never just switches.
+                modernCard.update(content, frame: layout.cardFrame, scale: scale, animated: !themeChanged)
                 let ambient = content.ambientImage
                 modernBackground.setAmbient(ambient, key: ambient == nil ? nil : content.key)
                 lastCardUpdate = now

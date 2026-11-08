@@ -15,11 +15,12 @@ enum NowPlayingSideLayout {
         min(600, size.width * 0.4)
     }
 
-    /// The side panel's width plus its margins, in canvas points (0 with nothing beside it).
-    static func reserve(menu: MenuView, size: CGSize) -> CGFloat {
-        if menu.isNowPlayingQueueVisible { return queueWidth(size) + 70 }
-        if menu.isNowPlayingLyricsVisible { return lyricsFrame(size).width + 90 }
-        return 0
+    /// The side panel's width plus its margins, in canvas points (0 with nothing beside it),
+    /// and how far out it is.
+    static func reserve(menu: MenuView, size: CGSize) -> (width: CGFloat, amount: CGFloat) {
+        if menu.nowPlayingQueueReveal > 0 { return (queueWidth(size) + 70, menu.nowPlayingQueueReveal) }
+        if menu.isNowPlayingLyricsVisible { return (lyricsFrame(size).width + 90, 1) }
+        return (0, 0)
     }
 
     static func lyricsFrame(_ size: CGSize) -> CGRect {
@@ -34,11 +35,12 @@ enum NowPlayingSideLayout {
     }
 
     /// The move and scale, about the middle of the screen, for what stays.
+    /// A list only part way out moves the rest only part of the way.
     static func shift(menu: MenuView, size: CGSize) -> (dx: CGFloat, scale: CGFloat) {
         let reserve = reserve(menu: menu, size: size)
-        guard reserve > 0 else { return (0, 1) }
-        let scale = min(1, max(0.5, (size.width - reserve - 50) / (size.width * 0.86)))
-        return (-reserve / 2, scale)
+        guard reserve.width > 0, reserve.amount > 0 else { return (0, 1) }
+        let scale = min(1, max(0.5, (size.width - reserve.width - 50) / (size.width * 0.86)))
+        return (-reserve.width / 2 * reserve.amount, 1 - (1 - scale) * reserve.amount)
     }
 
     static func transform(_ shift: (dx: CGFloat, scale: CGFloat), size: CGSize) -> CATransform3D {
@@ -60,13 +62,16 @@ enum NowPlayingSideLayout {
     }
 }
 
-/// A faint bar that says something can be pulled out from where it sits. It fades very slowly
-/// out and back in, every six seconds, so it never stays lit on one spot of the screen.
+/// A faint bar that says something can be pulled out from where it sits. When it first
+/// shows it brightens, drifts a little the way to pull and back, and settles faint and still.
 @MainActor
 final class HintBarLayer {
     let layer = SceneLayer()
     private let bar = SceneLayer()
     private var isShown = false
+    private var introducedSession: Int?
+    /// How bright it rests, against its brightest.
+    private static let resting: Float = 0.3
 
     init() {
         layer.addSublayer(bar)
@@ -75,30 +80,41 @@ final class HintBarLayer {
         bar.backgroundColor = CGColor(gray: 1, alpha: 1)
     }
 
-    func update(frame: CGRect, shown: Bool, alpha: CGFloat = 0.36) {
+    /// `drift` is the way to pull it, in the layer's own points; `session` changes each time
+    /// what it belongs to opens, and it introduces itself once per session.
+    func update(frame: CGRect, shown: Bool, drift: CGSize, session: Int, alpha: CGFloat = 0.55) {
         layer.place(frame)
         bar.frame = CGRect(origin: .zero, size: frame.size)
         bar.cornerRadius = min(frame.width, frame.height) / 2
         bar.backgroundColor = CGColor(gray: 1, alpha: alpha)
         guard shown != isShown else { return }
         isShown = shown
-        if shown {
-            layer.isHidden = false
-            layer.setOpacity(1, .smooth(duration: 0.8))
-            let breathe = CAKeyframeAnimation(keyPath: "opacity")
-            breathe.values = [1, 1, 0, 0, 1, 1]
-            breathe.keyTimes = [0, 0.12, 0.45, 0.55, 0.88, 1]
-            breathe.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 5)
-            breathe.duration = 6
-            breathe.repeatCount = .infinity
-            breathe.isRemovedOnCompletion = false
-            breathe.beginTime = CACurrentMediaTime() + 1
-            breathe.fillMode = .backwards
-            bar.add(breathe, forKey: "breathe")
-        } else {
+        guard shown else {
             layer.setOpacity(0, .smoothInOut(duration: 0.3))
-            bar.removeAnimation(forKey: "breathe")
+            return
         }
+        layer.isHidden = false
+        guard introducedSession != session else {
+            layer.setOpacity(Double(Self.resting), .smooth(duration: 0.6))
+            return
+        }
+        introducedSession = session
+        layer.removeAllAnimations()
+        bar.removeAllAnimations()
+        layer.opacity = Self.resting
+        let duration: CFTimeInterval = 2.8
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0, 1, 1, Self.resting]
+        fade.keyTimes = [0, 0.14, 0.42, 1]
+        fade.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .linear), CAMediaTimingFunction(name: .easeInEaseOut)]
+        fade.duration = duration
+        layer.add(fade, forKey: "introduce")
+        let float = CAKeyframeAnimation(keyPath: "transform")
+        float.values = [CATransform3DIdentity, CATransform3DMakeTranslation(drift.width, drift.height, 0), CATransform3DIdentity].map { NSValue(caTransform3D: $0) }
+        float.keyTimes = [0.1, 0.45, 0.85]
+        float.timingFunctions = [CAMediaTimingFunction(name: .easeInEaseOut), CAMediaTimingFunction(name: .easeInEaseOut)]
+        float.duration = duration
+        bar.add(float, forKey: "introduce")
     }
 }
 
@@ -163,13 +179,15 @@ final class NowPlayingQueueLayer {
         layer.frame = CGRect(origin: .zero, size: size)
         let isModern = ModernTheme.isActive
         isAvailable = menu.canShowNowPlayingQueue
-        let shown = isAvailable && menu.isNowPlayingQueueVisible
+        let reveal = isAvailable ? menu.nowPlayingQueueReveal : 0
 
         // The hint along the right edge, while the list is away.
         let barHeight: CGFloat = 130
         edgeBar.update(
             frame: CGRect(x: size.width - 24, y: (size.height - barHeight) / 2, width: 8, height: barHeight),
-            shown: isAvailable && !menu.isNowPlayingQueueVisible && !menu.isNowPlayingLyricsVisible && !menu.isMusicSongTransitioning,
+            shown: isAvailable && menu.nowPlayingQueueReveal <= 0 && !menu.isNowPlayingLyricsVisible,
+            drift: CGSize(width: -22, height: 0),
+            session: menu.nowPlayingSession,
         )
 
         let width = NowPlayingSideLayout.queueWidth(size)
@@ -183,11 +201,13 @@ final class NowPlayingQueueLayer {
         panel.shadowOpacity = 0.5
         panel.shadowRadius = 30
         panel.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: panelFrame.size), cornerWidth: panel.cornerRadius, cornerHeight: panel.cornerRadius, transform: nil)
-        if shown { panel.isHidden = false }
-        panel.setOpacity(shown ? 1 : 0, pass.animation)
-        panel.setTransform(shown ? CATransform3DIdentity : CATransform3DMakeTranslation(width * 0.6, 0, 0), pass.animation)
-        guard !panel.isHidden else { return }
-        if !shown, pass.animation == nil { panel.isHidden = true }
+        // One sheet that slides: away, it waits just past the right edge, shadow and all.
+        let travel = size.width - panelFrame.minX + 60
+        panel.isHidden = false
+        panel.opacity = 1
+        panel.setTransform(CATransform3DMakeTranslation(travel * (1 - reveal), 0, 0), pass.animation)
+        // Away, its rows needn't be kept up to date.
+        guard reveal > 0 else { return }
 
         // The list's name.
         let title = menu.nowPlayingQueueTitle

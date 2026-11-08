@@ -70,24 +70,46 @@ extension MenuView {
     func showNowPlayingQueue() {
         guard canShowNowPlayingQueue, !isNowPlayingQueueVisible else { return }
         // Opened on the song playing, with a couple of rows above it.
-        let active = CGFloat(nowPlayingQueueActiveIndex ?? 0)
-        nowPlayingQueueScroll = max(0, (active - 2) * Self.nowPlayingQueueRowPitch)
+        if nowPlayingQueueReveal == 0 { scrollNowPlayingQueueToActiveSong() }
         nowPlayingQueueHoverIndex = nil
         playSound(named: "SelectionChange")
-        withAnimation(.smooth(duration: 0.42)) {
-            isNowPlayingLyricsVisible = false
-            isNowPlayingQueueVisible = true
+        settleNowPlayingQueue(open: true)
+    }
+
+    func hideNowPlayingQueue() {
+        guard isNowPlayingQueueVisible || nowPlayingQueueReveal > 0 else { return }
+        settleNowPlayingQueue(open: false)
+    }
+
+    /// Where the list was opened on: a couple of rows above the song playing.
+    func scrollNowPlayingQueueToActiveSong() {
+        let active = CGFloat(nowPlayingQueueActiveIndex ?? 0)
+        nowPlayingQueueScroll = max(0, (active - 2) * Self.nowPlayingQueueRowPitch)
+    }
+
+    /// Slides the list all the way out or back, from wherever it is (no fade: it's one sheet
+    /// that slides, and the rest moves aside with it).
+    func settleNowPlayingQueue(open: Bool) {
+        let duration = 0.24 + 0.22 * Double(open ? 1 - nowPlayingQueueReveal : nowPlayingQueueReveal)
+        withAnimation(.smooth(duration: duration)) {
+            if open { isNowPlayingLyricsVisible = false }
+            isNowPlayingQueueVisible = open
+            nowPlayingQueueReveal = open ? 1 : 0
+            if !open { nowPlayingQueueHoverIndex = nil }
         }
         updateMusicNowPlayingFlipTimerState()
     }
 
-    func hideNowPlayingQueue() {
-        guard isNowPlayingQueueVisible else { return }
-        withAnimation(.smoothInOut(duration: 0.34)) {
-            isNowPlayingQueueVisible = false
+    /// A finger pulling the list part way: 0 away to 1 out, unanimated.
+    func pullNowPlayingQueue(to reveal: CGFloat) {
+        let clamped = max(0, min(1, reveal))
+        guard abs(clamped - nowPlayingQueueReveal) > 0.0005 else { return }
+        if nowPlayingQueueReveal == 0, clamped > 0, !isNowPlayingQueueVisible {
+            // Coming out from away: on the song playing.
+            scrollNowPlayingQueueToActiveSong()
             nowPlayingQueueHoverIndex = nil
         }
-        updateMusicNowPlayingFlipTimerState()
+        nowPlayingQueueReveal = clamped
     }
 
     /// Plays a song chosen from the list, and puts the list away.
@@ -168,6 +190,7 @@ extension MenuView {
         playSound(named: isNowPlayingLyricsVisible ? "Exit" : "Selection")
         withAnimation(isNowPlayingLyricsVisible ? .smoothInOut(duration: 0.34) : .smooth(duration: 0.42)) {
             isNowPlayingQueueVisible = false
+            nowPlayingQueueReveal = 0
             isNowPlayingLyricsVisible.toggle()
         }
         updateMusicNowPlayingFlipTimerState()
@@ -175,7 +198,9 @@ extension MenuView {
 
     /// Now Playing went away: its extras go with it.
     func resetNowPlayingExtras() {
+        nowPlayingSession += 1
         isNowPlayingQueueVisible = false
+        nowPlayingQueueReveal = 0
         nowPlayingQueueHoverIndex = nil
         isNowPlayingLyricsVisible = false
         nowPlayingTouchControlsHideTask?.cancel()
@@ -259,6 +284,8 @@ struct NowPlayingQueueGeometry {
     let canvasPerPoint: CGFloat
     /// How far it can scroll, in canvas points.
     let scrollLimit: CGFloat
+    /// How far its left edge moves between out and away, in window points.
+    let travel: CGFloat
 
     /// The row under a window point with the list scrolled `scroll` canvas points.
     func row(at point: CGPoint, scroll: CGFloat, count: Int) -> Int? {

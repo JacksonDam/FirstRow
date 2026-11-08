@@ -223,6 +223,11 @@ enum ModernCardContent {
     case artwork(NSImage, caption: ModernCardCaption?)
     case mosaic([NSImage])
 
+    var isGlyph: Bool {
+        if case .glyph = self { return true }
+        return false
+    }
+
     var key: String {
         switch self {
         case let .glyph(rootID): "glyph:\(rootID ?? "")"

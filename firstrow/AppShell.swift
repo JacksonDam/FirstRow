@@ -249,6 +249,8 @@ final class FirstRowAppController {
                 self?.isPresentingFolderPicker = false
                 menu?.isMoviesFolderPickerPresented = false
                 menu?.hasPromptedMoviesFolderPickerThisSession = false
+                // Cancelled: stay where it was asked from.
+                menu?.entersMoviesFolderAfterPicking = false
             })
         }
     #endif

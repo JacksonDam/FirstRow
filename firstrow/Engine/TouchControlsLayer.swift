@@ -45,6 +45,8 @@ final class TouchControlsLayer {
         /// A soft, blurred copy of `sharp`, shown while the button fades in or out.
         let blurred = SceneLayer()
         var isShown = false
+        /// Faded back while Now Playing sits untouched.
+        var isDimmed = false
         var blurKey = ""
         /// Counts fades out, so a late one doesn't hide a button that came back meanwhile.
         var fadeGeneration = 0
@@ -79,6 +81,7 @@ final class TouchControlsLayer {
     /// Each shown button's circle in window points, for touches.
     private(set) var frames: [TouchControl: CGRect] = [:]
     private var pressed: TouchControl?
+    private var lastTransportHidden = false
     private static let appear = Animation.smooth(duration: 0.34)
     private static let disappear = Animation.smoothInOut(duration: 0.3)
 
@@ -180,14 +183,20 @@ final class TouchControlsLayer {
         let sceneMoving = menu.isFullscreenSceneTransitioning || !isNowPlaying
         // Slid away, the buttons go below the bottom of the screen, and a bar stays behind.
         // The list beside Now Playing has the right of the screen, so they make way for it too.
-        let transportHidden = isNowPlaying && (menu.areNowPlayingTouchControlsHidden || menu.isNowPlayingQueueVisible)
+        let isIdle = isNowPlaying && menu.areNowPlayingTouchControlsHidden
+        let transportHidden = isNowPlaying && (isIdle || menu.nowPlayingQueueReveal > 0.001)
         transportGroup.place(CGRect(origin: .zero, size: size))
         let drop = 64 + max(insets.bottom, 10) + 40
-        transportGroup.setTransform(transportHidden ? CATransform3DMakeTranslation(0, drop, 0) : CATransform3DIdentity, pass.animation)
-        transportGroup.setOpacity(transportHidden ? 0 : 1, pass.animation)
+        // Their own slide, even part way through a finger's pull on the list.
+        let slide: Animation? = transportHidden == lastTransportHidden ? pass.animation : (transportHidden ? .smoothInOut(duration: 0.45) : .smooth(duration: 0.4))
+        lastTransportHidden = transportHidden
+        transportGroup.setTransform(transportHidden ? CATransform3DMakeTranslation(0, drop, 0) : CATransform3DIdentity, slide)
+        transportGroup.setOpacity(transportHidden ? 0 : 1, slide)
         transportHint.update(
             frame: CGRect(x: size.width / 2 - 40, y: size.height - max(insets.bottom, 8) - 16, width: 80, height: 5),
-            shown: enabled && transportHidden && !menu.isNowPlayingQueueVisible && !menu.isFullscreenSceneTransitioning,
+            shown: enabled && isIdle && menu.nowPlayingQueueReveal <= 0.001 && !menu.isFullscreenSceneTransitioning,
+            drift: CGSize(width: 0, height: -9),
+            session: menu.nowPlayingSession,
         )
 
         frames = [:]
@@ -245,6 +254,12 @@ final class TouchControlsLayer {
             // Slid away, they can't be pressed.
             if !(item.inScene && transportHidden) { frames[item.control] = frame }
             if !button.isShown { show(button, instantly: item.inScene && sceneMoving) }
+            // Back stays while Now Playing sits untouched, but faded back with the rest away.
+            let dims = item.control == .back && isIdle
+            if dims != button.isDimmed {
+                button.isDimmed = dims
+                button.sharp.setOpacity(dims ? 0.3 : 1, dims ? .smoothInOut(duration: 0.5) : .smooth(duration: 0.35))
+            }
         }
     }
 
@@ -252,6 +267,7 @@ final class TouchControlsLayer {
     /// to is fading in anyway).
     private func show(_ button: Button, instantly: Bool) {
         button.isShown = true
+        button.isDimmed = false
         button.fadeGeneration += 1
         let fresh = button.base.isHidden || button.base.opacity < 0.01
         button.base.isHidden = false
@@ -274,6 +290,7 @@ final class TouchControlsLayer {
     /// Fades a button out through its blurred copy, then hides it.
     private func hide(_ button: Button, instantly: Bool) {
         button.isShown = false
+        button.isDimmed = false
         button.fadeGeneration += 1
         if instantly {
             button.base.setOpacity(0, nil)

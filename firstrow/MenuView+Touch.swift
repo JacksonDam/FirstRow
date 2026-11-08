@@ -41,6 +41,8 @@ extension MenuView {
             case button(TouchControl)
             /// On Now Playing's list: a tap chooses a song, a drag scrolls.
             case queue
+            /// Pulling Now Playing's list out from the right edge, or pushing it back.
+            case queuePull
             case ignored
         }
 
@@ -75,6 +77,11 @@ extension MenuView {
         var queueOriginY: CGFloat?
         var queueWasMoving = false
         var queueMotion: TouchListMotion?
+        /// How far out the list was, and where the finger was, when a pull began; and the
+        /// finger's recent sideways positions, for how fast it let go.
+        var pullStartReveal: CGFloat = 0
+        var pullOriginX: CGFloat = 0
+        var xSamples: [(time: TimeInterval, x: CGFloat)] = []
         /// Frames at the screen's full rate while a finger is down or a list moves on its own.
         let clock = TouchFrameClock()
     }
@@ -287,6 +294,13 @@ extension MenuView {
                 pointer.hitTester?.highlightTouchControl(control)
                 return
             }
+            // In from the right edge, Now Playing's list follows the thumb.
+            if activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isNowPlayingQueueVisible, canShowNowPlayingQueue,
+               let geometry = pointer.hitTester?.nowPlayingQueueGeometry, geometry.edgeZone.contains(point)
+            {
+                beginNowPlayingQueuePull(at: point, time: time)
+                return
+            }
             if isNowPlayingQueueVisible, let geometry = pointer.hitTester?.nowPlayingQueueGeometry, geometry.panel.contains(point) {
                 state.mode = .queue
                 state.queueStartScroll = nowPlayingQueueScroll
@@ -356,12 +370,20 @@ extension MenuView {
                 pointer.hitTester?.highlightTouchControl(over ? control : nil)
             case .scrubbing:
                 continueProgressDrag(at: point)
+            case .queuePull:
+                state.xSamples.append((time, point.x))
+                if let first = state.xSamples.first, time - first.time > 0.15 {
+                    state.xSamples.removeAll { time - $0.time > 0.12 }
+                }
+                if let geometry = pointer.hitTester?.nowPlayingQueueGeometry {
+                    pullNowPlayingQueue(to: state.pullStartReveal + (state.pullOriginX - point.x) / geometry.travel)
+                }
             case .queue:
                 if state.queueOriginY == nil {
                     guard (dx * dx + dy * dy).squareRoot() > Self.touchSlop else { return }
                     if abs(dx) > abs(dy) {
-                        // Sideways: a swipe (to the right, it puts the list away).
-                        state.mode = .swiping
+                        // Sideways: the list goes with the finger, back towards the edge.
+                        beginNowPlayingQueuePull(at: point, time: time)
                         return
                     }
                     state.queueOriginY = point.y
@@ -372,6 +394,11 @@ extension MenuView {
             case .undecided:
                 guard (dx * dx + dy * dy).squareRoot() > Self.touchSlop else { return }
                 state.holdTask?.cancel()
+                if isNowPlayingQueueVisible, abs(dx) > abs(dy), activeFullscreenScene?.key == musicNowPlayingFullscreenKey {
+                    // Beside the list, a sideways drag moves it too.
+                    beginNowPlayingQueuePull(at: point, time: time)
+                    return
+                }
                 if abs(dx) > abs(dy) || !isMenuTouchContext {
                     state.mode = .swiping
                     endTouchSelection()
@@ -408,6 +435,15 @@ extension MenuView {
                 }
             case .scrubbing:
                 finishProgressDrag(at: point)
+            case .queuePull:
+                state.xSamples.append((time, point.x))
+                if abs(point.x - state.start.x) < Self.touchSlop, abs(point.y - state.start.y) < Self.touchSlop, !isNowPlayingQueueVisible {
+                    // Only a tap by the edge.
+                    settleNowPlayingQueue(open: false)
+                    handleTouchTap(at: point, target: state.startTarget)
+                } else {
+                    finishNowPlayingQueuePull(velocity: releaseSidewaysVelocity(at: time))
+                }
             case .queue:
                 if state.queueOriginY == nil {
                     // A tap: a song, unless the finger only stopped the list moving.
@@ -459,6 +495,9 @@ extension MenuView {
             }
             if state.mode == .queue, state.queueOriginY != nil {
                 releaseNowPlayingQueue(velocity: 0)
+            }
+            if state.mode == .queuePull {
+                finishNowPlayingQueuePull(velocity: 0)
             }
             state.mode = .ignored
             endTouchSelection()
@@ -821,6 +860,40 @@ extension MenuView {
                 return true
             }
             return false
+        }
+
+        private func beginNowPlayingQueuePull(at point: CGPoint, time: TimeInterval) {
+            let state = touch
+            state.mode = .queuePull
+            state.queueMotion = nil
+            state.pullStartReveal = nowPlayingQueueReveal
+            state.pullOriginX = point.x
+            state.xSamples = [(time, point.x)]
+        }
+
+        /// The thumb let go of the list: out if it was pulled far enough or flicked out, back
+        /// if not or flicked back.
+        private func finishNowPlayingQueuePull(velocity: CGFloat) {
+            let wasOpen = isNowPlayingQueueVisible
+            let open: Bool = if velocity < -350 {
+                true
+            } else if velocity > 350 {
+                false
+            } else {
+                nowPlayingQueueReveal > 0.5
+            }
+            #if DEBUG || FIRSTROW_HARNESS_BUILD
+                FirstRowHarness.touchLog(String(format: "[touch] list let go at %.2f, %.0f pt/s: %@", nowPlayingQueueReveal, velocity, open ? "out" : "back"))
+            #endif
+            if open, !wasOpen { playSound(named: "SelectionChange") }
+            settleNowPlayingQueue(open: open)
+        }
+
+        /// The finger's sideways speed as it let go, in window points a second.
+        private func releaseSidewaysVelocity(at time: TimeInterval) -> CGFloat {
+            let recent = touch.xSamples.filter { time - $0.time <= 0.1 }
+            guard let first = recent.first, let last = recent.last, last.time - first.time > 0.008 else { return 0 }
+            return (last.x - first.x) / CGFloat(last.time - first.time)
         }
 
         /// Drags Now Playing's list, `dy` window points from where the drag started, past its

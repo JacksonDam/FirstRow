@@ -138,17 +138,27 @@ extension MenuView {
         func handleMoviesFolderPickedFromFiles(_ selectedFolderURL: URL) {
             storeBookmarkedMoviesFolderURL(selectedFolderURL)
             importMoviesFromFolderIntoDocuments(selectedFolderURL)
+            if entersMoviesFolderAfterPicking {
+                entersMoviesFolderAfterPicking = false
+                enterMoviesFolderMenu()
+                return
+            }
             if thirdMenuMode == .moviesFolder {
                 loadThirdMenuDirectory(moviesRootDirectoryURL(), resetSelection: true)
             }
         }
 
-        func promptForMoviesFolderPickerIfNeeded() {
-            guard thirdMenuMode == .moviesFolder else { return }
-            guard thirdMenuItems.isEmpty else { return }
-            guard !hasPromptedMoviesFolderPickerThisSession else { return }
+        /// With no movies and no folder chosen yet, Movies Folder asks for one first: the Files
+        /// picker comes straight up (iOS moves the menu back behind it), and the folder opens once
+        /// one is chosen. Returns whether it asked.
+        func promptForMoviesFolderPickerIfNeeded() -> Bool {
+            guard !hasPromptedMoviesFolderPickerThisSession, resolveBookmarkedMoviesFolderURL() == nil,
+                  movieFileEntries(in: moviesRootDirectoryURL()).isEmpty
+            else { return false }
             hasPromptedMoviesFolderPickerThisSession = true
+            entersMoviesFolderAfterPicking = true
             isMoviesFolderPickerPresented = true
+            return true
         }
     #else
         func isSupportedMovieFile(url: URL, values _: URLResourceValues?) -> Bool {
@@ -717,6 +727,9 @@ extension MenuView {
     }
 
     func enterMoviesFolderMenu() {
+        #if os(iOS)
+            if promptForMoviesFolderPickerIfNeeded() { return }
+        #endif
         transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
             self.isShowingContinueWatching = false
             self.thirdMenuMode = .moviesFolder
@@ -728,9 +741,6 @@ extension MenuView {
             self.isInThirdMenu = true
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1
-            #if os(iOS)
-                self.promptForMoviesFolderPickerIfNeeded()
-            #endif
             #if os(macOS) || FIRSTROW_PORTABLE
                 let roots = self.allMoviesRootURLs()
                 self.movieLibraryRootURLs = roots.count > 1 ? roots : []

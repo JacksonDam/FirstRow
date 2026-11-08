@@ -310,8 +310,12 @@ final class MenuView: ObservableObject {
     /// Touch mode's Now Playing buttons, slid away while a song plays untouched.
     @Published var areNowPlayingTouchControlsHidden = false
     var nowPlayingTouchControlsHideTask: Task<Void, Never>?
-    /// The songs Now Playing was started from, over its right side (mouse and touch modes).
+    /// The songs Now Playing was started from, over its right side (mouse and touch modes):
+    /// whether it's out, and how far (0 away to 1 out), which a finger can hold part way.
     @Published var isNowPlayingQueueVisible = false
+    @Published var nowPlayingQueueReveal: CGFloat = 0
+    /// Counts Now Playing's openings, so its hints introduce themselves once each time.
+    var nowPlayingSession = 0
     /// How far that list is scrolled, in canvas points from its top.
     @Published var nowPlayingQueueScroll: CGFloat = 0
     /// The row under the pointer in that list.
@@ -560,6 +564,8 @@ final class MenuView: ObservableObject {
     #if os(iOS)
         @Published var isMoviesFolderPickerPresented = false
         @Published var hasPromptedMoviesFolderPickerThisSession = false
+        /// Movies Folder opens once the folder picker it asked with has been answered.
+        var entersMoviesFolderAfterPicking = false
     #endif
 }
 
