@@ -130,7 +130,8 @@ extension MenuView {
             // A nudge of the desk shouldn't end it, a real move should.
             let origin = pointer.screenSaverWakeOrigin ?? point
             pointer.screenSaverWakeOrigin = origin
-            if hypot(point.x - origin.x, point.y - origin.y) > 6, !isFullscreenSceneTransitioning {
+            let distance = ((point.x - origin.x) * (point.x - origin.x) + (point.y - origin.y) * (point.y - origin.y)).squareRoot()
+            if distance > 6, !isFullscreenSceneTransitioning {
                 pointer.screenSaverWakeOrigin = nil
                 dismissScreenSaverForUserInteraction()
             }
