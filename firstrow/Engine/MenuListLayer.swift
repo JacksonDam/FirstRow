@@ -150,7 +150,16 @@ final class MenuListLayer {
         let selectionAnimation = lastSelectedRowOffset == nil ? nil : pass.animation(movement, when: selectionMoved)
         let isFreshList = lastScrollOffset == nil
         // A list following a finger moves with it, unanimated.
-        let scrollAnimation = isFreshList || menu.pointer.tracksFinger ? nil : pass.animation(movement, when: indexChanged || pinMoved)
+        let scrollAnimation: Animation?
+        if isFreshList || menu.pointer.tracksFinger {
+            scrollAnimation = nil
+        } else if pinMoved, let coast = menu.pointer.scrollAnimation {
+            // A flick coasting on, or a list springing back from past its end.
+            scrollAnimation = coast
+            menu.pointer.scrollAnimation = nil
+        } else {
+            scrollAnimation = pass.animation(movement, when: indexChanged || pinMoved)
+        }
         lastSelectedRowOffset = selectedRowOffset
         lastScrollOffset = scrollOffset
         lastSelectedIndex = selectedIndex
@@ -246,7 +255,9 @@ final class MenuListLayer {
             let spec = MenuRowLayer.Spec(
                 item: item,
                 isSelected: index == selectedIndex && !c.hidesSelection,
-                isSettled: menu.isSelectionSettled,
+                // Only the selected row cares when the selection settles (for a long title's
+                // scrolling); the others needn't redraw for it.
+                isSettled: index == selectedIndex ? menu.isSelectionSettled : true,
                 rowWidth: rowContentWidth,
                 rowHeight: rowHeight,
                 leadingCompensation: rowLeadingCompensation,

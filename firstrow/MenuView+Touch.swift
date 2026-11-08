@@ -26,7 +26,7 @@ extension MenuView {
     /// One finger's progress through a touch, between events.
     @MainActor
     final class TouchInputState {
-        enum Mode {
+        enum Mode: Equatable {
             /// Down, but not yet a slide, a scroll or a swipe.
             case undecided
             /// Sliding the selection over the rows; lifting chooses.
@@ -37,6 +37,8 @@ extension MenuView {
             case scrubbing
             /// Moving sideways or (in a movie) up or down, for a swipe.
             case swiping
+            /// On one of touch mode's buttons; lifting over it presses it.
+            case button(TouchControl)
             case ignored
         }
 
@@ -52,7 +54,8 @@ extension MenuView {
         var scrollStart: CGFloat = 0
         var startTarget: PointerTarget?
         var holdTask: Task<Void, Never>?
-        var momentumTimer: Timer?
+        /// A flick's coast to a stop, or a list springing back from past its end.
+        var coastTask: Task<Void, Never>?
     }
 
     /// Direct touch, when Settings > Touch Controls is on. In menus nothing is selected until a
@@ -94,7 +97,7 @@ extension MenuView {
         }
 
         private func touchBegan(at point: CGPoint, time: TimeInterval) {
-            stopTouchMomentum()
+            let caughtList = catchCoastingList()
             let state = touch
             state.holdTask?.cancel()
             state.start = point
@@ -114,6 +117,20 @@ extension MenuView {
             registerUserInteractionForScreenSaver()
             guard !isPointerInputPaused else {
                 state.mode = .ignored
+                return
+            }
+            // The on-screen buttons come first.
+            if let control = pointer.hitTester?.touchControl(at: point) {
+                state.mode = .button(control)
+                pointer.hitTester?.highlightTouchControl(control)
+                return
+            }
+            // A finger on a list that's still moving stops it there, as a scroll view does.
+            if let caughtList {
+                state.mode = .scrolling
+                state.level = caughtList.level
+                state.scrollState = caughtList.scroll
+                state.scrollStart = caughtList.scroll.presentedScrollOffset
                 return
             }
             let target = pointer.hitTester?.pointerTarget(at: point)
@@ -162,15 +179,13 @@ extension MenuView {
             let dx = point.x - state.start.x
             let dy = point.y - state.start.y
             switch state.mode {
+            case let .button(control):
+                // Held down only while the finger stays on it.
+                let over = pointer.hitTester?.touchControl(at: point) == control
+                pointer.hitTester?.highlightTouchControl(over ? control : nil)
             case .scrubbing:
                 continueProgressDrag(at: point)
             case .selecting:
-                // A firm move to the right turns the slide into a swipe back.
-                if dx > 40, dx > abs(dy) * 2 {
-                    state.mode = .swiping
-                    endTouchSelection()
-                    return
-                }
                 slideTouchSelection(to: point)
             case .undecided:
                 guard (dx * dx + dy * dy).squareRoot() > Self.touchSlop else { return }
@@ -202,6 +217,11 @@ extension MenuView {
             let mode = state.mode
             state.mode = .ignored
             switch mode {
+            case let .button(control):
+                pointer.hitTester?.highlightTouchControl(nil)
+                if pointer.hitTester?.touchControl(at: point) == control {
+                    pressTouchControl(control)
+                }
             case .scrubbing:
                 finishProgressDrag(at: point)
             case .selecting:
@@ -212,10 +232,12 @@ extension MenuView {
                     endTouchSelection()
                 }
             case .scrolling:
-                // Coasting on (scene points a second) if the finger was still moving.
-                if let level = state.level, let scroll = state.scrollState, time - state.lastTime < 0.1, abs(state.velocity) > 150 {
+                // Coasting on (in scene points a second) if the finger was still moving, and
+                // springing back if it left the list pulled past an end.
+                if let level = state.level, let scroll = state.scrollState {
                     let scale = max(0.0001, scroll.rowPitchInWindow / max(1, scroll.rowPitch))
-                    startTouchMomentum(level: level, velocity: state.velocity / scale)
+                    let moving = time - state.lastTime < 0.1
+                    coastTouchList(level: level, velocity: moving ? state.velocity / scale : 0)
                 } else {
                     pointer.tracksFinger = false
                 }
@@ -231,11 +253,12 @@ extension MenuView {
         private func touchCancelled() {
             let state = touch
             state.holdTask?.cancel()
+            pointer.hitTester?.highlightTouchControl(nil)
             if state.mode == .scrubbing {
                 finishProgressDrag(at: state.last)
             }
-            if state.mode == .scrolling {
-                pointer.tracksFinger = false
+            if state.mode == .scrolling, let level = state.level {
+                coastTouchList(level: level, velocity: 0)
             }
             state.mode = .ignored
             endTouchSelection()
@@ -289,59 +312,98 @@ extension MenuView {
         }
 
         /// Moves a long list with the finger, `dy` window points from where the drag started.
-        private func scrollTouchList(level: MenuListLevel, by dy: CGFloat) {
+        /// Past either end it keeps following, but less and less, as a scroll view does.
+        private func scrollTouchList(level _: MenuListLevel, by dy: CGFloat) {
             guard let scroll = touch.scrollState else { return }
             let scale = max(0.0001, scroll.rowPitchInWindow / max(1, scroll.rowPitch))
-            let offset = max(scroll.minScrollOffset, min(0, touch.scrollStart + dy / scale))
+            var offset = touch.scrollStart + dy / scale
+            let reach: CGFloat = 700
+            func band(_ past: CGFloat) -> CGFloat { (1 - 1 / (past * 0.55 / reach + 1)) * reach }
+            if offset > 0 {
+                offset = band(offset)
+            } else if offset < scroll.minScrollOffset {
+                offset = scroll.minScrollOffset - band(scroll.minScrollOffset - offset)
+            }
             setTouchScroll(scroll, offset: offset)
         }
 
-        private func setTouchScroll(_ scroll: MenuListScrollState, offset: CGFloat) {
+        private func setTouchScroll(_ scroll: MenuListScrollState, offset: CGFloat, animation: Animation? = nil) {
             let old = pointer.pinnedScrollOffset(identity: scroll.identity) ?? scroll.scrollOffset
             guard abs(old - offset) > 0.01 else { return }
+            pointer.scrollAnimation = animation
             pointer.pin = (scroll.identity, offset)
             updateOverflowFadeVisibility(oldOffset: old, newOffset: offset)
             objectWillChange.send()
         }
 
-        /// Coasts a flicked list to a stop, slowing as a scroll view does.
-        private func startTouchMomentum(level: MenuListLevel, velocity: CGFloat) {
-            stopTouchMomentum()
+        /// Stops a list that is still coasting where it is on screen, for a finger landing on it.
+        private func catchCoastingList() -> (level: MenuListLevel, scroll: MenuListScrollState)? {
+            touch.coastTask?.cancel()
+            touch.coastTask = nil
+            guard isMenuTouchContext, let level = pointerActiveListLevel,
+                  let scroll = pointer.hitTester?.menuListScrollState(level),
+                  abs(scroll.presentedScrollOffset - scroll.scrollOffset) > 1
+            else { return nil }
             pointer.tracksFinger = true
-            var speed = velocity
-            var last = CACurrentMediaTime()
-            let timer = Timer(after: 1.0 / 60.0, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolatedIfPossible {
-                    guard let self else { return }
-                    let now = CACurrentMediaTime()
-                    let elapsed = now - last
-                    last = now
-                    speed *= CGFloat(pow(0.998, elapsed * 1000))
-                    guard level == self.pointerActiveListLevel,
-                          let scroll = self.pointer.hitTester?.menuListScrollState(level),
-                          let current = self.pointer.pinnedScrollOffset(identity: scroll.identity)
-                    else {
-                        self.stopTouchMomentum()
-                        return
-                    }
-                    var offset = current + speed * CGFloat(elapsed)
-                    if offset > 0 || offset < scroll.minScrollOffset {
-                        offset = max(scroll.minScrollOffset, min(0, offset))
-                        speed = 0
-                    }
-                    self.setTouchScroll(scroll, offset: offset)
-                    if abs(speed) < 12 { self.stopTouchMomentum() }
-                }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            touch.momentumTimer = timer
+            pointer.pin = (scroll.identity, scroll.presentedScrollOffset)
+            objectWillChange.send()
+            return (level, scroll)
         }
 
-        private func stopTouchMomentum() {
-            guard let timer = touch.momentumTimer else { return }
-            timer.invalidate()
-            touch.momentumTimer = nil
+        /// Lets a list go: a flick coasts to a stop on a decelerating curve that starts at the
+        /// finger's speed, bouncing off an end it runs into; a list pulled past an end springs
+        /// back. Core Animation runs the motion, so it keeps the screen's full frame rate.
+        private func coastTouchList(level: MenuListLevel, velocity: CGFloat) {
             pointer.tracksFinger = false
+            guard let scroll = pointer.hitTester?.menuListScrollState(level),
+                  let current = pointer.pinnedScrollOffset(identity: scroll.identity)
+            else { return }
+            let lower = scroll.minScrollOffset
+            let upper: CGFloat = 0
+            if current > upper || current < lower {
+                setTouchScroll(scroll, offset: min(upper, max(lower, current)), animation: .smooth(duration: 0.5))
+                return
+            }
+            guard abs(velocity) > 150 else { return }
+            // An ease-out over 2t starting at speed v travels v * t.
+            let glide: CGFloat = 0.42
+            let projected = current + velocity * glide
+            guard projected > upper || projected < lower else {
+                setTouchScroll(scroll, offset: projected, animation: .smooth(duration: Double(glide * 2)))
+                return
+            }
+            let bound = projected > upper ? upper : lower
+            let overshoot = min(80, abs(velocity) * 0.035) * (projected > upper ? 1 : -1)
+            let first = bound + overshoot
+            let duration = Double(max(0.12, min(0.7, 2 * abs(first - current) / abs(velocity))))
+            setTouchScroll(scroll, offset: first, animation: .smooth(duration: duration))
+            touch.coastTask = Task { @MainActor [weak self] in
+                try? await firstRowSleep(duration)
+                guard let self, !Task.isCancelled, let scroll = self.pointer.hitTester?.menuListScrollState(level) else { return }
+                self.setTouchScroll(scroll, offset: bound, animation: .smoothInOut(duration: 0.38))
+            }
+        }
+
+        // MARK: - Buttons
+
+        private func pressTouchControl(_ control: TouchControl) {
+            switch control {
+            case .back:
+                pressTouchKey(.escape)
+            case .playPause:
+                pressTouchKey(.space)
+            case .previous:
+                pressTouchKey(.upArrow)
+            case .next:
+                pressTouchKey(.downArrow)
+            case .skipBack:
+                skipMovie(bySeconds: -10)
+            case .skipForward:
+                skipMovie(bySeconds: 10)
+            }
+            if isMoviePlaybackVisible {
+                scheduleMovieControlsAutoHide()
+            }
         }
 
         // MARK: - Taps and swipes
@@ -421,8 +483,8 @@ extension MenuView {
                     pressTouchKey(rightward ? .upArrow : .downArrow)
                     return
                 }
-                if isMoviePlaybackVisible, !fromEdge { return }
-                if rightward { pressTouchKey(.escape) }
+                // Back is a swipe in from the left edge, as elsewhere on iPhone, or the Back button.
+                if rightward, fromEdge { pressTouchKey(.escape) }
                 return
             }
             if abs(dy) > abs(dx) * 1.5, abs(dy) > Self.touchSwipeDistance, isMoviePlaybackVisible {

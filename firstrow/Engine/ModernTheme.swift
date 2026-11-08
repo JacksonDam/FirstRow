@@ -146,7 +146,7 @@ final class ModernBackgroundLayer {
             DispatchQueue.main.asyncAfter(deadline: .now() + fade.duration + 0.05) { old.removeFromSuperlayer() }
             ambient = nil
         }
-        guard let image, let blurred = Self.blurredAmbient(image) else { return }
+        guard let image, let blurred = Self.cachedAmbient(image) else { return }
         let next = SceneLayer()
         next.contents = blurred
         next.contentsGravity = .resizeAspectFill
@@ -178,6 +178,17 @@ final class ModernBackgroundLayer {
         glow(CGPoint(x: size.width * 0.78, y: size.height * 0.18), radius: size.width * 0.5, white: 0.5, alpha: 0.05)
         return context.makeImage()
     }()
+
+    private static var ambientCache: [ObjectIdentifier: (NSImage, CGImage)] = [:]
+
+    /// `blurredAmbient`, remembered for the last few pictures.
+    static func cachedAmbient(_ image: NSImage) -> CGImage? {
+        if let hit = ambientCache[ObjectIdentifier(image)], hit.0 === image { return hit.1 }
+        guard let blurred = blurredAmbient(image) else { return nil }
+        if ambientCache.count >= 24 { ambientCache.removeAll() }
+        ambientCache[ObjectIdentifier(image)] = (image, blurred)
+        return blurred
+    }
 
     /// The picture shrunk to a few pixels and darkened. Shown stretched over the screen, the
     /// layer's smooth scaling turns it into a very soft blur.

@@ -45,6 +45,7 @@ final class MenuSceneRenderer: TransactionRendering {
     private let fullscreenScene: FullscreenSceneLayer
     private let toast = ScreenSaverToastLayer()
     private let volumeOverlay = VolumeOverlayLayer()
+    let touchControls = TouchControlsLayer()
     private let folderSwapOverlay = SceneLayer()
     private let movieTransitionOverlay = SceneLayer()
     private let fullscreenTransitionOverlay = SceneLayer()
@@ -60,6 +61,8 @@ final class MenuSceneRenderer: TransactionRendering {
     private var settingsObserver: NSObjectProtocol?
     private var flushObserver: RunLoopFlushObserver?
     private var memo = RenderMemo()
+    private var lastCardUpdate: CFTimeInterval = 0
+    private var isCardRefreshScheduled = false
 
     /// Values from the previous pass, for the parts that animate when one particular value changes.
     private struct RenderMemo {
@@ -146,6 +149,7 @@ final class MenuSceneRenderer: TransactionRendering {
             overlay.isHidden = true
             rootLayer.addSublayer(overlay)
         }
+        rootLayer.addSublayer(touchControls.layer)
         rootLayer.addSublayer(volumeOverlay.layer)
     }
 
@@ -239,12 +243,28 @@ final class MenuSceneRenderer: TransactionRendering {
         modernCard.layer.isHidden = !isModern
         modernBackground.layer.isHidden = !isModern
         if isModern {
-            let layout = ModernTheme.layout(sceneSize: sceneSize, menuHeight: frames.menuFrame.height)
-            let content = menu.modernCardContent(sceneSize: sceneSize, pass: pass)
-            modernCard.layer.frame = CGRect(origin: .zero, size: sceneSize)
-            modernCard.update(content, frame: layout.cardFrame, scale: scale, animated: !themeChanged && !pass.transaction.disablesAnimations)
-            let ambient = content.ambientImage
-            modernBackground.setAmbient(ambient, key: ambient == nil ? nil : content.key)
+            // While a held arrow or a sliding finger races through a list, the card and the
+            // background follow once it pauses rather than for every row it passes.
+            let now = CACurrentMediaTime()
+            let sweeping = menu.activeDirectionalHoldKey != .none || menu.isTouchSelecting
+            if !sweeping || now - lastCardUpdate > 0.25 || themeChanged {
+                let layout = ModernTheme.layout(sceneSize: sceneSize, menuHeight: frames.menuFrame.height)
+                let content = menu.modernCardContent(sceneSize: sceneSize, pass: pass)
+                modernCard.layer.frame = CGRect(origin: .zero, size: sceneSize)
+                modernCard.update(content, frame: layout.cardFrame, scale: scale, animated: !themeChanged && !pass.transaction.disablesAnimations)
+                let ambient = content.ambientImage
+                modernBackground.setAmbient(ambient, key: ambient == nil ? nil : content.key)
+                lastCardUpdate = now
+            } else if !isCardRefreshScheduled {
+                isCardRefreshScheduled = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                    MainActor.assumeIsolatedIfPossible {
+                        self?.isCardRefreshScheduled = false
+                        self?.lastCardUpdate = 0
+                        self?.isDirty = true
+                    }
+                }
+            }
         } else if themeChanged {
             lastCarouselConfiguration = nil
         }
@@ -282,6 +302,7 @@ final class MenuSceneRenderer: TransactionRendering {
         fullscreenScene.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         toast.update(menu: menu, pass: pass, bounds: fullBounds, backingScale: backingScale)
         volumeOverlay.layout(screenSize: fullBounds.size)
+        touchControls.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         for (overlay, opacity) in [
             (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),
             (movieTransitionOverlay, menu.movieTransitionOverlayOpacity),

@@ -51,6 +51,8 @@ struct MenuListScrollState {
     let rowPitch: CGFloat
     /// One row's pitch in window points.
     let rowPitchInWindow: CGFloat
+    /// Where the list is on screen right now, part way through a scroll.
+    var presentedScrollOffset: CGFloat
 
     var canScroll: Bool { minScrollOffset < -0.5 }
 }
@@ -66,6 +68,10 @@ protocol PointerHitTesting: AnyObject {
     /// The movie options panel's row at `windowPoint`: its index, -1 on the panel between rows,
     /// or nil off the panel.
     func movieOptionsRow(at windowPoint: CGPoint) -> Int?
+    /// The touch mode button at `windowPoint`, if one is showing there.
+    func touchControl(at windowPoint: CGPoint) -> TouchControl?
+    /// Shows a touch mode button as held down (nil for none).
+    func highlightTouchControl(_ control: TouchControl?)
 }
 
 /// Where a list's rows were laid out, in the list's box (origin top left, before scrolling).
@@ -158,6 +164,14 @@ struct PointerScene {
 }
 
 extension MenuSceneRenderer: PointerHitTesting {
+    func touchControl(at windowPoint: CGPoint) -> TouchControl? {
+        touchControls.control(at: windowPoint)
+    }
+
+    func highlightTouchControl(_ control: TouchControl?) {
+        touchControls.setPressed(control)
+    }
+
     func pointerTarget(at windowPoint: CGPoint) -> PointerTarget? {
         let scene = pointerScene
         let menu = menu
@@ -210,6 +224,7 @@ extension MenuSceneRenderer: PointerHitTesting {
             minScrollOffset: geometry.minScrollOffset,
             rowPitch: geometry.rowPitch,
             rowPitchInWindow: geometry.rowPitch * scene.canvasScale,
+            presentedScrollOffset: list.presentedScrollOffset ?? geometry.scrollOffset,
         )
     }
 

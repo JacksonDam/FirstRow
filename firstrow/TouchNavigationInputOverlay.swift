@@ -18,6 +18,7 @@
         private var activeHoldArrowKey: KeyCode?
         private var trackedTouch: UITouch?
         private var singleFingerRecognizers: [UIGestureRecognizer] = []
+        private var multiFingerRecognizers: [UIGestureRecognizer] = []
 
         private var usesDirectTouch: Bool {
             AppSettings.isTouchEnabled && onTouch != nil
@@ -45,6 +46,7 @@
             singleFingerTap.require(toFail: fourFingerTap)
             singleFingerTap.require(toFail: singleFingerHold)
             singleFingerRecognizers = [singleFingerTap, singleFingerHold]
+            multiFingerRecognizers = [twoFingerTap, threeFingerTap, fourFingerTap]
             updateSingleFingerRecognizers()
             settingsObserver = NotificationCenter.default.addObserver(forName: AppSettings.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolatedIfPossible { self?.updateSingleFingerRecognizers() }
@@ -57,7 +59,8 @@
         /// slide or swipe can never also press an arrow.
         private func updateSingleFingerRecognizers() {
             let enabled = !usesDirectTouch
-            for recognizer in singleFingerRecognizers where recognizer.isEnabled != enabled {
+            // Touch mode has buttons for these, so the multi-finger taps are off too.
+            for recognizer in singleFingerRecognizers + multiFingerRecognizers where recognizer.isEnabled != enabled {
                 recognizer.isEnabled = enabled
             }
             if !enabled, let key = activeHoldArrowKey {

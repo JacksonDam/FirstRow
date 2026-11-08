@@ -26,6 +26,8 @@ final class PointerInputState {
     var pin: (identity: String, offset: CGFloat)?
     /// The pin follows a finger: no nudging to show the selected row, and no easing.
     var tracksFinger = false
+    /// How the next move of the pin animates (a flick coasting to a stop), used once.
+    var scrollAnimation: Animation?
     fileprivate(set) var location: CGPoint?
     fileprivate var pressTarget: PointerTarget?
     var drag: Drag?
@@ -45,10 +47,11 @@ final class PointerInputState {
         guard let pin, pin.identity == identity else { return nil }
         let minOffset = min(0, viewportHeight - contentHeight)
         var offset = max(minOffset, min(0, pin.offset))
-        // A list moved by a finger stays where it was left, wherever the selection is.
-        if tracksFinger { return offset }
+        // A list moved by a finger stays where it was left, wherever the selection is, and may
+        // be pulled past its ends for a moment (it springs back when let go).
+        if tracksFinger { return pin.offset }
         #if os(iOS)
-            if AppSettings.isTouchEnabled { return offset }
+            if AppSettings.isTouchEnabled { return pin.offset }
         #endif
         // Scrolled just enough to show the whole selected row, if it's cut off at an edge.
         let top = selectedRowTop + offset

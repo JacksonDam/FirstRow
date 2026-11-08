@@ -332,6 +332,12 @@ extension CALayer {
         if animation.repeatsForever {
             basic.repeatCount = .infinity
         }
+        #if os(iOS)
+            // ProMotion screens run animations at up to 120 Hz when asked.
+            if #available(iOS 15.0, *) {
+                basic.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
+            }
+        #endif
         add(basic, forKey: keyPath)
     }
 
