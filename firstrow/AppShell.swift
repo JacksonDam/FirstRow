@@ -18,6 +18,15 @@ extension Notification.Name {
 @MainActor
 final class FirstRowAppController {
     let hostView = SceneHostView(frame: CGRect(x: 0, y: 0, width: 1280, height: 720))
+    #if os(macOS)
+        /// What the window shows: the scene, with the system's glass buttons (where there are
+        /// some) in a view over it. (The scene's own view hosts layers only, so they can't go in it.)
+        let windowContentView: NSView = {
+            let container = NSView(frame: CGRect(x: 0, y: 0, width: 1280, height: 720))
+            container.wantsLayer = true
+            return container
+        }()
+    #endif
     private(set) var menu: MenuView?
     private var renderer: MenuSceneRenderer?
     private let menuContainer = SceneLayer()
@@ -73,6 +82,25 @@ final class FirstRowAppController {
         hostView.onLayout = { [weak self] size, scale in
             self?.layout(size: size, scale: scale)
         }
+        #if os(macOS)
+            hostView.frame = windowContentView.bounds
+            hostView.autoresizingMask = [.width, .height]
+            windowContentView.addSubview(hostView)
+        #endif
+        // The modern look's buttons as the system's Liquid Glass, on systems that have it.
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *), let native = NativeControls.makeIfSupported() {
+                #if os(macOS)
+                    native.view.frame = windowContentView.bounds
+                    native.view.autoresizingMask = [.width, .height]
+                    windowContentView.addSubview(native.view)
+                #else
+                    native.view.frame = hostView.bounds
+                    native.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                    hostView.addSubview(native.view)
+                #endif
+            }
+        #endif
         #if os(macOS)
             hostView.onKeyDown = { [weak self] event in self?.handleKeyDown(event) }
             hostView.onKeyUp = { [weak self] event in self?.handleKeyUp(event) }
@@ -168,10 +196,20 @@ final class FirstRowAppController {
 
     private func installMenuInput(_ menu: MenuView) {
         menu.pointer.hitTester = renderer
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *) {
+                NativeControls.shared?.onPress = { [weak menu] control in menu?.pressOnScreenControl(control) }
+                #if os(iOS)
+                    // Kept on top of the touch views added below.
+                    if let native = NativeControls.shared { hostView.bringSubviewToFront(native.view) }
+                #endif
+            }
+        #endif
         #if os(macOS)
             hostView.onPointer = { [weak menu] event in menu?.handlePointerEvent(event) }
         #endif
         FirstRowHarness.pointerEventSink = { [weak menu] event in menu?.handlePointerEvent(event) }
+        FirstRowHarness.harnessMenu = menu
         FirstRowHarness.rubberBandSink = { [weak menu] value in
             withAnimation(.smooth(duration: 0.2)) { menu?.remoteRubberBand = value }
         }
@@ -397,6 +435,11 @@ final class FirstRowAppController {
     private func beginQuitTransition() {
         guard !isQuitting else { return }
         isQuitting = true
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *) {
+                NativeControls.shared?.hideAll(animation: .easeInOut(duration: 0.5))
+            }
+        #endif
         quitOverlay.setOpacity(1, .easeInOut(duration: Self.appQuitFadeDuration))
         #if os(macOS)
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.appQuitFadeDuration + Self.appQuitHoldDuration) {

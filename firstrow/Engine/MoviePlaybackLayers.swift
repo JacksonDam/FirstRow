@@ -60,6 +60,7 @@ final class MoviePlaybackLayers {
                 controlsOpacity: menu.movieControlsOpacity,
                 size: optionsCanvas.size,
                 scale: optionsCanvas.pixelScale(backingScale: scale),
+                canvasScale: optionsCanvas.scale,
                 pass: pass,
             )
         }

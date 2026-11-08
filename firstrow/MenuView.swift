@@ -333,6 +333,7 @@ final class MenuView: ObservableObject {
     @Published var onboardingContentOpacity: Double = 1
     var isOnboardingTransitioning = false
     var onboardingPressedOption: Int?
+    var onboardingPressedControl: TouchControl?
     /// A photo slideshow's Back button, up for a few seconds after a tap, click or move.
     @Published var areSlideshowControlsVisible = false
     var slideshowControlsHideTask: Task<Void, Never>?

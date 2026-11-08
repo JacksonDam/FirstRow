@@ -32,7 +32,7 @@
             let window = FirstRowWindow(contentRect: screenFrame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.title = "First Row"
-            window.contentView = controller.hostView
+            window.contentView = controller.windowContentView
             window.backgroundColor = .black
             window.isOpaque = true
             window.hasShadow = false

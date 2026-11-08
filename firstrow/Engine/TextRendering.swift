@@ -796,6 +796,56 @@ enum SymbolFallback {
                 context.addEllipse(in: CGRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4))
                 context.fillPath()
             }
+        case "xmark":
+            return Shape(referenceSize: 20, box: CGSize(width: 22, height: 22)) { context in
+                context.setLineWidth(2.4)
+                context.move(to: CGPoint(x: 5, y: 5))
+                context.addLine(to: CGPoint(x: 17, y: 17))
+                context.move(to: CGPoint(x: 17, y: 5))
+                context.addLine(to: CGPoint(x: 5, y: 17))
+                context.strokePath()
+            }
+        case "arrow.up.and.down", "arrow.left.and.right":
+            let vertical = name == "arrow.up.and.down"
+            return Shape(referenceSize: 20, box: CGSize(width: 24, height: 24)) { context in
+                func point(_ along: CGFloat, _ across: CGFloat) -> CGPoint {
+                    vertical ? CGPoint(x: 12 + across, y: along) : CGPoint(x: along, y: 12 + across)
+                }
+                context.setLineWidth(2.2)
+                context.move(to: point(4, 0))
+                context.addLine(to: point(20, 0))
+                for (tip, back) in [(CGFloat(3), CGFloat(8.5)), (21, 15.5)] {
+                    context.move(to: point(back, -5))
+                    context.addLine(to: point(tip, 0))
+                    context.addLine(to: point(back, 5))
+                }
+                context.strokePath()
+            }
+        case "cursorarrow":
+            return Shape(referenceSize: 20, box: CGSize(width: 20, height: 24)) { context in
+                context.addPath(roundedPolygon([(4, 2.5, 0.8), (17, 15, 0.8), (10.6, 15.4, 0.6), (14, 21.5, 0.8), (11.4, 22.6, 0.8), (8.2, 16.6, 0.6), (4, 20.6, 0.8)]))
+                context.fillPath()
+            }
+        case "music.note.list":
+            return Shape(referenceSize: 20, box: CGSize(width: 26, height: 22)) { context in
+                context.setLineWidth(2)
+                for y: CGFloat in [5, 10, 15] {
+                    context.move(to: CGPoint(x: 2, y: y))
+                    context.addLine(to: CGPoint(x: y == 15 ? 9 : 13, y: y))
+                }
+                context.strokePath()
+                context.addEllipse(in: CGRect(x: 12.5, y: 14, width: 6.5, height: 6))
+                context.addRect(CGRect(x: 17.6, y: 3, width: 1.6, height: 14))
+                context.addPath(roundedPolygon([(17.6, 3, 0.4), (24, 1.5, 0.6), (24, 6, 0.6), (17.6, 7.5, 0.4)]))
+                context.fillPath()
+            }
+        case "playpause.fill":
+            return Shape(referenceSize: 20, box: CGSize(width: 28, height: 20)) { context in
+                context.addPath(roundedPolygon([(2, 3, 1.2), (14, 10, 1.2), (2, 17, 1.2)]))
+                context.addPath(CGPath(roundedRect: CGRect(x: 16.5, y: 3.5, width: 3.6, height: 13), cornerWidth: 1, cornerHeight: 1, transform: nil))
+                context.addPath(CGPath(roundedRect: CGRect(x: 22.5, y: 3.5, width: 3.6, height: 13), cornerWidth: 1, cornerHeight: 1, transform: nil))
+                context.fillPath()
+            }
         case "keyboard":
             return Shape(referenceSize: 20, box: CGSize(width: 30, height: 20)) { context in
                 context.setLineWidth(1.8)

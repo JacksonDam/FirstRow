@@ -84,6 +84,9 @@ final class TouchControlsLayer {
     private(set) var frames: [TouchControl: CGRect] = [:]
     private var pressed: TouchControl?
     private var lastTransportHidden = false
+    /// Now Playing's scale and visibility, as last set (the native buttons follow them too).
+    private var sceneTransform = CATransform3DIdentity
+    private var sceneOpacity: Double = 1
     private static let appear = Animation.smooth(duration: 0.34)
     private static let disappear = Animation.smoothInOut(duration: 0.3)
 
@@ -120,9 +123,12 @@ final class TouchControlsLayer {
         let size = bounds.size
         let insets = Self.safeAreaInsets
         let isNowPlaying = menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey
-        if enabled, !menu.isMovieTransitioning, menu.textEntry == nil, menu.codeDisplay == nil {
-            let backFrame = CGRect(x: max(insets.left + 16, 38), y: max(insets.top + 10, 32), width: 46, height: 46)
-            let back = Wanted(control: .back, frame: backFrame, symbol: "chevron.left", pointSize: 19)
+        let backFrame = CGRect(x: max(insets.left + 16, 38), y: max(insets.top + 10, 32), width: 46, height: 46)
+        let back = Wanted(control: .back, frame: backFrame, symbol: "chevron.left", pointSize: 19)
+        if let step = menu.onboardingStep {
+            // The first-launch screens after the first have Back, whatever the input.
+            if step != .theme, menu.onboardingOpacity > 0.5 { wanted = [back] }
+        } else if enabled, !menu.isMovieTransitioning, menu.textEntry == nil, menu.codeDisplay == nil {
             if menu.isMoviePlaybackVisible {
                 // With the movie's controls, coming and going together.
                 // (Subtitles, audio and speed have buttons of their own, above the bar.)
@@ -174,8 +180,10 @@ final class TouchControlsLayer {
         sceneGroup.place(CGRect(origin: .zero, size: size))
         if isNowPlaying {
             let depth = isModern ? menu.fullscreenSceneScale : 1
-            sceneGroup.setTransform(MenuSceneRenderer.scale(depth, about: CGPoint(x: size.width / 2, y: size.height / 2)), pass.animation)
-            sceneGroup.setOpacity(menu.fullscreenSceneOpacity * (1 - menu.fullscreenTransitionOverlayOpacity), pass.animation)
+            sceneTransform = MenuSceneRenderer.scale(depth, about: CGPoint(x: size.width / 2, y: size.height / 2))
+            sceneOpacity = menu.fullscreenSceneOpacity * (1 - menu.fullscreenTransitionOverlayOpacity)
+            sceneGroup.setTransform(sceneTransform, pass.animation)
+            sceneGroup.setOpacity(sceneOpacity, pass.animation)
         }
         let sceneMoving = menu.isFullscreenSceneTransitioning || !isNowPlaying
         // Slid away, the buttons go below the bottom of the screen, and a bar stays behind.
@@ -204,6 +212,55 @@ final class TouchControlsLayer {
         )
 
         frames = [:]
+        // The modern look on systems with Liquid Glass: the system's own glass buttons.
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *), let native = NativeControls.shared {
+                if isModern {
+                    for (_, button) in buttons where button.isShown {
+                        hide(button, instantly: true)
+                    }
+                    var items: [NativeControls.Item] = []
+                    var instant: Set<NativeControls.Key> = []
+                    for item in wanted {
+                        #if os(iOS)
+                            let dimmedAlpha: CGFloat = 0.3
+                        #else
+                            let dimmedAlpha: CGFloat = 0
+                        #endif
+                        items.append(NativeControls.Item(
+                            control: item.control,
+                            inScene: item.inScene,
+                            frame: item.frame,
+                            symbol: item.symbol,
+                            pointSize: item.pointSize,
+                            dimmed: item.control == .back && isIdle,
+                            dimmedAlpha: dimmedAlpha,
+                        ))
+                        if !(item.inScene && transportHidden) { frames[item.control] = item.frame }
+                    }
+                    for key in buttons.keys.map({ NativeControls.Key(control: $0.control, inScene: $0.inScene) }) + wanted.map({ NativeControls.Key(control: $0.control, inScene: $0.inScene) })
+                        where putAwayForKeys || (key.inScene && sceneMoving)
+                    {
+                        instant.insert(key)
+                    }
+                    native.update(
+                        items: items,
+                        size: size,
+                        sceneTransform: sceneTransform,
+                        sceneOpacity: sceneOpacity,
+                        sceneAnimation: pass.animation,
+                        transportHidden: transportHidden,
+                        transportDrop: drop,
+                        transportAnimation: slide,
+                        appear: Self.appear,
+                        disappear: Self.disappear,
+                        instantly: instant,
+                    )
+                    return
+                }
+                native.hideAll(animation: nil)
+            }
+        #endif
         let shown = Set(wanted.map { Key(control: $0.control, inScene: $0.inScene) })
         for (key, button) in buttons where button.isShown && !shown.contains(key) {
             hide(button, instantly: putAwayForKeys || (key.inScene && sceneMoving))

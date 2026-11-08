@@ -26,6 +26,8 @@ enum FirstRowHarness {
     @MainActor static var pointerEventSink: ((PointerEvent) -> Void)?
     /// Pulls the selected row past the end of its list, as a Siri Remote swipe does on Apple TV.
     @MainActor static var rubberBandSink: ((CGFloat) -> Void)?
+    /// The menus, for the commands that drive them directly (playfolder, playmovie).
+    @MainActor static weak var harnessMenu: MenuView?
     @MainActor private static var lastPointerLocation = CGPoint.zero
 
     /// `mouse:move|down|up|click|right|back:x:y` and `mouse:scroll:dx:dy[:precise]` (points from
@@ -210,6 +212,10 @@ enum FirstRowHarness {
                     lines.sort { (Int($0.prefix { $0.isNumber }) ?? 0) > (Int($1.prefix { $0.isNumber }) ?? 0) }
                     fputs("[dumplayers] window \(window.windowNumber): \(lines.count) pictures, shown \(shownBytes / 1_048_576) MB, hidden \(hiddenBytes / 1_048_576) MB\n" + lines.joined(separator: "\n") + "\n", stderr)
                 }
+            case "windowshot" where parts.count == 2:
+                // windowshot:/path.png: the window as the window server shows it (system glass
+                // and all), which `shot` can't draw.
+                saveWindowPicture(to: URL(fileURLWithPath: parts[1]))
             case "shot" where parts.count == 2:
                 // shot:/path/to/file.png draws the window's layers to a picture (blurs and
                 // other filters are left out), with no need for screen recording.
@@ -238,6 +244,25 @@ enum FirstRowHarness {
             case "rubberband" where parts.count == 2:
                 // rubberband:<scene points>
                 rubberBandSink?(CGFloat(Double(parts[1]) ?? 0))
+            case "playfolder" where parts.count == 2:
+                // playfolder:<folder>: plays the audio files there as a list, from the first.
+                guard let menu = harnessMenu else { return }
+                let folder = URL(fileURLWithPath: parts[1], isDirectory: true)
+                let files = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { ["m4a", "mp3"].contains($0.pathExtension.lowercased()) }
+                    .sorted { $0.lastPathComponent < $1.lastPathComponent }
+                let songs = files.enumerated().map { index, url in
+                    MenuView.MusicLibrarySongEntry(
+                        id: "harness-\(index)", title: String(url.deletingPathExtension().lastPathComponent.dropFirst(3)),
+                        artist: "Test Band", album: "Queue Test", genre: "", composer: "", durationSeconds: 60,
+                        trackNumber: index + 1, discNumber: 1, artworkAlbumKey: nil, url: url, artwork: nil,
+                    )
+                }
+                guard let first = songs.first else { return }
+                menu.startMusicPlayback(from: first, trackIndex: 0, trackCount: songs.count, playbackQueue: songs)
+            case "playmovie" where parts.count == 2:
+                // playmovie:<file>
+                harnessMenu?.startMoviePlayback(from: URL(fileURLWithPath: parts[1]))
             case "clearresume":
                 // Empties Continue Watching.
                 MovieResumeStore.removeAll()
@@ -263,6 +288,18 @@ enum FirstRowHarness {
 
         private static func post(_ key: KeyCode, type: NSEvent.EventType) {
             SyntheticKeyEvents.post(key, down: type == .keyDown)
+        }
+
+        @MainActor
+        private static func saveWindowPicture(to url: URL) {
+            typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+            guard let window = NSApplication.shared.windows.first(where: { $0 is FirstRowWindow }),
+                  let symbol = dlsym(dlopen(nil, RTLD_NOW), "CGWindowListCreateImage")
+            else { return }
+            let capture = unsafeBitCast(symbol, to: Capture.self)
+            // Just this window, without its frame.
+            guard let image = capture(.null, 0x8, UInt32(window.windowNumber), 0x1)?.takeRetainedValue() else { return }
+            try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: url)
         }
 
         @MainActor

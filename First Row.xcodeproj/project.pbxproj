@@ -145,6 +145,7 @@
 		766F3C1E38D54EC25E2DAC05 /* MenuView+RemoteSwipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F8FF2A4C4A080F0988B0B8 /* MenuView+RemoteSwipe.swift */; };
 		0FE49575F8D2796FA1B0B39B /* MenuView+Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ED3B49ED8C7EF4396DD4148 /* MenuView+Onboarding.swift */; };
 		8A6DECC667E3A12646B3E500 /* OnboardingLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A761D1AE7536863CEC349FE9 /* OnboardingLayer.swift */; };
+		F0B74FB4C2ECD0C4DBB49B80 /* NativeControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = F99E9C651A4F6A4D5D1C621D /* NativeControls.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -305,6 +306,7 @@
 		A7F8FF2A4C4A080F0988B0B8 /* MenuView+RemoteSwipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+RemoteSwipe.swift"; sourceTree = "<group>"; };
 		5ED3B49ED8C7EF4396DD4148 /* MenuView+Onboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Onboarding.swift"; sourceTree = "<group>"; };
 		A761D1AE7536863CEC349FE9 /* OnboardingLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingLayer.swift; sourceTree = "<group>"; };
+		F99E9C651A4F6A4D5D1C621D /* NativeControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeControls.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -591,6 +593,7 @@
 		2C8096D62CAC0F80B1BDAF5E /* Engine */ = {
 			isa = PBXGroup;
 			children = (
+				F99E9C651A4F6A4D5D1C621D /* NativeControls.swift */,
 				A761D1AE7536863CEC349FE9 /* OnboardingLayer.swift */,
 				D94F1CD991053A6EFB6EA143 /* NowPlayingExtrasLayers.swift */,
 				A6D0192C9E7940A48F1A7319 /* TouchControlsLayer.swift */,
@@ -790,6 +793,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F0B74FB4C2ECD0C4DBB49B80 /* NativeControls.swift in Sources */,
 				8A6DECC667E3A12646B3E500 /* OnboardingLayer.swift in Sources */,
 				0FE49575F8D2796FA1B0B39B /* MenuView+Onboarding.swift in Sources */,
 				766F3C1E38D54EC25E2DAC05 /* MenuView+RemoteSwipe.swift in Sources */,

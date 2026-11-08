@@ -391,9 +391,21 @@ final class MovieOptionsLayer {
     }
 
     /// `anchor` is the progress bar (canvas points) while the controls show, nil while they don't.
-    func update(menu: MenuView, anchor: CGRect?, controlsOpacity: Double, size: CGSize, scale: CGFloat, pass: RenderPass) {
+    /// The system's Liquid Glass for the buttons and panel, where there is some (modern look).
+    private var nativeGlass: AnyObject? {
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *), ModernTheme.isActive {
+                return NativeControls.shared?.options
+            }
+        #endif
+        return nil
+    }
+
+    /// `canvasScale` is window points per canvas point (for the native glass).
+    func update(menu: MenuView, anchor: CGRect?, controlsOpacity: Double, size: CGSize, scale: CGFloat, canvasScale: CGFloat, pass: RenderPass) {
         layer.frame = CGRect(origin: .zero, size: size)
         let isModern = ModernTheme.isActive
+        let usesNativeGlass = nativeGlass != nil
         let state = menu.isMoviePlaybackVisible ? menu.movieOptions : nil
         if let state { shownState = state }
         let isOpen = state != nil && menu.movieOptionsReveal > 0.5
@@ -446,7 +458,22 @@ final class MovieOptionsLayer {
                 buttonHighlight.setOpacity(0, .smooth(duration: 0.2))
             }
         }
-        buttons.setOpacity(showsButtons ? controlsOpacity : 0, pass.animation)
+        buttons.setOpacity(showsButtons && !usesNativeGlass ? controlsOpacity : 0, pass.animation)
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
+                // The system's glass instead, with the system's symbols, in window points.
+                let focusedKind = isOpen ? state.flatMap { $0.rows.indices.contains($0.focusedRow) ? $0.rows[$0.focusedRow].kind : nil } : nil
+                let windowFrame = CGRect(x: clusterFrame.minX * canvasScale, y: clusterFrame.minY * canvasScale, width: clusterFrame.width * canvasScale, height: clusterFrame.height * canvasScale)
+                glass.updateCluster(
+                    frame: showsButtons && controlsOpacity > 0.5 ? windowFrame : nil,
+                    kinds: kinds,
+                    slotWidth: slot.width * canvasScale,
+                    focused: focusedKind,
+                    iconSize: 30 * canvasScale,
+                    animation: pass.animation ?? .smooth(duration: 0.3),
+                )
+            }
+        #endif
 
         // The panel, grown out of the buttons, or gone back into them.
         guard let content = shownState, !content.rows.isEmpty else {
@@ -456,6 +483,20 @@ final class MovieOptionsLayer {
             valueFrames = []
             return
         }
+        // With the system's glass, the panel's rows are hosted inside it; without, the panel
+        // draws its own background here.
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
+                let host = glass.panelLayerHost
+                if panel.superlayer !== host {
+                    panel.removeAllAnimations()
+                    host.addSublayer(panel)
+                }
+            } else if panel.superlayer !== layer {
+                panel.removeAllAnimations()
+                layer.addSublayer(panel)
+            }
+        #endif
         let opening = isOpen && !wasOpen
         let closing = !isOpen && wasOpen
         if opening { panel.isHidden = false }
@@ -465,24 +506,46 @@ final class MovieOptionsLayer {
         let height = CGFloat(content.rows.count) * rowHeight + inset * 2
         let reference = showsButtons ? clusterFrame : CGRect(x: size.width - 110 - 260, y: size.height - 240, width: 260, height: slot.height)
         let frame = CGRect(x: max(40, reference.maxX - width), y: reference.minY - 18 - height, width: width, height: height)
-        panel.place(frame)
-        panel.backgroundColor = CGColor(gray: isModern ? 0.08 : 0, alpha: isModern ? 0.84 : 0.88)
-        panel.cornerRadius = isModern ? 34 : 14
-        panel.borderWidth = isModern ? 0 : 1.5
-        panel.borderColor = CGColor(gray: 1, alpha: 0.22)
         // Grows from (and shrinks back to) the middle of the buttons.
         let origin = CGPoint(x: reference.midX - frame.minX, y: reference.midY - frame.minY)
-        var collapsed = CATransform3DMakeTranslation(origin.x, origin.y, 0)
-        collapsed = CATransform3DScale(collapsed, 0.2, 0.2, 1)
-        collapsed = CATransform3DTranslate(collapsed, -origin.x, -origin.y, 0)
-        if opening, (panel.presentation()?.opacity ?? panel.opacity) < 0.02 {
-            // Starts from the buttons (part way back in, it turns round where it is instead).
-            panel.setTransform(collapsed, nil)
-            panel.setOpacity(0, nil)
-        }
         let move: Animation? = opening || closing ? (pass.animation ?? (opening ? .smooth(duration: 0.36) : .smoothInOut(duration: 0.3))) : nil
-        panel.setTransform(isOpen ? CATransform3DIdentity : collapsed, move)
-        panel.setOpacity(isOpen ? 1 : 0, move)
+        if usesNativeGlass {
+            #if os(iOS) || os(macOS)
+                if #available(macOS 26.0, iOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
+                    // Drawn at canvas size inside the glass, which is in window points.
+                    panel.backgroundColor = CGColor(gray: 0, alpha: 0)
+                    panel.cornerRadius = 0
+                    panel.borderWidth = 0
+                    panel.isHidden = false
+                    panel.setOpacity(1, nil)
+                    panel.bounds = CGRect(origin: .zero, size: frame.size)
+                    panel.position = .zero
+                    panel.setTransform(CATransform3DMakeScale(canvasScale, canvasScale, 1), nil)
+                    let windowFrame = CGRect(x: frame.minX * canvasScale, y: frame.minY * canvasScale, width: frame.width * canvasScale, height: frame.height * canvasScale)
+                    let pivot = CGPoint(x: origin.x * canvasScale, y: origin.y * canvasScale)
+                    var collapsed = CATransform3DMakeTranslation(pivot.x, pivot.y, 0)
+                    collapsed = CATransform3DScale(collapsed, 0.2, 0.2, 1)
+                    collapsed = CATransform3DTranslate(collapsed, -pivot.x, -pivot.y, 0)
+                    glass.updatePanel(frame: windowFrame, open: isOpen, collapsed: collapsed, animation: move)
+                }
+            #endif
+        } else {
+            panel.place(frame)
+            panel.backgroundColor = CGColor(gray: isModern ? 0.08 : 0, alpha: isModern ? 0.84 : 0.88)
+            panel.cornerRadius = isModern ? 34 : 14
+            panel.borderWidth = isModern ? 0 : 1.5
+            panel.borderColor = CGColor(gray: 1, alpha: 0.22)
+            var collapsed = CATransform3DMakeTranslation(origin.x, origin.y, 0)
+            collapsed = CATransform3DScale(collapsed, 0.2, 0.2, 1)
+            collapsed = CATransform3DTranslate(collapsed, -origin.x, -origin.y, 0)
+            if opening, (panel.presentation()?.opacity ?? panel.opacity) < 0.02 {
+                // Starts from the buttons (part way back in, it turns round where it is instead).
+                panel.setTransform(collapsed, nil)
+                panel.setOpacity(0, nil)
+            }
+            panel.setTransform(isOpen ? CATransform3DIdentity : collapsed, move)
+            panel.setOpacity(isOpen ? 1 : 0, move)
+        }
         wasOpen = isOpen
         if isOpen {
             panelFrame = frame
