@@ -280,6 +280,10 @@ final class MenuView: ObservableObject {
     @Published var movieLastScrubInputDate: Date?
     @Published var movieLastScrubTickDate: Date?
     @Published var movieScrubTimer: Timer?
+    /// The subtitles, audio and speed panel, while it's open.
+    @Published var movieOptions: MovieOptionsState?
+    /// The current movie's playback speed (1 is normal).
+    var movieSpeed: Double = 1
     /// A left or right press in a movie that isn't yet known to be a tap or a hold.
     var movieArrowPending: (direction: Int, task: Task<Void, Never>)?
     @Published var moviePlaybackValidationRequestID = 0

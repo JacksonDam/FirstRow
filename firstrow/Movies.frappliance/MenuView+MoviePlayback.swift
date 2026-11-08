@@ -329,6 +329,7 @@ extension MenuView {
 
     func stopMoviePlaybackAndReturnToMenu(captureResumePosition: Bool = true) {
         guard !isMovieTransitioning, isMoviePlaybackVisible else { return }
+        movieOptions = nil
         isMovieTransitioning = true
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         clearMovieControlsVisibilityInstantly()
@@ -366,7 +367,10 @@ extension MenuView {
     }
 
     func handleMoviePlaybackInput(_ key: KeyCode, isRepeat: Bool) {
+        if handleMovieOptionsInput(key) { return }
         switch key {
+        case .downArrow:
+            if !isRepeat { openMovieOptions() }
         case .delete, .escape:
             playSound(named: "Exit")
             stopMoviePlaybackAndReturnToMenu()
@@ -425,7 +429,8 @@ extension MenuView {
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         movieControlsGlyphState = .play
         player.play()
-        hideMovieControlsWithFade()
+        if movieSpeed != 1 { applyMovieSpeed(player) }
+        if movieOptions == nil { hideMovieControlsWithFade() }
     }
 
     func beginMovieScrubbing(direction: Int, isRepeat: Bool) {
@@ -565,7 +570,7 @@ extension MenuView {
 
     func hideMovieControlsWithFade() {
         cancelMovieControlsAutoHide()
-        guard areMovieControlsVisible else { return }
+        guard areMovieControlsVisible, movieOptions == nil else { return }
         withAnimation(.easeOut(duration: movieControlsFadeDuration)) {
             movieControlsOpacity = 0
         }
@@ -593,6 +598,8 @@ extension MenuView {
 
     func configureMoviePlaybackObservation(for player: AVPlayer) {
         removeMoviePlaybackObservation()
+        movieOptions = nil
+        movieSpeed = 1
         observedMoviePlayer = player
         moviePlaybackCurrentSeconds = max(0, player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0)
         moviePlaybackDurationSeconds = resolvedMovieDurationSeconds(for: player)

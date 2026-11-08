@@ -91,6 +91,12 @@ final class MPVCore {
         return mpv_get_property(handle, name, MPV_FORMAT_INT64, &v) >= 0 ? Int(v) : nil
     }
 
+    func string(_ name: String) -> String? {
+        guard let value = mpv_get_property_string(handle, name) else { return nil }
+        defer { mpv_free(value) }
+        return String(cString: value)
+    }
+
     func flag(_ name: String) -> Bool? {
         var v: Int32 = 0
         return mpv_get_property(handle, name, MPV_FORMAT_FLAG, &v) >= 0 ? v != 0 : nil

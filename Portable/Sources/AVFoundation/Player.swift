@@ -197,8 +197,37 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     public func play() {
         MPVCore.debug("play()")
         playing = true
-        ensureCore()?.setFlag("pause", false)
+        let core = ensureCore()
+        if playbackSpeed != 1 { core?.setProperty("speed", playbackSpeed) }
+        core?.setFlag("pause", false)
         fireObservers()
+    }
+
+    /// How fast playback runs (1 is normal), kept across pauses. First Row's own addition:
+    /// AVFoundation sets this through `rate` instead.
+    public var playbackSpeed: Double = 1 {
+        didSet { core?.setProperty("speed", playbackSpeed) }
+    }
+
+    /// The subtitle ("sub") or audio ("audio") tracks mpv found in the file.
+    public func tracks(ofType type: String) -> [PlayerTrack] {
+        guard let core, let count = core.int("track-list/count") else { return [] }
+        var result: [PlayerTrack] = []
+        for index in 0 ..< count where core.string("track-list/\(index)/type") == type {
+            guard let id = core.int("track-list/\(index)/id") else { continue }
+            let language = core.string("track-list/\(index)/lang") ?? ""
+            let title = core.string("track-list/\(index)/title") ?? ""
+            let name = PlayerTrack.languageName(language)
+            let label = [name, title].filter { !$0.isEmpty }.joined(separator: " – ")
+            result.append(PlayerTrack(id: id, title: label.isEmpty ? "Track \(result.count + 1)" : label, isSelected: core.flag("track-list/\(index)/selected") ?? false))
+        }
+        return result
+    }
+
+    /// Chooses a subtitle or audio track by its id, or none (subtitles off) for nil.
+    public func selectTrack(ofType type: String, id: Int?) {
+        let property = type == "sub" ? "sid" : "aid"
+        core?.setProperty(property, id.map(String.init) ?? "no")
     }
 
     public func pause() {
@@ -491,5 +520,24 @@ open class AVPlayerLayer: CALayer {
         for entry in VideoSurface.all.values {
             entry.surface?.update()
         }
+    }
+}
+
+/// A subtitle or audio track in a file.
+public struct PlayerTrack: Equatable {
+    public let id: Int
+    public let title: String
+    public let isSelected: Bool
+
+    /// "English" for "eng" or "en", or the code itself when it isn't known.
+    static func languageName(_ code: String) -> String {
+        let names = [
+            "en": "English", "eng": "English", "fr": "French", "fre": "French", "fra": "French", "de": "German", "ger": "German",
+            "deu": "German", "es": "Spanish", "spa": "Spanish", "it": "Italian", "ita": "Italian", "ja": "Japanese", "jpn": "Japanese",
+            "ko": "Korean", "kor": "Korean", "zh": "Chinese", "chi": "Chinese", "zho": "Chinese", "pt": "Portuguese", "por": "Portuguese",
+            "ru": "Russian", "rus": "Russian", "nl": "Dutch", "dut": "Dutch", "nld": "Dutch", "sv": "Swedish", "swe": "Swedish",
+            "pl": "Polish", "pol": "Polish", "ar": "Arabic", "ara": "Arabic", "hi": "Hindi", "hin": "Hindi",
+        ]
+        return names[code.lowercased()] ?? code.uppercased()
     }
 }

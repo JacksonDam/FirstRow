@@ -249,3 +249,90 @@ final class ModernMovieControlsLayer {
         glyph.layer.frame = CGRect(x: barFrame.minX, y: barFrame.minY - 30 - glyph.size.height, width: glyph.size.width, height: glyph.size.height)
     }
 }
+
+/// The movie's subtitles, audio and speed panel, above the transport bar. Each row has its name
+/// on the left and its value, with arrows to change it, on the right.
+@MainActor
+final class MovieOptionsLayer {
+    let layer = SceneLayer()
+    private let panel = SceneLayer()
+    private let modernFocus = SceneLayer()
+    private let classicFocus = SelectionBoxLayer()
+    private var rows: [(title: SceneLayer, value: SceneLayer)] = []
+    private var lastFocus: Int?
+
+    init() {
+        layer.isHidden = true
+        layer.addSublayer(panel)
+        panel.addSublayer(classicFocus.layer)
+        modernFocus.backgroundColor = ModernTheme.focusFill.cgColor
+        panel.addSublayer(modernFocus)
+    }
+
+    func update(_ state: MenuView.MovieOptionsState?, size: CGSize, scale: CGFloat, pass: RenderPass) {
+        guard let state, !state.rows.isEmpty else {
+            layer.isHidden = true
+            lastFocus = nil
+            return
+        }
+        let appearing = layer.isHidden
+        layer.isHidden = false
+        layer.frame = CGRect(origin: .zero, size: size)
+        let isModern = ModernTheme.isActive
+        let width: CGFloat = 820
+        let rowHeight: CGFloat = 72
+        let inset: CGFloat = 16
+        let height = CGFloat(state.rows.count) * rowHeight + inset * 2
+        panel.frame = CGRect(x: (size.width - width) / 2, y: size.height - 210 - height, width: width, height: height)
+        panel.backgroundColor = CGColor(gray: isModern ? 0.08 : 0, alpha: isModern ? 0.82 : 0.86)
+        panel.cornerRadius = isModern ? 34 : 14
+        panel.borderWidth = isModern ? 0 : 1
+        panel.borderColor = CGColor(gray: 1, alpha: 0.18)
+
+        let focus = min(state.focusedRow, state.rows.count - 1)
+        let moved = lastFocus != nil && lastFocus != focus
+        lastFocus = focus
+        let focusFrame = CGRect(x: inset, y: inset + CGFloat(focus) * rowHeight + 4, width: width - inset * 2, height: rowHeight - 8)
+        modernFocus.isHidden = !isModern
+        classicFocus.layer.isHidden = isModern
+        if isModern {
+            modernFocus.setFrame(focusFrame, appearing || !moved ? nil : .focus(duration: ModernTheme.focusDuration))
+            modernFocus.cornerRadius = focusFrame.height / 2
+        } else {
+            // The glow texture reaches past the row as the menus' does, scaled to this row's height.
+            let spill = focusFrame.height / 75
+            classicFocus.update(frame: focusFrame.insetBy(dx: -40 * spill, dy: -29 * spill), selectionBoxHeight: focusFrame.height, animation: appearing || !moved ? nil : .easeInOut(duration: 0.2))
+        }
+
+        while rows.count < state.rows.count {
+            let pair = (SceneLayer(), SceneLayer())
+            panel.addSublayer(pair.0)
+            panel.addSublayer(pair.1)
+            rows.append(pair)
+        }
+        for (index, pair) in rows.enumerated() {
+            guard state.rows.indices.contains(index) else {
+                pair.title.isHidden = true
+                pair.value.isHidden = true
+                continue
+            }
+            pair.title.isHidden = false
+            pair.value.isHidden = false
+            let row = state.rows[index]
+            let focused = index == focus && isModern
+            let primary = focused ? ModernTheme.focusedText : RGBA(white: 1, alpha: 0.94)
+            let secondary = focused ? ModernTheme.focusedSecondaryText : RGBA(white: 1, alpha: 0.6)
+            let titleFont = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
+            let valueFont = isModern ? ModernTheme.regularFontName : firstRowRegularFontName
+            let top = inset + CGFloat(index) * rowHeight
+            let titleGraphic = TextRenderer.render(TextSpec(text: row.title, fontName: titleFont, size: 32, color: primary), scale: scale)
+            pair.title.show(titleGraphic, at: CGPoint(x: inset + 30, y: top + (rowHeight - titleGraphic.size.height) / 2))
+            let value = row.values.indices.contains(row.selected) ? row.values[row.selected] : ""
+            let canGoBack = row.selected > 0
+            let canGoOn = row.selected + 1 < row.values.count
+            let text = (canGoBack ? "‹  " : "   ") + value + (canGoOn ? "  ›" : "   ")
+            let valueGraphic = TextRenderer.render(TextSpec(text: text, fontName: valueFont, size: 30, color: secondary, maxWidth: width * 0.6, minimumScaleFactor: 0.7), scale: scale)
+            pair.value.show(valueGraphic, at: CGPoint(x: width - inset - 26 - valueGraphic.size.width, y: top + (rowHeight - valueGraphic.size.height) / 2))
+        }
+    }
+}

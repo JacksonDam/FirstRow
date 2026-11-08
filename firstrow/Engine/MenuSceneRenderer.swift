@@ -132,6 +132,7 @@ final class MenuSceneRenderer: TransactionRendering {
         rootLayer.addSublayer(playback.playerLayer)
         rootLayer.addSublayer(playback.controls.layer)
         rootLayer.addSublayer(playback.modernControls.layer)
+        rootLayer.addSublayer(playback.options.layer)
         rootLayer.addSublayer(fullscreenScene.layer)
         rootLayer.addSublayer(toast.layer)
         for overlay in [folderSwapOverlay, movieTransitionOverlay, fullscreenTransitionOverlay, startupOverlay] {

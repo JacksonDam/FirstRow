@@ -15,6 +15,7 @@ final class MoviePlaybackLayers {
     let playerLayer = AVPlayerLayer()
     let controls = MovieControlsLayer()
     let modernControls = ModernMovieControlsLayer()
+    let options = MovieOptionsLayer()
 
     init() {
         playerLayer.videoGravity = .resizeAspect
@@ -35,6 +36,9 @@ final class MoviePlaybackLayers {
         }
         playerLayer.frame = bounds
 
+        let optionsCanvas = FullscreenCanvas(screenSize: bounds.size)
+        optionsCanvas.apply(to: options.layer)
+        options.update(menu.isMoviePlaybackVisible ? menu.movieOptions : nil, size: optionsCanvas.size, scale: optionsCanvas.pixelScale(backingScale: scale), pass: pass)
         let showsControls = menu.isMoviePlaybackVisible && menu.areMovieControlsVisible
         let isModern = ModernTheme.isActive
         controls.layer.isHidden = !showsControls || isModern
