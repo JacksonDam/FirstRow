@@ -108,6 +108,15 @@ struct RenderedGraphic {
 
 enum FontMetrics {
     static func font(_ name: String, size: CGFloat) -> CTFont {
+        #if !FIRSTROW_PORTABLE
+            if let weight = ModernTheme.systemFontWeight(for: name) {
+                #if os(macOS)
+                    return NSFont.systemFont(ofSize: size, weight: weight) as CTFont
+                #else
+                    return UIFont.systemFont(ofSize: size, weight: weight) as CTFont
+                #endif
+            }
+        #endif
         #if os(macOS)
             if let font = NSFont(name: name, size: size) { return font as CTFont }
             return NSFont.systemFont(ofSize: size) as CTFont

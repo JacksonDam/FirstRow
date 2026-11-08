@@ -33,6 +33,9 @@ final class MenuSceneRenderer: TransactionRendering {
     private let thirdList = MenuListLayer()
     private let sortPill = SceneLayer()
     private let resumePrompt = MovieResumePromptLayer()
+    // The modern look's backdrop and card.
+    private let modernBackground = ModernBackgroundLayer()
+    private let modernCard = ModernCardLayer()
 
     // Full-screen layers, sized to the window.
     private let playback = MoviePlaybackLayers()
@@ -51,6 +54,7 @@ final class MenuSceneRenderer: TransactionRendering {
     /// Set when a pass skipped the carousel, which takes the run loop pass's changes together.
     private var carouselNeedsUpdate = true
     private var observation: Any?
+    private var settingsObserver: NSObjectProtocol?
     private var flushObserver: RunLoopFlushObserver?
     private var memo = RenderMemo()
 
@@ -66,6 +70,7 @@ final class MenuSceneRenderer: TransactionRendering {
         var showsSubmenuList = false
         var showsThirdList = false
         var sortMode: MenuView.TVShowsSortMode?
+        var theme: InterfaceTheme?
     }
 
     init(menu: MenuView) {
@@ -75,6 +80,9 @@ final class MenuSceneRenderer: TransactionRendering {
         buildLayerTree()
         observation = menu.objectWillChange.sink { [weak self] _ in
             self?.isDirty = true
+        }
+        settingsObserver = NotificationCenter.default.addObserver(forName: AppSettings.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolatedIfPossible { self?.isDirty = true }
         }
         flushObserver = RunLoopFlushObserver { [weak self] in
             self?.renderAtEndOfRunLoopPass()
@@ -95,11 +103,14 @@ final class MenuSceneRenderer: TransactionRendering {
     private func buildLayerTree() {
         rootLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
         rootLayer.masksToBounds = true
+        rootLayer.addSublayer(modernBackground.layer)
         rootLayer.addSublayer(canvas)
         canvas.addSublayer(sceneContent)
         sceneContent.addSublayer(rootHeader.layer)
         sceneContent.addSublayer(submenuHeader.layer)
         sceneContent.addSublayer(carouselBox)
+        sceneContent.addSublayer(modernCard.layer)
+        modernCard.layer.isHidden = true
         carouselBox.addSublayer(detailContent.layer)
         carouselBox.addSublayer(carouselSpace)
         #if os(macOS) || FIRSTROW_PORTABLE
@@ -135,6 +146,7 @@ final class MenuSceneRenderer: TransactionRendering {
         guard containerSize.width > 0, containerSize.height > 0 else { return }
         self.containerSize = containerSize
         self.backingScale = backingScale
+        modernBackground.layout(size: containerSize)
         withoutLayerActions {
             rootLayer.frame = CGRect(origin: .zero, size: containerSize)
             let virtualSize = menu.activeMenuVirtualSceneSize
@@ -180,7 +192,7 @@ final class MenuSceneRenderer: TransactionRendering {
         if isDirty {
             isDirty = false
             update(RenderPass(transaction: Transaction()), includesCarousel: true)
-        } else if carouselNeedsUpdate {
+        } else if carouselNeedsUpdate, !ModernTheme.isActive {
             updateCarousel()
         }
         carouselNeedsUpdate = false
@@ -202,16 +214,33 @@ final class MenuSceneRenderer: TransactionRendering {
         let sceneSize = menu.activeMenuVirtualSceneSize
         let frames = menu.sceneFrames(sceneSize: sceneSize)
         let scale = textScale
+        let theme = AppSettings.theme
+        let isModern = theme == .modern
+        let themeChanged = memo.theme != nil && memo.theme != theme
+        memo.theme = theme
         sceneContent.setOpacity(menu.menuSceneOpacity, pass.animation)
 
         updateHeaders(pass, sceneSize: sceneSize, frames: frames, scale: scale)
 
-        // The carousel and the section's preview content.
+        // The carousel and the section's preview content, or in the modern look the card.
+        carouselBox.isHidden = isModern
+        modernCard.layer.isHidden = !isModern
+        modernBackground.layer.isHidden = !isModern
+        if isModern {
+            let layout = ModernTheme.layout(sceneSize: sceneSize, menuHeight: frames.menuFrame.height)
+            let content = menu.modernCardContent(sceneSize: sceneSize, pass: pass)
+            modernCard.layer.frame = CGRect(origin: .zero, size: sceneSize)
+            modernCard.update(content, frame: layout.cardFrame, scale: scale, animated: !themeChanged && !pass.transaction.disablesAnimations)
+            let ambient = content.ambientImage
+            modernBackground.setAmbient(ambient, key: ambient == nil ? nil : content.key)
+        } else if themeChanged {
+            lastCarouselConfiguration = nil
+        }
         carouselBox.frame = frames.carouselFrame
         let boxBounds = CGRect(origin: .zero, size: frames.carouselFrame.size)
         carouselSpace.frame = boxBounds
         rootCarousel.rootLayer.frame = boxBounds
-        if includesCarousel || lastCarouselConfiguration == nil {
+        if !isModern, includesCarousel || lastCarouselConfiguration == nil {
             updateCarousel()
         }
         detailContent.layer.frame = boxBounds
@@ -219,7 +248,7 @@ final class MenuSceneRenderer: TransactionRendering {
         detailContent.update(
             menu: menu,
             pass: pass,
-            visible: menu.isInSubmenu,
+            visible: menu.isInSubmenu && !isModern,
             opacity: menu.detailContentVisibilityOpacity,
             opacityAnimation: pass.animation(.easeInOut(duration: 0.22), when: memo.hidesPodcastsChrome != nil && memo.hidesPodcastsChrome != hidesChrome),
             sceneSize: sceneSize,
@@ -293,13 +322,16 @@ final class MenuSceneRenderer: TransactionRendering {
         let showsSubmenuHeader = menu.isInSubmenu && menu.activeRootItemID != nil
         let switched = memo.showsSubmenuHeader != nil && memo.showsSubmenuHeader != showsSubmenuHeader
         let transition = switched ? pass.animation : nil
-        let graphic = TextRenderer.render(TextSpec(text: menu.headerText, fontName: firstRowBoldFontName, size: 60, maxWidth: sceneSize.width), scale: scale)
+        let isModern = ModernTheme.isActive
+        let graphic = isModern
+            ? TextRenderer.render(TextSpec(text: menu.headerText, fontName: ModernTheme.boldFontName, size: ModernTheme.titleSize, color: ModernTheme.title, maxWidth: sceneSize.width - 240), scale: scale)
+            : TextRenderer.render(TextSpec(text: menu.headerText, fontName: firstRowBoldFontName, size: 60, maxWidth: sceneSize.width), scale: scale)
         let hidesChrome = menu.shouldHidePodcastsSubmenuChromeUntilLoadCompletes
 
-        // Main menu title, over the middle of the list's selection.
+        // Main menu title, over the middle of the list's selection (centred at the top in the modern look).
         rootHeader.setPresent(!showsSubmenuHeader, transition)
         if !showsSubmenuHeader {
-            let centerX = sceneSize.width * 0.5 + menu.rootMenuHeaderOffsetX(sceneSize: sceneSize)
+            let centerX = isModern ? sceneSize.width * 0.5 : sceneSize.width * 0.5 + menu.rootMenuHeaderOffsetX(sceneSize: sceneSize)
             rootHeader.show(graphic, centerX: centerX, top: frames.headerTop)
             let changed = memo.headerOpacity != nil && memo.headerOpacity != menu.headerOpacity
             rootHeader.content.setOpacity(menu.headerOpacity, pass.animation(.easeInOut(duration: 0.25), when: changed))
@@ -308,7 +340,7 @@ final class MenuSceneRenderer: TransactionRendering {
         // Section title, beside the section's icon.
         submenuHeader.setPresent(showsSubmenuHeader, transition)
         if showsSubmenuHeader {
-            let centerX = sceneSize.width * 0.5 + menu.firstRowHeaderOffsetX(sceneSize: sceneSize) + menu.landedIconWidth * 0.6
+            let centerX = isModern ? sceneSize.width * 0.5 : sceneSize.width * 0.5 + menu.firstRowHeaderOffsetX(sceneSize: sceneSize) + menu.landedIconWidth * 0.6
             submenuHeader.show(graphic, centerX: centerX, top: frames.headerTop)
             let titleChanged = memo.submenuTitleOpacity != nil && memo.submenuTitleOpacity != menu.submenuTitleOpacity
             let chromeChanged = memo.hidesPodcastsChrome != nil && memo.hidesPodcastsChrome != hidesChrome
@@ -324,6 +356,7 @@ final class MenuSceneRenderer: TransactionRendering {
         let menu = menu
         let menuWidth = frames.menuFrame.width
         let arrow = menu.menuArrowAppearance
+        let theme = AppSettings.theme
 
         rootList.layer.frame = CGRect(x: 0, y: 0, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.defaultVisibleMenuRowCount))
         rootList.update(MenuListLayer.Configuration(
@@ -333,8 +366,10 @@ final class MenuSceneRenderer: TransactionRendering {
             arrowAppearance: arrow,
             showsTopOverflowFade: true,
             visibleRowCount: menu.defaultVisibleMenuRowCount,
+            theme: theme,
         ), menu: menu, pass: pass, scale: scale)
         rootList.layer.setOpacity(menu.rootMenuOpacity, pass.animation)
+        slide(rootList.layer, away: menu.rootMenuOpacity < 0.5, toLeft: true, theme: theme, pass.animation)
 
         // Section menu.
         let showsSubmenu = menu.isInSubmenu || menu.isEnteringSubmenu || menu.submenuOpacity > 0.001
@@ -355,7 +390,9 @@ final class MenuSceneRenderer: TransactionRendering {
                 visibleRowCount: menu.defaultVisibleMenuRowCount,
                 selectionBoxWidthScale: isPhotos ? menu.photosSelectionBoxWidthScale : 1,
                 selectionBoxHeightScale: isPhotos ? menu.photosSelectionBoxHeightScale : 1,
+                theme: theme,
             ), menu: menu, pass: memo.showsSubmenuList ? pass : RenderPass(transaction: .instant), scale: scale)
+            slide(submenuList.layer, away: menu.submenuOpacity < 0.5, toLeft: menu.isInThirdMenu, theme: theme, memo.showsSubmenuList ? pass.animation : nil)
             let hideChanged = memo.hidesSubmenuList != nil && memo.hidesSubmenuList != hidesSubmenu
             submenuList.layer.setOpacity(hidesSubmenu ? 0 : menu.submenuOpacity, hideChanged ? pass.animation(.easeInOut(duration: 0.18), when: true) : insertion ?? pass.animation)
         } else if memo.showsSubmenuList {
@@ -383,7 +420,9 @@ final class MenuSceneRenderer: TransactionRendering {
                 selectionBoxWidthScale: isPhotosThird ? menu.photosSelectionBoxWidthScale : 1,
                 selectionBoxHeightScale: isPhotosThird ? menu.photosSelectionBoxHeightScale : 1,
                 usesUniformRowLayout: menu.thirdMenuMode == .musicSongs,
+                theme: theme,
             ), menu: menu, pass: memo.showsThirdList ? pass : RenderPass(transaction: .instant), scale: scale)
+            slide(thirdList.layer, away: menu.thirdMenuOpacity < 0.5, toLeft: false, theme: theme, memo.showsThirdList ? pass.animation : nil)
             let hideChanged = memo.hidesThirdList != nil && memo.hidesThirdList != hidesThird
             thirdList.layer.setOpacity(hidesThird ? 0 : menu.thirdMenuOpacity, hideChanged ? pass.animation(.easeInOut(duration: 0.18), when: true) : pass.animation)
         } else if memo.showsThirdList {
@@ -409,6 +448,14 @@ final class MenuSceneRenderer: TransactionRendering {
         }
         sortPill.setOpacity(showsPill ? 1 : 0, pass.animation(.easeInOut(duration: 0.2), when: pillChanged))
         memo.showsSortPill = showsPill
+    }
+
+    /// In the modern look a list slides out as it fades (left when the next level comes in,
+    /// right when going back) and slides in from the other side.
+    private func slide(_ layer: CALayer, away: Bool, toLeft: Bool, theme: InterfaceTheme, _ animation: Animation?) {
+        let distance = ModernTheme.listSlideDistance
+        let offset: CGFloat = theme == .modern && away ? (toLeft ? -distance : distance) : 0
+        layer.setTransform(CATransform3DMakeTranslation(offset, 0, 0), theme == .modern ? animation : nil)
     }
 }
 

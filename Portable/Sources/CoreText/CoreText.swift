@@ -98,6 +98,11 @@ public enum FontRegistry {
         "lucida grande": ["Lucida Grande", "LucidaGrande", ".Lucida Grande UI", "Lucida Grande UI", "Lucida Sans Unicode", "Lucida Sans", "Lucida Sans Regular", "DejaVu Sans", "Verdana", "Arial"],
         "helvetica neue": ["Helvetica Neue", "Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"],
         "helvetica": ["Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"],
+        // The modern theme's system font, in four weights.
+        "firstrowmodern regular": ["SF Pro Text", "SF Pro Display", "Segoe UI", "Inter", "Roboto", "Noto Sans", "Cantarell", "Ubuntu", "DejaVu Sans"],
+        "firstrowmodern medium": ["SF Pro Text Medium", "SF Pro Display Medium", "Segoe UI Semibold", "Inter Medium", "Roboto Medium", "Noto Sans Medium", "Ubuntu Medium", "Cantarell", "DejaVu Sans"],
+        "firstrowmodern semi": ["SF Pro Display Semibold", "SF Pro Text Semibold", "Segoe UI Semibold", "Inter SemiBold", "Roboto Medium", "Noto Sans SemiBold", "Ubuntu Medium", "DejaVu Sans Bold"],
+        "firstrowmodern heavy": ["SF Pro Display Bold", "SF Pro Text Bold", "Segoe UI Bold", "Inter Bold", "Roboto Bold", "Noto Sans Bold", "Ubuntu Bold", "DejaVu Sans Bold"],
     ]
 
     /// Line metrics (ascent, descent and line gap, in ems) of fonts the layouts were made with,

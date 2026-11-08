@@ -162,6 +162,9 @@ enum FirstRowHarness {
                 // library:iTunesXML|iPhoto:/path
                 guard let kind = MediaSources.LibraryKind(rawValue: parts[1]) else { return }
                 MediaSources.shared.setLibrary(URL(fileURLWithPath: parts[2]), kind: kind)
+            case "theme" where parts.count == 2:
+                // theme:classic|modern
+                AppSettings.theme = InterfaceTheme(rawValue: parts[1]) ?? .classic
             case "volume" where parts.count == 2:
                 // volume:0.5 shows the volume overlay at that level.
                 NotificationCenter.default.post(name: .firstRowVolumeChanged, object: nil, userInfo: ["volume": Double(parts[1]) ?? 0])

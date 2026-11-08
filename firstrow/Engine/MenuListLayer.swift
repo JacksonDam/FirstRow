@@ -21,17 +21,21 @@ final class MenuListLayer {
         var selectionBoxWidthScale: CGFloat = 1
         var selectionBoxHeightScale: CGFloat = 1
         var usesUniformRowLayout = false
+        var theme: InterfaceTheme = .classic
     }
 
     /// The list's box: the menu width, and as tall as its rows plus the space below them.
     let layer = SceneLayer()
     private let selectionBox = SelectionBoxLayer()
+    /// The modern theme's selection: a white capsule under the focused row.
+    private let focusCapsule = SceneLayer()
     private let clip = SceneLayer()
     private let rowsContainer = SceneLayer()
     private let topFade = SceneGradientLayer()
     private let bottomFade = SceneGradientLayer()
-    private var rows: [Int: MenuRowLayer] = [:]
-    private var spareRows: [MenuRowLayer] = []
+    private var rows: [Int: any MenuRowLayering] = [:]
+    private var spareRows: [any MenuRowLayering] = []
+    private var rowTheme: InterfaceTheme?
     private var lastSelectedIndex: Int?
     private var lastSelectedRowOffset: CGFloat?
     private var lastScrollOffset: CGFloat?
@@ -41,6 +45,13 @@ final class MenuListLayer {
 
     init() {
         layer.addSublayer(selectionBox.layer)
+        focusCapsule.backgroundColor = ModernTheme.focusFill.cgColor
+        focusCapsule.shadowColor = CGColor(gray: 0, alpha: 1)
+        focusCapsule.shadowOpacity = 0.5
+        focusCapsule.shadowRadius = 18
+        focusCapsule.shadowOffset = CGSize(width: 0, height: 10)
+        focusCapsule.isHidden = true
+        layer.addSublayer(focusCapsule)
         clip.masksToBounds = true
         layer.addSublayer(clip)
         clip.addSublayer(rowsContainer)
@@ -66,6 +77,15 @@ final class MenuListLayer {
 
     func update(_ c: Configuration, menu: MenuView, pass: RenderPass, scale: CGFloat) {
         let items = c.items
+        let isModern = c.theme == .modern
+        if rowTheme != c.theme {
+            // Rows are drawn differently in each look, so start them afresh.
+            for row in Array(rows.values) + spareRows { row.layer.removeFromSuperlayer() }
+            rows.removeAll()
+            spareRows.removeAll()
+            rowTheme = c.theme
+            reset()
+        }
         let menuWidth = c.menuWidth
         let selectedIndex = items.isEmpty ? 0 : min(max(0, c.selectedIndex), items.count - 1)
         let selectionWidth = menuWidth * c.selectionBoxWidthScale
@@ -134,12 +154,33 @@ final class MenuListLayer {
         let visualXOffset = selectionVisualXOffset + compactReduction * 0.5
         let visualHeight = selectedIsNormalHeight ? menu.selectionBoxHeight + menu.selectionTextureVisualHeightDelta : selectionVisualHeight
         let visualYOffset = selectedIsNormalHeight ? -(menu.selectionTextureVisualHeightDelta * 0.5) : selectionVisualYOffset
-        selectionBox.layer.isHidden = items.isEmpty
-        selectionBox.update(
-            frame: CGRect(x: visualXOffset, y: selectedRowOffset + scrollOffset + visualYOffset, width: visualWidth, height: visualHeight),
-            selectionBoxHeight: menu.selectionBoxHeight,
-            animation: selectionAnimation,
-        )
+        selectionBox.layer.isHidden = items.isEmpty || isModern
+        focusCapsule.isHidden = items.isEmpty || !isModern
+        if isModern {
+            let rowHeight = selectedIsNormalHeight ? menu.selectionBoxHeight : selectionHeight
+            let rowYOffset = selectedIsNormalHeight ? 0 : selectionYOffset
+            let growth = ModernTheme.focusGrowth
+            let capsuleHeight = rowHeight - ModernTheme.rowCapsuleInset + growth.height * 2
+            let frame = CGRect(
+                x: rowContentXOffset - growth.width,
+                y: selectedRowOffset + scrollOffset + rowYOffset + (rowHeight - capsuleHeight) * 0.5,
+                width: rowContentWidth + growth.width * 2,
+                height: capsuleHeight,
+            )
+            // A single step springs into place; a held sweep keeps its steady pace.
+            let animation = selectionAnimation.map { menu.useLinearSelectionSweepAnimation || $0 != movement ? $0 : .focus(duration: ModernTheme.focusDuration) }
+            focusCapsule.setFrame(frame, animation)
+            if focusCapsule.cornerRadius != capsuleHeight * 0.5 {
+                focusCapsule.cornerRadius = capsuleHeight * 0.5
+                focusCapsule.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: frame.size), cornerWidth: capsuleHeight * 0.5, cornerHeight: capsuleHeight * 0.5, transform: nil)
+            }
+        } else {
+            selectionBox.update(
+                frame: CGRect(x: visualXOffset, y: selectedRowOffset + scrollOffset + visualYOffset, width: visualWidth, height: visualHeight),
+                selectionBoxHeight: menu.selectionBoxHeight,
+                animation: selectionAnimation,
+            )
+        }
 
         // Rows scroll inside a box that clips them top and bottom only.
         clip.frame = CGRect(x: -Self.clipOverhang, y: 0, width: menuWidth + Self.clipOverhang * 2, height: viewportHeight)
@@ -187,12 +228,12 @@ final class MenuListLayer {
         }
         for index in renderRange {
             let item = items[index]
-            let row: MenuRowLayer
+            let row: any MenuRowLayering
             if let existing = rows[index] {
                 row = existing
             } else {
                 row = spareRows.popLast() ?? {
-                    let made = MenuRowLayer()
+                    let made: any MenuRowLayering = isModern ? ModernMenuRowLayer() : MenuRowLayer()
                     rowsContainer.addSublayer(made.layer)
                     return made
                 }()
@@ -221,6 +262,7 @@ final class MenuListLayer {
                     ? menu.photosAlbumCoverImageCache[item.id]
                     : nil,
                 scale: scale,
+                theme: c.theme,
             )
             row.update(spec, menu: menu)
             row.layer.frame = CGRect(x: rowContentXOffset, y: rowYBase + rowYOffset, width: rowContentWidth, height: rowHeight)
@@ -307,9 +349,17 @@ final class SelectionBoxLayer {
     }
 }
 
+/// A row of a menu list, in either look.
+@MainActor
+protocol MenuRowLayering: AnyObject {
+    var layer: SceneLayer { get }
+    func update(_ spec: MenuRowLayer.Spec, menu: MenuView)
+    func updateDecorations(divider: CGRect?, background: CGRect?)
+}
+
 /// One row of a menu list.
 @MainActor
-final class MenuRowLayer {
+final class MenuRowLayer: MenuRowLayering {
     struct Spec: Equatable {
         var item: MenuListItemConfig
         var isSelected: Bool
@@ -323,9 +373,10 @@ final class MenuRowLayer {
         var isPhotosThirdMenu: Bool
         var dynamicLeadingImage: NSImage?
         var scale: CGFloat
+        var theme: InterfaceTheme = .classic
 
         static func == (lhs: Spec, rhs: Spec) -> Bool {
-            lhs.item == rhs.item && lhs.isSelected == rhs.isSelected && lhs.isSettled == rhs.isSettled &&
+            lhs.item == rhs.item && lhs.isSelected == rhs.isSelected && lhs.isSettled == rhs.isSettled && lhs.theme == rhs.theme &&
                 lhs.rowWidth == rhs.rowWidth && lhs.rowHeight == rhs.rowHeight &&
                 lhs.leadingCompensation == rhs.leadingCompensation && lhs.showsPlaybackSpeaker == rhs.showsPlaybackSpeaker &&
                 lhs.isPhotosRoot == rhs.isPhotosRoot && lhs.isPhotosThirdMenu == rhs.isPhotosThirdMenu &&
@@ -597,18 +648,19 @@ final class MarqueeLayer {
         layer.isHidden = true
     }
 
-    func show(title: String, viewportWidth: CGFloat, height: CGFloat, scale: CGFloat) {
-        if let current, current.title == title, current.width == viewportWidth, current.scale == scale, !layer.isHidden, strip.animation(forKey: "marquee") != nil {
+    func show(title: String, viewportWidth: CGFloat, height: CGFloat, scale: CGFloat, fontName: String = firstRowBoldFontName, size: CGFloat = 40, color: RGBA = .white) {
+        let identity = "\(title)|\(fontName)|\(size)|\(color.red),\(color.alpha)"
+        if let current, current.title == identity, current.width == viewportWidth, current.scale == scale, !layer.isHidden, strip.animation(forKey: "marquee") != nil {
             return
         }
-        current = (title, viewportWidth, scale)
+        current = (identity, viewportWidth, scale)
         layer.isHidden = false
         layer.frame = CGRect(x: 0, y: 0, width: viewportWidth, height: height)
         let fade = min(0.5, max(0, Self.edgeFade / max(1, viewportWidth)))
         fadeMask.frame = layer.bounds
         fadeMask.colors = [CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 0)]
         fadeMask.locations = [0, NSNumber(value: Double(fade)), NSNumber(value: Double(1 - fade)), 1]
-        let graphic = TextRenderer.render(TextSpec(text: title, fontName: firstRowBoldFontName, size: 40), scale: scale)
+        let graphic = TextRenderer.render(TextSpec(text: title, fontName: fontName, size: size, color: color), scale: scale)
         first.show(graphic, at: .zero)
         second.show(graphic, at: CGPoint(x: graphic.size.width + Self.gap, y: 0))
         let cycle = max(1, graphic.size.width + Self.gap)
