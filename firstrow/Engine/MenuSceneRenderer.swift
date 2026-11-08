@@ -360,7 +360,11 @@ final class MenuSceneRenderer: TransactionRendering {
         )
 
         lap("card")
-        // The menu lists.
+        // The menu lists. One clicked into a player takes up its usual scroll once the player
+        // covers it, not while it's still in view.
+        if menu.pointer.clearsPinOnceCovered, menu.isPlayerCoveringMenus() {
+            menu.pointer.clearPin()
+        }
         menuArea.frame = frames.menuFrame
         updateLists(pass, sceneSize: sceneSize, frames: frames, scale: scale)
         lap("lists")

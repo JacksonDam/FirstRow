@@ -24,6 +24,7 @@ extension MenuView {
             return
         }
         notePointerAwareKey(key)
+        defer { if key == .enter { settlePointerScrollAfterEnter() } }
         if deferForStartupMusicLibraryPreload(key) { return }
         isMusicEntryWaitingForStartupPreload = false
         registerUserInteractionForScreenSaver()

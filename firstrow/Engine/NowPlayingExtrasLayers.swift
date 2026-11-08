@@ -269,12 +269,15 @@ final class NowPlayingQueueLayer {
         let scroll = max(0, min(scrollLimit, menu.nowPlayingQueueScroll))
         rowsContainer.bounds = CGRect(x: 0, y: 0, width: width, height: max(clipFrame.height, CGFloat(count) * pitch + padding * 2))
         let scrollAnimation = lastScroll == nil ? nil : pass.animation
+        // Where it shows now, part way through a scroll, as well as where it's going: a quick
+        // flick of the wheel mustn't leave it empty on the way.
+        let shownScroll = padding - (rowsContainer.presentation()?.position.y ?? rowsContainer.position.y)
         rowsContainer.setPosition(CGPoint(x: 0, y: padding - scroll), scrollAnimation)
         lastScroll = scroll
 
-        // Rows near the view.
-        let first = max(0, Int(floor(scroll / pitch)) - 2)
-        let last = min(count - 1, Int(ceil((scroll + clipFrame.height) / pitch)) + 2)
+        // Rows near the view, all the way along a scroll under way.
+        let first = max(0, Int(floor(min(scroll, shownScroll) / pitch)) - 2)
+        let last = min(count - 1, Int(ceil((max(scroll, shownScroll) + clipFrame.height) / pitch)) + 2)
         let range = first <= last ? first ... last : 1 ... 0
         for (index, row) in rows where !range.contains(index) {
             row.layer.isHidden = true

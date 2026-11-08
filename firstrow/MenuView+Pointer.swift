@@ -132,7 +132,12 @@ final class PointerInputState {
         }
     }
 
+    /// A list clicked into a player keeps where the wheel left it while the player comes up over
+    /// it, and takes up its usual place once it's out of sight.
+    var clearsPinOnceCovered = false
+
     func clearPin() {
+        clearsPinOnceCovered = false
         pin = nil
         leftScrollOffsets.removeAll()
         forgetWhenShownAgain.removeAll()
@@ -212,6 +217,21 @@ extension MenuView {
                     return
                 }
             #endif
+            // Enter waits to see what it opens (see settlePointerScrollAfterEnter).
+            if key != .enter { pointer.clearPin() }
+        }
+    }
+
+    /// After Enter: a player coming up over the list leaves it where the wheel left it until
+    /// the player covers it; anything else hands the list back to the arrows straight away.
+    func settlePointerScrollAfterEnter() {
+        #if os(iOS)
+            if AppSettings.isTouchEnabled { return }
+        #endif
+        guard pointer.pin != nil else { return }
+        if isPlayerCoveringMenus(orComing: true) {
+            pointer.clearsPinOnceCovered = true
+        } else {
             pointer.clearPin()
         }
     }
@@ -367,12 +387,11 @@ extension MenuView {
             return
         }
         if activeFullscreenScene != nil {
-            // Now Playing and slideshows: a click plays or pauses, as the space bar does.
+            // Now Playing: a click brings the buttons back, as moving does (only the play button
+            // plays and pauses).
             let key = activeFullscreenScene?.key
             if key == musicNowPlayingFullscreenKey {
-                isPressingOnScreenPlaybackButton = true
-                handleKeyDown(.space)
-                isPressingOnScreenPlaybackButton = false
+                showNowPlayingTouchControls()
             } else if key == photoSlideshowFullscreenKey {
                 // As on a movie: a click brings Back up (moving the pointer does too).
                 showSlideshowControls()
@@ -391,7 +410,6 @@ extension MenuView {
             if index != pointerSelectionIndex(for: level) {
                 selectRowFromPointer(level: level, index: index)
             }
-            pointer.clearPin()
             handleKeyDown(.enter)
         case let .carouselItem(index):
             guard pointerActiveListLevel == .root else { return }
@@ -736,6 +754,16 @@ extension MenuView {
 }
 
 extension MenuView {
+    /// A player (Now Playing, a movie, a slideshow) over the menus; with `orComing`, one on its
+    /// way too, or the movie prompt that comes before one.
+    func isPlayerCoveringMenus(orComing: Bool = false) -> Bool {
+        let scene = activeFullscreenScene.map { $0.key != screenSaverFullscreenKey } ?? false
+        if orComing {
+            return scene || isFullscreenSceneTransitioning || isMoviePlaybackVisible || isMovieTransitioning || isMovieResumePromptVisible
+        }
+        return (scene && !isFullscreenSceneTransitioning) || (isMoviePlaybackVisible && !isMovieTransitioning)
+    }
+
     /// One of the on-screen buttons was pressed (by a finger or the pointer).
     func pressOnScreenControl(_ control: TouchControl) {
         func press(_ key: KeyCode) {

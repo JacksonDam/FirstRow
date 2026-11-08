@@ -546,6 +546,8 @@ extension MenuView {
             let durationSeconds: Double
             let isPlaying: Bool
             let isStopped: Bool
+            /// Whether `elapsedSeconds` is Music's position (read from it), not a stand-in.
+            var hasPosition = false
         }
 
         static func musicPersistentIDHexString(forDecimalString decimalString: String) -> String? {
@@ -636,6 +638,91 @@ extension MenuView {
             } else {
                 stopMusicPlaybackSession(clearDisplayState: false)
             }
+        }
+
+        /// Within a few seconds of the end of the song (where Music moves on, or repeats it, by itself).
+        var isMusicAppleScriptSongNearItsEnd: Bool {
+            musicNowPlayingDurationSeconds > 0 && musicNowPlayingElapsedSeconds >= musicNowPlayingDurationSeconds - 3
+        }
+
+        /// Music moved to another song itself. At the end of a song, or with its Next, First Row's
+        /// next song follows. With its Previous (the keyboard's previous key goes to Music, not
+        /// First Row), First Row's previous song does: Music only knows its own list, not First
+        /// Row's, so which way it went is asked of Music when it isn't plain.
+        func handleMusicAppTrackChange(from expectedHex: String, to snapshot: MusicSystemPlayerSnapshot) {
+            guard isCurrentMusicPlaybackUsingAppleScript, isCurrentMusicPlaybackManagedByFirstRow,
+                  !musicAppleScriptDidHandleTrackBoundary
+            else { return }
+            let queue = resolvedActiveMusicPlaybackQueue()
+            guard let index = activeMusicPlaybackIndex(), !isMusicAppleScriptSongNearItsEnd else {
+                handleMusicAppleScriptTrackBoundary()
+                return
+            }
+            if queue.indices.contains(index - 1), queue[index - 1].id == snapshot.persistentIDDecimalString {
+                goToPreviousSongAfterMusicApp()
+                return
+            }
+            if queue.indices.contains(index + 1), queue[index + 1].id == snapshot.persistentIDDecimalString {
+                handleMusicAppleScriptTrackBoundary()
+                return
+            }
+            // Held while Music is asked, so nothing else acts on the change meanwhile.
+            musicAppleScriptDidHandleTrackBoundary = true
+            let requestID = musicPlaybackRequestID
+            Task(priority: .userInitiated) {
+                let wentBack = await musicAppleScriptExecutor.run {
+                    Self.musicAppWentBack(from: expectedHex)
+                }
+                await MainActor.run {
+                    guard self.musicPlaybackRequestID == requestID, self.isCurrentMusicPlaybackUsingAppleScript else { return }
+                    self.musicAppleScriptDidHandleTrackBoundary = false
+                    if wentBack {
+                        self.goToPreviousSongAfterMusicApp()
+                    } else {
+                        self.handleMusicAppleScriptTrackBoundary()
+                    }
+                }
+            }
+        }
+
+        /// First Row's previous song, or from the first song, that one again from the start.
+        private func goToPreviousSongAfterMusicApp() {
+            musicAppleScriptDidHandleTrackBoundary = true
+            stopMusicScrubbing(showPauseGlyph: false)
+            musicNowPlayingLeadingGlyphState = nil
+            let queue = resolvedActiveMusicPlaybackQueue()
+            if let index = activeMusicPlaybackIndex(), index == 0, let first = queue.first {
+                startMusicPlayback(
+                    from: first,
+                    trackIndex: 0,
+                    trackCount: queue.count,
+                    presentsFullscreen: false,
+                    playbackQueue: queue,
+                )
+                return
+            }
+            switchMusicNowPlayingTrack(direction: -1)
+        }
+
+        /// Whether the song Music is playing now comes before `previousHex` in Music's list.
+        nonisolated static func musicAppWentBack(from previousHex: String) -> Bool {
+            let source = """
+            tell application "\(musicApplicationName)"
+                if not running then
+                    return "ON"
+                end if
+                try
+                    set newIndex to index of current track
+                    set oldIndex to index of (first track of current playlist whose persistent ID is "\(previousHex)")
+                    if newIndex < oldIndex then
+                        return "BACK"
+                    end if
+                end try
+                return "ON"
+            end tell
+            """
+            let result = executeMusicApplicationAppleScript(source, retryCount: 2)
+            return result.succeeded && result.trimmedStandardOutput == "BACK"
         }
 
         /// Apple Music cloud tracks have no local URL and can't be played via AVFoundation.
@@ -1032,7 +1119,7 @@ extension MenuView {
                let currentPersistentIDHex = snapshot.persistentIDHex,
                expectedPersistentIDHex != currentPersistentIDHex
             {
-                handleMusicAppleScriptTrackBoundary()
+                handleMusicAppTrackChange(from: expectedPersistentIDHex, to: snapshot)
                 return
             }
 
@@ -1056,6 +1143,18 @@ extension MenuView {
             let isGraceActive = (musicAppleScriptStartupDeadline.map { $0 > Date() } ?? false) && !snapshot.isPlaying
             let effectiveIsPlaying = isGraceActive ? musicAppleScriptIsPlaying : snapshot.isPlaying
             
+            // Music's own Previous (the keyboard's previous key goes to Music, not First Row)
+            // starts the song again more than a few seconds in: First Row goes to its previous
+            // song instead, as its own previous does.
+            if snapshot.hasPosition, musicScrubDirection == 0, !isGraceActive,
+               isCurrentMusicPlaybackUsingAppleScript, isCurrentMusicPlaybackManagedByFirstRow,
+               musicNowPlayingElapsedSeconds > 4, snapshot.elapsedSeconds < 2,
+               !isMusicAppleScriptSongNearItsEnd,
+               let index = activeMusicPlaybackIndex(), index > 0
+            {
+                goToPreviousSongAfterMusicApp()
+                return
+            }
             if musicScrubDirection == 0 {
                 musicAppleScriptIsPlaying = effectiveIsPlaying
                 musicAppleScriptStartupDeadline = isGraceActive ? musicAppleScriptStartupDeadline : nil
@@ -1303,6 +1402,7 @@ extension MenuView {
                 durationSeconds: max(0, durationMilliseconds / 1000.0),
                 isPlaying: playerStateText == "playing",
                 isStopped: playerStateText == "stopped" || resolvedPersistentIDHex == nil,
+                hasPosition: true,
             )
         }
 
