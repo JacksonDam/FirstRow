@@ -130,7 +130,6 @@ final class NowPlayingQueueLayer {
     private let clip = SceneLayer()
     private let fade = SceneGradientLayer()
     private let rowsContainer = SceneLayer()
-    private let edgeBar = HintBarLayer()
 
     /// One song in the list, drawn as the menus' rows are: in the modern look a translucent
     /// capsule that turns white, grows and casts its shadow when picked out; in the classic look
@@ -196,7 +195,6 @@ final class NowPlayingQueueLayer {
     private(set) var isAvailable = false
 
     init() {
-        layer.addSublayer(edgeBar.layer)
         layer.addSublayer(panel)
         panel.addSublayer(header)
         panel.addSublayer(clip)
@@ -218,14 +216,8 @@ final class NowPlayingQueueLayer {
         isAvailable = menu.canShowNowPlayingQueue
         let reveal = isAvailable ? menu.nowPlayingQueueReveal : 0
 
-        // The hint along the right edge, while the list is away.
-        let barHeight: CGFloat = 130
-        edgeBar.update(
-            frame: CGRect(x: size.width - 24, y: (size.height - barHeight) / 2, width: 8, height: barHeight),
-            shown: isAvailable && menu.nowPlayingQueueReveal <= 0 && !menu.isNowPlayingLyricsVisible && menu.showsPointingHints,
-            drift: CGSize(width: -22, height: 0),
-            session: menu.nowPlayingSession,
-        )
+        // (The hint along the right edge is drawn with the on-screen buttons, in screen points,
+        // so it matches the transport's.)
 
         let width = NowPlayingSideLayout.queueWidth(size)
         panelFrame = CGRect(x: size.width - width - 40, y: 70, width: width, height: size.height - 140)

@@ -39,9 +39,11 @@ extension MenuView {
         if lastInputSource != source { lastInputSource = source }
     }
 
-    /// The pointing and touching hints have a use: the last input wasn't a key.
+    /// The pointing and touching hints (the faint bars, the on-screen buttons) are for the
+    /// pointer and fingers: a key or any remote puts them away until the pointer moves or a
+    /// finger touches again.
     var showsPointingHints: Bool {
-        lastInputSource != .keyboard && lastInputSource != .appleRemote
+        lastInputSource == .pointer || lastInputSource == .touch
     }
 
     /// The round on-screen buttons (Back, the transports) are shown: touch mode on iPhone and
@@ -59,6 +61,10 @@ extension MenuView {
     func handleKeyDown(_ key: KeyCode, isRepeat: Bool = false, modifiers: NSEvent.ModifierFlags = []) {
         // The file picker is answering keys of its own.
         if isChoosingMediaSource { return }
+        if onboardingStep != nil {
+            handleOnboardingKey(key, isRepeat: isRepeat)
+            return
+        }
         if key == .upArrow || key == .downArrow || key == .leftArrow || key == .rightArrow {
             if isRepeat { return }
             handleDirectionalPressBegan(key, modifiers: modifiers)
@@ -74,6 +80,7 @@ extension MenuView {
 
     /// Called once the menus are on screen.
     func start() {
+        beginOnboardingIfNeeded()
         beginStartupMusicLibraryPreloadIfNeeded()
         preloadITunesTopChartsInBackground()
         registerUserInteractionForScreenSaver()

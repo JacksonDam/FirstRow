@@ -175,12 +175,26 @@ final class FirstRowAppController {
         FirstRowHarness.rubberBandSink = { [weak menu] value in
             withAnimation(.smooth(duration: 0.2)) { menu?.remoteRubberBand = value }
         }
+        // Game controllers (and the Siri Remote on Apple TV) count as keys: they put the
+        // pointing and touching hints away.
         let controllers = GameControllerInput(
-            onArrowKeyDown: { [weak menu] key in menu?.handleDirectionalPressBegan(key) },
+            onArrowKeyDown: { [weak menu] key in
+                menu?.noteInputSource(.keyboard)
+                menu?.handleDirectionalPressBegan(key)
+            },
             onArrowKeyUp: { [weak menu] key in menu?.handleDirectionalPressEnded(key) },
-            onEnter: { [weak menu] in menu?.handleKeyDown(.enter) },
-            onBackspace: { [weak menu] in menu?.handleKeyDown(.delete) },
-            onSpace: { [weak menu] in menu?.handleKeyDown(.space) },
+            onEnter: { [weak menu] in
+                menu?.noteInputSource(.keyboard)
+                menu?.handleKeyDown(.enter)
+            },
+            onBackspace: { [weak menu] in
+                menu?.noteInputSource(.keyboard)
+                menu?.handleKeyDown(.delete)
+            },
+            onSpace: { [weak menu] in
+                menu?.noteInputSource(.keyboard)
+                menu?.handleKeyDown(.space)
+            },
         )
         controllers.startMonitoringControllersIfNeeded()
         gameControllers = controllers

@@ -32,6 +32,10 @@ final class TouchControlsLayer {
     /// leaving a faint bar to pull them back up with.
     private let transportGroup = SceneLayer()
     private let transportHint = HintBarLayer()
+    /// The bar along the right edge that pulls Now Playing's list out: the same bar as the
+    /// transport's, turned on its side.
+    private let queueHint = HintBarLayer()
+    private var wasEnabled = false
 
     private final class Button {
         /// Positioned at the button's frame; fades and shrinks when pressed.
@@ -87,6 +91,7 @@ final class TouchControlsLayer {
         layer.addSublayer(sceneGroup)
         sceneGroup.addSublayer(transportGroup)
         sceneGroup.addSublayer(transportHint.layer)
+        sceneGroup.addSublayer(queueHint.layer)
     }
 
     func setPressed(_ control: TouchControl?) {
@@ -105,7 +110,10 @@ final class TouchControlsLayer {
 
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
         var wanted: [Wanted] = []
-        let enabled = menu.showsOnScreenControls
+        // Shown for the pointer and fingers; a key or remote puts them straight away.
+        let enabled = menu.showsOnScreenControls && menu.showsPointingHints && menu.onboardingStep == nil
+        let putAwayForKeys = wasEnabled && !enabled
+        wasEnabled = enabled
         let isModern = ModernTheme.isActive
         // Laid out in the screen's own points, so the buttons are finger-sized on any screen,
         // and kept clear of the notch or Dynamic Island and of the screen's rounded corners.
@@ -150,6 +158,9 @@ final class TouchControlsLayer {
                     let small: CGFloat = 46
                     wanted.append(Wanted(control: .lyrics, frame: CGRect(x: rightEdge + 40, y: centerY - small / 2, width: small, height: small), symbol: menu.isNowPlayingLyricsVisible ? "quote.bubble.fill" : "quote.bubble", pointSize: 19, inScene: true))
                 }
+            } else if menu.activeFullscreenScene?.key == menu.photoSlideshowFullscreenKey {
+                // Only for a few seconds after a tap, click or move: the pictures have the screen.
+                if menu.areSlideshowControlsVisible, !menu.isFullscreenSceneTransitioning { wanted = [back] }
             } else if menu.activeFullscreenScene != nil, menu.activeFullscreenScene?.key != menu.screenSaverFullscreenKey {
                 wanted = [back]
             } else if menu.activeFullscreenScene == nil, menu.isInSubmenu || menu.isMovieResumePromptVisible {
@@ -184,11 +195,18 @@ final class TouchControlsLayer {
             drift: CGSize(width: 0, height: -9),
             session: menu.nowPlayingSession,
         )
+        queueHint.update(
+            frame: CGRect(x: size.width - max(insets.right, 8) - 16, y: size.height / 2 - 40, width: 5, height: 80),
+            shown: isNowPlaying && menu.canShowNowPlayingQueue && menu.nowPlayingQueueReveal <= 0.001 && !menu.isNowPlayingLyricsVisible &&
+                !menu.isFullscreenSceneTransitioning && menu.showsPointingHints && menu.onboardingStep == nil,
+            drift: CGSize(width: -9, height: 0),
+            session: menu.nowPlayingSession,
+        )
 
         frames = [:]
         let shown = Set(wanted.map { Key(control: $0.control, inScene: $0.inScene) })
         for (key, button) in buttons where button.isShown && !shown.contains(key) {
-            hide(button, instantly: key.inScene && sceneMoving)
+            hide(button, instantly: putAwayForKeys || (key.inScene && sceneMoving))
         }
         for item in wanted {
             let key = Key(control: item.control, inScene: item.inScene)
@@ -240,11 +258,17 @@ final class TouchControlsLayer {
             // Slid away, they can't be pressed.
             if !(item.inScene && transportHidden) { frames[item.control] = frame }
             if !button.isShown { show(button, instantly: item.inScene && sceneMoving) }
-            // Back stays while Now Playing sits untouched, but faded back with the rest away.
+            // Back stays while Now Playing sits untouched, faded back with the rest away (for
+            // the mouse, all the way: the pointer moving brings it back).
             let dims = item.control == .back && isIdle
             if dims != button.isDimmed {
                 button.isDimmed = dims
-                button.sharp.setOpacity(dims ? 0.3 : 1, dims ? .smoothInOut(duration: 0.5) : .smooth(duration: 0.35))
+                #if os(iOS)
+                    let dimmed: Double = 0.3
+                #else
+                    let dimmed: Double = 0
+                #endif
+                button.base.setOpacity(dims ? dimmed : 1, dims ? .smoothInOut(duration: 0.5) : .smooth(duration: 0.35))
             }
         }
     }

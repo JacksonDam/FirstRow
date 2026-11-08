@@ -282,6 +282,9 @@
                     try? await Task.sleep(nanoseconds: 50_000_000)
                     touchView?.injectTouch(.ended, at: point)
                 }
+            case "playmovie" where parts.count == 2:
+                // playmovie:<file>: plays a movie, for trying its controls.
+                touchMenu?.startMoviePlayback(from: URL(fileURLWithPath: resolvedHarnessPath(parts[1])))
             case "playfolder" where parts.count == 2:
                 // playfolder:<folder>: plays the audio files there as a list, from the first,
                 // for trying Now Playing's list and lyrics where there's no music library.

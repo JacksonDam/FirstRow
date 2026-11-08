@@ -66,7 +66,7 @@ extension MenuView {
     }
 
     func evaluateScreenSaverIdleActivation() {
-        guard shouldAutoActivateScreenSaver else { return }
+        guard shouldAutoActivateScreenSaver, onboardingStep == nil else { return }
         let elapsedIdleTime = Date().timeIntervalSince(lastUserInteractionAt)
         guard elapsedIdleTime >= screenSaverIdleActivationDelay else { return }
         resetScreenSaverIdleTimer()

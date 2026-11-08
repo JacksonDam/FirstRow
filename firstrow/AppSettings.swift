@@ -22,6 +22,7 @@ enum AppSettings {
     private static let mouseKey = "isMouseEnabled"
     private static let touchKey = "isTouchEnabled"
     private static let screenSaverDelayKey = "screenSaverStartAfterSeconds"
+    private static let onboardingKey = "hasCompletedOnboarding"
     private static let legacyScreenSaverKey = "isScreenSaverEnabled"
 
     static var theme: InterfaceTheme {
@@ -30,6 +31,12 @@ enum AppSettings {
             UserDefaults.standard.set(newValue.rawValue, forKey: themeKey)
             NotificationCenter.default.post(name: didChangeNotification, object: nil)
         }
+    }
+
+    /// The first-launch screens (the look, then mouse or touch) have been answered.
+    static var hasCompletedOnboarding: Bool {
+        get { UserDefaults.standard.bool(forKey: onboardingKey) }
+        set { UserDefaults.standard.set(newValue, forKey: onboardingKey) }
     }
 
     /// Pointing and clicking in the menus and playback screens.

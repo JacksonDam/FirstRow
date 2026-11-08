@@ -20,8 +20,16 @@
         private var singleFingerRecognizers: [UIGestureRecognizer] = []
         private var multiFingerRecognizers: [UIGestureRecognizer] = []
 
+        /// Direct touch whatever the setting (the first-launch screens, where a finger picks).
+        @MainActor static var takesDirectTouch = false {
+            didSet {
+                guard takesDirectTouch != oldValue else { return }
+                NotificationCenter.default.post(name: AppSettings.didChangeNotification, object: nil)
+            }
+        }
+
         private var usesDirectTouch: Bool {
-            AppSettings.isTouchEnabled && onTouch != nil
+            (AppSettings.isTouchEnabled || Self.takesDirectTouch) && onTouch != nil
         }
 
         override init(frame: CGRect) {

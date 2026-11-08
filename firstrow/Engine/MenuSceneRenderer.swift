@@ -46,6 +46,7 @@ final class MenuSceneRenderer: TransactionRendering {
     private let toast = ScreenSaverToastLayer()
     private let volumeOverlay = VolumeOverlayLayer()
     let touchControls = TouchControlsLayer()
+    let onboarding = OnboardingLayer()
     private let folderSwapOverlay = SceneLayer()
     private let movieTransitionOverlay = SceneLayer()
     private let fullscreenTransitionOverlay = SceneLayer()
@@ -151,6 +152,7 @@ final class MenuSceneRenderer: TransactionRendering {
             overlay.isHidden = true
             rootLayer.addSublayer(overlay)
         }
+        rootLayer.addSublayer(onboarding.layer)
         rootLayer.addSublayer(touchControls.layer)
         rootLayer.addSublayer(volumeOverlay.layer)
     }
@@ -373,6 +375,7 @@ final class MenuSceneRenderer: TransactionRendering {
         fullscreenScene.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         toast.update(menu: menu, pass: pass, bounds: fullBounds, backingScale: backingScale)
         volumeOverlay.layout(screenSize: fullBounds.size)
+        onboarding.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         touchControls.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         for (overlay, opacity) in [
             (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),
@@ -818,6 +821,10 @@ extension MenuSceneRenderer {
         let values = playback.options.valueFrames
         let backward = values.indices.contains(index) && point.x < values[index].minX + min(70, values[index].width * 0.35)
         return (index, backward)
+    }
+
+    func onboardingOption(at windowPoint: CGPoint) -> Int? {
+        onboarding.option(atWindowPoint: windowPoint)
     }
 
     func movieOptionsButton(at windowPoint: CGPoint) -> MenuView.MovieOptionRow.Kind? {

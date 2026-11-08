@@ -233,8 +233,20 @@ extension MenuView {
         private static let touchSwipeDistance: CGFloat = 60
 
         func handleTouch(_ phase: TouchPhase, at point: CGPoint, time: TimeInterval) {
+            if onboardingStep != nil {
+                handleOnboardingTouch(phase, at: point)
+                return
+            }
             guard AppSettings.isTouchEnabled, !isChoosingMediaSource else { return }
+            let wasTouching = lastInputSource == .touch
             noteInputSource(.touch)
+            if phase == .began, !wasTouching {
+                // After a remote or keyboard, a touch only brings the on-screen buttons back.
+                touch.holdTask?.cancel()
+                touch.mode = .ignored
+                touch.isFingerDown = true
+                return
+            }
             switch phase {
             case .began: touchBegan(at: point, time: time)
             case .moved: touchMoved(to: point, time: time)
@@ -795,7 +807,8 @@ extension MenuView {
                         isPressingOnScreenPlaybackButton = false
                     }
                 } else if scene.key == photoSlideshowFullscreenKey {
-                    pressTouchKey(.space)
+                    // As on a movie: a tap shows or hides Back.
+                    toggleSlideshowControls()
                 } else if scene.key != screenSaverFullscreenKey {
                     // Errors and messages go away with a tap.
                     pressTouchKey(.escape)

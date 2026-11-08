@@ -325,6 +325,17 @@ final class MenuView: ObservableObject {
     /// state itself, so Now Playing's small glyph under the bar stays away.
     var isPressingOnScreenPlaybackButton = false
     @Published var hidesMusicLeadingGlyph = false
+    /// The first-launch screens: which one is up, the option picked out (0 left, 1 right), and
+    /// the fades in and out of them.
+    @Published var onboardingStep: OnboardingStep?
+    @Published var onboardingFocus = 0
+    @Published var onboardingOpacity: Double = 1
+    @Published var onboardingContentOpacity: Double = 1
+    var isOnboardingTransitioning = false
+    var onboardingPressedOption: Int?
+    /// A photo slideshow's Back button, up for a few seconds after a tap, click or move.
+    @Published var areSlideshowControlsVisible = false
+    var slideshowControlsHideTask: Task<Void, Never>?
     /// The selected row pulled past the end of its list by a Siri Remote swipe, in scene points.
     @Published var remoteRubberBand: CGFloat = 0
     #if os(tvOS)

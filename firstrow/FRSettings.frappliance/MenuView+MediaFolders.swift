@@ -192,7 +192,7 @@ extension MenuView {
 
     /// Command-comma: Settings > Media Folders, from the main menu or the Settings menu.
     func showMediaFoldersFromShortcut() {
-        guard activeFullscreenScene == nil, !isMoviePlaybackVisible, !isMovieResumePromptVisible,
+        guard onboardingStep == nil, activeFullscreenScene == nil, !isMoviePlaybackVisible, !isMovieResumePromptVisible,
               !isMenuFolderSwapTransitioning, !isFullscreenSceneTransitioning
         else { return }
         if thirdMenuMode == .mediaFolders { return }

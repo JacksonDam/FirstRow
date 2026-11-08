@@ -15,6 +15,13 @@ enum PointerEvent {
     /// Positive `dy` moves the content down, towards the earlier rows. Precise deltas are in
     /// points (trackpads); the others are wheel notches.
     case scrolled(dx: CGFloat, dy: CGFloat, precise: Bool, at: CGPoint)
+
+    var location: CGPoint {
+        switch self {
+        case let .moved(point), let .pressed(_, point), let .released(_, point): point
+        case let .scrolled(_, _, _, point): point
+        }
+    }
 }
 
 enum PointerButton {
@@ -72,6 +79,8 @@ protocol PointerHitTesting: AnyObject {
     /// The movie options panel's row at `windowPoint`: its index, -1 on the panel between rows,
     /// or nil off the panel.
     func movieOptionsRow(at windowPoint: CGPoint) -> (index: Int, backward: Bool)?
+    /// The first-launch screen's option (0 left, 1 right) at `windowPoint`.
+    func onboardingOption(at windowPoint: CGPoint) -> Int?
     /// The movie option button at `windowPoint`, while they show.
     func movieOptionsButton(at windowPoint: CGPoint) -> MenuView.MovieOptionRow.Kind?
     /// Where Now Playing's list is, when Now Playing could show one.

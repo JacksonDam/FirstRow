@@ -796,6 +796,37 @@ enum SymbolFallback {
                 context.addEllipse(in: CGRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4))
                 context.fillPath()
             }
+        case "keyboard":
+            return Shape(referenceSize: 20, box: CGSize(width: 30, height: 20)) { context in
+                context.setLineWidth(1.8)
+                context.addPath(CGPath(roundedRect: CGRect(x: 2, y: 2.5, width: 26, height: 15), cornerWidth: 3, cornerHeight: 3, transform: nil))
+                context.strokePath()
+                // Two rows of keys, and the space bar.
+                for row in 0 ..< 2 {
+                    for column in 0 ..< 6 {
+                        context.addRect(CGRect(x: 5.4 + CGFloat(column) * 3.5, y: 5.6 + CGFloat(row) * 3.3, width: 2, height: 1.9))
+                    }
+                }
+                context.addRect(CGRect(x: 9, y: 12.6, width: 12, height: 1.9))
+                context.fillPath()
+            }
+        case "computermouse.fill", "computermouse":
+            return Shape(referenceSize: 20, box: CGSize(width: 18, height: 26)) { context in
+                let body = CGPath(roundedRect: CGRect(x: 2.5, y: 1.5, width: 13, height: 23), cornerWidth: 6.5, cornerHeight: 6.5, transform: nil)
+                context.addPath(body)
+                if name == "computermouse.fill" {
+                    // The buttons' parting line and the wheel, cut out.
+                    context.addRect(CGRect(x: 2.5, y: 9.6, width: 13, height: 1.2))
+                    context.addRect(CGRect(x: 8.4, y: 1.5, width: 1.2, height: 8.5))
+                    context.fillPath(using: .evenOdd)
+                } else {
+                    context.setLineWidth(1.8)
+                    context.strokePath()
+                    context.move(to: CGPoint(x: 9, y: 4))
+                    context.addLine(to: CGPoint(x: 9, y: 8))
+                    context.strokePath()
+                }
+            }
         case "music.note":
             return Shape(referenceSize: 40, box: CGSize(width: 34, height: 46)) { context in
                 context.addEllipse(in: CGRect(x: 5, y: 31.2, width: 12.7, height: 12))

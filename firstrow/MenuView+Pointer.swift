@@ -169,8 +169,18 @@ extension MenuView {
     }
 
     func handlePointerEvent(_ event: PointerEvent) {
+        if onboardingStep != nil {
+            handleOnboardingPointer(event)
+            return
+        }
         guard AppSettings.isMouseEnabled, !isChoosingMediaSource else { return }
+        let wasPointing = lastInputSource == .pointer
         noteInputSource(.pointer)
+        // After keys or a remote, a click only brings the on-screen buttons back.
+        if case .pressed = event, !wasPointing {
+            pointer.location = event.location
+            return
+        }
         switch event {
         case let .moved(point):
             pointerMoved(to: point)
@@ -252,6 +262,10 @@ extension MenuView {
         }
         if activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isFullscreenSceneTransitioning {
             pointerMovedOverNowPlaying(point)
+            return
+        }
+        if activeFullscreenScene?.key == photoSlideshowFullscreenKey, !isFullscreenSceneTransitioning {
+            showSlideshowControls()
             return
         }
         guard activeFullscreenScene == nil, let target = pointer.hitTester?.pointerTarget(at: point) else { return }
@@ -360,7 +374,8 @@ extension MenuView {
                 handleKeyDown(.space)
                 isPressingOnScreenPlaybackButton = false
             } else if key == photoSlideshowFullscreenKey {
-                handleKeyDown(.space)
+                // As on a movie: a click brings Back up (moving the pointer does too).
+                showSlideshowControls()
             }
             return
         }
@@ -392,8 +407,8 @@ extension MenuView {
         }
     }
 
-    /// A click during a movie: on the options or their buttons, or anywhere else to show or
-    /// hide the controls (playing and pausing is the play button's job).
+    /// A click during a movie: on the options or their buttons, or anywhere else to bring the
+    /// controls up (playing and pausing is the play button's job; the controls go by themselves).
     private func performMovieClick(on target: PointerTarget) {
         guard !isMovieTransitioning, moviePlayer != nil else { return }
         switch target {
@@ -404,9 +419,6 @@ extension MenuView {
         default:
             if isMovieOptionsVisible {
                 closeMovieOptions()
-            } else if areMovieControlsVisible, movieControlsOpacity > 0.5 {
-                cancelMovieControlsAutoHide()
-                hideMovieControlsWithFade()
             } else {
                 showMovieControlsFading()
                 scheduleMovieControlsAutoHide()

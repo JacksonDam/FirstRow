@@ -531,7 +531,36 @@ extension MenuView {
                 fullscreenTransitionOverlayOpacity = 0
             }
             isFullscreenSceneTransitioning = false
+            // Back shows for a moment, then leaves the pictures to themselves.
+            showSlideshowControls()
             resolvePhotoSlideshowMusicURL(forRequestID: requestID)
+        }
+    }
+
+    /// The slideshow's Back button (touch and mouse modes): shown for a few seconds, then
+    /// faded away until a tap, a click or the pointer moving brings it back.
+    func showSlideshowControls() {
+        slideshowControlsHideTask?.cancel()
+        if !areSlideshowControlsVisible { areSlideshowControlsVisible = true }
+        slideshowControlsHideTask = Task { @MainActor [weak self] in
+            try? await firstRowSleep(3)
+            guard let self, !Task.isCancelled else { return }
+            self.areSlideshowControlsVisible = false
+        }
+    }
+
+    func hideSlideshowControls() {
+        slideshowControlsHideTask?.cancel()
+        slideshowControlsHideTask = nil
+        if areSlideshowControlsVisible { areSlideshowControlsVisible = false }
+    }
+
+    /// A tap or click on a slideshow: brings Back up, or puts it away, as on a movie.
+    func toggleSlideshowControls() {
+        if areSlideshowControlsVisible {
+            hideSlideshowControls()
+        } else {
+            showSlideshowControls()
         }
     }
 

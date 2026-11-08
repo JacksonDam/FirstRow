@@ -14,6 +14,10 @@ import Foundation
 
 extension MenuView {
     func handleKeyInput(_ key: KeyCode, isRepeat: Bool, modifiers: NSEvent.ModifierFlags = []) {
+        if onboardingStep != nil {
+            handleOnboardingKey(key, isRepeat: isRepeat)
+            return
+        }
         let commandPressed = modifiers.contains(.command)
         if key == .escape, commandPressed {
             NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
@@ -849,6 +853,10 @@ extension MenuView {
         modifiers: NSEvent.ModifierFlags = [],
     ) {
         if isChoosingMediaSource { return }
+        if onboardingStep != nil {
+            handleOnboardingKey(key, isRepeat: false)
+            return
+        }
         guard isDirectionalNavigationKey(key) else {
             handleKeyInput(key, isRepeat: false, modifiers: modifiers)
             return

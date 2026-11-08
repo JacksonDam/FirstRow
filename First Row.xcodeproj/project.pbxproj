@@ -143,6 +143,8 @@
 		0C9DA29CB164F36610FC007F /* MenuView+NowPlayingExtras.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F99887355B4E39ACAAC389F /* MenuView+NowPlayingExtras.swift */; };
 		53D2760FBF3ECF731A0CF301 /* NowPlayingExtrasLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D94F1CD991053A6EFB6EA143 /* NowPlayingExtrasLayers.swift */; };
 		766F3C1E38D54EC25E2DAC05 /* MenuView+RemoteSwipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F8FF2A4C4A080F0988B0B8 /* MenuView+RemoteSwipe.swift */; };
+		0FE49575F8D2796FA1B0B39B /* MenuView+Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ED3B49ED8C7EF4396DD4148 /* MenuView+Onboarding.swift */; };
+		8A6DECC667E3A12646B3E500 /* OnboardingLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A761D1AE7536863CEC349FE9 /* OnboardingLayer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -301,6 +303,8 @@
 		9F99887355B4E39ACAAC389F /* MenuView+NowPlayingExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+NowPlayingExtras.swift"; sourceTree = "<group>"; };
 		D94F1CD991053A6EFB6EA143 /* NowPlayingExtrasLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingExtrasLayers.swift; sourceTree = "<group>"; };
 		A7F8FF2A4C4A080F0988B0B8 /* MenuView+RemoteSwipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+RemoteSwipe.swift"; sourceTree = "<group>"; };
+		5ED3B49ED8C7EF4396DD4148 /* MenuView+Onboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Onboarding.swift"; sourceTree = "<group>"; };
+		A761D1AE7536863CEC349FE9 /* OnboardingLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingLayer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -489,6 +493,7 @@
 		7A73DE812F5776A20021C281 /* firstrow */ = {
 			isa = PBXGroup;
 			children = (
+				5ED3B49ED8C7EF4396DD4148 /* MenuView+Onboarding.swift */,
 				A7F8FF2A4C4A080F0988B0B8 /* MenuView+RemoteSwipe.swift */,
 				AC2E5BC75E266992AE5994D7 /* TouchHarness.swift */,
 				5FAC8B622BFB186235A2E4AD /* MenuView+Touch.swift */,
@@ -586,6 +591,7 @@
 		2C8096D62CAC0F80B1BDAF5E /* Engine */ = {
 			isa = PBXGroup;
 			children = (
+				A761D1AE7536863CEC349FE9 /* OnboardingLayer.swift */,
 				D94F1CD991053A6EFB6EA143 /* NowPlayingExtrasLayers.swift */,
 				A6D0192C9E7940A48F1A7319 /* TouchControlsLayer.swift */,
 				FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */,
@@ -784,6 +790,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A6DECC667E3A12646B3E500 /* OnboardingLayer.swift in Sources */,
+				0FE49575F8D2796FA1B0B39B /* MenuView+Onboarding.swift in Sources */,
 				766F3C1E38D54EC25E2DAC05 /* MenuView+RemoteSwipe.swift in Sources */,
 				53D2760FBF3ECF731A0CF301 /* NowPlayingExtrasLayers.swift in Sources */,
 				0C9DA29CB164F36610FC007F /* MenuView+NowPlayingExtras.swift in Sources */,
