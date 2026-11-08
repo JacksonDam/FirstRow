@@ -1018,8 +1018,16 @@ extension MenuView {
         if isMusicPlaybackRunning() {
             return
         }
-        SoundEffectPlayer.shared.play(named: fileName)
+        SoundEffectPlayer.shared.play(named: Self.themedSoundName(fileName))
     }
+
+    /// The modern look has its own, softer set of the interface sounds.
+    static func themedSoundName(_ name: String) -> String {
+        guard ModernTheme.isActive, modernSoundNames.contains(name) else { return name }
+        return "Modern" + name
+    }
+
+    private static let modernSoundNames: Set<String> = ["Selection", "SelectionChange", "Exit", "Limit", "Key"]
 
     func menuImage(forRootID rootID: String) -> NSImage? {
         MenuConfiguration.imageName(forRootID: rootID).flatMap { NSImage(named: $0) }

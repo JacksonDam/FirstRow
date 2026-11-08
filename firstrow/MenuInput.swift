@@ -49,7 +49,7 @@ extension MenuView {
         startupSoundWarmUpWorkItem = Task {
             try? await firstRowSleep(0.75)
             guard !Task.isCancelled else { return }
-            SoundEffectPlayer.shared.warmUp(soundNames: ["Selection", "SelectionChange", "Exit", "Limit"])
+            SoundEffectPlayer.shared.warmUp(soundNames: ["Selection", "SelectionChange", "Exit", "Limit"].map(Self.themedSoundName))
         }
     }
 

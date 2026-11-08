@@ -119,6 +119,11 @@
 		E23A15D2B8390FBD221D10A8 /* MenuView+Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3221A20525FB90A70CCEC3BD /* MenuView+Settings.swift */; };
 		416B372B6FEC6A31DFCD77A0 /* ModernTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6848BC75830F2ECA0E0230DC /* ModernTheme.swift */; };
 		0478771795FD6F2B1727EE99 /* ModernMenuRowLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 175661ABA5C3D2DB7A570244 /* ModernMenuRowLayer.swift */; };
+		75EFC3ED571F6BBD03360BD2 /* ModernExit.aif in Resources */ = {isa = PBXBuildFile; fileRef = 7D497B33BC318B56E51F4833 /* ModernExit.aif */; };
+		CB1964FB6259EDC5A3EB7CF8 /* ModernKey.aif in Resources */ = {isa = PBXBuildFile; fileRef = 2606A894405F6560E295BCEF /* ModernKey.aif */; };
+		328279BE0D230AFC6C820100 /* ModernLimit.aif in Resources */ = {isa = PBXBuildFile; fileRef = 5C8EE11956FA430ABA68B313 /* ModernLimit.aif */; };
+		CA9F9456A2EE20F6B7086E6C /* ModernSelection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 375BB57713E15DCC94725F7F /* ModernSelection.aif */; };
+		FD12DD474D5A4F5FB7E0FDC7 /* ModernSelectionChange.aif in Resources */ = {isa = PBXBuildFile; fileRef = 24EFAA60856E197241F520F8 /* ModernSelectionChange.aif */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -253,6 +258,11 @@
 		3221A20525FB90A70CCEC3BD /* MenuView+Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Settings.swift"; sourceTree = "<group>"; };
 		6848BC75830F2ECA0E0230DC /* ModernTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModernTheme.swift; sourceTree = "<group>"; };
 		175661ABA5C3D2DB7A570244 /* ModernMenuRowLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModernMenuRowLayer.swift; sourceTree = "<group>"; };
+		7D497B33BC318B56E51F4833 /* ModernExit.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernExit.aif; sourceTree = "<group>"; };
+		2606A894405F6560E295BCEF /* ModernKey.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernKey.aif; sourceTree = "<group>"; };
+		5C8EE11956FA430ABA68B313 /* ModernLimit.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernLimit.aif; sourceTree = "<group>"; };
+		375BB57713E15DCC94725F7F /* ModernSelection.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernSelection.aif; sourceTree = "<group>"; };
+		24EFAA60856E197241F520F8 /* ModernSelectionChange.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernSelectionChange.aif; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -401,6 +411,11 @@
 		7A73DE632F5776A20021C281 /* Sounds */ = {
 			isa = PBXGroup;
 			children = (
+				24EFAA60856E197241F520F8 /* ModernSelectionChange.aif */,
+				375BB57713E15DCC94725F7F /* ModernSelection.aif */,
+				5C8EE11956FA430ABA68B313 /* ModernLimit.aif */,
+				2606A894405F6560E295BCEF /* ModernKey.aif */,
+				7D497B33BC318B56E51F4833 /* ModernExit.aif */,
 				7A73DE5E2F5776A20021C281 /* default.mp3 */,
 				7A73DE5F2F5776A20021C281 /* Exit.aif */,
 				7A73DE602F5776A20021C281 /* Limit.aif */,
@@ -651,6 +666,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FD12DD474D5A4F5FB7E0FDC7 /* ModernSelectionChange.aif in Resources */,
+				CA9F9456A2EE20F6B7086E6C /* ModernSelection.aif in Resources */,
+				328279BE0D230AFC6C820100 /* ModernLimit.aif in Resources */,
+				CB1964FB6259EDC5A3EB7CF8 /* ModernKey.aif in Resources */,
+				75EFC3ED571F6BBD03360BD2 /* ModernExit.aif in Resources */,
 				7A73DEBB2F5776A20021C281 /* 72969531.jpg in Resources */,
 				7A73DEBD2F5776A20021C281 /* IMG_1914-1.jpg in Resources */,
 				7A73DEBE2F5776A20021C281 /* A25C92-1.jpg in Resources */,
