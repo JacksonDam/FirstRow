@@ -523,8 +523,14 @@ extension MenuView {
         Task { @MainActor in
             let found = await JellyfinDiscovery.discover()
             guard self.jellyfin.requestID == requestID, self.currentJellyfinPage?.page == .addServer else { return }
+            let rows = self.jellyfinMenuListItems()
+            let selectedID = rows.indices.contains(self.selectedThirdIndex) ? rows[self.selectedThirdIndex].id : nil
             self.jellyfin.discovered = found
             self.jellyfin.isDiscovering = false
+            // Stay on the row that was selected, unless it was the "looking" row that just went away.
+            if let selectedID, let index = self.jellyfinMenuListItems().firstIndex(where: { $0.id == selectedID }) {
+                self.selectedThirdIndex = index
+            }
         }
     }
 
