@@ -45,6 +45,7 @@ final class FirstRowAppController {
     #if os(tvOS)
         private var remoteInput: RemotePressCapturingView?
         private var launchRemoteInput: LaunchBackRemoteCapturingView?
+        private var remoteSwipes: RemoteSwipeRecognizer?
     #endif
 
     private static let appQuitFadeDuration: Double = 1.0
@@ -171,6 +172,9 @@ final class FirstRowAppController {
             hostView.onPointer = { [weak menu] event in menu?.handlePointerEvent(event) }
         #endif
         FirstRowHarness.pointerEventSink = { [weak menu] event in menu?.handlePointerEvent(event) }
+        FirstRowHarness.rubberBandSink = { [weak menu] value in
+            withAnimation(.smooth(duration: 0.2)) { menu?.remoteRubberBand = value }
+        }
         let controllers = GameControllerInput(
             onArrowKeyDown: { [weak menu] key in menu?.handleDirectionalPressBegan(key) },
             onArrowKeyUp: { [weak menu] key in menu?.handleDirectionalPressEnded(key) },
@@ -188,6 +192,8 @@ final class FirstRowAppController {
                 guard let menu else { return false }
                 return menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey
             }
+            SiriRemoteInput.shared.onTVButton = { [weak menu] in menu?.handleRemoteTVButton() }
+            SiriRemoteInput.shared.onInput = { [weak menu] in menu?.noteInputSource(.siriRemote) }
             AppleRemoteInput.shared.plusMinusChangeVolume = { [weak menu] in
                 guard let menu, !menu.isMovieResumePromptVisible else { return false }
                 if let scene = menu.activeFullscreenScene {
@@ -232,6 +238,12 @@ final class FirstRowAppController {
             hostView.addSubview(remote)
             remoteInput = remote
             remote.makePrimaryResponderIfPossible()
+            // Swipes on the remote's touch surface.
+            let swipes = RemoteSwipeRecognizer { [weak menu] state, translation, velocity in
+                menu?.handleRemotePan(state, translation: translation, velocity: velocity)
+            }
+            hostView.addGestureRecognizer(swipes.recognizer)
+            remoteSwipes = swipes
         #endif
     }
 
@@ -260,6 +272,7 @@ final class FirstRowAppController {
         func handleKeyDown(_ event: NSEvent) {
             NSCursor.setHiddenUntilMouseMoves(true)
             let key = KeyCode(rawValue: event.keyCode) ?? .none
+            menu?.noteInputSource(SyntheticKeyEvents.source(of: event))
             if isLaunchToggleWindowActive, key == .delete, !event.isARepeat {
                 handleLaunchBackPressBegan()
             }
@@ -283,6 +296,7 @@ final class FirstRowAppController {
 
         func handleKeyUp(_ event: NSEvent) {
             let key = KeyCode(rawValue: event.keyCode) ?? .none
+            _ = SyntheticKeyEvents.source(of: event)
             if key == .delete { handleLaunchBackPressEnded() }
             menu?.handleKeyUp(key)
         }
@@ -291,6 +305,7 @@ final class FirstRowAppController {
             if isLaunchToggleWindowActive, key == .delete, !isRepeat {
                 handleLaunchBackPressBegan()
             }
+            menu?.noteInputSource(.keyboard)
             menu?.handleKeyDown(key, isRepeat: isRepeat)
         }
 

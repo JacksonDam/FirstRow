@@ -244,8 +244,28 @@
                 // control:<name>: a tap on one of touch mode's buttons, found by looking for it.
                 let controls: [String: TouchControl] = [
                     "back": .back, "play": .playPause, "previous": .previous, "next": .next,
-                    "skipback": .skipBack, "skipforward": .skipForward, "options": .movieOptions, "lyrics": .lyrics,
+                    "skipback": .skipBack, "skipforward": .skipForward, "lyrics": .lyrics,
                 ]
+                let optionKinds: [String: MenuView.MovieOptionRow.Kind] = ["subtitles": .subtitles, "audio": .audio, "speed": .speed]
+                if let kind = optionKinds[parts[1]], let view = touchView, let hitTester = touchMenu?.pointer.hitTester {
+                    // control:speed etc.: a movie option button above the bar.
+                    var found: CGPoint?
+                    for y in stride(from: CGFloat(0), to: view.bounds.height, by: 4) {
+                        for x in stride(from: CGFloat(0), to: view.bounds.width, by: 4) where found == nil && hitTester.movieOptionsButton(at: CGPoint(x: x, y: y)) == kind {
+                            found = CGPoint(x: x + 10, y: y + 10)
+                        }
+                    }
+                    guard let point = found else {
+                        touchLog("[harness] no \(parts[1]) button showing")
+                        return
+                    }
+                    touchView?.injectTouch(.began, at: point)
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 50_000_000)
+                        touchView?.injectTouch(.ended, at: point)
+                    }
+                    return
+                }
                 guard let wanted = controls[parts[1]], let view = touchView, let hitTester = touchMenu?.pointer.hitTester else { return }
                 var found: CGPoint?
                 for y in stride(from: CGFloat(0), to: view.bounds.height, by: 6) {

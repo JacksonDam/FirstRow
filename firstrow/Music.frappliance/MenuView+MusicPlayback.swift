@@ -1,8 +1,8 @@
 import AVFoundation
-import AVFoundation
 import Foundation
 #if os(macOS)
     import AppKit
+    import CoreServices
 #elseif canImport(UIKit)
     import UIKit
 #else
@@ -22,6 +22,30 @@ import Foundation
 #endif
 
 private let mediaTrackFlagsCache = BoundedCache<String, (hasVideo: Bool, hasAudio: Bool)>(maxEntryCount: 800)
+
+/// The music start that's current, readable off the main thread: a start still waiting its turn
+/// there checks it's still wanted before it plays anything.
+enum MusicPlaybackGate {
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var value = 0
+
+    static var current: Int {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+        set {
+            lock.lock()
+            value = newValue
+            lock.unlock()
+        }
+    }
+
+    static func isCurrent(_ requestID: Int) -> Bool {
+        current == requestID
+    }
+}
 
 extension MenuView {
     var standaloneAudioFileExtensions: Set<String> {
@@ -382,6 +406,12 @@ extension MenuView {
         isCurrentMusicPlaybackManagedByFirstRow = true
         hasPendingExternalMusicRestore = false
         let playbackRequestID = incrementRequestID(&musicPlaybackRequestID)
+        // Only ever one song: the Music app, playing on its own, stops for this one.
+        #if os(macOS)
+            if !willUseAppleScriptPlayback { pauseMusicAppIfPlaying() }
+        #elseif os(iOS)
+            SystemMusicPlayerCalls.pauseMusicApp(unlessPlaying: song.url == nil ? song.id : nil)
+        #endif
         let performPlayback: () -> Void
         if song.spotify != nil {
             performPlayback = {
@@ -549,8 +579,11 @@ extension MenuView {
             musicAppleScriptDidHandleTrackBoundary = false
             let expectedSongID = song.id
             Task(priority: .userInitiated) {
-                let trackStartResult = await musicAppleScriptExecutor.run {
-                    self.playMusicTrackViaAppleScript(song: song)
+                let trackStartResult = await musicAppleScriptExecutor.run { () -> MusicAppleScriptTrackStartResult? in
+                    // Something else was played while this waited its turn: it never starts, so
+                    // Music can't end up playing alongside it.
+                    guard MusicPlaybackGate.isCurrent(playbackRequestID) else { return nil }
+                    return self.playMusicTrackViaAppleScript(song: song)
                 }
                 await MainActor.run {
                     guard self.musicPlaybackRequestID == playbackRequestID else { return }
@@ -730,6 +763,31 @@ extension MenuView {
                 persistentIDHex: parts.dropFirst().first?.uppercased() ?? hexID,
                 didBeginPlayback: didBeginPlayback,
             )
+        }
+
+        /// Pauses the Music app if it's playing on its own, before First Row plays something
+        /// itself, so the two never play together. Only when First Row may already control Music
+        /// (it never asks for that here) and Music is open.
+        func pauseMusicAppIfPlaying() {
+            guard !FirstRowHarness.isActive,
+                  !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
+            else { return }
+            Task(priority: .userInitiated) {
+                _ = await musicAppleScriptExecutor.run { () -> Bool in
+                    guard Self.mayControlMusicApp() else { return false }
+                    return self.pauseMusicPlaybackViaAppleScript()
+                }
+            }
+        }
+
+        /// Whether First Row has been allowed to control the Music app, without asking.
+        nonisolated static func mayControlMusicApp() -> Bool {
+            var target = AEAddressDesc()
+            let bundleID = Array("com.apple.Music".utf8)
+            let created = bundleID.withUnsafeBytes { AECreateDesc(DescType(typeApplicationBundleID), $0.baseAddress, $0.count, &target) }
+            guard created == noErr else { return false }
+            defer { AEDisposeDesc(&target) }
+            return AEDeterminePermissionToAutomateTarget(&target, AEEventClass(typeWildCard), AEEventID(typeWildCard), false) == noErr
         }
 
         @discardableResult
@@ -1435,7 +1493,19 @@ extension MenuView {
             }
         }
         let interval = CMTime(seconds: 1.0 / 20.0, preferredTimescale: 600)
+        #if os(iOS)
+            var lastStrayCheck = CACurrentMediaTime()
+        #endif
         musicTimeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+            #if os(iOS)
+                // Never two songs: First Row's system player, if it's somehow still going while a
+                // file plays, is stopped (checked every couple of seconds, off the main thread).
+                let now = CACurrentMediaTime()
+                if now - lastStrayCheck > 2, player.rate > 0.01, SystemMusicPlayerCalls.hasStarted {
+                    lastStrayCheck = now
+                    SystemMusicPlayerCalls.stopStray()
+                }
+            #endif
             let currentSeconds = max(0, time.seconds.isFinite ? time.seconds : 0)
             if self.musicScrubDirection == 0 {
                 self.musicNowPlayingElapsedSeconds = currentSeconds
@@ -1656,6 +1726,10 @@ extension MenuView {
 
         private func followMediaPlayer(_ state: SystemMusicPlayerCalls.State) {
             let isPlaying = state.isPlaying
+            // Never two songs: a file player left going stops (the system player has the song).
+            if isPlaying, let stray = musicAudioPlayer, stray.rate > 0.01 {
+                stray.pause()
+            }
             if isPlaying != musicMediaPlayerWasPlaying {
                 musicMediaPlayerWasPlaying = isPlaying
                 updateMusicNowPlayingFlipTimerState()
@@ -2111,6 +2185,24 @@ extension MenuView {
     // MARK: - Music Input & Scrubbing
 
     func handleMusicPlaybackInput(_ key: KeyCode, isRepeat: Bool) {
+        // Play and pause from an on-screen button show on the button, not as a glyph.
+        hidesMusicLeadingGlyph = isPressingOnScreenPlaybackButton
+        // The list, while it's out, takes up, down and Select.
+        if isNowPlayingQueueVisible {
+            switch key {
+            case .upArrow:
+                moveNowPlayingQueueFocus(by: -1)
+                return
+            case .downArrow:
+                moveNowPlayingQueueFocus(by: 1)
+                return
+            case .enter:
+                chooseFocusedNowPlayingQueueRow()
+                return
+            default:
+                break
+            }
+        }
         switch key {
         case .delete, .escape:
             // The lyrics or the list go first.
@@ -2472,7 +2564,7 @@ extension MenuView {
             elapsedSeconds: musicNowPlayingElapsedSeconds,
             durationSeconds: musicNowPlayingDurationSeconds,
             showsShuffleGlyph: musicNowPlayingShowsShuffleGlyph,
-            leadingGlyphState: musicNowPlayingLeadingGlyphState,
+            leadingGlyphState: hidesMusicLeadingGlyph ? nil : musicNowPlayingLeadingGlyphState,
         )
     }
 }
@@ -2492,6 +2584,13 @@ extension MenuView {
             lock.lock()
             startCount += 1
             lock.unlock()
+        }
+
+        /// The system player has been used this session (so it might still be playing).
+        static var hasStarted: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return startCount > 0
         }
 
         private static var currentStartCount: Int {
@@ -2559,6 +2658,30 @@ extension MenuView {
 
         /// A progress read is on its way (they don't queue up behind a slow one).
         @MainActor static var isReadingProgress = false
+
+        /// Pauses the Music app's own player if it's playing something (other than the song with
+        /// `persistentID`), so it never plays alongside First Row. Only with library access,
+        /// which asking without would prompt for.
+        @MainActor
+        static func pauseMusicApp(unlessPlaying persistentID: String?) {
+            guard MPMediaLibrary.authorizationStatus() == .authorized, !FirstRowHarness.isActive else { return }
+            queue.async {
+                let system = MPMusicPlayerController.systemMusicPlayer
+                guard system.playbackState == .playing else { return }
+                if let persistentID, let item = system.nowPlayingItem, String(item.persistentID) == persistentID { return }
+                system.pause()
+            }
+        }
+
+        /// Stops First Row's system player now, whatever started since (it's playing when a song
+        /// from a file has the speakers).
+        static func stopStray() {
+            queue.async {
+                let player = MPMusicPlayerController.applicationQueuePlayer
+                guard player.playbackState == .playing else { return }
+                player.stop()
+            }
+        }
 
         /// The cover of the song playing, if it's the one with `persistentID`.
         static func nowPlayingArtwork(persistentID: String) async -> NSImage? {

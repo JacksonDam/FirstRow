@@ -223,8 +223,8 @@ extension MenuView {
     /// and lifting chooses. Long lists scroll with a drag and coast; holding still first slides
     /// the selection instead. Swiping right goes back. In Now Playing a tap plays or pauses (in
     /// a movie it shows or hides the controls),
-    /// dragging the bar scrubs, Now Playing swipes change song, and a movie's Subtitles & Speed
-    /// button (or a swipe down) opens its options.
+    /// dragging the bar scrubs, Now Playing swipes change song, and a movie's option buttons
+    /// above its bar (or a swipe down) open its options.
     extension MenuView {
         private static let touchSlop: CGFloat = 10
         private static let touchHighlightDelay: TimeInterval = 0.1
@@ -234,6 +234,7 @@ extension MenuView {
 
         func handleTouch(_ phase: TouchPhase, at point: CGPoint, time: TimeInterval) {
             guard AppSettings.isTouchEnabled, !isChoosingMediaSource else { return }
+            noteInputSource(.touch)
             switch phase {
             case .began: touchBegan(at: point, time: time)
             case .moved: touchMoved(to: point, time: time)
@@ -762,34 +763,7 @@ extension MenuView {
         // MARK: - Buttons
 
         private func pressTouchControl(_ control: TouchControl) {
-            switch control {
-            case .back:
-                pressTouchKey(.escape)
-            case .playPause:
-                pressTouchKey(.space)
-            case .previous:
-                pressTouchKey(.upArrow)
-            case .next:
-                pressTouchKey(.downArrow)
-            case .skipBack:
-                skipMovie(bySeconds: -10)
-            case .skipForward:
-                skipMovie(bySeconds: 10)
-            case .movieOptions:
-                if isMovieOptionsVisible {
-                    closeMovieOptions()
-                } else {
-                    openMovieOptions()
-                }
-            case .lyrics:
-                toggleNowPlayingLyrics()
-            }
-            if activeFullscreenScene?.key == musicNowPlayingFullscreenKey {
-                scheduleNowPlayingTouchControlsHide()
-            }
-            if isMoviePlaybackVisible {
-                scheduleMovieControlsAutoHide()
-            }
+            pressOnScreenControl(control)
         }
 
         // MARK: - Taps and swipes
@@ -815,7 +789,10 @@ extension MenuView {
                     } else if areNowPlayingTouchControlsHidden {
                         showNowPlayingTouchControls()
                     } else {
+                        // The play button shows the state, so the glyph under the bar stays away.
+                        isPressingOnScreenPlaybackButton = true
                         pressTouchKey(.space)
+                        isPressingOnScreenPlaybackButton = false
                     }
                 } else if scene.key == photoSlideshowFullscreenKey {
                     pressTouchKey(.space)
@@ -929,20 +906,19 @@ extension MenuView {
 
         private func handleMovieTouchTap(at point: CGPoint) {
             guard !isMovieTransitioning, moviePlayer != nil else { return }
-            if var options = movieOptions {
+            // The options' buttons above the bar open, move or close the panel.
+            if let kind = pointer.hitTester?.movieOptionsButton(at: point) {
+                toggleMovieOptions(focusing: kind)
+                return
+            }
+            if movieOptions != nil {
                 guard let hit = pointer.hitTester?.movieOptionsRow(at: point) else {
                     closeMovieOptions()
                     return
                 }
-                guard options.rows.indices.contains(hit.index) else { return }
                 // A tap changes the row it lands on: on its "‹" back a value, anywhere else
                 // on to the next one, round to the first after the last.
-                if hit.index != options.focusedRow {
-                    options.focusedRow = hit.index
-                    options.hasMoved = true
-                    movieOptions = options
-                }
-                _ = handleMovieOptionsInput(hit.backward ? .leftArrow : .enter)
+                chooseMovieOptionRow(hit.index, backward: hit.backward)
                 return
             }
             // A tap away from the buttons shows or hides the controls; playing and pausing is

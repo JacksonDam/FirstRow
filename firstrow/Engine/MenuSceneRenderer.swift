@@ -475,6 +475,7 @@ final class MenuSceneRenderer: TransactionRendering {
             theme: theme,
             hidesSelection: menu.touchHidesSelection,
             visibility: visibility(of: rootList, opacity: menu.rootMenuOpacity),
+            rubberBand: menu.pointerActiveListLevel == .root ? menu.remoteRubberBand : 0,
         ), menu: menu, pass: pass, scale: scale)
         rootList.layer.setOpacity(menu.rootMenuOpacity, pass.animation)
         slide(rootList.layer, away: menu.rootMenuOpacity < 0.5, toLeft: true, theme: theme, pass.animation)
@@ -501,6 +502,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 theme: theme,
                 hidesSelection: menu.touchHidesSelection,
                 visibility: visibility(of: submenuList, opacity: hidesSubmenu ? 0 : menu.submenuOpacity),
+                rubberBand: menu.pointerActiveListLevel == .submenu ? menu.remoteRubberBand : 0,
             ), menu: menu, pass: memo.showsSubmenuList ? pass : RenderPass(transaction: .instant), scale: scale)
             slide(submenuList.layer, away: menu.submenuOpacity < 0.5, toLeft: menu.isInThirdMenu, theme: theme, memo.showsSubmenuList ? pass.animation : nil)
             let hideChanged = memo.hidesSubmenuList != nil && memo.hidesSubmenuList != hidesSubmenu
@@ -533,6 +535,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 theme: theme,
                 hidesSelection: menu.touchHidesSelection,
                 visibility: visibility(of: thirdList, opacity: hidesThird ? 0 : menu.thirdMenuOpacity),
+                rubberBand: menu.pointerActiveListLevel == .third ? menu.remoteRubberBand : 0,
             ), menu: menu, pass: memo.showsThirdList ? pass : RenderPass(transaction: .instant), scale: scale)
             slide(thirdList.layer, away: menu.thirdMenuOpacity < 0.5, toLeft: false, theme: theme, memo.showsThirdList ? pass.animation : nil)
             let hideChanged = memo.hidesThirdList != nil && memo.hidesThirdList != hidesThird
@@ -815,6 +818,12 @@ extension MenuSceneRenderer {
         let values = playback.options.valueFrames
         let backward = values.indices.contains(index) && point.x < values[index].minX + min(70, values[index].width * 0.35)
         return (index, backward)
+    }
+
+    func movieOptionsButton(at windowPoint: CGPoint) -> MenuView.MovieOptionRow.Kind? {
+        let canvas = FullscreenCanvas(screenSize: fullscreenContainerSize)
+        let point = CGPoint(x: windowPoint.x / max(canvas.scale, 0.0001), y: windowPoint.y / max(canvas.scale, 0.0001))
+        return playback.options.button(at: point)
     }
 
     var pointerScene: PointerScene {

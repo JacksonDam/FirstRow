@@ -64,7 +64,6 @@
             guard !FirstRowHarness.isActive else { return }
             AppleRemoteInput.shared.start()
             SiriRemoteInput.shared.start()
-            applyImmersivePresentationOptions()
             // Refocus the window unless a First Row panel, like the folder picker, is in front.
             if let window, NSApplication.shared.keyWindow == nil, !NSApplication.shared.windows.contains(where: { $0 is NSPanel && $0.isVisible }) {
                 window.makeKeyAndOrderFront(nil)
@@ -75,7 +74,8 @@
             isCommandKeyDown = false
             AppleRemoteInput.shared.stop()
             SiriRemoteInput.shared.stop()
-            NSApplication.shared.presentationOptions = []
+            // The Dock and menu bar settings only apply while First Row is in front, so they're
+            // left alone here: changing them mid-switch got in the way of Command-Tab.
         }
 
         func applicationWillTerminate(_: Notification) {
@@ -163,14 +163,19 @@
             })
         }
 
+        /// The Dock and menu bar stay out of the way, but come in when the pointer goes to their
+        /// edge of the screen, and Command-Tab still switches apps.
         private func applyImmersivePresentationOptions() {
-            NSApplication.shared.presentationOptions = [.hideDock, .hideMenuBar]
+            let options: NSApplication.PresentationOptions = [.autoHideDock, .autoHideMenuBar]
+            if NSApplication.shared.presentationOptions != options {
+                NSApplication.shared.presentationOptions = options
+            }
         }
 
         /// Keeps First Row's window (only) covering its screen.
         private func lockWindowToScreen() {
             guard let window, let screenFrame = (window.screen ?? NSScreen.main)?.frame else { return }
-            window.level = .normal
+            if window.level != .normal { window.level = .normal }
             window.isMovable = false
             window.minSize = screenFrame.size
             window.maxSize = screenFrame.size

@@ -39,6 +39,10 @@ enum PointerTarget: Equatable {
     case resumeOption(Int)
     /// A playback progress bar, at this fraction of its length.
     case progressBar(fraction: Double)
+    /// One of a movie's option buttons above its bar.
+    case movieOptionButton(MenuView.MovieOptionRow.Kind)
+    /// A row of the open movie options (-1 between rows), on its "‹" or not.
+    case movieOptionRow(Int, backward: Bool)
     case background
 }
 
@@ -68,6 +72,8 @@ protocol PointerHitTesting: AnyObject {
     /// The movie options panel's row at `windowPoint`: its index, -1 on the panel between rows,
     /// or nil off the panel.
     func movieOptionsRow(at windowPoint: CGPoint) -> (index: Int, backward: Bool)?
+    /// The movie option button at `windowPoint`, while they show.
+    func movieOptionsButton(at windowPoint: CGPoint) -> MenuView.MovieOptionRow.Kind?
     /// Where Now Playing's list is, when Now Playing could show one.
     var nowPlayingQueueGeometry: NowPlayingQueueGeometry? { get }
     /// The touch mode button at `windowPoint`, if one is showing there.
@@ -204,6 +210,10 @@ extension MenuSceneRenderer: PointerHitTesting {
         let scene = pointerScene
         let menu = menu
         if menu.isMoviePlaybackVisible {
+            if menu.movieOptions != nil, let hit = movieOptionsRow(at: windowPoint) {
+                return .movieOptionRow(hit.index, backward: hit.backward)
+            }
+            if let kind = movieOptionsButton(at: windowPoint) { return .movieOptionButton(kind) }
             guard menu.areMovieControlsVisible, let track = scene.movieSeekTrack else { return .background }
             let point = scene.fullscreenPoint(windowPoint)
             guard track.frame.insetBy(dx: -6, dy: -18).contains(point) else { return .background }

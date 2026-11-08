@@ -287,6 +287,12 @@ final class MenuView: ObservableObject {
     @Published var movieScrubTimer: Timer?
     /// The subtitles, audio and speed panel, while it's open.
     @Published var movieOptions: MovieOptionsState?
+    /// How far that panel has come out of its buttons above the bar (0 in, 1 out).
+    @Published var movieOptionsReveal: CGFloat = 0
+    /// What the current movie offers there (its buttons), speed always.
+    @Published var movieOptionKinds: [MovieOptionRow.Kind] = [.speed]
+    /// How many times the current movie's tracks have been looked at for those buttons.
+    var movieOptionKindProbes = 0
     /// The current movie's playback speed (1 is normal).
     var movieSpeed: Double = 1
     /// A left or right press in a movie that isn't yet known to be a tap or a hold.
@@ -306,6 +312,24 @@ final class MenuView: ObservableObject {
     @Published var movieSceneOpacity: Double = 1
 
     // MARK: - Now Playing extras
+
+    /// Where the last input came from (see `MenuInputSource`).
+    @Published var lastInputSource: MenuInputSource = {
+        #if os(iOS)
+            AppSettings.isTouchEnabled ? .touch : .keyboard
+        #else
+            .keyboard
+        #endif
+    }()
+    /// Set while an on-screen button (touch or mouse) plays or pauses: the button shows the
+    /// state itself, so Now Playing's small glyph under the bar stays away.
+    var isPressingOnScreenPlaybackButton = false
+    @Published var hidesMusicLeadingGlyph = false
+    /// The selected row pulled past the end of its list by a Siri Remote swipe, in scene points.
+    @Published var remoteRubberBand: CGFloat = 0
+    #if os(tvOS)
+        let remoteSwipe = RemoteSwipeState()
+    #endif
 
     /// Touch mode's Now Playing buttons, slid away while a song plays untouched.
     @Published var areNowPlayingTouchControlsHidden = false
@@ -467,7 +491,9 @@ final class MenuView: ObservableObject {
     var musicArtworkPrefetchInFlightKeys: Set<String> = []
     /// Volumes for music files measured as louder than the library (iTunes previews).
     var musicLoudnessVolumeByPath: [String: Float] = [:]
-    @Published var musicPlaybackRequestID = 0
+    @Published var musicPlaybackRequestID = 0 {
+        didSet { MusicPlaybackGate.current = musicPlaybackRequestID }
+    }
     #if os(tvOS) || os(macOS)
         @Published var musicKitScrubGlyphResetWorkItem: Task<Void, Never>?
     #endif

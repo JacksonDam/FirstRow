@@ -45,13 +45,24 @@ final class MoviePlaybackLayers {
         }
         playerLayer.frame = bounds
 
-        let optionsCanvas = FullscreenCanvas(screenSize: bounds.size)
-        optionsCanvas.apply(to: options.layer)
-        options.update(menu.isMoviePlaybackVisible ? menu.movieOptions : nil, size: optionsCanvas.size, scale: optionsCanvas.pixelScale(backingScale: scale), pass: pass)
         let showsControls = menu.isMoviePlaybackVisible && menu.areMovieControlsVisible
         let isModern = ModernTheme.isActive
         controls.layer.isHidden = !showsControls || isModern
         modernControls.layer.isHidden = !showsControls || !isModern
+        // The options' buttons sit above the right end of the bar, and the panel grows out of them.
+        defer {
+            let optionsCanvas = FullscreenCanvas(screenSize: bounds.size)
+            optionsCanvas.apply(to: options.layer)
+            let bar = isModern ? modernControls.barFrame : controls.barFrame
+            options.update(
+                menu: menu,
+                anchor: showsControls && bar.width > 0 ? bar : nil,
+                controlsOpacity: menu.movieControlsOpacity,
+                size: optionsCanvas.size,
+                scale: optionsCanvas.pixelScale(backingScale: scale),
+                pass: pass,
+            )
+        }
         guard showsControls else { return }
         // Laid out on the full-screen canvas so it keeps its proportions at any resolution.
         let canvas = FullscreenCanvas(screenSize: bounds.size)
@@ -101,6 +112,8 @@ final class MovieControlsLayer {
     private var artworkKey: String?
     /// The track the position diamond travels, in canvas points: its box and the stretch the diamond's centre covers.
     private(set) var seekTrack: (frame: CGRect, travel: ClosedRange<CGFloat>)?
+    /// The whole bar, in canvas points.
+    private(set) var barFrame: CGRect = .zero
 
     private static let trackTop = RGBA(red: 70 / 255, green: 140 / 255, blue: 205 / 255)
     private static let trackMid = RGBA(red: 55 / 255, green: 165 / 255, blue: 210 / 255)
@@ -146,6 +159,7 @@ final class MovieControlsLayer {
         let travelWidth = max(0, centerWidth - (travelStartX - centerStartX) * 2)
         let diamondCenterX = travelStartX + travelWidth * CGFloat(progress)
         let barFrame = CGRect(x: (size.width - controlWidth) * 0.5, y: size.height - 52 - 28 - trackHeight, width: controlWidth, height: trackHeight)
+        self.barFrame = barFrame.insetBy(dx: 24, dy: 0)
         bar.frame = barFrame
         seekTrack = (
             CGRect(x: barFrame.minX + centerStartX, y: barFrame.minY, width: centerWidth, height: trackHeight),

@@ -7,7 +7,29 @@
 
     /// Key events First Row posts itself (Apple Remote, harness), handled like the keyboard's.
     enum SyntheticKeyEvents {
-        static func post(_ key: KeyCode, down: Bool) {
+        private static let lock = NSLock()
+        /// Posted events still on their way, with where they came from.
+        private nonisolated(unsafe) static var pending: [(key: UInt16, down: Bool, source: MenuInputSource, time: TimeInterval)] = []
+
+        /// Where a key event came from: a remote's (posted here), or the keyboard.
+        static func source(of event: NSEvent) -> MenuInputSource {
+            guard event.windowNumber == 0 else { return .keyboard }
+            let down = event.type == .keyDown
+            let now = ProcessInfo.processInfo.systemUptime
+            lock.lock()
+            defer { lock.unlock() }
+            pending.removeAll { now - $0.time > 2 }
+            guard let index = pending.firstIndex(where: { $0.key == event.keyCode && $0.down == down }) else { return .keyboard }
+            return pending.remove(at: index).source
+        }
+
+        static func post(_ key: KeyCode, down: Bool, source: MenuInputSource = .keyboard) {
+            if source != .keyboard {
+                lock.lock()
+                pending.append((key.rawValue, down, source, ProcessInfo.processInfo.systemUptime))
+                if pending.count > 64 { pending.removeFirst(pending.count - 64) }
+                lock.unlock()
+            }
             let characters: String = switch key {
             case .enter: "\r"
             case .escape: "\u{1b}"
@@ -91,7 +113,7 @@
             devices.removeAll()
             for keyCode in pressedKeys {
                 if let key = KeyCode(rawValue: keyCode) {
-                    SyntheticKeyEvents.post(key, down: false)
+                    SyntheticKeyEvents.post(key, down: false, source: .siriRemote)
                 }
             }
             pressedKeys.removeAll()
@@ -116,7 +138,7 @@
                 }
                 guard pressedKeys.insert(key.rawValue).inserted else { return }
                 keyForButton[button] = key
-                SyntheticKeyEvents.post(key, down: true)
+                SyntheticKeyEvents.post(key, down: true, source: .appleRemote)
             } else {
                 if volumeButtons.remove(button) != nil {
                     if volumeButtons.isEmpty { volumeHold.end() }
@@ -124,7 +146,7 @@
                 }
                 guard let key = keyForButton.removeValue(forKey: button) else { return }
                 pressedKeys.remove(key.rawValue)
-                SyntheticKeyEvents.post(key, down: false)
+                SyntheticKeyEvents.post(key, down: false, source: .appleRemote)
             }
         }
 
@@ -176,6 +198,13 @@
         private var remotes: [IOHIDDevice] = []
         private var pressedKeys: Set<UInt16> = []
         private let volumeHold = VolumeButtonHold()
+        /// Set by the app: the TV button, which opens and closes Now Playing's list.
+        var onTVButton: @MainActor () -> Void = {}
+        /// Set by the app: a remote's button was pressed (before the key it sends arrives).
+        var onInput: @MainActor () -> Void = {}
+
+        /// A Siri Remote is paired and held by First Row.
+        var hasRemote: Bool { !remotes.isEmpty }
 
         func start() {
             guard manager == nil else { return }
@@ -238,7 +267,7 @@
         private func releaseAll() {
             for keyCode in pressedKeys {
                 if let key = KeyCode(rawValue: keyCode) {
-                    SyntheticKeyEvents.post(key, down: false)
+                    SyntheticKeyEvents.post(key, down: false, source: .siriRemote)
                 }
             }
             pressedKeys.removeAll()
@@ -246,7 +275,12 @@
         }
 
         private func handle(page: UInt32, usage: UInt32, pressed: Bool) {
+            if pressed { onInput() }
             switch (Int(page), Int(usage)) {
+            case (kHIDPage_Consumer, 0x60):
+                // The TV button.
+                if pressed { onTVButton() }
+                return
             case (kHIDPage_Consumer, kHIDUsage_Csmr_VolumeIncrement):
                 if pressed { volumeHold.begin(1) } else { volumeHold.end() }
                 return
@@ -268,7 +302,7 @@
             } else {
                 guard pressedKeys.remove(key.rawValue) != nil else { return }
             }
-            SyntheticKeyEvents.post(key, down: pressed)
+            SyntheticKeyEvents.post(key, down: pressed, source: .siriRemote)
         }
 
         static func key(page: UInt32, usage: UInt32) -> KeyCode? {

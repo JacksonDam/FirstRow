@@ -52,6 +52,8 @@ final class PointerInputState {
     fileprivate var pressTarget: PointerTarget?
     /// The row of Now Playing's list a click started on.
     fileprivate var queuePressRow: Int?
+    /// The on-screen button a click started on.
+    fileprivate var pressedControl: TouchControl?
     var drag: Drag?
     fileprivate var screenSaverWakeOrigin: CGPoint?
     fileprivate var wheelAccumulator: CGFloat = 0
@@ -151,7 +153,8 @@ enum PointerCursor {
 }
 
 /// Mouse and trackpad input, when Settings > Mouse is on: hovering moves the selection,
-/// clicking chooses, the right button goes back, the wheel scrolls, and the progress bars seek.
+/// clicking chooses, the on-screen Back button (or the mouse's back button) goes back, the wheel
+/// scrolls, and the progress bars seek.
 extension MenuView {
     private static let pointerCursorHideDelay: TimeInterval = 3
     private static let pointerSelectionDuration: Double = 0.22
@@ -167,6 +170,7 @@ extension MenuView {
 
     func handlePointerEvent(_ event: PointerEvent) {
         guard AppSettings.isMouseEnabled, !isChoosingMediaSource else { return }
+        noteInputSource(.pointer)
         switch event {
         case let .moved(point):
             pointerMoved(to: point)
@@ -224,11 +228,26 @@ extension MenuView {
             continueProgressDrag(at: point)
             return
         }
+        if let control = pointer.pressedControl {
+            // Held down only while the pointer stays on it.
+            pointer.hitTester?.highlightTouchControl(pointer.hitTester?.touchControl(at: point) == control ? control : nil)
+            return
+        }
         guard !isPointerInputPaused else { return }
         if isMoviePlaybackVisible {
             guard !isMovieTransitioning, moviePlayer != nil else { return }
-            showMovieControlsInstantly()
-            scheduleMovieControlsAutoHide()
+            // The controls fade in as the pointer moves, and stay while it does.
+            showMovieControlsFading()
+            // Over the open options, the row under the pointer is picked out.
+            if var options = movieOptions, let hit = pointer.hitTester?.movieOptionsRow(at: point),
+               options.rows.indices.contains(hit.index), hit.index != options.focusedRow
+            {
+                options.focusedRow = hit.index
+                options.hasMoved = true
+                movieOptions = options
+                playSound(named: "SelectionChange")
+            }
+            if movieOptions == nil { scheduleMovieControlsAutoHide() }
             return
         }
         if activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isFullscreenSceneTransitioning {
@@ -255,10 +274,21 @@ extension MenuView {
             return
         }
         guard !isPointerInputPaused else { return }
-        guard button == .primary else {
-            pointer.clearPin()
+        // The on-screen buttons come first, as for fingers.
+        if button == .primary, let control = pointer.hitTester?.touchControl(at: point) {
+            pointer.pressedControl = control
             pointer.pressTarget = nil
-            handleKeyDown(.escape)
+            pointer.hitTester?.highlightTouchControl(control)
+            return
+        }
+        guard button == .primary else {
+            // The mouse's own back button goes back; the right button does nothing (Back is
+            // on screen instead).
+            if button == .back {
+                pointer.clearPin()
+                pointer.pressTarget = nil
+                handleKeyDown(.escape)
+            }
             return
         }
         // Now Playing's list takes clicks on it; one beside it puts it away.
@@ -287,6 +317,14 @@ extension MenuView {
     private func pointerReleased(_ button: PointerButton, at point: CGPoint) {
         pointer.location = point
         guard button == .primary else { return }
+        if let control = pointer.pressedControl {
+            pointer.pressedControl = nil
+            pointer.hitTester?.highlightTouchControl(nil)
+            if pointer.hitTester?.touchControl(at: point) == control {
+                pressOnScreenControl(control)
+            }
+            return
+        }
         if pointer.drag != nil {
             finishProgressDrag(at: point)
             return
@@ -310,10 +348,18 @@ extension MenuView {
     }
 
     private func performPointerClick(on target: PointerTarget) {
-        if isMoviePlaybackVisible || activeFullscreenScene != nil {
-            // Playback screens: a click plays or pauses, as the space bar does.
+        if isMoviePlaybackVisible {
+            performMovieClick(on: target)
+            return
+        }
+        if activeFullscreenScene != nil {
+            // Now Playing and slideshows: a click plays or pauses, as the space bar does.
             let key = activeFullscreenScene?.key
-            if isMoviePlaybackVisible || key == musicNowPlayingFullscreenKey || key == photoSlideshowFullscreenKey {
+            if key == musicNowPlayingFullscreenKey {
+                isPressingOnScreenPlaybackButton = true
+                handleKeyDown(.space)
+                isPressingOnScreenPlaybackButton = false
+            } else if key == photoSlideshowFullscreenKey {
                 handleKeyDown(.space)
             }
             return
@@ -341,8 +387,30 @@ extension MenuView {
             }
         case let .sortSegment(mode):
             handleTVShowsSortInput(direction: mode == .date ? -1 : 1)
-        case .progressBar, .background:
+        case .progressBar, .background, .movieOptionButton, .movieOptionRow:
             break
+        }
+    }
+
+    /// A click during a movie: on the options or their buttons, or anywhere else to show or
+    /// hide the controls (playing and pausing is the play button's job).
+    private func performMovieClick(on target: PointerTarget) {
+        guard !isMovieTransitioning, moviePlayer != nil else { return }
+        switch target {
+        case let .movieOptionRow(index, backward):
+            chooseMovieOptionRow(index, backward: backward)
+        case let .movieOptionButton(kind):
+            toggleMovieOptions(focusing: kind)
+        default:
+            if isMovieOptionsVisible {
+                closeMovieOptions()
+            } else if areMovieControlsVisible, movieControlsOpacity > 0.5 {
+                cancelMovieControlsAutoHide()
+                hideMovieControlsWithFade()
+            } else {
+                showMovieControlsFading()
+                scheduleMovieControlsAutoHide()
+            }
         }
     }
 
@@ -543,6 +611,8 @@ extension MenuView {
         guard duration.isFinite, duration > 0 else { return }
         let wasPlaying = (musicAudioPlayer?.rate ?? 0) > 0.01
         pointer.drag = .music(wasPlaying: wasPlaying)
+        // Held by a finger or the pointer, the bar itself shows what's happening.
+        hidesMusicLeadingGlyph = true
         pointer.cursorHideTask?.cancel()
         stopMusicScrubbing(showPauseGlyph: false)
         musicAudioPlayer?.pause()
@@ -654,6 +724,47 @@ extension MenuView {
 }
 
 extension MenuView {
+    /// One of the on-screen buttons was pressed (by a finger or the pointer).
+    func pressOnScreenControl(_ control: TouchControl) {
+        func press(_ key: KeyCode) {
+            handleKeyDown(key)
+            handleKeyUp(key)
+        }
+        switch control {
+        case .back:
+            press(.escape)
+        case .playPause, .previous, .next:
+            // The buttons show the state themselves, so the glyph under the bar stays away.
+            isPressingOnScreenPlaybackButton = true
+            press(control == .playPause ? .space : control == .previous ? .upArrow : .downArrow)
+            isPressingOnScreenPlaybackButton = false
+        case .skipBack:
+            skipMovie(bySeconds: -10)
+        case .skipForward:
+            skipMovie(bySeconds: 10)
+        case .lyrics:
+            toggleNowPlayingLyrics()
+        }
+        if activeFullscreenScene?.key == musicNowPlayingFullscreenKey {
+            scheduleNowPlayingTouchControlsHide()
+        }
+        if isMoviePlaybackVisible, movieOptions == nil {
+            scheduleMovieControlsAutoHide()
+        }
+    }
+
+    /// A tap or click on a row of the movie's options: on its "‹" back a value, anywhere else on
+    /// to the next one, round to the first after the last; between rows, nothing.
+    func chooseMovieOptionRow(_ index: Int, backward: Bool) {
+        guard var options = movieOptions, options.rows.indices.contains(index) else { return }
+        if index != options.focusedRow {
+            options.focusedRow = index
+            options.hasMoved = true
+            movieOptions = options
+        }
+        _ = handleMovieOptionsInput(backward ? .leftArrow : .enter)
+    }
+
     /// Moves the system's own music player (Apple Music and library songs on iPhone, iPad and
     /// Apple TV), which plays without an AVPlayer of First Row's.
     func seekSystemMusicPlayer(toSeconds seconds: Double) {

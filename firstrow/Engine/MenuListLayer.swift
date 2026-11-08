@@ -25,6 +25,9 @@ final class MenuListLayer {
         /// Touch mode with no finger down: nothing is shown as selected.
         var hidesSelection = false
         var visibility: Visibility = .visible
+        /// How far the selected row is pulled past the end of the list (a Siri Remote swipe that
+        /// can't go further), in scene points: only that row moves, as on Apple TV.
+        var rubberBand: CGFloat = 0
     }
 
     /// How much of a list is on screen. One on its way out keeps its scroll, whatever happens
@@ -54,6 +57,10 @@ final class MenuListLayer {
     private var lastScrollingDown: Bool?
     private var lastEdgeFades: (top: Bool, bottom: Bool)?
     private var lastIdentity: String?
+    /// Room the clip leaves above and below the list (the modern look's focused row grows and
+    /// casts a shadow past its own box, which would be cut off at the top and bottom).
+    private var clipMargin: CGFloat = 0
+    private var lastRubberBand: CGFloat = 0
     /// Where the rows were last laid out, for finding the one under the pointer.
     private(set) var hitGeometry: MenuListHitGeometry?
     private static let clipOverhang: CGFloat = 2500
@@ -210,19 +217,30 @@ final class MenuListLayer {
                 animation: revealsSelection ? nil : selectionAnimation,
             )
         }
+        // The selected row (and its bar) pulled a little past the end, alone.
+        let bandAnimation: Animation? = c.rubberBand != lastRubberBand ? pass.animation : nil
+        let bandTransform = c.rubberBand == 0 ? CATransform3DIdentity : CATransform3DMakeTranslation(0, c.rubberBand, 0)
+        selectionBox.layer.setTransform(bandTransform, bandAnimation)
 
         // Rows scroll inside a box that clips them top and bottom only.
-        clip.frame = CGRect(x: -Self.clipOverhang, y: 0, width: menuWidth + Self.clipOverhang * 2, height: viewportHeight)
+        let margin: CGFloat = isModern ? 34 : 0
+        if margin != clipMargin {
+            // Keeps the rows where they are on screen as the room changes.
+            rowsContainer.removeAnimation(forKey: "position")
+            rowsContainer.position.y += margin - clipMargin
+            clipMargin = margin
+        }
+        clip.frame = CGRect(x: -Self.clipOverhang, y: -margin, width: menuWidth + Self.clipOverhang * 2, height: viewportHeight + margin * 2)
         rowsContainer.bounds = CGRect(x: 0, y: 0, width: menuWidth, height: max(contentHeight, viewportHeight))
         // Read the on-screen scroll before the new animation replaces the one in flight.
         let presentedOffset: CGFloat = if isFreshList {
             scrollOffset
         } else if rowsContainer.animation(forKey: "position") != nil {
-            rowsContainer.presentation()?.position.y ?? rowsContainer.position.y
+            (rowsContainer.presentation()?.position.y ?? rowsContainer.position.y) - margin
         } else {
-            rowsContainer.position.y
+            rowsContainer.position.y - margin
         }
-        rowsContainer.setPosition(CGPoint(x: Self.clipOverhang, y: scrollOffset), scrollAnimation)
+        rowsContainer.setPosition(CGPoint(x: Self.clipOverhang, y: scrollOffset + margin), scrollAnimation)
 
         // Rows that need layers: everything the scroll passes over, plus a margin.
         let renderRange: Range<Int>
@@ -296,7 +314,8 @@ final class MenuListLayer {
                 theme: c.theme,
             )
             row.update(spec, menu: menu)
-            row.layer.frame = CGRect(x: rowContentXOffset, y: rowYBase + rowYOffset, width: rowContentWidth, height: rowHeight)
+            row.layer.place(CGRect(x: rowContentXOffset, y: rowYBase + rowYOffset, width: rowContentWidth, height: rowHeight))
+            row.layer.setTransform(index == selectedIndex ? bandTransform : CATransform3DIdentity, index == selectedIndex ? bandAnimation : nil)
             row.updateDecorations(
                 divider: item.showsTopDivider
                     ? CGRect(x: menu.dividerLineInsetHorizontal, y: -(rowYOffset) - dividerGap + menu.dividerLineYOffsetInGap, width: max(0, rowContentWidth - menu.dividerLineInsetHorizontal * 2), height: 1)
@@ -333,19 +352,21 @@ final class MenuListLayer {
             let attaching = clip.mask !== edgeMask
             if attaching { clip.mask = edgeMask }
             edgeMask.frame = clip.bounds
-            let fade = min(0.25, 44 / max(1, viewportHeight))
+            let clipHeight = max(1, viewportHeight + margin * 2)
+            let fade = min(0.25, 44 / max(1, viewportHeight)) * viewportHeight / clipHeight
+            let room = margin / clipHeight
             let fades = (top: scrollOffset < -1, bottom: scrollOffset > viewportHeight - contentHeight + 1)
-            // An edge fades in as rows go past it, and out as the last of them comes back.
+            // An edge fades in as rows go past it, and out as the last of them comes back. The
+            // room past each edge shows only while nothing is scrolled past it.
             if attaching || isFreshList || lastEdgeFades?.top != fades.top || lastEdgeFades?.bottom != fades.bottom {
-                let colors = [
-                    CGColor(gray: 0, alpha: fades.top ? 0 : 1), CGColor(gray: 0, alpha: 1),
-                    CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: fades.bottom ? 0 : 1),
-                ]
+                let top = CGColor(gray: 0, alpha: fades.top ? 0 : 1)
+                let bottom = CGColor(gray: 0, alpha: fades.bottom ? 0 : 1)
+                let colors = [top, top, CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1), bottom, bottom]
                 let animates = !attaching && !isFreshList && lastEdgeFades != nil
                 edgeMask.set("colors", to: colors, unchanged: false, animation: animates ? .smoothInOut(duration: 0.28) : nil)
                 lastEdgeFades = fades
             }
-            edgeMask.locations = [0, NSNumber(value: Double(fade)), NSNumber(value: Double(1 - fade)), 1]
+            edgeMask.locations = [0, room, room + fade, 1 - room - fade, 1 - room, 1].map { NSNumber(value: Double($0)) }
         } else if clip.mask != nil {
             clip.mask = nil
             lastEdgeFades = nil
@@ -362,15 +383,16 @@ final class MenuListLayer {
         bottomFade.setOpacity(menu.isMenuOverflowScrollingDown ? 1 : 0, pass.animation(fadeAnimation, when: lastScrollingDown != nil && lastScrollingDown != menu.isMenuOverflowScrollingDown))
         lastScrollingUp = menu.isMenuOverflowScrollingUp
         lastScrollingDown = menu.isMenuOverflowScrollingDown
+        lastRubberBand = c.rubberBand
     }
 
     /// The scroll as it is on screen, mid-animation included.
     var presentedScrollOffset: CGFloat? {
         guard hitGeometry != nil else { return nil }
         if rowsContainer.animation(forKey: "position") != nil {
-            return rowsContainer.presentation()?.position.y ?? rowsContainer.position.y
+            return (rowsContainer.presentation()?.position.y ?? rowsContainer.position.y) - clipMargin
         }
-        return rowsContainer.position.y
+        return rowsContainer.position.y - clipMargin
     }
 
     /// Tells lists apart, so a pinned scroll only applies to the list it was pinned in.

@@ -15,14 +15,12 @@ enum TouchControl: Equatable {
     case next
     case skipBack
     case skipForward
-    /// A movie's subtitles, audio and speed.
-    case movieOptions
     /// Now Playing's lyrics.
     case lyrics
 }
 
 /// Round buttons over everything else: Back at the top left wherever there's somewhere to go
-/// back to, and the transport for Now Playing and movies. Shown only in touch mode. Buttons
+/// back to, and the transport for Now Playing and movies. Shown in touch mode and mouse mode. Buttons
 /// come and go by fading through a blurred copy of themselves, sharpening as they appear;
 /// Now Playing's own buttons instead belong to it, scaling and fading with the rest of it.
 @MainActor
@@ -107,11 +105,7 @@ final class TouchControlsLayer {
 
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
         var wanted: [Wanted] = []
-        #if os(iOS)
-            let enabled = AppSettings.isTouchEnabled
-        #else
-            let enabled = false
-        #endif
+        let enabled = menu.showsOnScreenControls
         let isModern = ModernTheme.isActive
         // Laid out in the screen's own points, so the buttons are finger-sized on any screen,
         // and kept clear of the notch or Dynamic Island and of the screen's rounded corners.
@@ -123,19 +117,11 @@ final class TouchControlsLayer {
             let back = Wanted(control: .back, frame: backFrame, symbol: "chevron.left", pointSize: 19)
             if menu.isMoviePlaybackVisible {
                 // With the movie's controls, coming and going together.
+                // (Subtitles, audio and speed have buttons of their own, above the bar.)
                 if menu.areMovieControlsVisible, menu.movieControlsOpacity > 0.01 {
                     let middle = CGPoint(x: size.width / 2, y: size.height / 2)
-                    // Labelled, since it opens a page of its own.
-                    let label = TextRenderer.render(TextSpec(
-                        text: "Subtitles & Speed",
-                        fontName: isModern ? ModernTheme.mediumFontName : firstRowBoldFontName,
-                        size: 17,
-                    ), scale: scale)
-                    let optionsWidth = (18 + 22 + 8 + label.size.width + 20).rounded()
-                    let optionsFrame = CGRect(x: size.width - max(insets.right + 16, 38) - optionsWidth, y: backFrame.minY, width: optionsWidth, height: 46)
                     wanted = [
                         back,
-                        Wanted(control: .movieOptions, frame: optionsFrame, symbol: "captions.bubble", pointSize: 18, label: label),
                         Wanted(control: .skipBack, frame: CGRect(x: middle.x - 36 - 44 - 56, y: middle.y - 28, width: 56, height: 56), symbol: "gobackward.10", pointSize: 22),
                         Wanted(control: .playPause, frame: CGRect(x: middle.x - 36, y: middle.y - 36, width: 72, height: 72), symbol: menu.movieControlsGlyphState == .pause ? "play.fill" : "pause.fill", pointSize: 28),
                         Wanted(control: .skipForward, frame: CGRect(x: middle.x + 36 + 44, y: middle.y - 28, width: 56, height: 56), symbol: "goforward.10", pointSize: 22),
@@ -194,7 +180,7 @@ final class TouchControlsLayer {
         transportGroup.setOpacity(transportHidden ? 0 : 1, slide)
         transportHint.update(
             frame: CGRect(x: size.width / 2 - 40, y: size.height - max(insets.bottom, 8) - 16, width: 80, height: 5),
-            shown: enabled && isIdle && menu.nowPlayingQueueReveal <= 0.001 && !menu.isFullscreenSceneTransitioning,
+            shown: enabled && isIdle && menu.nowPlayingQueueReveal <= 0.001 && !menu.isFullscreenSceneTransitioning && menu.showsPointingHints,
             drift: CGSize(width: 0, height: -9),
             session: menu.nowPlayingSession,
         )
@@ -314,10 +300,10 @@ final class TouchControlsLayer {
     /// The button drawn soft, as if out of focus: its circle and symbol under a near-Gaussian
     /// blur, with room around them for the blur to spread into. Small enough to make at once.
     private static func blurredButton(size: CGSize, fill: CGColor, border: Bool, parts: [(RenderedGraphic, CGPoint)]) -> (image: CGImage, margin: CGFloat)? {
-        #if os(iOS)
+        #if !FIRSTROW_PORTABLE
             let key = "\(size.width)|\(size.height)|\(border)|" + parts.map { "\(ObjectIdentifier($0.0.image ?? Self.placeholderImage))@\($0.1.x),\($0.1.y)" }.joined(separator: "|")
             if let cached = blurCache[key] { return cached }
-            #if DEBUG || FIRSTROW_HARNESS_BUILD
+            #if os(iOS) && (DEBUG || FIRSTROW_HARNESS_BUILD)
                 let started = CACurrentMediaTime()
                 defer { FirstRowHarness.touchLog(String(format: "[touch] blurred a button in %.1f ms", (CACurrentMediaTime() - started) * 1000)) }
             #endif
@@ -370,7 +356,7 @@ final class TouchControlsLayer {
         #endif
     }
 
-    #if os(iOS)
+    #if !FIRSTROW_PORTABLE
         /// Averages each pixel with `radius` on either side along a line of `count` pixels
         /// `stride` bytes apart (all four channels), treating what lies beyond as clear.
         private static func boxBlur(_ start: UnsafeMutablePointer<UInt8>, count: Int, stride: Int, radius: Int) {

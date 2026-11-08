@@ -301,6 +301,10 @@ extension MenuView {
         configureMoviePlaybackObservation(for: player)
         currentMoviePlaybackURL = url.standardizedFileURL
         moviePlayer = player
+        movieOptionKinds = [.speed]
+        movieOptionsReveal = 0
+        movieOptionKindProbes = 0
+        probeMovieOptionKinds(player)
         isMoviePlaybackVisible = true
         pendingMovieControlsRevealOnDurationReady = false
         let clampedStart = max(0, startSeconds.isFinite ? startSeconds : 0)
@@ -348,6 +352,7 @@ extension MenuView {
     func stopMoviePlaybackAndReturnToMenu(captureResumePosition: Bool = true) {
         guard !isMovieTransitioning, isMoviePlaybackVisible else { return }
         movieOptions = nil
+        movieOptionsReveal = 0
         isMovieTransitioning = true
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         clearMovieControlsVisibilityInstantly()
@@ -425,6 +430,7 @@ extension MenuView {
     /// Lets go of the movie once it's out of sight.
     private func tearDownMoviePlayback() {
         removeMoviePlaybackObservation()
+        movieOptionsReveal = 0
         moviePlayer = nil
         isMoviePlaybackVisible = false
         clearMoviePlaybackControlState()
@@ -436,7 +442,14 @@ extension MenuView {
         if handleMovieOptionsInput(key) { return }
         switch key {
         case .downArrow:
+            // Down to the options, out of their buttons; up from there comes back.
             if !isRepeat { openMovieOptions() }
+        case .upArrow:
+            // Up from the bar puts the controls away.
+            if !isRepeat, areMovieControlsVisible {
+                stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
+                hideMovieControlsWithFade()
+            }
         case .delete, .escape:
             playSound(named: "Exit")
             stopMoviePlaybackAndReturnToMenu()
@@ -624,6 +637,23 @@ extension MenuView {
         }
     }
 
+    /// Fades the controls in (the pointer moving), rather than putting them straight up.
+    func showMovieControlsFading() {
+        cancelMovieControlsAutoHide()
+        guard !areMovieControlsVisible || movieControlsOpacity < 1 else { return }
+        if !areMovieControlsVisible {
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                movieControlsOpacity = 0
+                areMovieControlsVisible = true
+            }
+        }
+        withAnimation(.easeOut(duration: 0.25)) {
+            movieControlsOpacity = 1
+        }
+    }
+
     func clearMovieControlsVisibilityInstantly() {
         cancelMovieControlsAutoHide()
         var instant = Transaction()
@@ -698,6 +728,17 @@ extension MenuView {
             let currentSeconds = max(0, time.seconds.isFinite ? time.seconds : 0)
             if self.movieScrubDirection == 0 {
                 self.moviePlaybackCurrentSeconds = currentSeconds
+            }
+            // Once it's playing its tracks are known (some players only list them then): a
+            // look half a second in, and again a little later.
+            let probeAt: Double? = switch self.movieOptionKindProbes {
+            case 0: 0.5
+            case 1: 2.5
+            default: nil
+            }
+            if self.moviePlayer === player, let probeAt, currentSeconds > probeAt {
+                self.movieOptionKindProbes += 1
+                self.probeMovieOptionKinds(player)
             }
             let durationSeconds = self.resolvedMovieDurationSeconds(for: player)
             if durationSeconds > 0 {

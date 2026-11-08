@@ -398,9 +398,14 @@ enum SymbolRenderer {
             case .bold: .bold
             case .heavy: .heavy
             }
-            guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil),
+            guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil) ?? olderName(name).flatMap({ NSImage(systemSymbolName: $0, accessibilityDescription: nil) }),
                   let image = base.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: nsWeight))
-            else { return nil }
+            else {
+                // A symbol newer than this Mac's: the drawn stand-in.
+                return SymbolFallback.symbol(name, pointSize: pointSize, weight: weight, oversample: oversample).map {
+                    Symbol(image: $0.image, size: $0.size, pixelSize: CGSize(width: $0.image.width, height: $0.image.height))
+                }
+            }
             let size = image.size
             var rect = CGRect(x: 0, y: 0, width: size.width * oversample, height: size.height * oversample)
             guard let cgImage = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return nil }
@@ -417,7 +422,14 @@ enum SymbolRenderer {
             case .bold: .bold
             case .heavy: .heavy
             }
-            guard let image = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: pointSize, weight: uiWeight)) else { return nil }
+            let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: uiWeight)
+            guard let image = UIImage(systemName: name, withConfiguration: configuration)
+                ?? olderName(name).flatMap({ UIImage(systemName: $0, withConfiguration: configuration) })
+            else {
+                return SymbolFallback.symbol(name, pointSize: pointSize, weight: weight, oversample: oversample).map {
+                    Symbol(image: $0.image, size: $0.size, pixelSize: CGSize(width: $0.image.width, height: $0.image.height))
+                }
+            }
             let format = UIGraphicsImageRendererFormat()
             format.scale = oversample
             let rendered = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
@@ -426,6 +438,14 @@ enum SymbolRenderer {
             guard let cgImage = rendered.cgImage else { return nil }
             return Symbol(image: cgImage, size: image.size, pixelSize: CGSize(width: cgImage.width, height: cgImage.height))
         #endif
+    }
+
+    /// An older symbol that stands in for a newer one on systems without it.
+    private static func olderName(_ name: String) -> String? {
+        switch name {
+        case "gauge.with.dots.needle.67percent": "speedometer"
+        default: nil
+        }
     }
 
     private static func tintedImage(_ image: CGImage, pixelSize: CGSize, color: RGBA) -> CGImage? {
@@ -663,6 +683,118 @@ enum SymbolFallback {
                 context.addLine(to: CGPoint(x: 13.6, y: 26.4))
                 context.addLine(to: CGPoint(x: 28.5, y: 6))
                 context.strokePath()
+            }
+        case "chevron.left":
+            // chevron.right turned round.
+            return Shape(referenceSize: 30, box: CGSize(width: 24, height: 33)) { context in
+                let stroke: CGFloat = weight == .regular ? 2.8 : 4.09
+                let ink = CGRect(x: 2, y: 3.125, width: 16, height: 26.875)
+                let half = stroke / 2
+                context.setLineWidth(stroke)
+                context.move(to: CGPoint(x: ink.maxX - half, y: ink.minY + half))
+                context.addLine(to: CGPoint(x: ink.minX + half, y: ink.midY))
+                context.addLine(to: CGPoint(x: ink.maxX - half, y: ink.maxY - half))
+                context.strokePath()
+            }
+        case "forward.fill", "backward.fill":
+            let forward = name == "forward.fill"
+            return Shape(referenceSize: 20, box: CGSize(width: 30, height: 18)) { context in
+                for start: CGFloat in [2, 15] {
+                    let points: [(CGFloat, CGFloat, CGFloat)] = [(start, 1.5, 1.6), (start + 13, 9, 1.6), (start, 16.5, 1.6)]
+                    context.addPath(roundedPolygon(points.map { (forward ? $0.0 : 30 - $0.0, $0.1, $0.2) }))
+                }
+                context.fillPath()
+            }
+        case "goforward.10", "gobackward.10":
+            let forward = name == "goforward.10"
+            return Shape(referenceSize: 22, box: CGSize(width: 24, height: 26)) { context in
+                func x(_ value: CGFloat) -> CGFloat { forward ? value : 24 - value }
+                let center = CGPoint(x: 12, y: 14)
+                let radius: CGFloat = 9.4
+                context.setLineWidth(2)
+                // Round from the top, the long way, leaving a gap before it where the arrow points.
+                let steps = 48
+                for step in 0 ... steps {
+                    let angle = -CGFloat.pi / 2 - CGFloat(step) / CGFloat(steps) * (CGFloat.pi * 1.68)
+                    let point = CGPoint(x: x(center.x + radius * cos(angle)), y: center.y + radius * sin(angle))
+                    if step == 0 { context.move(to: point) } else { context.addLine(to: point) }
+                }
+                context.strokePath()
+                context.addPath(roundedPolygon([(x(11), 0.8, 0.8), (x(17), 4.6, 0.8), (x(11), 8.4, 0.8)]))
+                context.fillPath()
+                // "10".
+                context.setLineWidth(1.7)
+                context.move(to: CGPoint(x: 8.4, y: 11.2))
+                context.addLine(to: CGPoint(x: 9.6, y: 10.4))
+                context.addLine(to: CGPoint(x: 9.6, y: 17.8))
+                context.strokePath()
+                context.addEllipse(in: CGRect(x: 12, y: 10.4, width: 4.4, height: 7.4))
+                context.strokePath()
+            }
+        case "quote.bubble", "quote.bubble.fill", "captions.bubble":
+            return Shape(referenceSize: 20, box: CGSize(width: 26, height: 24)) { context in
+                let bubble = CGMutablePath()
+                bubble.addRoundedRect(in: CGRect(x: 2, y: 2, width: 22, height: 16), cornerWidth: 5, cornerHeight: 5)
+                bubble.move(to: CGPoint(x: 6, y: 17))
+                bubble.addLine(to: CGPoint(x: 5, y: 22.5))
+                bubble.addLine(to: CGPoint(x: 11.5, y: 17))
+                if name == "quote.bubble.fill" {
+                    context.addPath(bubble)
+                    for left: CGFloat in [8.2, 14.2] {
+                        context.addEllipse(in: CGRect(x: left, y: 7, width: 3.6, height: 3.6))
+                        context.addRect(CGRect(x: left + 2, y: 9, width: 1.6, height: 3.4))
+                    }
+                    context.fillPath(using: .evenOdd)
+                    return
+                }
+                context.setLineWidth(1.9)
+                context.addPath(bubble)
+                context.strokePath()
+                if name == "captions.bubble" {
+                    // Two lines of words.
+                    context.setLineWidth(1.8)
+                    for (from, to, y) in [(7, 12.5, 8.4), (14.5, 19, 8.4), (7, 10.5, 12.2), (12.5, 19, 12.2)] as [(CGFloat, CGFloat, CGFloat)] {
+                        context.move(to: CGPoint(x: from, y: y))
+                        context.addLine(to: CGPoint(x: to, y: y))
+                    }
+                    context.strokePath()
+                } else {
+                    for left: CGFloat in [8.2, 14.2] {
+                        context.addEllipse(in: CGRect(x: left, y: 7, width: 3.6, height: 3.6))
+                        context.addRect(CGRect(x: left + 2, y: 9, width: 1.6, height: 3.4))
+                    }
+                    context.fillPath()
+                }
+            }
+        case "waveform":
+            return Shape(referenceSize: 20, box: CGSize(width: 26, height: 22)) { context in
+                context.setLineWidth(2.1)
+                for (x, height) in [(3, 5), (7, 11), (11, 18), (15, 9), (19, 14), (23, 6)] as [(CGFloat, CGFloat)] {
+                    context.move(to: CGPoint(x: x, y: 11 - height / 2))
+                    context.addLine(to: CGPoint(x: x, y: 11 + height / 2))
+                }
+                context.strokePath()
+            }
+        case "gauge.with.dots.needle.67percent", "speedometer":
+            return Shape(referenceSize: 20, box: CGSize(width: 24, height: 22)) { context in
+                let center = CGPoint(x: 12, y: 12.5)
+                context.setLineWidth(2)
+                context.addEllipse(in: CGRect(x: center.x - 9.5, y: center.y - 9.5, width: 19, height: 19))
+                context.strokePath()
+                // Dots round the dial, and the needle two-thirds of the way.
+                for degrees: CGFloat in [150, 195, 240, 285] {
+                    let angle = degrees * .pi / 180
+                    let point = CGPoint(x: center.x + 6.4 * cos(angle), y: center.y + 6.4 * sin(angle))
+                    context.addEllipse(in: CGRect(x: point.x - 1, y: point.y - 1, width: 2, height: 2))
+                }
+                context.fillPath()
+                context.setLineWidth(2)
+                let needle = -25 * CGFloat.pi / 180
+                context.move(to: center)
+                context.addLine(to: CGPoint(x: center.x + 6.8 * cos(needle), y: center.y + 6.8 * sin(needle)))
+                context.strokePath()
+                context.addEllipse(in: CGRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4))
+                context.fillPath()
             }
         case "music.note":
             return Shape(referenceSize: 40, box: CGSize(width: 34, height: 46)) { context in

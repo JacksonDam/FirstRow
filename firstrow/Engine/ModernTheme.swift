@@ -194,24 +194,151 @@ final class ModernBackgroundLayer {
         return blurred
     }
 
-    /// The picture shrunk to a few pixels and darkened. Shown stretched over the screen, the
-    /// layer's smooth scaling turns it into a very soft blur.
+    /// The picture's colours averaged into a 16 by 9 grid, darkened, and blurred into a soft
+    /// wash. The blur is done here, at a size big enough to stretch over the screen smoothly:
+    /// the grid itself stretched that far showed the straight seams between its pixels.
     static func blurredAmbient(_ image: NSImage) -> CGImage? {
-        guard let source = LayerImageCache.cgImage(for: image),
-              let tiny = CGContext(
-                  data: nil, width: 16, height: 9, bitsPerComponent: 8, bytesPerRow: 0,
-                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
-              )
-        else { return nil }
-        tiny.interpolationQuality = .high
-        // Fill the frame, cropping the picture's longer side.
+        guard let source = LayerImageCache.cgImage(for: image) else { return nil }
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        // The picture filling a small 16:9 frame, cropping its longer side.
+        let sampleWidth = 128, sampleHeight = 72
+        guard let sample = CGContext(
+            data: nil, width: sampleWidth, height: sampleHeight, bitsPerComponent: 8, bytesPerRow: 0,
+            space: space, bitmapInfo: layerBitmapInfo,
+        ) else { return nil }
+        sample.interpolationQuality = .high
         let aspect = CGFloat(source.width) / CGFloat(max(1, source.height))
-        let drawSize = aspect > 16.0 / 9.0 ? CGSize(width: 9 * aspect, height: 9) : CGSize(width: 16, height: 16 / aspect)
-        tiny.draw(source, in: CGRect(x: (16 - drawSize.width) / 2, y: (9 - drawSize.height) / 2, width: drawSize.width, height: drawSize.height))
-        // Darken towards black, keeping a little of the colour.
-        tiny.setFillColor(CGColor(gray: 0, alpha: 0.58))
-        tiny.fill(CGRect(x: 0, y: 0, width: 16, height: 9))
-        return tiny.makeImage()
+        let frame = CGSize(width: sampleWidth, height: sampleHeight)
+        let drawSize = aspect > 16.0 / 9.0 ? CGSize(width: frame.height * aspect, height: frame.height) : CGSize(width: frame.width, height: frame.width / aspect)
+        sample.draw(source, in: CGRect(x: (frame.width - drawSize.width) / 2, y: (frame.height - drawSize.height) / 2, width: drawSize.width, height: drawSize.height))
+
+        // Averaged into the grid (8 by 8 pixels a cell), and darkened towards black.
+        let gridWidth = 16, gridHeight = 9
+        let cell = sampleWidth / gridWidth
+        let darken: Float = 0.42
+        var grid = [Float](repeating: 0, count: gridWidth * gridHeight * 3)
+        let read = withPixels(of: sample) { bytes, bytesPerRow in
+            for gy in 0 ..< gridHeight {
+                for gx in 0 ..< gridWidth {
+                    var sums: (Float, Float, Float) = (0, 0, 0)
+                    for y in gy * cell ..< (gy + 1) * cell {
+                        let row = bytes + y * bytesPerRow
+                        for x in gx * cell ..< (gx + 1) * cell {
+                            let pixel = row + x * 4
+                            sums.0 += Float(pixel[0])
+                            sums.1 += Float(pixel[1])
+                            sums.2 += Float(pixel[2])
+                        }
+                    }
+                    let scale = darken / Float(cell * cell)
+                    let index = (gy * gridWidth + gx) * 3
+                    grid[index] = sums.0 * scale
+                    grid[index + 1] = sums.1 * scale
+                    grid[index + 2] = sums.2 * scale
+                }
+            }
+        }
+        guard read else { return nil }
+
+        // Spread over a bigger frame, then blurred by about a cell, so no seams are left.
+        let width = 320, height = 180
+        var plane = [Float](repeating: 0, count: width * height * 3)
+        let stepX = Float(gridWidth) / Float(width)
+        let stepY = Float(gridHeight) / Float(height)
+        for y in 0 ..< height {
+            let fy = max(0, min(Float(gridHeight - 1), (Float(y) + 0.5) * stepY - 0.5))
+            let y0 = Int(fy), y1 = min(gridHeight - 1, y0 + 1)
+            let ty = fy - Float(y0)
+            for x in 0 ..< width {
+                let fx = max(0, min(Float(gridWidth - 1), (Float(x) + 0.5) * stepX - 0.5))
+                let x0 = Int(fx), x1 = min(gridWidth - 1, x0 + 1)
+                let tx = fx - Float(x0)
+                for channel in 0 ..< 3 {
+                    let a = grid[(y0 * gridWidth + x0) * 3 + channel]
+                    let b = grid[(y0 * gridWidth + x1) * 3 + channel]
+                    let c = grid[(y1 * gridWidth + x0) * 3 + channel]
+                    let d = grid[(y1 * gridWidth + x1) * 3 + channel]
+                    let top = a + (b - a) * tx
+                    let bottom = c + (d - c) * tx
+                    plane[(y * width + x) * 3 + channel] = top + (bottom - top) * ty
+                }
+            }
+        }
+        // Three box blurs come close to a Gaussian one.
+        let radius = width / gridWidth
+        for _ in 0 ..< 3 {
+            boxBlur(&plane, width: width, height: height, radius: radius, horizontal: true)
+            boxBlur(&plane, width: width, height: height, radius: radius, horizontal: false)
+        }
+
+        // Back to 8 bits, with a touch of noise so dark gradients don't band.
+        var generator = SystemRandomNumberGenerator()
+        return makeOpaqueImage(width: width, height: height, space: space) { bytes, bytesPerRow in
+            for y in 0 ..< height {
+                let row = bytes + y * bytesPerRow
+                for x in 0 ..< width {
+                    let pixel = row + x * 4
+                    let source = (y * width + x) * 3
+                    let noise = Float(UInt8.random(in: 0 ... 255, using: &generator)) / 255 - 0.5
+                    for channel in 0 ..< 3 {
+                        pixel[channel] = UInt8(max(0, min(255, (plane[source + channel] + noise).rounded())))
+                    }
+                    pixel[3] = 255
+                }
+            }
+        }
+    }
+
+    /// Averages each value with `radius` neighbours either side along rows or columns of a
+    /// three-channel plane, holding the edge values beyond the ends.
+    private static func boxBlur(_ plane: inout [Float], width: Int, height: Int, radius: Int, horizontal: Bool) {
+        let count = horizontal ? width : height
+        let lines = horizontal ? height : width
+        let window = Float(radius * 2 + 1)
+        var line = [Float](repeating: 0, count: count)
+        for lineIndex in 0 ..< lines {
+            for channel in 0 ..< 3 {
+                func index(_ position: Int) -> Int {
+                    (horizontal ? lineIndex * width + position : position * width + lineIndex) * 3 + channel
+                }
+                for position in 0 ..< count { line[position] = plane[index(position)] }
+                var sum: Float = 0
+                for offset in -radius ... radius { sum += line[max(0, min(count - 1, offset))] }
+                for position in 0 ..< count {
+                    plane[index(position)] = sum / window
+                    sum += line[min(count - 1, position + radius + 1)] - line[max(0, position - radius)]
+                }
+            }
+        }
+    }
+
+    /// Lets `body` read a bitmap context's pixels (four bytes each, alpha last, top row first).
+    private static func withPixels(of context: CGContext, _ body: (UnsafePointer<UInt8>, Int) -> Void) -> Bool {
+        #if FIRSTROW_PORTABLE
+            guard let image = context.makeImage() else { return false }
+            body(UnsafePointer(image.storage.bytes), image.storage.bytesPerRow)
+            return true
+        #else
+            guard let data = context.data else { return false }
+            body(UnsafePointer(data.assumingMemoryBound(to: UInt8.self)), context.bytesPerRow)
+            return true
+        #endif
+    }
+
+    /// An opaque image whose pixels `fill` writes (four bytes each, alpha last, top row first).
+    private static func makeOpaqueImage(width: Int, height: Int, space: CGColorSpace, fill: (UnsafeMutablePointer<UInt8>, Int) -> Void) -> CGImage? {
+        #if FIRSTROW_PORTABLE
+            let storage = PixelStorage(width: width, height: height)
+            fill(storage.bytes, storage.bytesPerRow)
+            return CGImage(storage: storage, colorSpace: space, alphaInfo: .premultipliedFirst)
+        #else
+            guard let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: space, bitmapInfo: layerBitmapInfo,
+            ), let data = context.data else { return nil }
+            fill(data.assumingMemoryBound(to: UInt8.self), context.bytesPerRow)
+            return context.makeImage()
+        #endif
     }
 }
 

@@ -24,6 +24,8 @@ enum FirstRowHarness {
 
     /// Where the harness's pointer commands go once the menus are up.
     @MainActor static var pointerEventSink: ((PointerEvent) -> Void)?
+    /// Pulls the selected row past the end of its list, as a Siri Remote swipe does on Apple TV.
+    @MainActor static var rubberBandSink: ((CGFloat) -> Void)?
     @MainActor private static var lastPointerLocation = CGPoint.zero
 
     /// `mouse:move|down|up|click|right|back:x:y` and `mouse:scroll:dx:dy[:precise]` (points from
@@ -233,6 +235,15 @@ enum FirstRowHarness {
                 // irremote:<usage page>:<usage>:<1|0> in hex, as the infrared receiver sends them.
                 guard let page = UInt32(parts[1], radix: 16), let usage = UInt32(parts[2], radix: 16) else { return }
                 AppleRemoteInput.shared.handle(page: page, usage: usage, pressed: parts[3] == "1")
+            case "rubberband" where parts.count == 2:
+                // rubberband:<scene points>
+                rubberBandSink?(CGFloat(Double(parts[1]) ?? 0))
+            case "clearresume":
+                // Empties Continue Watching.
+                MovieResumeStore.removeAll()
+            case "tvbutton":
+                // The Siri Remote's TV button.
+                SiriRemoteInput.shared.onTVButton()
             case "mouse":
                 _ = performPointerCommand(parts)
             case "setting":

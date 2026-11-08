@@ -25,9 +25,19 @@ extension MenuView {
         activeFullscreenScene?.key == musicNowPlayingFullscreenKey && !isFullscreenSceneTransitioning
     }
 
+    /// A Siri Remote is held, whose TV button brings the list out.
+    var hasSiriRemoteForNowPlaying: Bool {
+        #if os(macOS)
+            SiriRemoteInput.shared.hasRemote
+        #else
+            false
+        #endif
+    }
+
     /// Whether Now Playing has a list worth showing beside it.
     var canShowNowPlayingQueue: Bool {
-        canPointAtNowPlaying && activeFullscreenScene?.key == musicNowPlayingFullscreenKey && nowPlayingQueueCount > 1
+        (canPointAtNowPlaying || hasSiriRemoteForNowPlaying || isNowPlayingQueueVisible) &&
+            activeFullscreenScene?.key == musicNowPlayingFullscreenKey && nowPlayingQueueCount > 1
     }
 
     var nowPlayingQueueCount: Int {
@@ -67,13 +77,72 @@ extension MenuView {
     /// Rows are this far apart in the list, in full-screen canvas points.
     static let nowPlayingQueueRowPitch: CGFloat = 78
 
-    func showNowPlayingQueue() {
+    /// Brings the list out. Opened from a key or remote, the song playing is picked out in it,
+    /// for the arrows to move from.
+    func showNowPlayingQueue(focusingActiveSong: Bool = false) {
         guard canShowNowPlayingQueue, !isNowPlayingQueueVisible else { return }
         // Opened on the song playing, with a couple of rows above it.
         if nowPlayingQueueReveal == 0 { scrollNowPlayingQueueToActiveSong() }
-        nowPlayingQueueHoverIndex = nil
+        nowPlayingQueueHoverIndex = focusingActiveSong ? (nowPlayingQueueActiveIndex ?? 0) : nil
         playSound(named: "SelectionChange")
         settleNowPlayingQueue(open: true)
+    }
+
+    /// The Siri Remote's TV button: brings Now Playing's list out, or puts it away.
+    func handleRemoteTVButton() {
+        noteInputSource(.siriRemote)
+        guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isFullscreenSceneTransitioning else { return }
+        registerUserInteractionForScreenSaver()
+        if isNowPlayingQueueVisible {
+            hideNowPlayingQueue()
+            playSound(named: "Exit")
+        } else {
+            if isNowPlayingLyricsVisible { toggleNowPlayingLyrics() }
+            showNowPlayingQueue(focusingActiveSong: true)
+        }
+    }
+
+    /// Up and down while the list is out: the row picked out moves, the list scrolling to keep
+    /// it in view.
+    func moveNowPlayingQueueFocus(by step: Int) {
+        let count = nowPlayingQueueCount
+        guard count > 0 else { return }
+        let current = nowPlayingQueueHoverIndex ?? nowPlayingQueueActiveIndex ?? 0
+        let target = nowPlayingQueueHoverIndex == nil ? current : max(0, min(count - 1, current + step))
+        guard target != nowPlayingQueueHoverIndex else {
+            playLimitSoundOnceForCurrentHold()
+            return
+        }
+        playSound(named: "SelectionChange")
+        withAnimation(.smooth(duration: 0.22)) {
+            nowPlayingQueueHoverIndex = target
+            keepNowPlayingQueueRowInView(target)
+        }
+    }
+
+    /// Scrolls the list just enough to show all of row `index`.
+    private func keepNowPlayingQueueRowInView(_ index: Int) {
+        guard let geometry = pointer.hitTester?.nowPlayingQueueGeometry else { return }
+        let pitch = Self.nowPlayingQueueRowPitch
+        let padding: CGFloat = 14
+        let visible = geometry.viewport.height * geometry.canvasPerPoint
+        let top = CGFloat(index) * pitch + padding
+        var scroll = nowPlayingQueueScroll
+        if top - pitch * 0.5 < scroll {
+            scroll = top - pitch * 0.5
+        } else if top + pitch * 1.5 > scroll + visible {
+            scroll = top + pitch * 1.5 - visible
+        }
+        nowPlayingQueueScroll = max(0, min(geometry.scrollLimit, scroll))
+    }
+
+    /// Select while the list is out: plays the row picked out.
+    func chooseFocusedNowPlayingQueueRow() {
+        if let index = nowPlayingQueueHoverIndex {
+            chooseNowPlayingQueueRow(index)
+        } else {
+            hideNowPlayingQueue()
+        }
     }
 
     func hideNowPlayingQueue() {
@@ -136,6 +205,12 @@ extension MenuView {
     /// The pointer moved over Now Playing: up against the right edge brings the list out, away
     /// from it puts it back, and over it picks out a row.
     func pointerMovedOverNowPlaying(_ point: CGPoint) {
+        // The buttons come back while the pointer moves, and go again when it rests.
+        if areNowPlayingTouchControlsHidden {
+            showNowPlayingTouchControls()
+        } else if nowPlayingTouchControlsHideTask != nil {
+            scheduleNowPlayingTouchControlsHide()
+        }
         guard let geometry = pointer.hitTester?.nowPlayingQueueGeometry else { return }
         if !isNowPlayingQueueVisible {
             if geometry.edgeZone.contains(point) { showNowPlayingQueue() }
@@ -231,41 +306,38 @@ extension MenuView {
         }
     }
 
-    /// Starts the wait before the buttons slide away, if they should: only in touch mode, in
-    /// Now Playing, while it plays. Paused, they stay.
+    /// Starts the wait before the buttons slide away, if they should: only with on-screen
+    /// buttons (touch or mouse mode), in Now Playing, while it plays. Paused, they stay.
     func scheduleNowPlayingTouchControlsHide() {
         nowPlayingTouchControlsHideTask?.cancel()
         nowPlayingTouchControlsHideTask = nil
-        #if os(iOS)
-            guard AppSettings.isTouchEnabled, activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
-            guard isMusicPlaybackRunning() else {
-                if areNowPlayingTouchControlsHidden {
-                    withAnimation(.smooth(duration: 0.4)) { areNowPlayingTouchControlsHidden = false }
-                }
-                return
+        guard showsOnScreenControls, activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
+        guard isMusicPlaybackRunning() else {
+            if areNowPlayingTouchControlsHidden {
+                withAnimation(.smooth(duration: 0.4)) { areNowPlayingTouchControlsHidden = false }
             }
-            nowPlayingTouchControlsHideTask = Task { @MainActor [weak self] in
-                try? await firstRowSleep(Self.nowPlayingTouchControlsHideDelay)
-                guard let self, !Task.isCancelled else { return }
-                guard self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey, self.isMusicPlaybackRunning() else { return }
-                self.hideNowPlayingTouchControls()
-            }
-        #endif
+            return
+        }
+        nowPlayingTouchControlsHideTask = Task { @MainActor [weak self] in
+            try? await firstRowSleep(Self.nowPlayingTouchControlsHideDelay)
+            guard let self, !Task.isCancelled else { return }
+            self.nowPlayingTouchControlsHideTask = nil
+            guard self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey, self.isMusicPlaybackRunning() else { return }
+            self.hideNowPlayingTouchControls()
+        }
     }
 
     /// Keeps the extras in step with playback: called whenever it starts, stops or changes song.
     func noteNowPlayingPlaybackChanged() {
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
         refreshNowPlayingLyrics()
-        #if os(iOS)
-            if AppSettings.isTouchEnabled, nowPlayingTouchControlsHideTask == nil || !isMusicPlaybackRunning() {
-                if areNowPlayingTouchControlsHidden, !isMusicPlaybackRunning() {
-                    showNowPlayingTouchControls()
-                } else if !areNowPlayingTouchControlsHidden {
-                    scheduleNowPlayingTouchControlsHide()
-                }
+        if showsOnScreenControls, nowPlayingTouchControlsHideTask == nil || !isMusicPlaybackRunning() {
+            if areNowPlayingTouchControlsHidden, !isMusicPlaybackRunning() {
+                showNowPlayingTouchControls()
+            } else if !areNowPlayingTouchControlsHidden {
+                scheduleNowPlayingTouchControlsHide()
             }
-        #endif
+        }
     }
 }
 

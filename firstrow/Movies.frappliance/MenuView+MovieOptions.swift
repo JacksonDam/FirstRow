@@ -1,11 +1,12 @@
 import AVFoundation
 import Foundation
 
-/// The panel ↓ opens during a movie: subtitles, audio track and playback speed. Up and down
-/// move between rows, left and right (or Select) change the value, Menu or ↑ from the top closes it.
+/// The panel ↓ opens during a movie (or its buttons above the bar): subtitles, audio track and
+/// playback speed. Up and down move between rows, left and right (or Select) change the value,
+/// Menu or ↑ from the top closes it, back into its buttons.
 extension MenuView {
     struct MovieOptionRow: Equatable {
-        enum Kind: Equatable {
+        enum Kind: Hashable {
             case subtitles
             case audio
             case speed
@@ -22,6 +23,8 @@ extension MenuView {
         var focusedRow = 0
         /// Set once up or down has moved the focus, so rows arriving late don't move it.
         var hasMoved = false
+        /// The row to open on (the button it was opened from), once the rows are in.
+        var preferredKind: MovieOptionRow.Kind?
         #if FIRSTROW_PORTABLE
             var subtitleIDs: [Int?] = []
             var audioIDs: [Int] = []
@@ -44,7 +47,8 @@ extension MenuView {
         movieOptions != nil
     }
 
-    func openMovieOptions() {
+    /// Opens the panel, out of its buttons, on the row for `kind` (the first row if nil).
+    func openMovieOptions(focusing kind: MovieOptionRow.Kind? = nil) {
         guard let player = moviePlayer, movieOptions == nil, !isMovieTransitioning else { return }
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         movieControlsGlyphState = player.rate > 0.01 ? .play : .pause
@@ -52,15 +56,72 @@ extension MenuView {
         playSound(named: "Selection")
         var state = MovieOptionsState(rows: [])
         state.rows = [speedRow()]
+        state.preferredKind = kind
+        if kind != nil { state.hasMoved = true }
         movieOptions = state
+        withAnimation(.smooth(duration: 0.36)) {
+            movieOptionsReveal = 1
+        }
         loadMovieTrackRows(player)
     }
 
+    /// Puts the panel back into its buttons.
     func closeMovieOptions() {
         guard movieOptions != nil else { return }
-        movieOptions = nil
+        withAnimation(.smoothInOut(duration: 0.3)) {
+            movieOptions = nil
+            movieOptionsReveal = 0
+        }
         playSound(named: "Exit")
         scheduleMovieControlsAutoHide()
+    }
+
+    /// A tap or click on one of the buttons: opens the panel on that row, moves to it if the
+    /// panel's open on another, or closes it.
+    func toggleMovieOptions(focusing kind: MovieOptionRow.Kind) {
+        guard var state = movieOptions else {
+            openMovieOptions(focusing: kind)
+            return
+        }
+        guard let index = state.rows.firstIndex(where: { $0.kind == kind }), index != state.focusedRow else {
+            closeMovieOptions()
+            return
+        }
+        state.focusedRow = index
+        state.hasMoved = true
+        movieOptions = state
+        playSound(named: "SelectionChange")
+    }
+
+    /// The panel's rows say what the movie offers, for its buttons.
+    private func noteMovieOptionKinds(_ rows: [MovieOptionRow]) {
+        let kinds = rows.map(\.kind)
+        if kinds != movieOptionKinds { movieOptionKinds = kinds }
+    }
+
+    /// Finds what the movie offers (subtitles, more than one audio track) for its buttons.
+    func probeMovieOptionKinds(_ player: AVPlayer) {
+        #if FIRSTROW_PORTABLE
+            var kinds: [MovieOptionRow.Kind] = []
+            if !player.tracks(ofType: "sub").isEmpty { kinds.append(.subtitles) }
+            if player.tracks(ofType: "audio").count > 1 { kinds.append(.audio) }
+            kinds.append(.speed)
+            if kinds != movieOptionKinds { movieOptionKinds = kinds }
+        #else
+            guard let item = player.currentItem else { return }
+            Task { @MainActor in
+                let legible = await Self.mediaSelectionGroup(item.asset, .legible)
+                let audible = await Self.mediaSelectionGroup(item.asset, .audible)
+                guard self.moviePlayer === player else { return }
+                var kinds: [MovieOptionRow.Kind] = []
+                if let legible, legible.options.contains(where: { !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) }) {
+                    kinds.append(.subtitles)
+                }
+                if let audible, audible.options.count > 1 { kinds.append(.audio) }
+                kinds.append(.speed)
+                if kinds != self.movieOptionKinds { self.movieOptionKinds = kinds }
+            }
+        #endif
     }
 
     private func speedRow() -> MovieOptionRow {
@@ -85,7 +146,11 @@ extension MenuView {
                 rows.append(MovieOptionRow(kind: .audio, title: "Audio", values: audio.map(\.title), selected: audio.firstIndex(where: \.isSelected) ?? 0))
             }
             state.rows = rows + state.rows
+            if let preferred = state.preferredKind, let index = state.rows.firstIndex(where: { $0.kind == preferred }) {
+                state.focusedRow = index
+            }
             movieOptions = state
+            noteMovieOptionKinds(state.rows)
         #else
             guard let item = player.currentItem else { return }
             Task { @MainActor in
@@ -109,10 +174,12 @@ extension MenuView {
                     state.audibleOptions = audible.options
                     rows.append(MovieOptionRow(kind: .audio, title: "Audio", values: audible.options.map(\.displayName), selected: current.flatMap { audible.options.firstIndex(of: $0) } ?? 0))
                 }
-                let focusedKind = state.rows.indices.contains(state.focusedRow) ? state.rows[state.focusedRow].kind : .speed
+                let focusedKind = state.preferredKind ?? (state.rows.indices.contains(state.focusedRow) ? state.rows[state.focusedRow].kind : .speed)
                 state.rows = rows + state.rows.filter { $0.kind == .speed }
                 state.focusedRow = state.hasMoved ? (state.rows.firstIndex { $0.kind == focusedKind } ?? 0) : 0
+                state.preferredKind = nil
                 self.movieOptions = state
+                self.noteMovieOptionKinds(state.rows)
             }
         #endif
     }
@@ -141,6 +208,7 @@ extension MenuView {
             } else {
                 state.focusedRow -= 1
                 state.hasMoved = true
+                state.preferredKind = nil
                 movieOptions = state
                 playSound(named: "SelectionChange")
             }
@@ -148,6 +216,7 @@ extension MenuView {
             if state.focusedRow + 1 < state.rows.count {
                 state.focusedRow += 1
                 state.hasMoved = true
+                state.preferredKind = nil
                 movieOptions = state
                 playSound(named: "SelectionChange")
             } else {

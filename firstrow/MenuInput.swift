@@ -22,7 +22,40 @@ enum KeyCode: UInt16 {
     case delete = 51
 }
 
+/// Where the last input came from. Hints for pointing and touching (the faint bars) stay
+/// away while the keyboard or the old Apple Remote is in use, which can't use them.
+enum MenuInputSource {
+    case keyboard
+    /// The white or aluminium infrared Apple Remote.
+    case appleRemote
+    case siriRemote
+    case pointer
+    case touch
+}
+
 extension MenuView {
+    /// Notes the input that just came in, for the hints that depend on it.
+    func noteInputSource(_ source: MenuInputSource) {
+        if lastInputSource != source { lastInputSource = source }
+    }
+
+    /// The pointing and touching hints have a use: the last input wasn't a key.
+    var showsPointingHints: Bool {
+        lastInputSource != .keyboard && lastInputSource != .appleRemote
+    }
+
+    /// The round on-screen buttons (Back, the transports) are shown: touch mode on iPhone and
+    /// iPad, mouse mode on computers.
+    var showsOnScreenControls: Bool {
+        #if os(iOS)
+            AppSettings.isTouchEnabled
+        #elseif os(tvOS)
+            false
+        #else
+            AppSettings.isMouseEnabled
+        #endif
+    }
+
     func handleKeyDown(_ key: KeyCode, isRepeat: Bool = false, modifiers: NSEvent.ModifierFlags = []) {
         // The file picker is answering keys of its own.
         if isChoosingMediaSource { return }

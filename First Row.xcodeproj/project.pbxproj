@@ -142,6 +142,7 @@
 		69833E3C6AAFCCEA6577BBE4 /* MusicLyrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = D98C0BD6410800723338868E /* MusicLyrics.swift */; };
 		0C9DA29CB164F36610FC007F /* MenuView+NowPlayingExtras.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F99887355B4E39ACAAC389F /* MenuView+NowPlayingExtras.swift */; };
 		53D2760FBF3ECF731A0CF301 /* NowPlayingExtrasLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D94F1CD991053A6EFB6EA143 /* NowPlayingExtrasLayers.swift */; };
+		766F3C1E38D54EC25E2DAC05 /* MenuView+RemoteSwipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F8FF2A4C4A080F0988B0B8 /* MenuView+RemoteSwipe.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -299,6 +300,7 @@
 		D98C0BD6410800723338868E /* MusicLyrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLyrics.swift; sourceTree = "<group>"; };
 		9F99887355B4E39ACAAC389F /* MenuView+NowPlayingExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+NowPlayingExtras.swift"; sourceTree = "<group>"; };
 		D94F1CD991053A6EFB6EA143 /* NowPlayingExtrasLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingExtrasLayers.swift; sourceTree = "<group>"; };
+		A7F8FF2A4C4A080F0988B0B8 /* MenuView+RemoteSwipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+RemoteSwipe.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -487,6 +489,7 @@
 		7A73DE812F5776A20021C281 /* firstrow */ = {
 			isa = PBXGroup;
 			children = (
+				A7F8FF2A4C4A080F0988B0B8 /* MenuView+RemoteSwipe.swift */,
 				AC2E5BC75E266992AE5994D7 /* TouchHarness.swift */,
 				5FAC8B622BFB186235A2E4AD /* MenuView+Touch.swift */,
 				B18E6D1B66D0C9E0F6B346B4 /* SystemMediaControls.swift */,
@@ -781,6 +784,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				766F3C1E38D54EC25E2DAC05 /* MenuView+RemoteSwipe.swift in Sources */,
 				53D2760FBF3ECF731A0CF301 /* NowPlayingExtrasLayers.swift in Sources */,
 				0C9DA29CB164F36610FC007F /* MenuView+NowPlayingExtras.swift in Sources */,
 				69833E3C6AAFCCEA6577BBE4 /* MusicLyrics.swift in Sources */,

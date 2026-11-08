@@ -132,18 +132,50 @@ final class NowPlayingQueueLayer {
     private let rowsContainer = SceneLayer()
     private let edgeBar = HintBarLayer()
 
+    /// One song in the list, drawn as the menus' rows are: in the modern look a translucent
+    /// capsule that turns white, grows and casts its shadow when picked out; in the classic look
+    /// plain text over the menus' selection bar.
     private final class Row {
         let layer = SceneLayer()
+        let shadowCaster = SceneLayer()
+        let shadowCutout = CAShapeLayer()
+        var shadowSize: CGSize = .zero
         let capsule = SceneLayer()
-        let title = SceneLayer()
-        let detail = SceneLayer()
-        let speaker = SceneLayer()
-        var key = ""
+        let content = SceneLayer()
+        let light = Ink()
+        let dark = Ink()
+        var contentKey = ""
+        var index = -1
+        var isFocused = false
+
+        final class Ink {
+            let layer = SceneLayer()
+            let title = SceneLayer()
+            let detail = SceneLayer()
+            let speaker = SceneLayer()
+
+            init() {
+                for sublayer in [title, detail, speaker] {
+                    layer.addSublayer(sublayer)
+                }
+            }
+        }
 
         init() {
-            for sublayer in [capsule, title, detail, speaker] {
-                layer.addSublayer(sublayer)
-            }
+            capsule.backgroundColor = ModernTheme.rowFill.cgColor
+            shadowCaster.shadowColor = CGColor(gray: 0, alpha: 1)
+            shadowCaster.shadowRadius = 14
+            shadowCaster.shadowOffset = .zero
+            shadowCaster.shadowOpacity = 0.6
+            shadowCutout.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull()]
+            shadowCutout.fillRule = .evenOdd
+            shadowCutout.fillColor = CGColor(gray: 0, alpha: 1)
+            shadowCaster.mask = shadowCutout
+            layer.addSublayer(shadowCaster)
+            layer.addSublayer(capsule)
+            layer.addSublayer(content)
+            content.addSublayer(light.layer)
+            content.addSublayer(dark.layer)
         }
     }
 
@@ -151,6 +183,9 @@ final class NowPlayingQueueLayer {
     private var spare: [Row] = []
     private var lastScroll: CGFloat?
     private var lastHeaderKey = ""
+    /// The classic look's selection bar, behind the row picked out.
+    private let selection = SelectionBoxLayer()
+    private var lastSelectionIndex: Int?
 
     /// In canvas points: the panel, where rows show, the first row's top, how far it scrolls,
     /// and the strip along the right edge that pulls it out.
@@ -167,6 +202,8 @@ final class NowPlayingQueueLayer {
         panel.addSublayer(clip)
         clip.masksToBounds = true
         clip.addSublayer(rowsContainer)
+        rowsContainer.addSublayer(selection.layer)
+        selection.layer.isHidden = true
         clip.mask = fade
         fade.startPoint = CGPoint(x: 0.5, y: 0)
         fade.endPoint = CGPoint(x: 0.5, y: 1)
@@ -185,7 +222,7 @@ final class NowPlayingQueueLayer {
         let barHeight: CGFloat = 130
         edgeBar.update(
             frame: CGRect(x: size.width - 24, y: (size.height - barHeight) / 2, width: 8, height: barHeight),
-            shown: isAvailable && menu.nowPlayingQueueReveal <= 0 && !menu.isNowPlayingLyricsVisible,
+            shown: isAvailable && menu.nowPlayingQueueReveal <= 0 && !menu.isNowPlayingLyricsVisible && menu.showsPointingHints,
             drift: CGSize(width: -22, height: 0),
             session: menu.nowPlayingSession,
         )
@@ -249,11 +286,35 @@ final class NowPlayingQueueLayer {
         let range = first <= last ? first ... last : 1 ... 0
         for (index, row) in rows where !range.contains(index) {
             row.layer.isHidden = true
+            row.index = -1
             spare.append(row)
             rows[index] = nil
         }
         let active = menu.nowPlayingQueueActiveIndex
-        let hover = menu.nowPlayingQueueHoverIndex
+        let focus = menu.nowPlayingQueueHoverIndex
+        // Rows leave room each side for the classic bar's glow, or the modern capsule's growth.
+        let rowInset: CGFloat = isModern ? 16 : 40
+        func rowFrame(_ index: Int) -> CGRect {
+            CGRect(x: rowInset, y: CGFloat(index) * pitch, width: width - rowInset * 2, height: pitch - 8)
+        }
+
+        // The classic bar slides from row to row, as the menus' does.
+        if !isModern, let focus, focus >= 0, focus < count {
+            let frame = rowFrame(focus)
+            let spill = frame.height / 75
+            let appearing = selection.layer.isHidden || lastSelectionIndex == nil
+            selection.layer.isHidden = false
+            selection.update(
+                frame: frame.insetBy(dx: -40 * spill, dy: -29 * spill),
+                selectionBoxHeight: frame.height,
+                animation: appearing ? nil : (lastSelectionIndex != focus ? .easeInOut(duration: 0.2) : nil),
+            )
+            lastSelectionIndex = focus
+        } else {
+            selection.layer.isHidden = true
+            lastSelectionIndex = nil
+        }
+
         for index in range {
             guard let content = menu.nowPlayingQueueRow(index) else { continue }
             let row = rows[index] ?? {
@@ -266,37 +327,115 @@ final class NowPlayingQueueLayer {
                 rows[index] = made
                 return made
             }()
-            let rowFrame = CGRect(x: 12, y: CGFloat(index) * pitch, width: width - 24, height: pitch - 8)
-            row.layer.frame = rowFrame
-            let isHovered = hover == index
-            let isPlaying = active == index
-            let key = "\(index)|\(content.title)|\(content.detail)|\(isHovered)|\(isPlaying)|\(isModern)|\(scale)|\(width)"
-            guard key != row.key else { continue }
-            row.key = key
-            row.capsule.frame = CGRect(origin: .zero, size: rowFrame.size)
-            row.capsule.cornerRadius = isModern ? rowFrame.height / 2 : 10
-            let focused = isHovered && isModern
-            row.capsule.backgroundColor = isHovered
-                ? (isModern ? ModernTheme.focusFill.cgColor : CGColor(red: 0.2, green: 0.45, blue: 0.95, alpha: 0.55))
-                : CGColor(gray: 1, alpha: isPlaying ? 0.14 : 0)
-            let primary = focused ? ModernTheme.focusedText : RGBA(white: 1, alpha: 0.95)
-            let secondary = focused ? ModernTheme.focusedSecondaryText : RGBA(white: 1, alpha: 0.55)
-            var right = rowFrame.width - 26
-            if isPlaying {
-                let glyph = SymbolRenderer.render("speaker.wave.3.fill", pointSize: 24, weight: .semibold, color: primary, scale: scale)
-                row.speaker.isHidden = false
-                row.speaker.show(glyph, at: CGPoint(x: right - glyph.size.width, y: ((rowFrame.height - glyph.size.height) / 2).rounded()))
-                right -= glyph.size.width + 16
-            } else {
-                row.speaker.isHidden = true
+            update(row, index: index, content: content, frame: rowFrame(index), isPlaying: active == index, isFocused: focus == index, isModern: isModern, scale: scale)
+        }
+    }
+
+    private static let focusAnimation = Animation.smooth(duration: ModernTheme.focusDuration)
+    private static let unfocusAnimation = Animation.smooth(duration: 0.22)
+
+    private func update(_ row: Row, index: Int, content: (title: String, detail: String), frame: CGRect, isPlaying: Bool, isFocused focused: Bool, isModern: Bool, scale: CGFloat) {
+        let sameRow = row.index == index
+        let wasFocused = sameRow && row.isFocused
+        row.index = index
+        row.layer.frame = frame
+        let size = frame.size
+
+        // Both inks drawn once per song, size and look.
+        let key = "\(content.title)|\(content.detail)|\(isPlaying)|\(isModern)|\(scale)|\(size.width)"
+        if key != row.contentKey {
+            row.contentKey = key
+            let titleFont = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
+            let detailFont = isModern ? ModernTheme.regularFontName : firstRowRegularFontName
+            let inks: [(Row.Ink, RGBA, RGBA)] = [
+                (row.light, isModern ? ModernTheme.text : RGBA(white: 1, alpha: 0.96), isModern ? ModernTheme.secondaryText : RGBA(white: 1, alpha: 0.6)),
+                (row.dark, ModernTheme.focusedText, ModernTheme.focusedSecondaryText),
+            ]
+            for (ink, primary, secondary) in inks {
+                ink.layer.frame = CGRect(origin: .zero, size: size)
+                var right = size.width - 26
+                if isPlaying {
+                    let glyph = SymbolRenderer.render("speaker.wave.3.fill", pointSize: 24, weight: .semibold, color: primary, scale: scale)
+                    ink.speaker.isHidden = false
+                    ink.speaker.show(glyph, at: CGPoint(x: right - glyph.size.width, y: ((size.height - glyph.size.height) / 2).rounded()))
+                    right -= glyph.size.width + 16
+                } else {
+                    ink.speaker.isHidden = true
+                }
+                let textWidth = max(40, right - 26)
+                let titleGraphic = TextRenderer.render(TextSpec(text: content.title, fontName: titleFont, size: 27, color: primary, maxWidth: textWidth), scale: scale)
+                let detailGraphic = TextRenderer.render(TextSpec(text: content.detail, fontName: detailFont, size: 20, color: secondary, maxWidth: textWidth), scale: scale)
+                let block = titleGraphic.size.height + 2 + detailGraphic.size.height
+                let top = ((size.height - block) / 2).rounded()
+                ink.title.show(titleGraphic, at: CGPoint(x: 26, y: top))
+                ink.detail.show(detailGraphic, at: CGPoint(x: 26, y: top + titleGraphic.size.height + 2))
             }
-            let textWidth = max(40, right - 26)
-            let titleGraphic = TextRenderer.render(TextSpec(text: content.title, fontName: isModern ? ModernTheme.mediumFontName : firstRowBoldFontName, size: 27, color: primary, maxWidth: textWidth), scale: scale)
-            let detailGraphic = TextRenderer.render(TextSpec(text: content.detail, fontName: isModern ? ModernTheme.regularFontName : firstRowRegularFontName, size: 20, color: secondary, maxWidth: textWidth), scale: scale)
-            let block = titleGraphic.size.height + 2 + detailGraphic.size.height
-            let top = ((rowFrame.height - block) / 2).rounded()
-            row.title.show(titleGraphic, at: CGPoint(x: 26, y: top))
-            row.detail.show(detailGraphic, at: CGPoint(x: 26, y: top + titleGraphic.size.height + 2))
+        }
+
+        guard isModern else {
+            // Classic: plain text; the bar behind does the picking out.
+            row.shadowCaster.isHidden = true
+            row.capsule.isHidden = true
+            row.dark.layer.isHidden = true
+            row.light.layer.isHidden = false
+            row.light.layer.setOpacity(1, nil)
+            row.content.setTransform(CATransform3DIdentity, nil)
+            row.content.place(CGRect(origin: .zero, size: size))
+            row.isFocused = focused
+            return
+        }
+        row.shadowCaster.isHidden = false
+        row.capsule.isHidden = false
+
+        // As the menus' rows: focus arrives at once and grows; it leaves with a quick fade.
+        let changed = sameRow && wasFocused != focused
+        let growth: Animation? = changed ? Self.focusAnimation : nil
+        let unfocus: Animation? = changed && !focused ? Self.unfocusAnimation : nil
+        let focusChanged = !sameRow || wasFocused != focused
+        row.isFocused = focused
+        let rest = CGRect(origin: .zero, size: size)
+        let grow = ModernTheme.focusGrowth
+        let capsuleFrame = focused ? rest.insetBy(dx: -grow.width, dy: -grow.height) : rest
+        if focusChanged {
+            row.capsule.set("backgroundColor", to: (focused ? ModernTheme.focusFill : ModernTheme.rowFill).cgColor, unchanged: false, animation: unfocus)
+            row.shadowCaster.set("shadowOpacity", to: Float(focused ? 0.75 : 0.6), unchanged: false, animation: unfocus ?? growth)
+        }
+        if size != row.shadowSize {
+            row.shadowSize = size
+            let radius = size.height / 2
+            row.shadowCaster.shadowPath = CGPath(roundedRect: rest, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            let reach: CGFloat = 48
+            row.shadowCutout.frame = rest.insetBy(dx: -reach, dy: -reach)
+            let cutout = CGMutablePath()
+            cutout.addRect(CGRect(x: 0, y: 0, width: size.width + reach * 2, height: size.height + reach * 2))
+            let hole = CGRect(x: reach + 0.5, y: reach + 0.5, width: size.width - 1, height: size.height - 1)
+            cutout.addPath(CGPath(roundedRect: hole, cornerWidth: radius - 0.5, cornerHeight: radius - 0.5, transform: nil))
+            row.shadowCutout.path = cutout
+        }
+        row.shadowCaster.frame = rest
+        row.capsule.setFrame(capsuleFrame, growth)
+        row.capsule.set("cornerRadius", to: capsuleFrame.height / 2, unchanged: row.capsule.cornerRadius == capsuleFrame.height / 2, animation: growth)
+        row.content.place(rest)
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        var grown = CATransform3DMakeTranslation(center.x, center.y, 0)
+        grown = CATransform3DScale(grown, ModernTheme.focusedContentScale, ModernTheme.focusedContentScale, 1)
+        grown = CATransform3DTranslate(grown, -center.x, -center.y, 0)
+        row.content.setTransform(focused ? grown : CATransform3DIdentity, growth)
+        if focused {
+            row.light.layer.isHidden = true
+            row.dark.layer.isHidden = false
+            if focusChanged { row.dark.layer.setOpacity(1, nil) }
+        } else {
+            row.light.layer.isHidden = false
+            if let unfocus {
+                // The dark text, as it was, fades out over the light text fading in.
+                row.light.layer.setOpacity(0, nil)
+                row.light.layer.setOpacity(1, unfocus)
+                row.dark.layer.setOpacity(0, unfocus)
+            } else if focusChanged {
+                row.light.layer.setOpacity(1, nil)
+                row.dark.layer.isHidden = true
+            }
         }
     }
 }

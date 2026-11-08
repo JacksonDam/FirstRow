@@ -62,6 +62,11 @@ enum MovieResumeStore {
         save(Array(list.prefix(limit)))
     }
 
+    /// Forgets every movie (for test runs).
+    static func removeAll() {
+        save([])
+    }
+
     static func remove(_ url: URL) {
         let path = url.standardizedFileURL.path
         save(stored().filter { $0.path != path })
@@ -117,6 +122,10 @@ extension MenuView {
         guard isShowingContinueWatching, thirdMenuMode == .moviesFolder else { return }
         let selectedID = thirdMenuItems.indices.contains(selectedThirdIndex) ? thirdMenuItems[selectedThirdIndex].id : nil
         let entries = MovieResumeStore.entries()
+        guard !entries.isEmpty else {
+            leaveEmptyContinueWatching()
+            return
+        }
         thirdMenuItems = entries.map {
             MoviesFolderEntry(id: "continue|\($0.path)", title: $0.title, url: $0.url, isDirectory: false)
         }
@@ -126,5 +135,26 @@ extension MenuView {
         } else {
             selectedThirdIndex = min(selectedThirdIndex, max(0, thirdMenuItems.count - 1))
         }
+    }
+
+    /// Nothing left to continue (the last one was watched to the end): back to the Movies menu
+    /// it was opened from, rather than an empty list. Behind a movie, that happens out of sight,
+    /// so the movie ends on the Movies menu.
+    private func leaveEmptyContinueWatching() {
+        guard isMoviePlaybackVisible || isMovieTransitioning else {
+            exitMoviesThirdMenuToSecondLevelWithSwap()
+            return
+        }
+        isInThirdMenu = false
+        thirdMenuMode = .none
+        thirdMenuOpacity = 0
+        submenuOpacity = 1
+        headerText = rootMenuTitle(for: activeRootItemID)
+        resetThirdMenuDirectoryState()
+        moviesFolderSelectionIndexByDirectoryPath = [:]
+        // The Continue Watching row has gone from the top: its place is the first row now.
+        selectedSubIndex = 0
+        musicSubmenuSelectionMemo = nil
+        refreshDetailPreviewForCurrentContext()
     }
 }

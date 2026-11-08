@@ -68,7 +68,7 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         let snapshot = menu.currentMusicNowPlayingSnapshot
         if snapshot.artworkImage !== backdropSource || backdropMissing {
             backdropSource = snapshot.artworkImage
-            let blurred = snapshot.artworkImage.flatMap { ModernBackgroundLayer.blurredAmbient($0) }
+            let blurred = snapshot.artworkImage.flatMap { ModernBackgroundLayer.cachedAmbient($0) }
             backdropMissing = blurred == nil
             if backdrop.contents != nil {
                 backdrop.removeAnimation(forKey: "contents")
@@ -342,56 +342,157 @@ final class ModernMovieControlsLayer {
     }
 }
 
-/// The movie's subtitles, audio and speed panel, above the transport bar. Each row has its name
-/// on the left and its value, with arrows to change it, on the right.
+/// The movie's subtitles, audio and speed: a row of buttons above the right end of the progress
+/// bar, as on iPhone, and the panel that grows out of them. Each row of the panel has its name on
+/// the left and its value, with arrows to change it, on the right.
 @MainActor
 final class MovieOptionsLayer {
     let layer = SceneLayer()
+    private let buttons = SceneLayer()
+    private let buttonHighlight = SceneLayer()
+    private var buttonIcons: [MenuView.MovieOptionRow.Kind: SceneLayer] = [:]
+    private var buttonsKey = ""
     private let panel = SceneLayer()
     private let modernFocus = SceneLayer()
     private let classicFocus = SelectionBoxLayer()
     private var rows: [(title: SceneLayer, value: SceneLayer)] = []
     private var lastFocus: Int?
-    /// The panel and its rows in canvas points, for touches.
+    /// What the panel last showed, kept while it goes back into its buttons.
+    private var shownState: MenuView.MovieOptionsState?
+    private var wasOpen = false
+    /// The panel and its rows in canvas points, for touches and clicks (only while it's open).
     private(set) var panelFrame: CGRect?
     private(set) var rowFrames: [CGRect] = []
     /// Each row's value, "‹" to "›", in canvas points.
     private(set) var valueFrames: [CGRect] = []
+    /// The buttons above the bar, in canvas points, while they show.
+    private(set) var buttonFrames: [(kind: MenuView.MovieOptionRow.Kind, frame: CGRect)] = []
+
+    static let buttonSlot = CGSize(width: 84, height: 72)
 
     init() {
-        layer.isHidden = true
+        layer.addSublayer(buttons)
+        buttons.addSublayer(buttonHighlight)
+        buttons.opacity = 0
         layer.addSublayer(panel)
         panel.addSublayer(classicFocus.layer)
         modernFocus.backgroundColor = ModernTheme.focusFill.cgColor
         panel.addSublayer(modernFocus)
+        panel.opacity = 0
+        panel.isHidden = true
     }
 
-    func update(_ state: MenuView.MovieOptionsState?, size: CGSize, scale: CGFloat, pass: RenderPass) {
-        guard let state, !state.rows.isEmpty else {
-            layer.isHidden = true
-            lastFocus = nil
+    static func symbol(for kind: MenuView.MovieOptionRow.Kind) -> String {
+        switch kind {
+        case .subtitles: "captions.bubble"
+        case .audio: "waveform"
+        case .speed: "gauge.with.dots.needle.67percent"
+        }
+    }
+
+    /// `anchor` is the progress bar (canvas points) while the controls show, nil while they don't.
+    func update(menu: MenuView, anchor: CGRect?, controlsOpacity: Double, size: CGSize, scale: CGFloat, pass: RenderPass) {
+        layer.frame = CGRect(origin: .zero, size: size)
+        let isModern = ModernTheme.isActive
+        let state = menu.isMoviePlaybackVisible ? menu.movieOptions : nil
+        if let state { shownState = state }
+        let isOpen = state != nil && menu.movieOptionsReveal > 0.5
+
+        // The buttons: one for each thing the movie offers, the open one picked out.
+        let kinds = menu.movieOptionKinds
+        let slot = Self.buttonSlot
+        let showsButtons = anchor != nil && menu.isMoviePlaybackVisible && !kinds.isEmpty
+        var clusterFrame = CGRect.zero
+        if let anchor {
+            let width = slot.width * CGFloat(kinds.count) + 12
+            clusterFrame = CGRect(x: anchor.maxX - width, y: anchor.minY - 26 - slot.height, width: width, height: slot.height)
+        }
+        buttonFrames = []
+        if showsButtons {
+            buttons.place(clusterFrame)
+            buttons.cornerRadius = slot.height / 2
+            buttons.backgroundColor = isModern ? CGColor(gray: 0.2, alpha: 0.62) : CGColor(gray: 0, alpha: 0.62)
+            buttons.borderWidth = isModern ? 0 : 1.5
+            buttons.borderColor = CGColor(gray: 1, alpha: 0.3)
+            let key = "\(kinds)|\(isModern)|\(scale)"
+            if key != buttonsKey {
+                buttonsKey = key
+                for (_, icon) in buttonIcons { icon.removeFromSuperlayer() }
+                buttonIcons = [:]
+                for (index, kind) in kinds.enumerated() {
+                    let icon = SceneLayer()
+                    let graphic = SymbolRenderer.render(Self.symbol(for: kind), pointSize: 30, weight: .semibold, color: .white, scale: scale)
+                    let center = CGPoint(x: 6 + slot.width * (CGFloat(index) + 0.5), y: slot.height / 2)
+                    icon.show(graphic, at: CGPoint(x: (center.x - graphic.size.width / 2).rounded(), y: (center.y - graphic.size.height / 2).rounded()))
+                    buttons.addSublayer(icon)
+                    buttonIcons[kind] = icon
+                }
+            }
+            for (index, kind) in kinds.enumerated() {
+                let local = CGRect(x: 6 + slot.width * CGFloat(index), y: 0, width: slot.width, height: slot.height)
+                buttonFrames.append((kind, local.offsetBy(dx: clusterFrame.minX, dy: clusterFrame.minY)))
+            }
+            // The button of the row the panel is on wears a soft circle.
+            let focusedKind = isOpen ? state.flatMap { $0.rows.indices.contains($0.focusedRow) ? $0.rows[$0.focusedRow].kind : nil } : nil
+            if let focusedKind, let index = kinds.firstIndex(of: focusedKind) {
+                let side = slot.height - 14
+                let frame = CGRect(x: 6 + slot.width * (CGFloat(index) + 0.5) - side / 2, y: 7, width: side, height: side)
+                let appearing = buttonHighlight.opacity < 0.01
+                buttonHighlight.setFrame(frame, appearing ? nil : .smooth(duration: 0.22))
+                buttonHighlight.cornerRadius = side / 2
+                buttonHighlight.backgroundColor = CGColor(gray: 1, alpha: 0.26)
+                buttonHighlight.setOpacity(1, .smooth(duration: 0.2))
+            } else {
+                buttonHighlight.setOpacity(0, .smooth(duration: 0.2))
+            }
+        }
+        buttons.setOpacity(showsButtons ? controlsOpacity : 0, pass.animation)
+
+        // The panel, grown out of the buttons, or gone back into them.
+        guard let content = shownState, !content.rows.isEmpty else {
+            panel.isHidden = true
             panelFrame = nil
             rowFrames = []
             valueFrames = []
             return
         }
-        let appearing = layer.isHidden
-        layer.isHidden = false
-        layer.frame = CGRect(origin: .zero, size: size)
-        let isModern = ModernTheme.isActive
-        let width: CGFloat = 820
+        let opening = isOpen && !wasOpen
+        let closing = !isOpen && wasOpen
+        if opening { panel.isHidden = false }
+        let width: CGFloat = 760
         let rowHeight: CGFloat = 72
         let inset: CGFloat = 16
-        let height = CGFloat(state.rows.count) * rowHeight + inset * 2
-        panel.frame = CGRect(x: (size.width - width) / 2, y: size.height - 210 - height, width: width, height: height)
-        panelFrame = panel.frame
-        rowFrames = state.rows.indices.map { CGRect(x: panel.frame.minX + inset, y: panel.frame.minY + inset + CGFloat($0) * rowHeight, width: width - inset * 2, height: rowHeight) }
-        panel.backgroundColor = CGColor(gray: isModern ? 0.08 : 0, alpha: isModern ? 0.82 : 0.86)
+        let height = CGFloat(content.rows.count) * rowHeight + inset * 2
+        let reference = showsButtons ? clusterFrame : CGRect(x: size.width - 110 - 260, y: size.height - 240, width: 260, height: slot.height)
+        let frame = CGRect(x: max(40, reference.maxX - width), y: reference.minY - 18 - height, width: width, height: height)
+        panel.place(frame)
+        panel.backgroundColor = CGColor(gray: isModern ? 0.08 : 0, alpha: isModern ? 0.84 : 0.88)
         panel.cornerRadius = isModern ? 34 : 14
-        panel.borderWidth = isModern ? 0 : 1
-        panel.borderColor = CGColor(gray: 1, alpha: 0.18)
+        panel.borderWidth = isModern ? 0 : 1.5
+        panel.borderColor = CGColor(gray: 1, alpha: 0.22)
+        // Grows from (and shrinks back to) the middle of the buttons.
+        let origin = CGPoint(x: reference.midX - frame.minX, y: reference.midY - frame.minY)
+        var collapsed = CATransform3DMakeTranslation(origin.x, origin.y, 0)
+        collapsed = CATransform3DScale(collapsed, 0.2, 0.2, 1)
+        collapsed = CATransform3DTranslate(collapsed, -origin.x, -origin.y, 0)
+        if opening, (panel.presentation()?.opacity ?? panel.opacity) < 0.02 {
+            // Starts from the buttons (part way back in, it turns round where it is instead).
+            panel.setTransform(collapsed, nil)
+            panel.setOpacity(0, nil)
+        }
+        let move: Animation? = opening || closing ? (pass.animation ?? (opening ? .smooth(duration: 0.36) : .smoothInOut(duration: 0.3))) : nil
+        panel.setTransform(isOpen ? CATransform3DIdentity : collapsed, move)
+        panel.setOpacity(isOpen ? 1 : 0, move)
+        wasOpen = isOpen
+        if isOpen {
+            panelFrame = frame
+            rowFrames = content.rows.indices.map { CGRect(x: frame.minX + inset, y: frame.minY + inset + CGFloat($0) * rowHeight, width: width - inset * 2, height: rowHeight) }
+        } else {
+            panelFrame = nil
+            rowFrames = []
+        }
 
-        let focus = min(state.focusedRow, state.rows.count - 1)
+        let focus = min(content.focusedRow, content.rows.count - 1)
         let moved = lastFocus != nil && lastFocus != focus
         lastFocus = focus
         let focusFrame = CGRect(x: inset, y: inset + CGFloat(focus) * rowHeight + 4, width: width - inset * 2, height: rowHeight - 8)
@@ -403,25 +504,25 @@ final class MovieOptionsLayer {
         } else {
             // The glow texture reaches past the row as the menus' does, scaled to this row's height.
             let spill = focusFrame.height / 75
-            classicFocus.update(frame: focusFrame.insetBy(dx: -40 * spill, dy: -29 * spill), selectionBoxHeight: focusFrame.height, animation: appearing || !moved ? nil : .easeInOut(duration: 0.2))
+            classicFocus.update(frame: focusFrame.insetBy(dx: -40 * spill, dy: -29 * spill), selectionBoxHeight: focusFrame.height, animation: opening || !moved ? nil : .easeInOut(duration: 0.2))
         }
 
-        valueFrames = []
-        while rows.count < state.rows.count {
+        var values: [CGRect] = []
+        while rows.count < content.rows.count {
             let pair = (SceneLayer(), SceneLayer())
             panel.addSublayer(pair.0)
             panel.addSublayer(pair.1)
             rows.append(pair)
         }
         for (index, pair) in rows.enumerated() {
-            guard state.rows.indices.contains(index) else {
+            guard content.rows.indices.contains(index) else {
                 pair.title.isHidden = true
                 pair.value.isHidden = true
                 continue
             }
             pair.title.isHidden = false
             pair.value.isHidden = false
-            let row = state.rows[index]
+            let row = content.rows[index]
             let focused = index == focus && isModern
             let primary = focused ? ModernTheme.focusedText : RGBA(white: 1, alpha: 0.94)
             let secondary = focused ? ModernTheme.focusedSecondaryText : RGBA(white: 1, alpha: 0.6)
@@ -437,7 +538,13 @@ final class MovieOptionsLayer {
             let valueGraphic = TextRenderer.render(TextSpec(text: text, fontName: valueFont, size: 30, color: secondary, maxWidth: width * 0.6, minimumScaleFactor: 0.7), scale: scale)
             let valueOrigin = CGPoint(x: width - inset - 26 - valueGraphic.size.width, y: top + (rowHeight - valueGraphic.size.height) / 2)
             pair.value.show(valueGraphic, at: valueOrigin)
-            valueFrames.append(CGRect(origin: valueOrigin, size: valueGraphic.size).offsetBy(dx: panel.frame.minX, dy: panel.frame.minY))
+            values.append(CGRect(origin: valueOrigin, size: valueGraphic.size).offsetBy(dx: frame.minX, dy: frame.minY))
         }
+        valueFrames = isOpen ? values : []
+    }
+
+    /// The button at a canvas point (with a little room around each).
+    func button(at point: CGPoint) -> MenuView.MovieOptionRow.Kind? {
+        buttonFrames.first { $0.frame.insetBy(dx: -4, dy: -12).contains(point) }?.kind
     }
 }
