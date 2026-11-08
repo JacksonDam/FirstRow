@@ -100,6 +100,10 @@ extension MenuView {
         fullscreenTransitionOverlayOpacity = 0
         let shouldRevealDeferredNowPlaying =
             key == musicNowPlayingFullscreenKey && deferNowPlayingMenuItemUntilAfterFadeOut
+        if ModernTheme.isActive {
+            crossfadeToFullscreenScene(key: key, revealsDeferredNowPlaying: shouldRevealDeferredNowPlaying)
+            return
+        }
         let isScreenSaverTransition = key == screenSaverFullscreenKey
         let fadeOutDuration = isScreenSaverTransition ? 1 : 0.28
         let fadeInDuration = isScreenSaverTransition ? 1 : 0.24
@@ -221,6 +225,10 @@ extension MenuView {
             stopMusicPlaybackSession(clearDisplayState: false)
         }
         isFullscreenSceneTransitioning = true
+        if ModernTheme.isActive {
+            crossfadeFromFullscreenScene(dismissedKey: dismissedKey, preservesMusicPlayback: shouldPreserveMusicPlayback)
+            return
+        }
         let isScreenSaverTransition = dismissedKey == screenSaverFullscreenKey
         let fadeOutDuration = isScreenSaverTransition ? 1.0 : 0.28
         let holdDuration: Double =
@@ -288,6 +296,57 @@ extension MenuView {
             try? await firstRowSleep(fadeInDuration)
             guard !Task.isCancelled else { return }
             isFullscreenSceneTransitioning = false
+        }
+    }
+}
+
+/// The modern look has no fades through black: full-screen scenes crossfade with the menus.
+extension MenuView {
+    private var modernSceneCrossfade: Animation {
+        .smoothInOut(duration: 0.5)
+    }
+
+    func crossfadeToFullscreenScene(key: String, revealsDeferredNowPlaying: Bool) {
+        // A menu change waiting on this (shuffling the library, say) hands over to it.
+        if isMenuFolderSwapTransitioning {
+            isMenuFolderSwapTransitioning = false
+            menuFolderSwapOverlayOpacity = 0
+            modernSwapOpacity = 1
+            modernSwapOffset = 0
+        }
+        withAnimation(modernSceneCrossfade) {
+            fullscreenSceneOpacity = 1
+            menuSceneOpacity = 0
+        }
+        Task {
+            try? await firstRowSleep(modernSceneCrossfade.duration)
+            guard !Task.isCancelled else { return }
+            if revealsDeferredNowPlaying {
+                self.revealDeferredNowPlayingMenuItemIfNeeded()
+            }
+            if key == self.musicNowPlayingFullscreenKey {
+                self.updateMusicNowPlayingFlipTimerState()
+            }
+            self.isFullscreenSceneTransitioning = false
+        }
+    }
+
+    func crossfadeFromFullscreenScene(dismissedKey: String?, preservesMusicPlayback: Bool) {
+        withAnimation(modernSceneCrossfade) {
+            fullscreenSceneOpacity = 0
+            menuSceneOpacity = 1
+        }
+        Task {
+            try? await firstRowSleep(modernSceneCrossfade.duration)
+            guard !Task.isCancelled else { return }
+            self.activeFullscreenScene = nil
+            if dismissedKey == self.musicNowPlayingFullscreenKey {
+                self.updateMusicNowPlayingFlipTimerState()
+                if !preservesMusicPlayback {
+                    self.clearMusicNowPlayingDisplayState()
+                }
+            }
+            self.isFullscreenSceneTransitioning = false
         }
     }
 }

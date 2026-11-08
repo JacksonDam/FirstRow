@@ -360,6 +360,15 @@ extension CALayer {
         set("transform", to: NSValue(caTransform3D: value), unchanged: CATransform3DEqualToTransform(transform, value), animation: animation)
     }
 
+    /// Sets the untransformed box of a layer anchored at its top left. Unlike `frame`, this
+    /// ignores the layer's transform, so a layer part way through a slide or scale keeps its place.
+    func place(_ rect: CGRect) {
+        let size = CGRect(origin: bounds.origin, size: rect.size)
+        if bounds != size { bounds = size }
+        let origin = CGPoint(x: rect.minX + rect.width * anchorPoint.x, y: rect.minY + rect.height * anchorPoint.y)
+        if position != origin { position = origin }
+    }
+
     func setHiddenIfTransparent() {
         isHidden = opacity <= 0.0001 && animation(forKey: "opacity") == nil
     }

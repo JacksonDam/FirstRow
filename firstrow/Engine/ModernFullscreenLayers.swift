@@ -64,19 +64,24 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         let incomingProgress = min(max(menu.musicSongTransitionIncomingProgress, 0), 1)
         let outgoingProgress = min(max(menu.musicSongTransitionOutgoingOpacityProgress, 0), 1)
         let direction: CGFloat = menu.musicSongTransitionDirection > 0 ? 1 : -1
+        // The old song eases out as the new one eases in a moment later, on quadratic curves of
+        // their own rather than the classic look's slower zoom.
+        let still = pass.transaction.disablesAnimations
+        let leave: Animation? = still ? nil : .smoothInOut(duration: 0.42)
+        let arrive: Animation? = still ? nil : .smooth(duration: 0.55)
 
-        incoming.layer.frame = bounds
+        incoming.layer.place(bounds)
         incoming.update(snapshot, size: size, scale: scale)
-        let inShift = hasTransition ? 60 * direction * (1 - incomingProgress) : 0
-        incoming.layer.setTransform(CATransform3DMakeTranslation(inShift, 0, 0), pass.animation)
-        incoming.layer.setOpacity(hasTransition ? Double(incomingProgress) : 1, pass.animation)
+        let inShift = hasTransition ? 90 * direction * (1 - incomingProgress) : 0
+        incoming.layer.setTransform(CATransform3DMakeTranslation(inShift, 0, 0), arrive)
+        incoming.layer.setOpacity(hasTransition ? Double(incomingProgress) : 1, arrive)
 
         if let previous = menu.musicSongTransitionSnapshot {
             outgoing.layer.isHidden = false
-            outgoing.layer.frame = bounds
+            outgoing.layer.place(bounds)
             outgoing.update(previous, size: size, scale: scale)
-            outgoing.layer.setTransform(CATransform3DMakeTranslation(-60 * direction * outgoingProgress, 0, 0), pass.animation)
-            outgoing.layer.setOpacity(Double(1 - outgoingProgress), pass.animation)
+            outgoing.layer.setTransform(CATransform3DMakeTranslation(-90 * direction * outgoingProgress, 0, 0), leave)
+            outgoing.layer.setOpacity(Double(1 - outgoingProgress), leave)
         } else {
             outgoing.layer.isHidden = true
             outgoing.layer.removeAllAnimations()
@@ -123,9 +128,13 @@ final class ModernNowPlayingPanelLayer {
     func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, size: CGSize, scale: CGFloat) {
         let width = size.width
         let height = size.height
-        let side = min(height * 0.56, width * 0.33)
-        let artCenter = CGPoint(x: width * 0.31, y: height * 0.48)
-        let art = CGRect(x: artCenter.x - side / 2, y: artCenter.y - side / 2, width: side, height: side)
+        // The artwork and the details beside it are centred together on the screen.
+        let side = min(height * 0.56, width * 0.34)
+        let gap = (side * 0.17).rounded()
+        let columnWidth = min(side * 1.5, width - side - gap - width * 0.12)
+        let left = ((width - side - gap - columnWidth) * 0.5).rounded()
+        let artCenter = CGPoint(x: left + side / 2, y: height * 0.49)
+        let art = CGRect(x: left, y: artCenter.y - side / 2, width: side, height: side)
         let radius = side * 0.035
         artworkShadow.frame = art
         artworkShadow.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: art.size), cornerWidth: radius, cornerHeight: radius, transform: nil)
@@ -133,8 +142,7 @@ final class ModernNowPlayingPanelLayer {
         artwork.cornerRadius = radius
         artwork.contents = LayerImageCache.cgImage(for: snapshot.artworkImage)
 
-        let columnLeft = art.maxX + width * 0.055
-        let columnWidth = max(300, width * 0.92 - columnLeft)
+        let columnLeft = art.maxX + gap
         let titleGraphic = TextRenderer.render(TextSpec(text: snapshot.trackTitle, fontName: ModernTheme.boldFontName, size: 54, color: ModernTheme.text, maxWidth: columnWidth, minimumScaleFactor: 0.7), scale: scale)
         let artistGraphic = TextRenderer.render(TextSpec(text: snapshot.artistName, fontName: ModernTheme.mediumFontName, size: 40, color: RGBA(white: 1, alpha: 0.72), maxWidth: columnWidth, minimumScaleFactor: 0.75), scale: scale)
         let albumGraphic = TextRenderer.render(TextSpec(text: snapshot.albumTitle, fontName: ModernTheme.regularFontName, size: 34, color: RGBA(white: 1, alpha: 0.5), maxWidth: columnWidth, minimumScaleFactor: 0.75), scale: scale)

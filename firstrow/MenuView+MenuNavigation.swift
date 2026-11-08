@@ -239,6 +239,10 @@ extension MenuView {
         guard !isMenuFolderSwapTransitioning else { return }
         guard !isFullscreenSceneTransitioning else { return }
         guard !isMovieTransitioning else { return }
+        if ModernTheme.isActive {
+            swapModernMenu(revealWhen: revealWhen, maxRevealWait: maxRevealWait, update)
+            return
+        }
         isMenuFolderSwapTransitioning = true
         if useOverlayFade {
             menuSceneOpacity = 1
@@ -293,6 +297,58 @@ extension MenuView {
                 isMenuFolderSwapTransitioning = false
             }
             await revealWhenReady()
+        }
+    }
+}
+
+/// The modern look changes menus without going through black: the title and list fade out,
+/// change, and ease back in from the side the move went (from the right going deeper, from the
+/// left coming back), while the card and background stay.
+extension MenuView {
+    /// Roughly how deep the menus are, to tell going in from coming back.
+    var modernMenuDepth: Int {
+        var depth = (isInSubmenu ? 1 : 0) + (isInThirdMenu ? 1 : 0)
+        depth += max(0, spotifyMenuPages.count - 1) + max(0, mediaFoldersPages.count - 1) + max(0, jellyfin.pages.count - 1)
+        if isMusicSongsCategoryScoped { depth += 1 }
+        if let current = thirdMenuCurrentURL, let root = thirdMenuRootURL {
+            depth += max(0, current.standardizedFileURL.pathComponents.count - root.standardizedFileURL.pathComponents.count)
+        }
+        if spotifySongsReturnPages != nil { depth += 1 }
+        return depth
+    }
+
+    func swapModernMenu(revealWhen: @escaping () -> Bool, maxRevealWait: TimeInterval, _ update: @escaping () -> Void) {
+        isMenuFolderSwapTransitioning = true
+        let depthBefore = modernMenuDepth
+        let leave = Animation.smoothInOut(duration: 0.16)
+        withAnimation(leave) {
+            modernSwapOpacity = 0
+        }
+        Task { @MainActor in
+            try? await firstRowSleep(leave.duration + 0.02)
+            guard !Task.isCancelled, isMenuFolderSwapTransitioning else { return }
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                update()
+            }
+            guard isMenuFolderSwapTransitioning else { return }
+            let goesDeeper = modernMenuDepth >= depthBefore
+            withTransaction(instant) {
+                modernSwapOffset = goesDeeper ? ModernTheme.listSlideDistance : -ModernTheme.listSlideDistance
+            }
+            let deadline = Date().addingTimeInterval(max(0, maxRevealWait))
+            while isMenuFolderSwapTransitioning, !revealWhen(), Date() < deadline {
+                try? await firstRowSleep(0.05)
+            }
+            guard isMenuFolderSwapTransitioning else { return }
+            let arrive = Animation.smooth(duration: 0.36)
+            withAnimation(arrive) {
+                modernSwapOpacity = 1
+                modernSwapOffset = 0
+            }
+            try? await firstRowSleep(arrive.duration)
+            isMenuFolderSwapTransitioning = false
         }
     }
 }

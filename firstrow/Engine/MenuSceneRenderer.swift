@@ -28,6 +28,8 @@ final class MenuSceneRenderer: TransactionRendering {
     private var lastCarouselConfiguration: RootCarouselConfiguration?
     private let settledIcon = SceneLayer()
     private let menuArea = SceneLayer()
+    /// The titles and lists together, which the modern look fades and slides as menus change.
+    private let menuGroup = SceneLayer()
     private let rootList = MenuListLayer()
     private let submenuList = MenuListLayer()
     private let thirdList = MenuListLayer()
@@ -108,8 +110,6 @@ final class MenuSceneRenderer: TransactionRendering {
         rootLayer.addSublayer(modernBackground.layer)
         rootLayer.addSublayer(canvas)
         canvas.addSublayer(sceneContent)
-        sceneContent.addSublayer(rootHeader.layer)
-        sceneContent.addSublayer(submenuHeader.layer)
         sceneContent.addSublayer(carouselBox)
         sceneContent.addSublayer(modernCard.layer)
         modernCard.layer.isHidden = true
@@ -122,7 +122,10 @@ final class MenuSceneRenderer: TransactionRendering {
         settledIcon.contentsGravity = .resizeAspect
         settledIcon.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         carouselBox.addSublayer(settledIcon)
-        sceneContent.addSublayer(menuArea)
+        sceneContent.addSublayer(menuGroup)
+        menuGroup.addSublayer(rootHeader.layer)
+        menuGroup.addSublayer(submenuHeader.layer)
+        menuGroup.addSublayer(menuArea)
         menuArea.addSublayer(rootList.layer)
         menuArea.addSublayer(submenuList.layer)
         menuArea.addSublayer(thirdList.layer)
@@ -224,6 +227,9 @@ final class MenuSceneRenderer: TransactionRendering {
         let themeChanged = memo.theme != nil && memo.theme != theme
         memo.theme = theme
         sceneContent.setOpacity(menu.menuSceneOpacity, pass.animation)
+        menuGroup.place(CGRect(origin: .zero, size: sceneSize))
+        menuGroup.setOpacity(isModern ? menu.modernSwapOpacity : 1, pass.animation)
+        menuGroup.setTransform(CATransform3DMakeTranslation(isModern ? menu.modernSwapOffset : 0, 0, 0), pass.animation)
 
         updateHeaders(pass, sceneSize: sceneSize, frames: frames, scale: scale)
 
@@ -365,7 +371,7 @@ final class MenuSceneRenderer: TransactionRendering {
         let arrow = menu.menuArrowAppearance
         let theme = AppSettings.theme
 
-        rootList.layer.frame = CGRect(x: 0, y: 0, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.defaultVisibleMenuRowCount))
+        rootList.layer.place(CGRect(x: 0, y: 0, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.defaultVisibleMenuRowCount)))
         rootList.update(MenuListLayer.Configuration(
             items: menu.rootListItems(),
             selectedIndex: menu.selectedIndex,
@@ -387,7 +393,7 @@ final class MenuSceneRenderer: TransactionRendering {
             let isPhotos = menu.activeRootItemID == "photos"
             let topInset: CGFloat = (menu.activeRootItemID == "tv_shows" && (menu.isInSubmenu || menu.isEnteringSubmenu)) ? 91 : 0
             submenuList.layer.isHidden = false
-            submenuList.layer.frame = CGRect(x: 0, y: topInset, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.defaultVisibleMenuRowCount))
+            submenuList.layer.place(CGRect(x: 0, y: topInset, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.defaultVisibleMenuRowCount)))
             submenuList.update(MenuListLayer.Configuration(
                 items: items,
                 selectedIndex: min(menu.selectedSubIndex, max(0, items.count - 1)),
@@ -416,7 +422,7 @@ final class MenuSceneRenderer: TransactionRendering {
             let items = menu.thirdMenuListItems()
             let isPhotosThird = menu.activeRootItemID == "photos" && menu.thirdMenuMode == .photosDateAlbums
             thirdList.layer.isHidden = false
-            thirdList.layer.frame = CGRect(x: 0, y: 0, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.thirdLevelVisibleMenuRowCount))
+            thirdList.layer.place(CGRect(x: 0, y: 0, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.thirdLevelVisibleMenuRowCount)))
             thirdList.update(MenuListLayer.Configuration(
                 items: items,
                 selectedIndex: min(menu.selectedThirdIndex, max(0, items.count - 1)),
@@ -466,7 +472,9 @@ final class MenuSceneRenderer: TransactionRendering {
     private func slide(_ layer: CALayer, away: Bool, toLeft: Bool, theme: InterfaceTheme, _ animation: Animation?) {
         let distance = ModernTheme.listSlideDistance
         let offset: CGFloat = theme == .modern && away ? (toLeft ? -distance : distance) : 0
-        layer.setTransform(CATransform3DMakeTranslation(offset, 0, 0), theme == .modern ? animation : nil)
+        // Slides decelerate on a quadratic curve, taking at least a moment so they read as moves.
+        let eased = animation.map { Animation.smooth(duration: max($0.duration, 0.36)) }
+        layer.setTransform(CATransform3DMakeTranslation(offset, 0, 0), theme == .modern ? eased : nil)
     }
 }
 

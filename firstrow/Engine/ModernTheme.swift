@@ -79,13 +79,15 @@ enum ModernTheme {
 
     static func layout(sceneSize: CGSize, menuHeight: CGFloat) -> SceneLayout {
         let width = sceneSize.width
-        let listWidth = (width * 0.406).rounded()
-        let listX = width - (width * 0.041).rounded() - listWidth
+        let listWidth = min(780, (width * 0.406).rounded())
         let cardSide = min(540, (width * 0.281).rounded())
-        let cardCenter = CGPoint(x: (width * 0.274).rounded(), y: (sceneSize.height * 0.47).rounded())
+        let gap = (width * 0.11).rounded()
+        // The card and the list together sit in the middle of the screen.
+        let left = ((width - cardSide - gap - listWidth) * 0.5).rounded()
+        let cardCenterY = (sceneSize.height * 0.47).rounded()
         return SceneLayout(
-            cardFrame: CGRect(x: cardCenter.x - cardSide / 2, y: cardCenter.y - cardSide / 2, width: cardSide, height: cardSide),
-            menuFrame: CGRect(x: listX, y: (sceneSize.height * 0.209).rounded(), width: listWidth, height: menuHeight),
+            cardFrame: CGRect(x: left, y: cardCenterY - cardSide / 2, width: cardSide, height: cardSide),
+            menuFrame: CGRect(x: left + cardSide + gap, y: (sceneSize.height * 0.209).rounded(), width: listWidth, height: menuHeight),
         )
     }
 
@@ -138,7 +140,7 @@ final class ModernBackgroundLayer {
     func setAmbient(_ image: NSImage?, key: String?) {
         guard key != ambientKey else { return }
         ambientKey = key
-        let fade = Animation.easeInOut(duration: 0.7)
+        let fade = Animation.smoothInOut(duration: 0.7)
         if let old = ambient {
             old.setOpacity(0, fade)
             DispatchQueue.main.asyncAfter(deadline: .now() + fade.duration + 0.05) { old.removeFromSuperlayer() }
@@ -247,7 +249,7 @@ final class ModernCardLayer {
         currentFrame = frame
         currentScale = scale
         let slot = makeSlot(content, frame: frame, scale: scale)
-        let fade = Animation.easeInOut(duration: 0.26)
+        let fade = Animation.smoothInOut(duration: 0.3)
         if let old = current {
             if animated, contentChanged {
                 old.setOpacity(0, fade)

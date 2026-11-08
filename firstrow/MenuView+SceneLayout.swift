@@ -424,7 +424,11 @@ extension MenuView {
             }
             return MenuVirtualScenePreset.widescreen
         #else
-            MenuVirtualScenePreset.widescreen
+            // Test copies can lay out as an iPad does, to check that layout on a Mac.
+            if FirstRowHarness.isActive, ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_SCENE"] == "ipad" {
+                return MenuVirtualScenePreset.iPad
+            }
+            return MenuVirtualScenePreset.widescreen
         #endif
     }
 }

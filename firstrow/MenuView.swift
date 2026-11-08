@@ -43,10 +43,10 @@ final class MenuView: ObservableObject {
 
     // MARK: - Duration constants
 
-    /// The modern look has no icon flight, so its menus come and go sooner.
-    var iconFlightAnimationDuration: Double { ModernTheme.isActive ? 0.3 : 0.5 }
+    /// The modern look has no icon flight: the next menu slides in while the last one leaves.
+    var iconFlightAnimationDuration: Double { ModernTheme.isActive ? 0.14 : 0.5 }
     let submenuBackgroundIconTransitionDuration: Double = 0.5
-    var submenuBackgroundIconReturnDuration: Double { ModernTheme.isActive ? 0.3 : 0.5 }
+    var submenuBackgroundIconReturnDuration: Double { ModernTheme.isActive ? 0.14 : 0.5 }
     let movieEntryFadeDuration: Double = 0.48
     let movieEntryBlackHoldDuration: Double = 1.0
     let movieExitFreezeHoldDuration: Double = 0.5
@@ -292,6 +292,9 @@ final class MenuView: ObservableObject {
 
     @Published var menuSceneOpacity: Double = 1
     @Published var menuFolderSwapOverlayOpacity: Double = 0
+    /// The modern look's menu changes: the title and list's opacity and sideways offset.
+    @Published var modernSwapOpacity: Double = 1
+    @Published var modernSwapOffset: CGFloat = 0
     @Published var moviePreviewTargetURL: URL?
     @Published var moviePreviewImage: NSImage?
     @Published var moviePreviewRequestID = 0
