@@ -137,6 +137,7 @@
 		144C9904B8443DC88EC09F31 /* MenuView+JellyfinPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B5C932D575304CBC8EDCB7 /* MenuView+JellyfinPlayback.swift */; };
 		7F6EEAF55AB82D16473103DC /* MenuView+Touch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FAC8B622BFB186235A2E4AD /* MenuView+Touch.swift */; };
 		781A33AC847A1B379B9B7A18 /* TouchHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2E5BC75E266992AE5994D7 /* TouchHarness.swift */; };
+		83AA467F517B5B26A6116F7C /* LoudnessMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F62CD15712C4CBFFE4EC47 /* LoudnessMeter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -289,6 +290,7 @@
 		D6B5C932D575304CBC8EDCB7 /* MenuView+JellyfinPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+JellyfinPlayback.swift"; sourceTree = "<group>"; };
 		5FAC8B622BFB186235A2E4AD /* MenuView+Touch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Touch.swift"; sourceTree = "<group>"; };
 		AC2E5BC75E266992AE5994D7 /* TouchHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchHarness.swift; sourceTree = "<group>"; };
+		E6F62CD15712C4CBFFE4EC47 /* LoudnessMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoudnessMeter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -369,6 +371,7 @@
 		7A73DE3B2F5776A20021C281 /* Music.frappliance */ = {
 			isa = PBXGroup;
 			children = (
+				E6F62CD15712C4CBFFE4EC47 /* LoudnessMeter.swift */,
 				E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */,
 				7A73DE352F5776A20021C281 /* MenuView+MusicLibrary.swift */,
 				7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */,
@@ -766,6 +769,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				83AA467F517B5B26A6116F7C /* LoudnessMeter.swift in Sources */,
 				781A33AC847A1B379B9B7A18 /* TouchHarness.swift in Sources */,
 				7F6EEAF55AB82D16473103DC /* MenuView+Touch.swift in Sources */,
 				E8EAE09511FF3A54B6FDB6A1 /* MenuView+MovieOptions.swift in Sources */,

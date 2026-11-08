@@ -199,6 +199,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         playing = true
         let core = ensureCore()
         if playbackSpeed != 1 { core?.setProperty("speed", playbackSpeed) }
+        if normalizesLoudness { core?.setProperty("af", "lavfi=[loudnorm=I=-16:TP=-1.5:LRA=11]") }
         core?.setFlag("pause", false)
         fireObservers()
     }
@@ -208,6 +209,10 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     public var playbackSpeed: Double = 1 {
         didSet { core?.setProperty("speed", playbackSpeed) }
     }
+
+    /// Levels the sound to about -16 LUFS as it plays (for previews mastered louder than the
+    /// library). First Row's own addition; Apple's players are given a measured volume instead.
+    public var normalizesLoudness = false
 
     /// The subtitle ("sub") or audio ("audio") tracks mpv found in the file.
     public func tracks(ofType type: String) -> [PlayerTrack] {

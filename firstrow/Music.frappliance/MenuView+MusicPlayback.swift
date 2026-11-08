@@ -366,6 +366,7 @@ extension MenuView {
                 performPlayback = {
                     let player = AVPlayer(url: songURL)
                     player.isMuted = FirstRowHarness.isActive
+                    player.volume = self.musicPlaybackVolume(for: songURL)
                     player.automaticallyWaitsToMinimizeStalling = false
                     self.configureMusicPlaybackObservation(for: player)
                     self.musicAudioPlayer = player
@@ -384,6 +385,7 @@ extension MenuView {
                     performPlayback = {
                         let player = AVPlayer(url: songURL)
                         player.isMuted = FirstRowHarness.isActive
+                        player.volume = self.musicPlaybackVolume(for: songURL)
                         player.automaticallyWaitsToMinimizeStalling = false
                         self.configureMusicPlaybackObservation(for: player)
                         self.musicAudioPlayer = player
@@ -401,6 +403,7 @@ extension MenuView {
                     performPlayback = {
                         let player = AVPlayer(url: songURL)
                         player.isMuted = FirstRowHarness.isActive
+                        player.volume = self.musicPlaybackVolume(for: songURL)
                         player.automaticallyWaitsToMinimizeStalling = false
                         self.configureMusicPlaybackObservation(for: player)
                         self.musicAudioPlayer = player
@@ -415,6 +418,7 @@ extension MenuView {
                 performPlayback = {
                     let player = AVPlayer(url: songURL)
                     player.isMuted = FirstRowHarness.isActive
+                    player.normalizesLoudness = self.musicPlaybackVolume(for: songURL) < 1
                     player.automaticallyWaitsToMinimizeStalling = false
                     self.configureMusicPlaybackObservation(for: player)
                     self.musicAudioPlayer = player

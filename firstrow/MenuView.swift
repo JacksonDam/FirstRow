@@ -442,6 +442,8 @@ final class MenuView: ObservableObject {
     @Published var musicLastScrubTickDate: Date?
     @Published var musicScrubTimer: Timer?
     var musicArtworkPrefetchInFlightKeys: Set<String> = []
+    /// Volumes for music files measured as louder than the library (iTunes previews).
+    var musicLoudnessVolumeByPath: [String: Float] = [:]
     @Published var musicPlaybackRequestID = 0
     #if os(tvOS) || os(macOS)
         @Published var musicKitScrubGlyphResetWorkItem: Task<Void, Never>?

@@ -323,6 +323,8 @@ extension MenuView {
             } catch {
                 return
             }
+            // Previews are mastered loud: bring them down to the library's level.
+            await self.levelPreviewLoudness(temporaryAudioURL)
             let resolvedArtwork: NSImage? = await MainActor.run {
                 _SendableImage(image: self.currentITunesTopCarouselArtworkCache(.songs)[song.id] ??
                     (self.currentITunesTopPreviewTargetID(.songs) == song.id
