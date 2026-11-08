@@ -120,6 +120,8 @@ final class MenuView: ObservableObject {
     let photoSlideshowFullscreenKey = "photo_slideshow"
 
     private var mediaSourcesObserver: NSObjectProtocol?
+    /// Mouse and trackpad state (Settings > Mouse).
+    let pointer = PointerInputState()
 
     init() {
         mediaSourcesObserver = NotificationCenter.default.addObserver(

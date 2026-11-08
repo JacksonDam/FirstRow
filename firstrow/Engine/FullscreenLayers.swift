@@ -57,6 +57,11 @@ final class FullscreenSceneLayer {
         contentKey = nil
     }
 
+    /// Now Playing's progress bar in canvas points, while it shows one song at rest.
+    var nowPlayingProgressBar: CGRect? {
+        (content as? NowPlayingSceneLayer)?.progressBar
+    }
+
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
         layer.frame = bounds
         guard let scene = menu.activeFullscreenScene else {
@@ -116,6 +121,12 @@ final class NowPlayingSceneLayer: FullscreenContent {
     private let flip = CALayer()
     private let incoming = NowPlayingPanelLayer()
     private let outgoing = NowPlayingPanelLayer()
+    private var isSwitchingSong = false
+
+    /// The progress bar in canvas points, or nil while songs change over.
+    var progressBar: CGRect? {
+        isSwitchingSong ? nil : incoming.progressBar
+    }
 
     override init() {
         super.init()
@@ -134,6 +145,7 @@ final class NowPlayingSceneLayer: FullscreenContent {
         flip.setTransform(yawTransform(degrees: menu.musicNowPlayingFlipRotationDegrees, perspective: 0.9, viewSize: size), pass.animation)
 
         let hasTransition = menu.musicSongTransitionSnapshot != nil
+        isSwitchingSong = hasTransition
         let incomingStart: CGFloat = menu.musicSongTransitionDirection > 0 ? 0.25 : 6
         let outgoingEnd: CGFloat = menu.musicSongTransitionDirection > 0 ? 6 : 0.25
         let outgoingProgress = min(max(menu.musicSongTransitionOutgoingProgress, 0), 1)
@@ -182,6 +194,7 @@ final class NowPlayingPanelLayer {
     private let barFill = SceneLayer()
     private let diamond = SceneLayer()
     private let artwork = NowPlayingArtworkLayer()
+    private(set) var progressBar: CGRect?
 
     init() {
         for sublayer in [title, artist, album, position, leading, leadingGlyph.layer, trailing, shuffle, barFrame, barFill, diamond, artwork.layer] {
@@ -288,6 +301,7 @@ final class NowPlayingPanelLayer {
         }
         let barLeft = rowLeft + leadingTimeWidth + 1
         barFrame.frame = CGRect(x: barLeft, y: rowTop, width: barWidth, height: barHeight)
+        progressBar = barFrame.frame
         barFrame.path = CGPath(rect: CGRect(x: 0, y: 0, width: barWidth, height: barHeight), transform: nil)
         barFill.frame = CGRect(x: barLeft, y: rowTop, width: max(0, barWidth * progress), height: barHeight)
         let diamondSize: CGFloat = 8

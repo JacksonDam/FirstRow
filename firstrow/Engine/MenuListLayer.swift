@@ -37,6 +37,8 @@ final class MenuListLayer {
     private var lastScrollOffset: CGFloat?
     private var lastScrollingUp: Bool?
     private var lastScrollingDown: Bool?
+    /// Where the rows were last laid out, for finding the one under the pointer.
+    private(set) var hitGeometry: MenuListHitGeometry?
     private static let clipOverhang: CGFloat = 2500
 
     init() {
@@ -62,6 +64,7 @@ final class MenuListLayer {
         lastScrollOffset = nil
         lastScrollingUp = nil
         lastScrollingDown = nil
+        hitGeometry = nil
     }
 
     func update(_ c: Configuration, menu: MenuView, pass: RenderPass, scale: CGFloat) {
@@ -91,7 +94,7 @@ final class MenuListLayer {
         let viewportHeight = menu.menuViewportHeight(for: c.visibleRowCount)
         let rowOffsets: [CGFloat]
         let contentHeight: CGFloat
-        let scrollOffset: CGFloat
+        let stickyScrollOffset: CGFloat
         let selectedRowOffset: CGFloat
         if c.usesUniformRowLayout {
             rowOffsets = []
@@ -100,24 +103,35 @@ final class MenuListLayer {
             if contentHeight > viewportHeight, count > 0 {
                 let anchor = CGFloat(min(max(0, menu.stickySelectionRowIndex), count - 1)) * rowPitch
                 let selectedY = CGFloat(selectedIndex) * rowPitch
-                scrollOffset = max(viewportHeight - contentHeight, min(0, anchor - selectedY))
+                stickyScrollOffset = max(viewportHeight - contentHeight, min(0, anchor - selectedY))
             } else {
-                scrollOffset = 0
+                stickyScrollOffset = 0
             }
             selectedRowOffset = CGFloat(selectedIndex) * rowPitch
         } else {
             rowOffsets = menu.menuRowOffsets(for: items, dividerGap: dividerGap, rowPitch: rowPitch, normalHeightIndices: normalHeightIndices)
             contentHeight = menu.menuContentHeight(for: items, rowOffsets: rowOffsets, rowHeight: selectionHeight)
-            scrollOffset = menu.menuScrollOffset(contentHeight: contentHeight, selectedIndex: selectedIndex, rowOffsets: rowOffsets, viewportHeight: viewportHeight)
+            stickyScrollOffset = menu.menuScrollOffset(contentHeight: contentHeight, selectedIndex: selectedIndex, rowOffsets: rowOffsets, viewportHeight: viewportHeight)
             selectedRowOffset = rowOffsets.indices.contains(selectedIndex) ? rowOffsets[selectedIndex] : 0
         }
+        // While the pointer drives the list, it stays where the pointer left it.
+        let identity = Self.identity(of: items)
+        let pinnedScrollOffset = menu.pointer.pinnedScrollOffset(
+            identity: identity,
+            selectedRowTop: selectedRowOffset,
+            selectedRowHeight: selectionHeight,
+            viewportHeight: viewportHeight,
+            contentHeight: contentHeight,
+        )
+        let scrollOffset = pinnedScrollOffset ?? stickyScrollOffset
 
         let selectionMoved = lastSelectedRowOffset != selectedRowOffset || lastScrollOffset != scrollOffset
         let indexChanged = lastSelectedIndex != selectedIndex
+        let pinMoved = pinnedScrollOffset != nil && lastScrollOffset != scrollOffset
         let movement = menu.selectionMovementAnimation
         let selectionAnimation = lastSelectedRowOffset == nil ? nil : pass.animation(movement, when: selectionMoved)
         let isFreshList = lastScrollOffset == nil
-        let scrollAnimation = isFreshList ? nil : pass.animation(movement, when: indexChanged)
+        let scrollAnimation = isFreshList ? nil : pass.animation(movement, when: indexChanged || pinMoved)
         lastSelectedRowOffset = selectedRowOffset
         lastScrollOffset = scrollOffset
         lastSelectedIndex = selectedIndex
@@ -238,6 +252,23 @@ final class MenuListLayer {
             spareRows.removeLast(spareRows.count - 40)
         }
 
+        hitGeometry = MenuListHitGeometry(
+            identity: identity,
+            itemCount: items.count,
+            rowOffsets: rowOffsets,
+            uniformRowPitch: c.usesUniformRowLayout ? rowPitch : nil,
+            rowHeight: selectionHeight,
+            rowYOffset: selectionYOffset,
+            normalRowHeight: menu.selectionBoxHeight,
+            normalHeightIndices: normalHeightIndices,
+            rowSpacing: max(0, rowPitch - selectionHeight),
+            rowPitch: rowPitch,
+            rowXRange: rowContentXOffset ... (rowContentXOffset + rowContentWidth),
+            viewportHeight: viewportHeight,
+            contentHeight: contentHeight,
+            scrollOffset: scrollOffset,
+        )
+
         // Fades at the edges while the list scrolls past more rows.
         let fadeWidth = max(visualWidth, menuWidth)
         topFade.isHidden = !c.showsTopOverflowFade
@@ -249,6 +280,20 @@ final class MenuListLayer {
         bottomFade.setOpacity(menu.isMenuOverflowScrollingDown ? 1 : 0, pass.animation(fadeAnimation, when: lastScrollingDown != nil && lastScrollingDown != menu.isMenuOverflowScrollingDown))
         lastScrollingUp = menu.isMenuOverflowScrollingUp
         lastScrollingDown = menu.isMenuOverflowScrollingDown
+    }
+
+    /// The scroll as it is on screen, mid-animation included.
+    var presentedScrollOffset: CGFloat? {
+        guard hitGeometry != nil else { return nil }
+        if rowsContainer.animation(forKey: "position") != nil {
+            return rowsContainer.presentation()?.position.y ?? rowsContainer.position.y
+        }
+        return rowsContainer.position.y
+    }
+
+    /// Tells lists apart, so a pinned scroll only applies to the list it was pinned in.
+    static func identity(of items: [MenuListItemConfig]) -> String {
+        "\(items.count)|\(items.first?.id ?? "")|\(items.last?.id ?? "")"
     }
 
     /// Where the middle of the selection is, from the list's left edge.

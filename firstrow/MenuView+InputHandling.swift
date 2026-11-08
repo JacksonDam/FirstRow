@@ -19,6 +19,7 @@ extension MenuView {
             NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
             return
         }
+        notePointerAwareKey(key)
         if deferForStartupMusicLibraryPreload(key) { return }
         isMusicEntryWaitingForStartupPreload = false
         registerUserInteractionForScreenSaver()
@@ -674,6 +675,7 @@ extension MenuView {
         rowOffsets: [CGFloat],
         contentHeight: CGFloat,
         viewportHeight: CGFloat,
+        listIdentity: String? = nil,
     ) -> Int? {
         guard itemCount > 0 else { return nil }
         navigatedListItemCount = itemCount
@@ -683,18 +685,22 @@ extension MenuView {
             playLimitSoundOnceForCurrentHold()
             return nil
         }
-        let oldScrollOffset = menuScrollOffset(
+        let oldScrollOffset = listIdentity.flatMap { pointer.pinnedScrollOffset(identity: $0) } ?? menuScrollOffset(
             contentHeight: contentHeight,
             selectedIndex: currentIndex,
             rowOffsets: rowOffsets,
             viewportHeight: viewportHeight,
         )
-        let newScrollOffset = menuScrollOffset(
+        let stickyScrollOffset = menuScrollOffset(
             contentHeight: contentHeight,
             selectedIndex: nextIndex,
             rowOffsets: rowOffsets,
             viewportHeight: viewportHeight,
         )
+        // A list the pointer scrolled hands back to the usual scrolling as the selection gets there.
+        let newScrollOffset = listIdentity.flatMap {
+            pointer.handOver(identity: $0, stickyOffset: stickyScrollOffset, direction: direction)
+        } ?? stickyScrollOffset
         updateOverflowFadeVisibility(oldOffset: oldScrollOffset, newOffset: newScrollOffset)
         didPlayLimitForCurrentHold = false
         markSelectionAsMoving()
@@ -715,6 +721,7 @@ extension MenuView {
             rowOffsets: rowOffsets,
             contentHeight: contentHeight,
             viewportHeight: viewportHeight,
+            listIdentity: MenuListLayer.identity(of: rootItems),
         ) else { return }
 
         selectedIndex = nextIndex
@@ -745,6 +752,7 @@ extension MenuView {
             rowOffsets: rowOffsets,
             contentHeight: contentHeight,
             viewportHeight: viewportHeight,
+            listIdentity: MenuListLayer.identity(of: submenuItems),
         ) else { return }
 
         selectedSubIndex = nextIndex
@@ -783,6 +791,7 @@ extension MenuView {
             rowOffsets: rowOffsets,
             contentHeight: contentHeight,
             viewportHeight: viewportHeight,
+            listIdentity: MenuListLayer.identity(of: listItems),
         ) else { return }
 
         selectedThirdIndex = nextIndex

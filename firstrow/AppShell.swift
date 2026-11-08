@@ -154,6 +154,11 @@ final class FirstRowAppController {
     }
 
     private func installMenuInput(_ menu: MenuView) {
+        menu.pointer.hitTester = renderer
+        #if os(macOS)
+            hostView.onPointer = { [weak menu] event in menu?.handlePointerEvent(event) }
+        #endif
+        FirstRowHarness.pointerEventSink = { [weak menu] event in menu?.handlePointerEvent(event) }
         let controllers = GameControllerInput(
             onArrowKeyDown: { [weak menu] key in menu?.handleDirectionalPressBegan(key) },
             onArrowKeyUp: { [weak menu] key in menu?.handleDirectionalPressEnded(key) },
@@ -348,6 +353,11 @@ final class FirstRowAppController {
 }
 
 extension FirstRowAppController {
+    /// A mouse or trackpad event from the window.
+    func handlePointer(_ event: PointerEvent) {
+        menu?.handlePointerEvent(event)
+    }
+
     /// Settings > Media Folders (Command-comma on the Mac).
     func showMediaFolders() {
         menu?.showMediaFoldersFromShortcut()

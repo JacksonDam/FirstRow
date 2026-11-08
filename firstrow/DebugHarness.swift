@@ -21,6 +21,62 @@ enum FirstRowHarness {
         guard isActive, let path = ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_MOVIES"] else { return nil }
         return URL(fileURLWithPath: path, isDirectory: true)
     }
+
+    /// Where the harness's pointer commands go once the menus are up.
+    @MainActor static var pointerEventSink: ((PointerEvent) -> Void)?
+    @MainActor private static var lastPointerLocation = CGPoint.zero
+
+    /// `mouse:move|down|up|click|right|back:x:y` and `mouse:scroll:dx:dy[:precise]` (points from
+    /// the window's top left), handed to the menus as the window would. Returns false if unknown.
+    @MainActor
+    static func performPointerCommand(_ parts: [String]) -> Bool {
+        guard parts.first == "mouse", parts.count >= 4, let a = Double(parts[2]), let b = Double(parts[3]) else { return false }
+        let point = CGPoint(x: a, y: b)
+        switch parts[1] {
+        case "move":
+            lastPointerLocation = point
+            pointerEventSink?(.moved(point))
+        case "down":
+            lastPointerLocation = point
+            pointerEventSink?(.pressed(.primary, point))
+        case "up":
+            lastPointerLocation = point
+            pointerEventSink?(.released(.primary, point))
+        case "click":
+            lastPointerLocation = point
+            pointerEventSink?(.moved(point))
+            pointerEventSink?(.pressed(.primary, point))
+            pointerEventSink?(.released(.primary, point))
+        case "right":
+            lastPointerLocation = point
+            pointerEventSink?(.pressed(.secondary, point))
+            pointerEventSink?(.released(.secondary, point))
+        case "back":
+            lastPointerLocation = point
+            pointerEventSink?(.pressed(.back, point))
+        case "scroll":
+            pointerEventSink?(.scrolled(dx: a, dy: b, precise: parts.count > 4 && parts[4] == "precise", at: lastPointerLocation))
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// `setting:mouse:on|off` and `setting:theme:classic|modern`.
+    @MainActor
+    static func performSettingCommand(_ parts: [String]) -> Bool {
+        guard parts.first == "setting", parts.count == 3 else { return false }
+        switch parts[1] {
+        case "mouse":
+            AppSettings.isMouseEnabled = parts[2] == "on"
+        case "theme":
+            guard let theme = InterfaceTheme(rawValue: parts[2]) else { return false }
+            AppSettings.theme = theme
+        default:
+            return false
+        }
+        return true
+    }
 }
 
 #if os(macOS) && (DEBUG || FIRSTROW_HARNESS_BUILD)
@@ -169,6 +225,10 @@ enum FirstRowHarness {
                 // irremote:<usage page>:<usage>:<1|0> in hex, as the infrared receiver sends them.
                 guard let page = UInt32(parts[1], radix: 16), let usage = UInt32(parts[2], radix: 16) else { return }
                 AppleRemoteInput.shared.handle(page: page, usage: usage, pressed: parts[3] == "1")
+            case "mouse":
+                _ = performPointerCommand(parts)
+            case "setting":
+                _ = performSettingCommand(parts)
             case "press" where parts.count == 2:
                 guard let key = keyCodes[parts[1]] else { return }
                 post(key, type: .keyDown)

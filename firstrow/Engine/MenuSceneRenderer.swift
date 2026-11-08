@@ -566,3 +566,20 @@ enum TVShowsSortPillRenderer {
         return path
     }
 }
+
+extension MenuSceneRenderer {
+    /// The scene's live geometry, for working out what the pointer is over.
+    var pointerScene: PointerScene {
+        PointerScene(
+            canvasOrigin: canvas.position,
+            canvasScale: canvasScale,
+            lists: [.root: rootList, .submenu: submenuList, .third: thirdList],
+            carousel: rootCarousel,
+            sortPillFrame: sortPill.frame,
+            resumePrompt: resumePrompt,
+            movieControls: playback.controls,
+            fullscreenScene: fullscreenScene,
+            fullscreenSize: fullscreenContainerSize,
+        )
+    }
+}
