@@ -33,6 +33,7 @@ final class MenuSceneRenderer: TransactionRendering {
     private let thirdList = MenuListLayer()
     private let sortPill = SceneLayer()
     private let resumePrompt = MovieResumePromptLayer()
+    private let textEntry = TextEntryLayer()
 
     // Full-screen layers, sized to the window.
     private let playback = MoviePlaybackLayers()
@@ -116,6 +117,7 @@ final class MenuSceneRenderer: TransactionRendering {
         menuArea.addSublayer(sortPill)
         sortPill.opacity = 0
         canvas.addSublayer(resumePrompt.layer)
+        canvas.addSublayer(textEntry.layer)
 
         rootLayer.addSublayer(playback.playerLayer)
         rootLayer.addSublayer(playback.controls.layer)
@@ -233,6 +235,7 @@ final class MenuSceneRenderer: TransactionRendering {
 
         // Movie resume prompt over the scene.
         resumePrompt.update(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale)
+        textEntry.update(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale)
 
         // Full-screen layers.
         let fullBounds = CGRect(origin: .zero, size: fullscreenContainerSize)

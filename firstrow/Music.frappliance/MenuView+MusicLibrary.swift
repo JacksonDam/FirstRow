@@ -616,7 +616,7 @@ extension MenuView {
     }
 
     func resolveMusicPreviewTargetSong() -> MusicLibrarySongEntry? {
-        guard activeRootItemID == "music", isInSubmenu, isInThirdMenu else { return nil }
+        guard isMusicLibraryContext, isInSubmenu, isInThirdMenu else { return nil }
         if thirdMenuMode == .spotify {
             return spotifyCollectionPreviewEntry()
         }
@@ -750,6 +750,9 @@ extension MenuView {
         if song.spotify != nil {
             return await loadSpotifyArtwork(for: song, cacheKey: cacheKey)
         }
+        if song.jellyfin != nil {
+            return await loadJellyfinArtwork(for: song, cacheKey: cacheKey)
+        }
         #if canImport(iTunesLibrary)
             if let libraryArtworkData = await MainActor.run(body: {
                 self.loadMusicLibraryArtworkData(for: song)
@@ -804,7 +807,7 @@ extension MenuView {
 
     /// Prefetches covers around the selection, reaching further ahead while an arrow is held.
     func prefetchMusicPreviewArtworkAroundCurrentSelection() {
-        guard activeRootItemID == "music", isInSubmenu else { return }
+        guard isMusicLibraryContext, isInSubmenu else { return }
         guard isInThirdMenu, thirdMenuMode == .musicSongs else { return }
         guard let currentIndex = currentMusicPreviewSongIndex() else { return }
         guard musicSongsThirdMenuItems.indices.contains(currentIndex) else { return }
@@ -2746,6 +2749,8 @@ extension MenuView {
         let sourcePlaylistPersistentIDHex: String?
         /// Set for songs that play through Spotify.
         let spotify: SpotifyTrackReference?
+        /// Set for songs that stream from a Jellyfin server.
+        let jellyfin: JellyfinTrackReference?
         #if os(tvOS)
             let musicKitSong: Song?
         #endif
@@ -2767,6 +2772,7 @@ extension MenuView {
                 prefersSystemMusicPlayerPlayback: Bool = false,
                 sourcePlaylistPersistentIDHex: String? = nil,
                 spotify: SpotifyTrackReference? = nil,
+                jellyfin: JellyfinTrackReference? = nil,
                 musicKitSong: Song? = nil,
             ) {
                 self.id = id
@@ -2784,6 +2790,7 @@ extension MenuView {
                 self.prefersSystemMusicPlayerPlayback = prefersSystemMusicPlayerPlayback
                 self.sourcePlaylistPersistentIDHex = sourcePlaylistPersistentIDHex
                 self.spotify = spotify
+                self.jellyfin = jellyfin
                 self.musicKitSong = musicKitSong
             }
         #else
@@ -2803,6 +2810,7 @@ extension MenuView {
                 prefersSystemMusicPlayerPlayback: Bool = false,
                 sourcePlaylistPersistentIDHex: String? = nil,
                 spotify: SpotifyTrackReference? = nil,
+                jellyfin: JellyfinTrackReference? = nil,
             ) {
                 self.id = id
                 self.title = title
@@ -2819,6 +2827,7 @@ extension MenuView {
                 self.prefersSystemMusicPlayerPlayback = prefersSystemMusicPlayerPlayback
                 self.sourcePlaylistPersistentIDHex = sourcePlaylistPersistentIDHex
                 self.spotify = spotify
+                self.jellyfin = jellyfin
             }
         #endif
     }

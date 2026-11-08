@@ -53,6 +53,10 @@ int64_t fr_tcp_send(int64_t socket, const void* bytes, int64_t length);
 int64_t fr_tcp_receive(int64_t socket, void* buffer, int64_t capacity);
 void fr_tcp_close(int64_t socket);
 
+/* Broadcasts `message` over UDP to `port` (plus `extra_host`:`extra_port` if given) and collects
+   the replies that arrive within `timeout_ms`, one per line, into `out`. Returns how many came. */
+int fr_udp_discover(const char* message, const char* extra_host, int extra_port, int port, int timeout_ms, char* out, int out_capacity);
+
 #ifdef __cplusplus
 }
 #endif

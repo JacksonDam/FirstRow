@@ -26,6 +26,7 @@ final class FirstRowAppController {
     private var introPlayer: AVPlayer?
     private var introEndObserver: NSObjectProtocol?
     private var quitObserver: NSObjectProtocol?
+    private var textEntryObservers: [NSObjectProtocol] = []
     private var isQuitting = false
     private var launchToggleTask: Task<Void, Never>?
     private var launchBackHoldTask: Task<Void, Never>?
@@ -78,6 +79,18 @@ final class FirstRowAppController {
         quitObserver = NotificationCenter.default.addObserver(forName: .firstRowQuitRequested, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolatedIfPossible { self?.beginQuitTransition() }
         }
+        if FirstRowHarness.isActive {
+            textEntryObservers.append(NotificationCenter.default.addObserver(forName: .firstRowHarnessTypeText, object: nil, queue: .main) { [weak self] note in
+                guard let text = note.userInfo?["text"] as? String else { return }
+                MainActor.assumeIsolatedIfPossible { self?.menu?.handleTypedText(text) }
+            })
+        }
+        #if os(tvOS)
+            // After the system's text field closes, the remote's presses come back here.
+            textEntryObservers.append(NotificationCenter.default.addObserver(forName: .firstRowTextEntryDidEnd, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolatedIfPossible { self?.remoteInput?.makePrimaryResponderIfPossible() }
+            })
+        #endif
     }
 
     func start() {
@@ -242,6 +255,14 @@ final class FirstRowAppController {
                key == .escape || event.charactersIgnoringModifiers == "\u{1b}"
             {
                 // Quitting is the app's job; the menus only see a plain Escape.
+                return
+            }
+            // Letters, digits and spaces go to a text field when one is open.
+            if let menu, menu.textEntry != nil, key == .none || key == .space,
+               !modifiers.intersection(.deviceIndependentFlagsMask).contains(.command),
+               let characters = event.characters, !characters.isEmpty
+            {
+                menu.handleTypedText(characters)
                 return
             }
             menu?.handleKeyDown(key, isRepeat: event.isARepeat, modifiers: modifiers)

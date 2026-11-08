@@ -176,7 +176,7 @@ extension MenuView {
     }
 
     var shouldShowMusicPreviewContent: Bool {
-        activeRootItemID == "music" &&
+        isMusicLibraryContext &&
             isInThirdMenu &&
             (thirdMenuMode == .musicSongs || isShowingMusicAlbumsList || isShowingSpotifyCollectionCovers) &&
             musicPreviewTargetSongID != nil
@@ -451,7 +451,8 @@ extension MenuView {
         }
         let fadeAlways = pass.transaction.disablesAnimations ? nil : Animation.easeInOut(duration: 0.22)
 
-        switch rootID {
+        // Jellyfin's song lists under Sources show what Music's do.
+        switch isShowingJellyfinSongs ? "music" : rootID {
         case "movies":
             let descriptor = movieGapPreviewDescriptor
             let selectedMovie = resolveITunesTopMoviePreviewTarget()
@@ -708,6 +709,9 @@ extension MenuView {
 
         case "settings":
             return [GapItemSpec(key: "icon", kind: .icon(image: image, reflected: false))]
+
+        case "sources":
+            return jellyfinGapContentItems(icon: { icon(opacity: $0, animation: $1) }, pass: pass, memo: &memo)
 
         default:
             return [GapItemSpec(key: "icon", kind: .icon(image: image, reflected: true))]

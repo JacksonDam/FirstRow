@@ -25,6 +25,10 @@ extension MenuView {
         if isFullscreenSceneTransitioning {
             return
         }
+        if isTextEntryActive {
+            handleTextEntryInput(key)
+            return
+        }
         if isMovieResumePromptVisible {
             handleMovieResumePromptInput(key, isRepeat: isRepeat)
             return
@@ -476,6 +480,9 @@ extension MenuView {
             playSound(named: "Selection")
             return
         }
+        if activeRootItemID == "sources", triggerSourcesItem(item) {
+            return
+        }
         if activeRootItemID == "sources", item.id == "sources_this_device" {
             playSound(named: "Selection")
             returnToRootMenuViaBlackFade()
@@ -598,6 +605,8 @@ extension MenuView {
             triggerScreenSaverSettingsAction()
         case .spotify:
             triggerSpotifyMenuAction()
+        case .jellyfin:
+            triggerJellyfinMenuAction()
         case .none:
             return
         }
@@ -787,7 +796,7 @@ extension MenuView {
 
         selectedThirdIndex = nextIndex
         rememberCurrentMoviesFolderSelectionIndex()
-        if activeRootItemID == "music", thirdMenuMode == .musicSongs {
+        if isMusicLibraryContext, thirdMenuMode == .musicSongs {
             refreshMusicPreviewForCurrentContext()
         } else if !(activeRootItemID == "photos" && thirdMenuMode == .photosDateAlbums) {
             refreshDetailPreviewForCurrentContext()

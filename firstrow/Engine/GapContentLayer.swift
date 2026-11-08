@@ -119,6 +119,7 @@ struct GapContentMemo {
     var hidesMusicRootIcon: Bool?
     var hidesPhotosRootIcon: Bool?
     var hidesPodcastsRootIcon: Bool?
+    var jellyfinPreviewKey: String?
 }
 
 struct GapItemContext {

@@ -464,6 +464,19 @@ final class MenuView: ObservableObject {
     var spotifySeekTarget: (seconds: Double, date: Date)?
     var spotifyProgressTimer: Timer?
 
+    // MARK: - Jellyfin and text entry state
+
+    @Published var jellyfin = JellyfinMenuState()
+    var jellyfinVideoSession: JellyfinPlaybackSession?
+    var jellyfinMusicSession: JellyfinPlaybackSession?
+    var jellyfinProgressTimer: Timer?
+    var isStartingJellyfinPlayback = false
+    @Published var textEntry: TextEntryState?
+    @Published var codeDisplay: CodeDisplayState?
+    @Published var textEntryOpacity: Double = 0
+    var textEntryCompletion: ((String?) -> Void)?
+    var codeDisplayCancel: (() -> Void)?
+
     // MARK: - Fullscreen / transitions state
 
     @Published var activeFullscreenScene: FullscreenScenePresentation?
