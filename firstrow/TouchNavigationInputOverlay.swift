@@ -2,6 +2,8 @@
     import UIKit
 
     /// Touch controls: hold a screen quarter for an arrow, 2 fingers select, 3 go back, 4 play/pause.
+    /// With Settings > Touch Controls on, one finger is passed on as it moves instead (see
+    /// MenuView+Touch.swift), and the quarter taps and holds stand aside.
     final class TouchNavigationInputView: UIView {
         var onArrowKeyDown: ((KeyCode) -> Void)?
         var onArrowKeyUp: ((KeyCode) -> Void)?
@@ -9,7 +11,15 @@
         var onBackspace: (() -> Void)?
         var onSpace: (() -> Void)?
         var onSingleFingerTap: (() -> Bool)?
+        /// Direct touch: one finger's movements, in this view's points.
+        var onTouch: ((TouchPhase, CGPoint, TimeInterval) -> Void)?
         private var activeHoldArrowKey: KeyCode?
+        private var trackedTouch: UITouch?
+        private var singleFingerRecognizers: [UIGestureRecognizer] = []
+
+        private var usesDirectTouch: Bool {
+            AppSettings.isTouchEnabled && onTouch != nil
+        }
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -32,6 +42,57 @@
             singleFingerTap.require(toFail: threeFingerTap)
             singleFingerTap.require(toFail: fourFingerTap)
             singleFingerTap.require(toFail: singleFingerHold)
+            singleFingerRecognizers = [singleFingerTap, singleFingerHold]
+        }
+
+        override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            !(usesDirectTouch && singleFingerRecognizers.contains(recognizer))
+        }
+
+        // MARK: - Direct touch
+
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+            super.touchesBegan(touches, with: event)
+            guard usesDirectTouch else { return }
+            let fingers = event?.allTouches?.filter { $0.phase != .ended && $0.phase != .cancelled }.count ?? touches.count
+            if fingers > 1 {
+                // A second finger means one of the multi-finger taps: let the first go.
+                if let tracked = trackedTouch {
+                    trackedTouch = nil
+                    onTouch?(.cancelled, tracked.location(in: self), tracked.timestamp)
+                }
+                return
+            }
+            guard trackedTouch == nil, let touch = touches.first else { return }
+            trackedTouch = touch
+            onTouch?(.began, touch.location(in: self), touch.timestamp)
+        }
+
+        override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+            super.touchesMoved(touches, with: event)
+            guard usesDirectTouch, let tracked = trackedTouch, touches.contains(tracked) else { return }
+            onTouch?(.moved, tracked.location(in: self), tracked.timestamp)
+        }
+
+        override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+            super.touchesEnded(touches, with: event)
+            guard let tracked = trackedTouch, touches.contains(tracked) else { return }
+            trackedTouch = nil
+            guard usesDirectTouch else { return }
+            onTouch?(.ended, tracked.location(in: self), tracked.timestamp)
+        }
+
+        override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+            super.touchesCancelled(touches, with: event)
+            guard let tracked = trackedTouch, touches.contains(tracked) else { return }
+            trackedTouch = nil
+            onTouch?(.cancelled, tracked.location(in: self), tracked.timestamp)
+        }
+
+        /// For the test harness: a touch as if from a finger at `point`.
+        func injectTouch(_ phase: TouchPhase, at point: CGPoint) {
+            guard usesDirectTouch else { return }
+            onTouch?(phase, point, ProcessInfo.processInfo.systemUptime)
         }
 
         @available(*, unavailable)

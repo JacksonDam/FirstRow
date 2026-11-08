@@ -145,7 +145,8 @@ final class MenuListLayer {
         let movement = isModern && !menu.useLinearSelectionSweepAnimation ? Animation.smooth(duration: 0.34) : menu.selectionMovementAnimation
         let selectionAnimation = lastSelectedRowOffset == nil ? nil : pass.animation(movement, when: selectionMoved)
         let isFreshList = lastScrollOffset == nil
-        let scrollAnimation = isFreshList ? nil : pass.animation(movement, when: indexChanged || pinMoved)
+        // A list following a finger moves with it, unanimated.
+        let scrollAnimation = isFreshList || menu.pointer.tracksFinger ? nil : pass.animation(movement, when: indexChanged || pinMoved)
         lastSelectedRowOffset = selectedRowOffset
         lastScrollOffset = scrollOffset
         lastSelectedIndex = selectedIndex

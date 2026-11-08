@@ -62,13 +62,15 @@ enum FirstRowHarness {
         return true
     }
 
-    /// `setting:mouse:on|off` and `setting:theme:classic|modern`.
+    /// `setting:mouse|touch:on|off` and `setting:theme:classic|modern`.
     @MainActor
     static func performSettingCommand(_ parts: [String]) -> Bool {
         guard parts.first == "setting", parts.count == 3 else { return false }
         switch parts[1] {
         case "mouse":
             AppSettings.isMouseEnabled = parts[2] == "on"
+        case "touch":
+            AppSettings.isTouchEnabled = parts[2] == "on"
         case "theme":
             guard let theme = InterfaceTheme(rawValue: parts[2]) else { return false }
             AppSettings.theme = theme

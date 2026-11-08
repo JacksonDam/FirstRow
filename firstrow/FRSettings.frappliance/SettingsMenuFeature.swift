@@ -21,6 +21,9 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
             .init(id: "settings_soundeffects", title: "Sound Effects", trailingText: "On"),
             .init(id: "settings_theme", title: "Theme", trailingText: "Classic"),
         ]
+        #if os(iOS)
+            submenuItems.append(.init(id: "settings_touch", title: "Touch Controls", trailingText: "Off"))
+        #endif
         #if os(macOS) || FIRSTROW_PORTABLE
             submenuItems.append(.init(id: "settings_mouse", title: "Mouse", trailingText: "Off"))
             submenuItems.append(.init(id: "settings_media_folders", title: "Media Folders", trailingText: "..."))

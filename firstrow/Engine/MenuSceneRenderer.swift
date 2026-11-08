@@ -380,6 +380,7 @@ final class MenuSceneRenderer: TransactionRendering {
             showsTopOverflowFade: true,
             visibleRowCount: menu.defaultVisibleMenuRowCount,
             theme: theme,
+            hidesSelection: menu.touchHidesSelection,
         ), menu: menu, pass: pass, scale: scale)
         rootList.layer.setOpacity(menu.rootMenuOpacity, pass.animation)
         slide(rootList.layer, away: menu.rootMenuOpacity < 0.5, toLeft: true, theme: theme, pass.animation)
@@ -404,6 +405,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 selectionBoxWidthScale: isPhotos ? menu.photosSelectionBoxWidthScale : 1,
                 selectionBoxHeightScale: isPhotos ? menu.photosSelectionBoxHeightScale : 1,
                 theme: theme,
+                hidesSelection: menu.touchHidesSelection,
             ), menu: menu, pass: memo.showsSubmenuList ? pass : RenderPass(transaction: .instant), scale: scale)
             slide(submenuList.layer, away: menu.submenuOpacity < 0.5, toLeft: menu.isInThirdMenu, theme: theme, memo.showsSubmenuList ? pass.animation : nil)
             let hideChanged = memo.hidesSubmenuList != nil && memo.hidesSubmenuList != hidesSubmenu
@@ -434,6 +436,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 selectionBoxHeightScale: isPhotosThird ? menu.photosSelectionBoxHeightScale : 1,
                 usesUniformRowLayout: menu.thirdMenuMode == .musicSongs,
                 theme: theme,
+                hidesSelection: menu.touchHidesSelection,
             ), menu: menu, pass: memo.showsThirdList ? pass : RenderPass(transaction: .instant), scale: scale)
             slide(thirdList.layer, away: menu.thirdMenuOpacity < 0.5, toLeft: false, theme: theme, memo.showsThirdList ? pass.animation : nil)
             let hideChanged = memo.hidesThirdList != nil && memo.hidesThirdList != hidesThird
@@ -674,6 +677,14 @@ enum TVShowsSortPillRenderer {
 
 extension MenuSceneRenderer {
     /// The scene's live geometry, for working out what the pointer is over.
+    func movieOptionsRow(at windowPoint: CGPoint) -> Int? {
+        guard let panel = playback.options.panelFrame else { return nil }
+        let canvas = FullscreenCanvas(screenSize: fullscreenContainerSize)
+        let point = CGPoint(x: windowPoint.x / max(canvas.scale, 0.0001), y: windowPoint.y / max(canvas.scale, 0.0001))
+        guard panel.contains(point) else { return nil }
+        return playback.options.rowFrames.firstIndex { $0.contains(point) } ?? -1
+    }
+
     var pointerScene: PointerScene {
         PointerScene(
             canvasOrigin: canvas.position,

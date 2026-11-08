@@ -268,6 +268,9 @@ final class MovieOptionsLayer {
     private let classicFocus = SelectionBoxLayer()
     private var rows: [(title: SceneLayer, value: SceneLayer)] = []
     private var lastFocus: Int?
+    /// The panel and its rows in canvas points, for touches.
+    private(set) var panelFrame: CGRect?
+    private(set) var rowFrames: [CGRect] = []
 
     init() {
         layer.isHidden = true
@@ -281,6 +284,8 @@ final class MovieOptionsLayer {
         guard let state, !state.rows.isEmpty else {
             layer.isHidden = true
             lastFocus = nil
+            panelFrame = nil
+            rowFrames = []
             return
         }
         let appearing = layer.isHidden
@@ -292,6 +297,8 @@ final class MovieOptionsLayer {
         let inset: CGFloat = 16
         let height = CGFloat(state.rows.count) * rowHeight + inset * 2
         panel.frame = CGRect(x: (size.width - width) / 2, y: size.height - 210 - height, width: width, height: height)
+        panelFrame = panel.frame
+        rowFrames = state.rows.indices.map { CGRect(x: panel.frame.minX + inset, y: panel.frame.minY + inset + CGFloat($0) * rowHeight, width: width - inset * 2, height: rowHeight) }
         panel.backgroundColor = CGColor(gray: isModern ? 0.08 : 0, alpha: isModern ? 0.82 : 0.86)
         panel.cornerRadius = isModern ? 34 : 14
         panel.borderWidth = isModern ? 0 : 1
