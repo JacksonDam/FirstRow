@@ -384,15 +384,14 @@ final class MovieResumePromptLayer {
             CGRect(x: options.frame.minX, y: options.frame.minY + CGFloat(index) * pitch, width: width, height: rowHeight)
         }
         let selected = menu.movieResumePromptSelectedIndex
-        let moved = lastSelectedIndex != nil && lastSelectedIndex != selected
         lastSelectedIndex = selected
-        let move = appearing ? nil : pass.animation(.focus(duration: ModernTheme.focusDuration), when: moved)
         let growth = ModernTheme.focusGrowth
         let focusFrame = CGRect(x: -growth.width, y: CGFloat(selected) * pitch + (rowHeight - capsuleHeight) * 0.5 - growth.height, width: width + growth.width * 2, height: capsuleHeight + growth.height * 2)
-        modernFocus.setFrame(focusFrame, move)
+        // Focus jumps to the chosen option rather than sliding there.
+        modernFocus.setFrame(focusFrame, nil)
         modernFocus.cornerRadius = focusFrame.height * 0.5
         modernFocus.isHidden = menu.movieResumePromptSolidBlackSelected
-        let textFade: Animation? = moved && !appearing ? .easeInOut(duration: 0.16) : nil
+        let textFade: Animation? = nil
         for (index, title) in ["Resume Playing", "Start from Beginning"].enumerated() {
             let isSelected = index == selected
             let top = CGFloat(index) * pitch

@@ -296,7 +296,7 @@ final class MovieOptionsLayer {
         modernFocus.isHidden = !isModern
         classicFocus.layer.isHidden = isModern
         if isModern {
-            modernFocus.setFrame(focusFrame, appearing || !moved ? nil : .focus(duration: ModernTheme.focusDuration))
+            modernFocus.setFrame(focusFrame, nil)
             modernFocus.cornerRadius = focusFrame.height / 2
         } else {
             // The glow texture reaches past the row as the menus' does, scaled to this row's height.

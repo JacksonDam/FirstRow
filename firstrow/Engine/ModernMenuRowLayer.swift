@@ -8,8 +8,8 @@ import QuartzCore
 #endif
 
 /// A row in the modern look: a translucent capsule with the title on the left and its value
-/// and chevron on the right. Focused, the list's white capsule sits under it, its text turns
-/// dark and it grows a little.
+/// and chevron on the right. Focus jumps straight to a row, which turns white with dark text and
+/// grows a little; only the growing and shrinking animate.
 @MainActor
 final class ModernMenuRowLayer: MenuRowLayering {
     let layer = SceneLayer()
@@ -21,8 +21,15 @@ final class ModernMenuRowLayer: MenuRowLayering {
     private let blueDot = SceneLayer()
     private var spec: MenuRowLayer.Spec?
 
+    /// How focus growth animates for the rows being updated (nil while a held arrow sweeps
+    /// through a list, so rows don't trail behind it). Set by the list before each update.
+    static var focusAnimation: Animation? = .smooth(duration: ModernTheme.focusDuration)
+
     init() {
         capsule.backgroundColor = ModernTheme.rowFill.cgColor
+        capsule.shadowColor = CGColor(gray: 0, alpha: 1)
+        capsule.shadowRadius = 16
+        capsule.shadowOffset = CGSize(width: 0, height: 8)
         leadingImage.masksToBounds = true
         layer.addSublayer(capsule)
         layer.addSublayer(content)
@@ -41,19 +48,25 @@ final class ModernMenuRowLayer: MenuRowLayering {
         let item = spec.item
         let focused = spec.isSelected
         let sameItem = previous?.item.id == item.id
-        let focusChanged = sameItem && previous?.isSelected != focused
+        let wasFocused = previous?.isSelected ?? false
+        let growth = sameItem && wasFocused != focused ? Self.focusAnimation : nil
         let height = spec.rowHeight
         let width = spec.rowWidth
         let capsuleHeight = height - ModernTheme.rowCapsuleInset
+        let restFrame = CGRect(x: 0, y: (height - capsuleHeight) * 0.5, width: width, height: capsuleHeight)
+        let grow = ModernTheme.focusGrowth
+        let capsuleFrame = focused ? restFrame.insetBy(dx: -grow.width, dy: -grow.height) : restFrame
 
-        capsule.frame = CGRect(x: 0, y: (height - capsuleHeight) * 0.5, width: width, height: capsuleHeight)
-        capsule.cornerRadius = capsuleHeight * 0.5
-        // Its own capsule comes back once the focus has moved off it.
-        capsule.setOpacity(focused ? 0 : 1, focusChanged && !focused ? Animation.easeInOut(duration: 0.14).delay(0.1) : nil)
+        // The colour changes at once; the size eases.
+        capsule.backgroundColor = (focused ? ModernTheme.focusFill : ModernTheme.rowFill).cgColor
+        capsule.shadowOpacity = focused ? 0.45 : 0
+        capsule.setFrame(capsuleFrame, growth)
+        capsule.set("cornerRadius", to: capsuleFrame.height * 0.5, unchanged: capsule.cornerRadius == capsuleFrame.height * 0.5, animation: growth)
+        capsule.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: capsuleFrame.size), cornerWidth: capsuleFrame.height * 0.5, cornerHeight: capsuleFrame.height * 0.5, transform: nil)
 
         content.frame = CGRect(x: 0, y: 0, width: width, height: height)
         let grown = Self.scale(ModernTheme.focusedContentScale, about: CGPoint(x: width * 0.5, y: height * 0.5))
-        content.setTransform(focused ? grown : CATransform3DIdentity, focusChanged ? .focus(duration: ModernTheme.focusDuration) : nil)
+        content.setTransform(focused ? grown : CATransform3DIdentity, growth)
 
         // A picture before the title (photo albums and the like).
         var textStart = ModernTheme.rowTextInset
@@ -82,17 +95,12 @@ final class ModernMenuRowLayer: MenuRowLayering {
             blueDot.isHidden = true
         }
 
-        let fade: Animation? = focusChanged ? .easeInOut(duration: 0.16) : nil
-        light.update(spec, focused: false, textStart: textStart, scrollsLongTitle: false)
-        light.layer.setOpacity(focused ? 0 : 1, fade)
-        // The dark text is only needed while focused or fading out.
-        if focused || previous?.isSelected == true {
-            dark.layer.isHidden = false
-            dark.update(spec, focused: true, textStart: textStart, scrollsLongTitle: focused && spec.isSettled)
-        }
-        dark.layer.setOpacity(focused ? 1 : 0, fade)
-        if !focused, !focusChanged {
-            dark.layer.isHidden = true
+        light.layer.isHidden = focused
+        dark.layer.isHidden = !focused
+        if focused {
+            dark.update(spec, focused: true, textStart: textStart, scrollsLongTitle: spec.isSettled)
+        } else {
+            light.update(spec, focused: false, textStart: textStart, scrollsLongTitle: false)
         }
     }
 

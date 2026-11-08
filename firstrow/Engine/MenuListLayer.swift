@@ -22,13 +22,13 @@ final class MenuListLayer {
         var selectionBoxHeightScale: CGFloat = 1
         var usesUniformRowLayout = false
         var theme: InterfaceTheme = .classic
+        /// Touch mode with no finger down: nothing is shown as selected.
+        var hidesSelection = false
     }
 
     /// The list's box: the menu width, and as tall as its rows plus the space below them.
     let layer = SceneLayer()
     private let selectionBox = SelectionBoxLayer()
-    /// The modern theme's selection: a white capsule under the focused row.
-    private let focusCapsule = SceneLayer()
     private let clip = SceneLayer()
     private let rowsContainer = SceneLayer()
     private let topFade = SceneGradientLayer()
@@ -47,13 +47,6 @@ final class MenuListLayer {
 
     init() {
         layer.addSublayer(selectionBox.layer)
-        focusCapsule.backgroundColor = ModernTheme.focusFill.cgColor
-        focusCapsule.shadowColor = CGColor(gray: 0, alpha: 1)
-        focusCapsule.shadowOpacity = 0.5
-        focusCapsule.shadowRadius = 18
-        focusCapsule.shadowOffset = CGSize(width: 0, height: 10)
-        focusCapsule.isHidden = true
-        layer.addSublayer(focusCapsule)
         clip.masksToBounds = true
         layer.addSublayer(clip)
         clip.addSublayer(rowsContainer)
@@ -148,7 +141,8 @@ final class MenuListLayer {
         let selectionMoved = lastSelectedRowOffset != selectedRowOffset || lastScrollOffset != scrollOffset
         let indexChanged = lastSelectedIndex != selectedIndex
         let pinMoved = pinnedScrollOffset != nil && lastScrollOffset != scrollOffset
-        let movement = menu.selectionMovementAnimation
+        // The modern look scrolls with a quadratic ease-out, except while a held arrow sweeps.
+        let movement = isModern && !menu.useLinearSelectionSweepAnimation ? Animation.smooth(duration: 0.34) : menu.selectionMovementAnimation
         let selectionAnimation = lastSelectedRowOffset == nil ? nil : pass.animation(movement, when: selectionMoved)
         let isFreshList = lastScrollOffset == nil
         let scrollAnimation = isFreshList ? nil : pass.animation(movement, when: indexChanged || pinMoved)
@@ -168,27 +162,10 @@ final class MenuListLayer {
         let visualXOffset = selectionVisualXOffset + compactReduction * 0.5
         let visualHeight = selectedIsNormalHeight ? menu.selectionBoxHeight + menu.selectionTextureVisualHeightDelta : selectionVisualHeight
         let visualYOffset = selectedIsNormalHeight ? -(menu.selectionTextureVisualHeightDelta * 0.5) : selectionVisualYOffset
-        selectionBox.layer.isHidden = items.isEmpty || isModern
-        focusCapsule.isHidden = items.isEmpty || !isModern
-        if isModern {
-            let rowHeight = selectedIsNormalHeight ? menu.selectionBoxHeight : selectionHeight
-            let rowYOffset = selectedIsNormalHeight ? 0 : selectionYOffset
-            let growth = ModernTheme.focusGrowth
-            let capsuleHeight = rowHeight - ModernTheme.rowCapsuleInset + growth.height * 2
-            let frame = CGRect(
-                x: rowContentXOffset - growth.width,
-                y: selectedRowOffset + scrollOffset + rowYOffset + (rowHeight - capsuleHeight) * 0.5,
-                width: rowContentWidth + growth.width * 2,
-                height: capsuleHeight,
-            )
-            // A single step springs into place; a held sweep keeps its steady pace.
-            let animation = selectionAnimation.map { menu.useLinearSelectionSweepAnimation || $0 != movement ? $0 : .focus(duration: ModernTheme.focusDuration) }
-            focusCapsule.setFrame(frame, animation)
-            if focusCapsule.cornerRadius != capsuleHeight * 0.5 {
-                focusCapsule.cornerRadius = capsuleHeight * 0.5
-                focusCapsule.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: frame.size), cornerWidth: capsuleHeight * 0.5, cornerHeight: capsuleHeight * 0.5, transform: nil)
-            }
-        } else {
+        // Modern rows show focus themselves: it jumps to the row, which grows a little.
+        selectionBox.layer.isHidden = items.isEmpty || isModern || c.hidesSelection
+        ModernMenuRowLayer.focusAnimation = menu.useLinearSelectionSweepAnimation ? nil : .smooth(duration: ModernTheme.focusDuration)
+        if !isModern {
             selectionBox.update(
                 frame: CGRect(x: visualXOffset, y: selectedRowOffset + scrollOffset + visualYOffset, width: visualWidth, height: visualHeight),
                 selectionBoxHeight: menu.selectionBoxHeight,
@@ -263,7 +240,7 @@ final class MenuListLayer {
                 (menu.thirdMenuMode == .podcastsEpisodes && menu.isPodcastAudioNowPlaying && menu.activePodcastPlaybackEpisodeID == item.id)
             let spec = MenuRowLayer.Spec(
                 item: item,
-                isSelected: index == selectedIndex,
+                isSelected: index == selectedIndex && !c.hidesSelection,
                 isSettled: menu.isSelectionSettled,
                 rowWidth: rowContentWidth,
                 rowHeight: rowHeight,

@@ -9,8 +9,10 @@ struct Animation: Equatable {
         case easeIn
         case easeOut
         case linear
-        /// Quick to start, settling with a slight overshoot, like focus moving on a TV.
-        case focus
+        /// Quadratic ease-out: quick to start and settling gently, as the modern look moves.
+        case smooth
+        /// Quadratic ease-in-out, for things that leave and arrive in one move.
+        case smoothInOut
     }
 
     var curve: Curve
@@ -22,7 +24,8 @@ struct Animation: Equatable {
     static func easeIn(duration: Double) -> Animation { Animation(curve: .easeIn, duration: duration) }
     static func easeOut(duration: Double) -> Animation { Animation(curve: .easeOut, duration: duration) }
     static func linear(duration: Double) -> Animation { Animation(curve: .linear, duration: duration) }
-    static func focus(duration: Double) -> Animation { Animation(curve: .focus, duration: duration) }
+    static func smooth(duration: Double) -> Animation { Animation(curve: .smooth, duration: duration) }
+    static func smoothInOut(duration: Double) -> Animation { Animation(curve: .smoothInOut, duration: duration) }
     static let easeInOut = Animation(curve: .easeInOut, duration: 0.35)
     static let `default` = Animation.easeInOut
 
@@ -44,7 +47,8 @@ struct Animation: Equatable {
         case .easeIn: CAMediaTimingFunction(controlPoints: 0.42, 0, 1, 1)
         case .easeOut: CAMediaTimingFunction(controlPoints: 0, 0, 0.58, 1)
         case .linear: CAMediaTimingFunction(name: .linear)
-        case .focus: CAMediaTimingFunction(controlPoints: 0.22, 1.12, 0.36, 1)
+        case .smooth: CAMediaTimingFunction(controlPoints: 0.25, 0.46, 0.45, 0.94)
+        case .smoothInOut: CAMediaTimingFunction(controlPoints: 0.455, 0.03, 0.515, 0.955)
         }
     }
 }

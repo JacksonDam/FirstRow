@@ -228,7 +228,7 @@ final class TextEntryLayer {
                 let grown = focusFrame.insetBy(dx: -5, dy: -5)
                 focusTile.backgroundColor = fill
                 focusTile.cornerRadius = style.keyCornerRadius + 3
-                focusTile.setFrame(grown, appearing ? nil : pass.animation(.focus(duration: 0.26), when: moved))
+                focusTile.setFrame(grown, nil)
                 focusTile.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: grown.size), cornerWidth: style.keyCornerRadius + 3, cornerHeight: style.keyCornerRadius + 3, transform: nil)
             }
             let boxHeight: CGFloat = 75

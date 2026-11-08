@@ -263,7 +263,7 @@ final class ModernCardLayer {
             slot.setOpacity(1, fade)
             let center = CGPoint(x: frame.midX, y: frame.midY)
             slot.transform = Self.scale(0.965, about: center)
-            slot.setTransform(CATransform3DIdentity, .focus(duration: 0.42))
+            slot.setTransform(CATransform3DIdentity, .smooth(duration: 0.42))
         }
     }
 
