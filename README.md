@@ -23,8 +23,14 @@ Here, the Leopard/Snow Leopard version of the interface is used as a reference.
 - Your own folders of movies, music and photos, an iTunes library file (`iTunes Music Library.xml`) and an iPhoto library, added on macOS in Settings > Media Folders inside First Row (`Cmd+,` jumps there)
 - Podcast viewing/listening on macOS if podcasts are downloaded on the device via Apple Podcasts
 - iTunes Top Charts and playable previews (movies, TV episodes, songs, music videos) via the iTunes RSS feeds
-- Screen saver with gorgeous floating photos 
+- Screen saver with gorgeous floating photos, starting after 1, 2, 5, 10, 15 or 30 minutes or an hour of idle time, or never (Settings > Screen Saver, which can also preview it)
 - Keyboard, touch, and game controller driven navigation (Siri Remotes are supported on tvOS and on Macs they are paired with)
+- Jellyfin: add your Jellyfin servers under Sources (found on your network, or by address) and sign in with Quick Connect or a user name and password. Browse Continue Watching, Next Up, movies, shows, music and other libraries; videos and songs play in First Row's own players, resume where you left off, and report what you've watched back to the server
+- Modern theme (Settings > Theme): a flat look in the style of today's Apple TV, with capsule rows, a springy focus highlight, a large preview card, a black blurred background tinted by the selected artwork, its own Now Playing and transport bar, and its own softer interface sounds
+- Mouse and trackpad support (Settings > Mouse, on macOS, Linux and Windows): pointing at a row selects it, clicking chooses it, right-click or the back button goes back, the wheel scrolls lists, and clicking or dragging along a progress bar seeks
+- Continue Watching in Movies: every movie remembers where you stopped, even after quitting, and picks up from there
+- Subtitles, audio track and playback speed for movies (press `Down` while one plays)
+- Media keys, Control Center and headphone controls on macOS, iOS and tvOS, with the current song or movie shown in the system's Now Playing
 
 Playback of movies and TV shows originating from the Apple TV app is not supported due to DRM-protection, but local video content from elsewhere can be played.
 Theatrical Trailers does not work as the original servers for this are gone and I haven't made a substitute yet (contributions welcome).
@@ -55,7 +61,9 @@ Theatrical Trailers does not work as the original servers for this are gone and 
 - `Apple Remote (Macs with an infrared receiver)`: `+`/`-` navigate menus and change the Mac's volume during playback, `⏮`/`⏭` move left and right (in Now Playing, tap them to change song and hold them to scrub), the centre button selects and toggles playback, `Menu` goes back.
 - `Game controller`: D-pad or left stick navigates/scrubs, `A` selects, `B` or `Menu` goes back, `X` toggles playback.
 - `Touch (iOS/iPadOS)`: Tap screen quadrants to navigate/scrub, press and hold to repeat navigation, two-finger tap selects, three-finger tap goes back, four-finger tap toggles playback.
+- `Mouse or trackpad (macOS, Linux, Windows; turn on in Settings > Mouse)`: Point at a row to select it, click to choose it, right-click or the mouse's back button goes back, the scroll wheel scrolls lists. During playback, click to play or pause and click or drag along the progress bar to seek.
 - `Fullscreen media player`: `Up`/`Down` switches songs or podcast episodes, `Left`/`Right` scrubs through the current item.
+- `Movies`: tap `Left`/`Right` to skip 10 seconds back or forward, hold them to scrub, press `Down` for subtitles, audio and speed.
 
 ## Project structure
 
@@ -88,7 +96,7 @@ firstrow/
 ├── Podcasts.frappliance/              Podcast series and episode browsing
 ├── Photos.frappliance/                Photo library browsing and slideshows
 ├── FRSettings.frappliance/            Settings screen, Media Folders + screen saver
-├── FRSources.frappliance/             Sources screen + Connect to iTunes
+├── FRSources.frappliance/             Sources screen, Connect to iTunes and Jellyfin servers
 │
 ├── Assets.xcassets/                   All image assets
 ├── Sounds/                            Sound effects (.aif) and slideshow default music (.mp3)
