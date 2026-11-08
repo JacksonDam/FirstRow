@@ -29,7 +29,10 @@ final class ModernMenuRowLayer: MenuRowLayering {
     /// How focus growth animates for the rows being updated (nil while a held arrow sweeps
     /// through a list, so rows don't trail behind it). Set by the list before each update.
     static var focusAnimation: Animation? = .smooth(duration: ModernTheme.focusDuration)
-    private static let unfocusAnimation = Animation.smooth(duration: 0.22)
+    /// Focus leaving: a quick fade, quicker still while a held arrow races along.
+    private static var unfocusAnimation: Animation {
+        .smooth(duration: min(0.22, focusAnimation?.duration ?? 0.22))
+    }
 
     init() {
         capsule.backgroundColor = ModernTheme.rowFill.cgColor

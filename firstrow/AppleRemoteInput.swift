@@ -256,6 +256,7 @@
             }, nil)
             IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
             remotes.append(device)
+            RemoteDiagnosticsLog.watchSiblings(of: device)
         }
 
         private func detach(_ device: IOHIDDevice) {
@@ -275,6 +276,7 @@
         }
 
         private func handle(page: UInt32, usage: UInt32, pressed: Bool) {
+            RemoteDiagnosticsLog.write("button page \(page) usage \(String(format: "0x%02x", usage)) \(pressed ? "down" : "up")")
             if pressed { onInput() }
             switch (Int(page), Int(usage)) {
             case (kHIDPage_Consumer, 0x60):
@@ -317,6 +319,78 @@
             case (kHIDPage_Consumer, kHIDUsage_Csmr_PlayOrPause): .space
             default: nil
             }
+        }
+    }
+
+    /// While the hidden `logRemoteInput` setting is on, writes what a Siri Remote sends (its
+    /// buttons as First Row gets them, and the raw packets of its other parts, the touch surface
+    /// among them) to ~/Library/Logs/First Row/remote.log, for working out how to read them.
+    @MainActor
+    enum RemoteDiagnosticsLog {
+        static let isOn = UserDefaults.standard.bool(forKey: "logRemoteInput")
+        private static let start = ProcessInfo.processInfo.systemUptime
+        private static var handle: FileHandle?
+        private static var manager: IOHIDManager?
+        private static var watchedSerials: Set<String> = []
+        private static var buffers: [UnsafeMutablePointer<UInt8>] = []
+
+        static func write(_ line: String) {
+            guard isOn else { return }
+            if handle == nil {
+                let folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/First Row", isDirectory: true)
+                try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let file = folder.appendingPathComponent("remote.log")
+                if !FileManager.default.fileExists(atPath: file.path) {
+                    FileManager.default.createFile(atPath: file.path, contents: nil)
+                }
+                handle = try? FileHandle(forWritingTo: file)
+                handle?.seekToEndOfFile()
+            }
+            let text = String(format: "%9.3f ", ProcessInfo.processInfo.systemUptime - start) + line + "\n"
+            handle?.write(Data(text.utf8))
+        }
+
+        /// Opens the remote's other parts (the same serial number), without taking them over.
+        static func watchSiblings(of remote: IOHIDDevice) {
+            guard isOn, let serial = IOHIDDeviceGetProperty(remote, kIOHIDSerialNumberKey as CFString) as? String,
+                  watchedSerials.insert(serial).inserted
+            else { return }
+            write("watching remote \(serial)")
+            let manager = manager ?? {
+                let made = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+                IOHIDManagerSetDeviceMatching(made, [kIOHIDVendorIDKey: 0x4C] as CFDictionary)
+                IOHIDManagerRegisterDeviceMatchingCallback(made, { _, _, _, device in
+                    MainActor.assumeIsolatedIfPossible { RemoteDiagnosticsLog.attach(device) }
+                }, nil)
+                IOHIDManagerScheduleWithRunLoop(made, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+                IOHIDManagerOpen(made, IOOptionBits(kIOHIDOptionsTypeNone))
+                return made
+            }()
+            self.manager = manager
+        }
+
+        private static func attach(_ device: IOHIDDevice) {
+            guard let serial = IOHIDDeviceGetProperty(device, kIOHIDSerialNumberKey as CFString) as? String,
+                  watchedSerials.contains(serial)
+            else { return }
+            let page = IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsagePageKey as CFString) as? Int ?? -1
+            let usage = IOHIDDeviceGetProperty(device, kIOHIDPrimaryUsageKey as CFString) as? Int ?? -1
+            // The buttons come through First Row's own handling.
+            guard !(page == kHIDPage_Consumer && usage == kHIDUsage_Csmr_ConsumerControl) else { return }
+            let opened = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
+            write("part page \(page) usage \(usage) open \(opened)")
+            let size = 1024
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: size)
+            buffers.append(buffer)
+            let tag = UnsafeMutableRawPointer(bitPattern: (page << 16) | usage)
+            IOHIDDeviceRegisterInputReportCallback(device, buffer, size, { context, _, _, _, reportID, report, length in
+                let tag = Int(bitPattern: context)
+                let bytes = (0 ..< length).map { String(format: "%02x", report[$0]) }.joined()
+                MainActor.assumeIsolatedIfPossible {
+                    RemoteDiagnosticsLog.write("packet \(tag >> 16)/\(tag & 0xFFFF) id \(reportID) len \(length) \(bytes)")
+                }
+            }, tag)
+            IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
         }
     }
 

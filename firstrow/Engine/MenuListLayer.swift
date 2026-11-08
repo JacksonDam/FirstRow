@@ -209,7 +209,10 @@ final class MenuListLayer {
         // not sliding over from where it was last.
         let revealsSelection = selectionBox.layer.isHidden
         selectionBox.layer.isHidden = items.isEmpty || isModern || c.hidesSelection
-        ModernMenuRowLayer.focusAnimation = menu.useLinearSelectionSweepAnimation ? nil : .smooth(duration: ModernTheme.focusDuration)
+        // A held arrow grows each row it reaches too (as on Apple TV), quicker the faster it goes.
+        ModernMenuRowLayer.focusAnimation = menu.useLinearSelectionSweepAnimation
+            ? .smooth(duration: min(ModernTheme.focusDuration, max(0.12, menu.selectionAnimationDuration * 1.6)))
+            : .smooth(duration: ModernTheme.focusDuration)
         if !isModern {
             selectionBox.update(
                 frame: CGRect(x: visualXOffset, y: selectedRowOffset + scrollOffset + visualYOffset, width: visualWidth, height: visualHeight),
