@@ -63,6 +63,7 @@ final class MenuSceneRenderer: TransactionRendering {
     private var memo = RenderMemo()
     private var lastCardUpdate: CFTimeInterval = 0
     private var isCardRefreshScheduled = false
+    private var wasSweeping = false
 
     /// Values from the previous pass, for the parts that animate when one particular value changes.
     private struct RenderMemo {
@@ -137,10 +138,7 @@ final class MenuSceneRenderer: TransactionRendering {
         canvas.addSublayer(resumePrompt.layer)
         canvas.addSublayer(textEntry.layer)
 
-        rootLayer.addSublayer(playback.playerLayer)
-        rootLayer.addSublayer(playback.controls.layer)
-        rootLayer.addSublayer(playback.modernControls.layer)
-        rootLayer.addSublayer(playback.options.layer)
+        rootLayer.addSublayer(playback.group)
         rootLayer.addSublayer(fullscreenScene.layer)
         rootLayer.addSublayer(toast.layer)
         for overlay in [folderSwapOverlay, movieTransitionOverlay, fullscreenTransitionOverlay, startupOverlay] {
@@ -286,7 +284,10 @@ final class MenuSceneRenderer: TransactionRendering {
             // background follow once it pauses rather than for every row it passes.
             let now = CACurrentMediaTime()
             let sweeping = menu.activeDirectionalHoldKey != .none || menu.isTouchSelecting
-            if !sweeping || now - lastCardUpdate > 0.25 || themeChanged {
+            // The first row of a sweep (where a finger lands) shows at once.
+            let sweepStarts = sweeping && !wasSweeping
+            wasSweeping = sweeping
+            if !sweeping || sweepStarts || now - lastCardUpdate > 0.25 || themeChanged {
                 let layout = ModernTheme.layout(sceneSize: sceneSize, menuHeight: frames.menuFrame.height)
                 let content = menu.modernCardContent(sceneSize: sceneSize, pass: pass)
                 modernCard.layer.frame = CGRect(origin: .zero, size: sceneSize)
@@ -444,6 +445,7 @@ final class MenuSceneRenderer: TransactionRendering {
             visibleRowCount: menu.defaultVisibleMenuRowCount,
             theme: theme,
             hidesSelection: menu.touchHidesSelection,
+            visibility: visibility(of: rootList, opacity: menu.rootMenuOpacity),
         ), menu: menu, pass: pass, scale: scale)
         rootList.layer.setOpacity(menu.rootMenuOpacity, pass.animation)
         slide(rootList.layer, away: menu.rootMenuOpacity < 0.5, toLeft: true, theme: theme, pass.animation)
@@ -469,6 +471,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 selectionBoxHeightScale: isPhotos ? menu.photosSelectionBoxHeightScale : 1,
                 theme: theme,
                 hidesSelection: menu.touchHidesSelection,
+                visibility: visibility(of: submenuList, opacity: hidesSubmenu ? 0 : menu.submenuOpacity),
             ), menu: menu, pass: memo.showsSubmenuList ? pass : RenderPass(transaction: .instant), scale: scale)
             slide(submenuList.layer, away: menu.submenuOpacity < 0.5, toLeft: menu.isInThirdMenu, theme: theme, memo.showsSubmenuList ? pass.animation : nil)
             let hideChanged = memo.hidesSubmenuList != nil && memo.hidesSubmenuList != hidesSubmenu
@@ -500,6 +503,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 usesUniformRowLayout: menu.thirdMenuMode == .musicSongs,
                 theme: theme,
                 hidesSelection: menu.touchHidesSelection,
+                visibility: visibility(of: thirdList, opacity: hidesThird ? 0 : menu.thirdMenuOpacity),
             ), menu: menu, pass: memo.showsThirdList ? pass : RenderPass(transaction: .instant), scale: scale)
             slide(thirdList.layer, away: menu.thirdMenuOpacity < 0.5, toLeft: false, theme: theme, memo.showsThirdList ? pass.animation : nil)
             let hideChanged = memo.hidesThirdList != nil && memo.hidesThirdList != hidesThird
@@ -531,6 +535,30 @@ final class MenuSceneRenderer: TransactionRendering {
         }
         sortPill.setOpacity(showsPill ? 1 : 0, pass.animation(.easeInOut(duration: 0.2), when: pillChanged))
         memo.showsSortPill = showsPill
+    }
+
+    /// Whether a list is on screen, on its way off, or out of sight: from its own opacity, the
+    /// scene's and the menu group's, and the black overlays over them, both as they are on
+    /// screen now and as they are heading.
+    private func visibility(of list: MenuListLayer, opacity: Double) -> MenuListLayer.Visibility {
+        let menu = menu
+        let isModern = ModernTheme.isActive
+        let overlays: [(CALayer, Double)] = [
+            (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),
+            (movieTransitionOverlay, menu.movieTransitionOverlayOpacity),
+            (fullscreenTransitionOverlay, menu.fullscreenTransitionOverlayOpacity),
+        ]
+        func onScreen(_ layer: CALayer) -> Double {
+            Double(layer.presentation()?.opacity ?? layer.opacity)
+        }
+        var heading = opacity * menu.menuSceneOpacity * (isModern ? menu.modernSwapOpacity : 1)
+        var showing = onScreen(list.layer) * onScreen(sceneContent) * onScreen(menuGroup)
+        for (overlay, target) in overlays {
+            heading *= 1 - target
+            if !overlay.isHidden { showing *= 1 - onScreen(overlay) }
+        }
+        if showing < 0.01 { return .hidden }
+        return heading < 0.5 ? .leaving : .visible
     }
 
     static func scale(_ factor: CGFloat, about center: CGPoint) -> CATransform3D {
@@ -747,12 +775,17 @@ enum TVShowsSortPillRenderer {
 
 extension MenuSceneRenderer {
     /// The scene's live geometry, for working out what the pointer is over.
-    func movieOptionsRow(at windowPoint: CGPoint) -> Int? {
+    /// The options row under a window point (-1 for the panel between rows), and whether
+    /// the point is on the "‹" end of its value.
+    func movieOptionsRow(at windowPoint: CGPoint) -> (index: Int, backward: Bool)? {
         guard let panel = playback.options.panelFrame else { return nil }
         let canvas = FullscreenCanvas(screenSize: fullscreenContainerSize)
         let point = CGPoint(x: windowPoint.x / max(canvas.scale, 0.0001), y: windowPoint.y / max(canvas.scale, 0.0001))
         guard panel.contains(point) else { return nil }
-        return playback.options.rowFrames.firstIndex { $0.contains(point) } ?? -1
+        guard let index = playback.options.rowFrames.firstIndex(where: { $0.contains(point) }) else { return (-1, false) }
+        let values = playback.options.valueFrames
+        let backward = values.indices.contains(index) && point.x < values[index].minX + min(70, values[index].width * 0.35)
+        return (index, backward)
     }
 
     var pointerScene: PointerScene {

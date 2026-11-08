@@ -109,7 +109,7 @@ enum TagReader {
 
     private static let id3v22: [String: String] = [
         "TT2": "TIT2", "TP1": "TPE1", "TP2": "TPE2", "TAL": "TALB", "TCO": "TCON", "TCM": "TCOM", "TRK": "TRCK",
-        "TPA": "TPOS", "PIC": "APIC", "COM": "COMM", "TYE": "TYER",
+        "TPA": "TPOS", "PIC": "APIC", "COM": "COMM", "TYE": "TYER", "ULT": "USLT",
     ]
 
     private static let id3Common: [String: String] = [
@@ -217,6 +217,10 @@ enum TagReader {
             } else if id == "COMM", frame.count > 4, let encoding = frame.first {
                 let (_, text) = split(frame.dropFirst(4), encoding: encoding)
                 info.tags.append(.init(identifier: "id3/COMM", commonKey: common, value: decodeText(text, encoding: encoding)))
+            } else if id == "USLT", frame.count > 4, let encoding = frame.first {
+                // Unsynchronised lyrics: encoding, language, a description, then the words.
+                let (_, text) = split(frame.dropFirst(4), encoding: encoding)
+                info.tags.append(.init(identifier: "id3/USLT", commonKey: nil, value: decodeText(text, encoding: encoding)))
             } else if id == "APIC", let encoding = frame.first {
                 var rest = frame.dropFirst()
                 if version == 2 {

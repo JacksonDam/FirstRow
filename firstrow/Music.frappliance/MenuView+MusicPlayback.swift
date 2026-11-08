@@ -168,24 +168,35 @@ extension MenuView {
         }
         let activeSongID = song.id
         Task.detached(priority: .userInitiated) {
-            let resolvedArtwork = await self.resolveMusicArtworkImage(
-                for: song,
-                cacheKey: cacheKey,
-            )
-            guard let resolvedArtwork else { return }
-            let shouldContinue = await MainActor.run {
-                self.musicNowPlayingArtworkRequestID == requestID &&
-                    self.activeMusicPlaybackSongID == activeSongID
-            }
-            guard shouldContinue else { return }
-            await MainActor.run {
-                guard self.musicNowPlayingArtworkRequestID == requestID else { return }
-                self.musicPreviewCache[cacheKey] = resolvedArtwork
-                guard self.activeMusicPlaybackSongID == activeSongID else { return }
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    self.musicNowPlayingArtwork = resolvedArtwork
+            var resolvedArtwork: NSImage?
+            // A streamed song's cover can reach the library only once the song has started, so
+            // a song still playing without one is asked about again a few times.
+            for wait in [0.0, 1, 2, 4] {
+                if wait > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                    let stillPlaying = await MainActor.run { self.activeMusicPlaybackSongID == activeSongID }
+                    guard stillPlaying else { return }
                 }
+                resolvedArtwork = await self.resolveMusicArtworkImage(for: song, cacheKey: cacheKey)
+                if resolvedArtwork != nil { break }
             }
+            guard let resolvedArtwork else { return }
+            await MainActor.run {
+                self.musicPreviewCache[cacheKey] = resolvedArtwork
+                self.showLateNowPlayingArtwork(resolvedArtwork, songID: activeSongID, requestID: requestID)
+            }
+        }
+    }
+
+    /// A cover that arrived after its song started: shown if that song is still playing and
+    /// either nothing has asked for a cover since or it still shows none.
+    func showLateNowPlayingArtwork(_ artwork: NSImage, songID: String, requestID: Int?) {
+        guard activeMusicPlaybackSongID == songID else { return }
+        let showsNoCover = musicNowPlayingArtwork == nil || musicNowPlayingArtwork === musicFallbackImage
+        guard showsNoCover || requestID == musicNowPlayingArtworkRequestID else { return }
+        guard musicNowPlayingArtwork !== artwork else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            musicNowPlayingArtwork = artwork
         }
     }
 
@@ -212,6 +223,8 @@ extension MenuView {
                 if self.musicPreviewCache[cacheKey] == nil {
                     self.musicPreviewCache[cacheKey] = resolvedArtwork
                 }
+                // The song playing may be waiting on this very cover.
+                self.showLateNowPlayingArtwork(resolvedArtwork, songID: song.id, requestID: nil)
             }
         }
     }
@@ -302,7 +315,10 @@ extension MenuView {
                 return false
             }
         #elseif os(iOS)
-            return isCurrentMusicPlaybackUsingMediaPlayer && activeMusicPlaybackSongID != nil && isMediaPlayerPlaying()
+            guard isCurrentMusicPlaybackUsingMediaPlayer, activeMusicPlaybackSongID != nil else { return false }
+            // Asking the system player waits on the media server; while the progress timer polls
+            // it ten times a second, its last answer will do.
+            return musicKitProgressTimer != nil ? musicMediaPlayerWasPlaying : isMediaPlayerPlaying()
         #else
             return false
         #endif
@@ -1668,7 +1684,7 @@ extension MenuView {
         #endif
         #if os(tvOS)
             if pauseSystemMusicPlayback {
-                ApplicationMusicPlayer.shared.stop()
+                stopSystemMusicPlayerSoon()
             }
             stopMusicKitProgressTimer()
             musicKitScrubGlyphResetWorkItem?.cancel()
@@ -1677,8 +1693,7 @@ extension MenuView {
         #endif
         #if os(iOS)
             if isCurrentMusicPlaybackUsingMediaPlayer, pauseSystemMusicPlayback {
-                MPMusicPlayerController.applicationQueuePlayer.stop()
-                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+                stopSystemMusicPlayerSoon()
             }
             isCurrentMusicPlaybackUsingMediaPlayer = false
             stopMusicKitProgressTimer()
@@ -1711,6 +1726,27 @@ extension MenuView {
         }
         resetScreenSaverIdleTimer()
     }
+
+    #if os(iOS) || os(tvOS)
+        /// The system player's stop waits on the media server, often for a few hundred
+        /// milliseconds. First Row's own state is cleared already; this runs once whatever the
+        /// stop belongs to (a menu moving on, say) has started on screen, unless something has
+        /// started playing since.
+        private func stopSystemMusicPlayerSoon() {
+            let generation = musicPlaybackRequestID
+            Task { @MainActor in
+                try? await firstRowSleep(0.05)
+                guard self.musicPlaybackRequestID == generation else { return }
+                #if os(iOS)
+                    guard !self.isCurrentMusicPlaybackUsingMediaPlayer else { return }
+                    MPMusicPlayerController.applicationQueuePlayer.stop()
+                    try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+                #else
+                    ApplicationMusicPlayer.shared.stop()
+                #endif
+            }
+        }
+    #endif
 
     func clearMusicSongSwitchTransitionState() {
         musicSongTransitionSnapshot = nil
@@ -1754,9 +1790,12 @@ extension MenuView {
     }
 
     func updateMusicNowPlayingFlipTimerState() {
+        noteNowPlayingPlaybackChanged()
         let isMusicSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
         let isMusicPlaying = isMusicPlaybackRunning()
-        let shouldRun = isMusicSceneVisible && isMusicPlaying && !isMovieTransitioning && !isMoviePlaybackVisible
+        // Not while the list or the words are beside it.
+        let shouldRun = isMusicSceneVisible && isMusicPlaying && !isMovieTransitioning && !isMoviePlaybackVisible &&
+            !isNowPlayingQueueVisible && !isNowPlayingLyricsVisible
         if !shouldRun {
             invalidateMusicNowPlayingFlipTimer()
             // Let a flip under way finish, or the panel is left edge-on until the next song.
@@ -1784,6 +1823,7 @@ extension MenuView {
 
     func performMusicNowPlayingFlip() {
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
+        guard !isNowPlayingQueueVisible, !isNowPlayingLyricsVisible else { return }
         guard isMusicPlaybackRunning() else { return }
         guard !isMusicSongTransitioning else { return }
         guard !isMusicNowPlayingFlipAnimating else { return }
@@ -1844,8 +1884,30 @@ extension MenuView {
         return nil
     }
 
-    func switchMusicNowPlayingTrack(direction: Int) {
-        guard direction != 0 else { return }
+    /// Whether Now Playing has songs either side to change to: not for a single preview.
+    var canSwitchMusicNowPlayingTrack: Bool {
+        if isPlayingSpotifyAdvert { return false }
+        if isPodcastAudioNowPlaying {
+            return activePodcastPlaybackEpisodes().count > 1
+        }
+        if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == "iTunes Top Songs" {
+            return false
+        }
+        return resolvedActiveMusicPlaybackQueue().count > 1
+    }
+
+    /// Spotify is playing an advert between songs: there's nothing to skip to until it ends.
+    var isPlayingSpotifyAdvert: Bool {
+        isCurrentMusicPlaybackUsingSpotify && spotifyShowsAdvert
+    }
+
+    /// Moves Now Playing a song on or back, or (`toIndex`) straight to a song in its list.
+    func switchMusicNowPlayingTrack(direction: Int, toIndex explicitIndex: Int? = nil) {
+        guard direction != 0 || explicitIndex != nil else { return }
+        guard !isPlayingSpotifyAdvert else {
+            playLimitSoundOnceForCurrentHold()
+            return
+        }
         if isMusicSongTransitioning {
             if let deadline = musicSongTransitionDeadline, deadline > Date() {
                 return
@@ -1861,8 +1923,9 @@ extension MenuView {
             guard !episodes.isEmpty else { return }
             guard let currentEpisodeID = activePodcastPlaybackEpisodeID else { return }
             guard let currentIndex = episodes.firstIndex(where: { $0.id == currentEpisodeID }) else { return }
-            let targetIndex = max(0, min(episodes.count - 1, currentIndex + direction))
+            let targetIndex = max(0, min(episodes.count - 1, explicitIndex ?? currentIndex + direction))
             guard targetIndex != currentIndex else { return }
+            let direction = targetIndex > currentIndex ? 1 : -1
             let targetEpisode = episodes[targetIndex]
             let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
             if isMusicNowPlayingSceneVisible {
@@ -1937,8 +2000,9 @@ extension MenuView {
         guard !playbackQueue.isEmpty else { return }
         let fallbackIndex = direction > 0 ? -1 : playbackQueue.count
         let currentIndex = activeMusicPlaybackIndex() ?? fallbackIndex
-        let targetIndex = max(0, min(playbackQueue.count - 1, currentIndex + direction))
+        let targetIndex = max(0, min(playbackQueue.count - 1, explicitIndex ?? currentIndex + direction))
         guard targetIndex != currentIndex else { return }
+        let direction = targetIndex > currentIndex ? 1 : -1
         let targetSong = playbackQueue[targetIndex]
         let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
         if !isMusicNowPlayingSceneVisible {
@@ -2015,10 +2079,23 @@ extension MenuView {
     func handleMusicPlaybackInput(_ key: KeyCode, isRepeat: Bool) {
         switch key {
         case .delete, .escape:
+            // The lyrics or the list go first.
+            if isNowPlayingLyricsVisible {
+                toggleNowPlayingLyrics()
+                return
+            }
+            if isNowPlayingQueueVisible {
+                hideNowPlayingQueue()
+                playSound(named: "Exit")
+                return
+            }
             stopMusicScrubbing(showPauseGlyph: false)
             clearMusicSongSwitchTransitionState()
             dismissFullscreenScene(preserveMusicPlayback: true)
             playSound(named: "Exit")
+        case .enter where hasNowPlayingLyrics || isNowPlayingLyricsVisible:
+            // Select shows the song's words, when it has some; Play/Pause still pauses.
+            toggleNowPlayingLyrics()
         case .space, .enter:
             handleMusicSpacebarPressed()
         case .upArrow:
@@ -2351,7 +2428,8 @@ extension MenuView {
             trackTitle: musicNowPlayingTitle,
             artistName: musicNowPlayingArtist,
             albumTitle: musicNowPlayingAlbum,
-            trackPositionText: musicNowPlayingTrackPositionText,
+            // An advert isn't one of the songs, so it has no place among them.
+            trackPositionText: isPlayingSpotifyAdvert ? "" : musicNowPlayingTrackPositionText,
             elapsedSeconds: musicNowPlayingElapsedSeconds,
             durationSeconds: musicNowPlayingDurationSeconds,
             showsShuffleGlyph: musicNowPlayingShowsShuffleGlyph,

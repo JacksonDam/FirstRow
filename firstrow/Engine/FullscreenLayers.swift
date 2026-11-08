@@ -43,12 +43,17 @@ final class FullscreenSceneLayer {
     let layer = SceneLayer()
     private var contentKey: String?
     private var content: FullscreenContent?
+    /// Now Playing's list and lyrics, over its right side.
+    let queue = NowPlayingQueueLayer()
+    let lyrics = NowPlayingLyricsLayer()
 
     init() {
         layer.backgroundColor = CGColor(gray: 0, alpha: 1)
         layer.opacity = 0
         layer.isHidden = true
         layer.masksToBounds = true
+        layer.addSublayer(lyrics.layer)
+        layer.addSublayer(queue.layer)
     }
 
     func tearDown() {
@@ -85,13 +90,23 @@ final class FullscreenSceneLayer {
             content = Self.makeContent(for: scene, menu: menu)
             contentKey = key
             if let content {
-                layer.addSublayer(content.layer)
+                layer.insertSublayer(content.layer, below: lyrics.layer)
             }
         }
         let canvas = FullscreenCanvas(screenSize: bounds.size)
         if let content {
             canvas.apply(to: content.layer)
             content.update(menu: menu, scene: scene, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale))
+        }
+        let isNowPlaying = scene.key == menu.musicNowPlayingFullscreenKey
+        queue.layer.isHidden = !isNowPlaying
+        if isNowPlaying {
+            canvas.apply(to: queue.layer)
+            queue.update(menu: menu, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale))
+            canvas.apply(to: lyrics.layer)
+            lyrics.update(menu: menu, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale))
+        } else {
+            lyrics.layer.isHidden = true
         }
         layer.setOpacity(menu.fullscreenSceneOpacity, pass.animation)
     }
@@ -120,6 +135,10 @@ class FullscreenContent {
 /// Now Playing for music and podcasts: the current song's panel, the previous one zooming
 /// away while songs change, and the whole thing flipping round every so often.
 final class NowPlayingSceneLayer: FullscreenContent {
+    /// Moves aside for the list or the lyrics.
+    private let stage = SceneLayer()
+    private var shift: (dx: CGFloat, scale: CGFloat) = (0, 1)
+    private var size: CGSize = .zero
     private let flip = CALayer()
     private let incoming = NowPlayingPanelLayer()
     private let outgoing = NowPlayingPanelLayer()
@@ -127,13 +146,14 @@ final class NowPlayingSceneLayer: FullscreenContent {
 
     /// The progress bar in canvas points, or nil while songs change over.
     var progressBar: CGRect? {
-        isSwitchingSong ? nil : incoming.progressBar
+        isSwitchingSong ? nil : incoming.progressBar.map { NowPlayingSideLayout.map($0, shift, size: size) }
     }
 
     override init() {
         super.init()
         flip.actions = ["position": NSNull(), "bounds": NSNull(), "transform": NSNull()]
-        layer.addSublayer(flip)
+        layer.addSublayer(stage)
+        stage.addSublayer(flip)
         incoming.layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         outgoing.layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         flip.addSublayer(incoming.layer)
@@ -142,6 +162,10 @@ final class NowPlayingSceneLayer: FullscreenContent {
 
     override func update(menu: MenuView, scene _: FullscreenScenePresentation, pass: RenderPass, size: CGSize, scale: CGFloat) {
         let bounds = CGRect(origin: .zero, size: size)
+        self.size = size
+        stage.place(bounds)
+        shift = NowPlayingSideLayout.shift(menu: menu, size: size)
+        stage.setTransform(NowPlayingSideLayout.transform(shift, size: size), pass.animation)
         flip.bounds = bounds
         flip.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
         flip.setTransform(yawTransform(degrees: menu.musicNowPlayingFlipRotationDegrees, perspective: 0.9, viewSize: size), pass.animation)
@@ -310,7 +334,7 @@ final class NowPlayingPanelLayer {
         let diamondCenterX = max(diamondSize * 0.5, min(barWidth - diamondSize * 0.5, progress * barWidth))
         diamond.bounds = CGRect(x: 0, y: 0, width: diamondSize, height: diamondSize)
         diamond.position = CGPoint(x: barLeft + diamondCenterX, y: rowTop + barHeight * 0.5)
-        let remaining = TextRenderer.render(TextSpec(text: "-\(formatfirstRowPlaybackTime(max(0, duration - displayElapsed)))", fontName: firstRowBoldFontName, size: timeSize, color: RGBA(white: 1, alpha: 0.95), maxWidth: trailingTimeWidth, minimumScaleFactor: 0.8), scale: scale)
+        let remaining = TextRenderer.render(TextSpec(text: formatfirstRowRemainingTime(duration: duration, elapsed: displayElapsed), fontName: firstRowBoldFontName, size: timeSize, color: RGBA(white: 1, alpha: 0.95), maxWidth: trailingTimeWidth, minimumScaleFactor: 0.8), scale: scale)
         let trailingRight = barLeft + barWidth + 1 + trailingTimeWidth
         trailing.show(remaining, at: CGPoint(x: trailingRight - remaining.size.width, y: rowTop + (barHeight - remaining.size.height) * 0.5))
 

@@ -301,6 +301,25 @@ final class MenuView: ObservableObject {
     /// as it fades, and the next comes in from slightly nearer.
     @Published var menuSceneScale: CGFloat = 1
     @Published var fullscreenSceneScale: CGFloat = 1
+    /// A movie's own scale and opacity, for the modern look's moves in and out of playback.
+    @Published var movieSceneScale: CGFloat = 1
+    @Published var movieSceneOpacity: Double = 1
+
+    // MARK: - Now Playing extras
+
+    /// Touch mode's Now Playing buttons, slid away while a song plays untouched.
+    @Published var areNowPlayingTouchControlsHidden = false
+    var nowPlayingTouchControlsHideTask: Task<Void, Never>?
+    /// The songs Now Playing was started from, over its right side (mouse and touch modes).
+    @Published var isNowPlayingQueueVisible = false
+    /// How far that list is scrolled, in canvas points from its top.
+    @Published var nowPlayingQueueScroll: CGFloat = 0
+    /// The row under the pointer in that list.
+    @Published var nowPlayingQueueHoverIndex: Int?
+    /// The current song's lyrics, over the right side, when it has some and they're asked for.
+    @Published var isNowPlayingLyricsVisible = false
+    @Published var nowPlayingLyrics: MusicLyrics?
+    var nowPlayingLyricsSongID: String?
     /// The modern look's menu changes: the title and list's opacity and sideways offset.
     @Published var modernSwapOpacity: Double = 1
     @Published var modernSwapOffset: CGFloat = 0

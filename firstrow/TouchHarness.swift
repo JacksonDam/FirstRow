@@ -11,12 +11,15 @@
     /// - `rowtap:<index>`, `rowtitle:<title>` tap a visible row of the list in front
     /// - `listswipe:<from>:<to>:<seconds>[:<hold>]` drags the list in front (heights as fractions
     ///   of its visible part); `listslide:<from>:<to>:<seconds>:<hold>` slides the selection and
-    ///   lets go without choosing; `back` taps the Back button
+    ///   lets go without choosing; `rowslide:<from>:<to>:<seconds>[:<hold>]` does the same from
+    ///   one row's middle to another's; `back` taps the Back button, `control:<name>` any of
+    ///   the buttons (back, play, previous, next, skipback, skipforward, options, lyrics)
     /// - `wait:<seconds>` pauses the script (for a script copied into the app's own folder on a
     ///   device, where relative `FIRSTROW_HARNESS_FIFO`/`_LOG` paths resolve to its tmp folder)
     /// - `FIRSTROW_DEBUG_RENDER=1` logs render pass times and frame pacing
     /// - `theme:classic|modern`, `setting:touch|theme:...`
     /// - `nopicker` stops Movies Folder offering the folder picker this session
+    /// - `playfolder:<folder>` plays a folder's audio files as a list, into Now Playing
     /// - `down`, `up`, `left`, `right`, `enter`, `escape`, `delete`, `space`
     extension FirstRowHarness {
         @MainActor private static weak var touchView: TouchNavigationInputView?
@@ -204,6 +207,22 @@
                     try? await Task.sleep(nanoseconds: UInt64((Double(numbers[2]) + 0.3) * 1_000_000_000))
                     touchView?.injectTouch(.cancelled, at: fingerLocation)
                 }
+            case "rowslide" where numbers.count == 3 || numbers.count == 4:
+                // rowslide:from:to:seconds[:hold]: a finger down on one visible row, an optional
+                // wait, a slide to another row's middle, then let go without choosing.
+                guard let rows = scanActiveList()?.rows, let from = rows[Int(numbers[0])], let to = rows[Int(numbers[1])] else {
+                    touchLog("[harness] rows \(Int(numbers[0])) and \(Int(numbers[1])) aren't both showing")
+                    return
+                }
+                fingerLocation = CGPoint(x: from.midX, y: from.midY)
+                touchView?.injectTouch(.began, at: fingerLocation)
+                let hold = numbers.count == 4 ? Double(numbers[3]) : 0
+                Task { @MainActor in
+                    if hold > 0 { try? await Task.sleep(nanoseconds: UInt64(hold * 1_000_000_000)) }
+                    moveFinger(to: CGPoint(x: to.midX, y: to.midY), over: Double(numbers[2]), liftingAtEnd: false)
+                    try? await Task.sleep(nanoseconds: UInt64((Double(numbers[2]) + 0.4) * 1_000_000_000))
+                    touchView?.injectTouch(.cancelled, at: fingerLocation)
+                }
             case "back":
                 guard let view = touchView, let hitTester = touchMenu?.pointer.hitTester else { return }
                 var found: CGPoint?
@@ -221,6 +240,48 @@
                     try? await Task.sleep(nanoseconds: 50_000_000)
                     touchView?.injectTouch(.ended, at: point)
                 }
+            case "control" where parts.count == 2:
+                // control:<name>: a tap on one of touch mode's buttons, found by looking for it.
+                let controls: [String: TouchControl] = [
+                    "back": .back, "play": .playPause, "previous": .previous, "next": .next,
+                    "skipback": .skipBack, "skipforward": .skipForward, "options": .movieOptions, "lyrics": .lyrics,
+                ]
+                guard let wanted = controls[parts[1]], let view = touchView, let hitTester = touchMenu?.pointer.hitTester else { return }
+                var found: CGPoint?
+                for y in stride(from: CGFloat(0), to: view.bounds.height, by: 6) {
+                    for x in stride(from: CGFloat(0), to: view.bounds.width, by: 6) where found == nil && hitTester.touchControl(at: CGPoint(x: x, y: y)) == wanted {
+                        found = CGPoint(x: x + 16, y: y + 16)
+                    }
+                }
+                guard let point = found else {
+                    touchLog("[harness] no \(parts[1]) button showing")
+                    return
+                }
+                touchView?.injectTouch(.began, at: point)
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    touchView?.injectTouch(.ended, at: point)
+                }
+            case "playfolder" where parts.count == 2:
+                // playfolder:<folder>: plays the audio files there as a list, from the first,
+                // for trying Now Playing's list and lyrics where there's no music library.
+                guard let menu = touchMenu else { return }
+                let folder = URL(fileURLWithPath: resolvedHarnessPath(parts[1]), isDirectory: true)
+                let files = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { ["m4a", "mp3"].contains($0.pathExtension.lowercased()) }
+                    .sorted { $0.lastPathComponent < $1.lastPathComponent }
+                let songs = files.enumerated().map { index, url in
+                    MenuView.MusicLibrarySongEntry(
+                        id: "harness-\(index)", title: String(url.deletingPathExtension().lastPathComponent.dropFirst(3)),
+                        artist: "Test Band", album: "Queue Test", genre: "", composer: "", durationSeconds: 60,
+                        trackNumber: index + 1, discNumber: 1, artworkAlbumKey: nil, url: url, artwork: nil,
+                    )
+                }
+                guard let first = songs.first else {
+                    touchLog("[harness] no songs in \(folder.path)")
+                    return
+                }
+                menu.startMusicPlayback(from: first, trackIndex: 0, trackCount: songs.count, playbackQueue: songs)
             case "theme" where parts.count == 2:
                 AppSettings.theme = InterfaceTheme(rawValue: parts[1]) ?? .classic
             case "setting":

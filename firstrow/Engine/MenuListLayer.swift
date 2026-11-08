@@ -24,6 +24,15 @@ final class MenuListLayer {
         var theme: InterfaceTheme = .classic
         /// Touch mode with no finger down: nothing is shown as selected.
         var hidesSelection = false
+        var visibility: Visibility = .visible
+    }
+
+    /// How much of a list is on screen. One on its way out keeps its scroll, whatever happens
+    /// to its selection meanwhile, and one out of sight changes without animating.
+    enum Visibility {
+        case visible
+        case leaving
+        case hidden
     }
 
     /// The list's box: the menu width, and as tall as its rows plus the space below them.
@@ -44,6 +53,7 @@ final class MenuListLayer {
     private var lastScrollingUp: Bool?
     private var lastScrollingDown: Bool?
     private var lastEdgeFades: (top: Bool, bottom: Bool)?
+    private var lastIdentity: String?
     /// Where the rows were last laid out, for finding the one under the pointer.
     private(set) var hitGeometry: MenuListHitGeometry?
     private static let clipOverhang: CGFloat = 2500
@@ -74,6 +84,7 @@ final class MenuListLayer {
         lastScrollingUp = nil
         lastScrollingDown = nil
         lastEdgeFades = nil
+        lastIdentity = nil
         hitGeometry = nil
     }
 
@@ -142,18 +153,23 @@ final class MenuListLayer {
             viewportHeight: viewportHeight,
             contentHeight: contentHeight,
         )
-        let scrollOffset = pinnedScrollOffset ?? stickyScrollOffset
+        var scrollOffset = pinnedScrollOffset ?? stickyScrollOffset
+        if c.visibility == .leaving, lastIdentity == identity, let lastScrollOffset {
+            scrollOffset = lastScrollOffset
+        }
+        lastIdentity = identity
+        let unseen = c.visibility == .hidden
 
         let selectionMoved = lastSelectedRowOffset != selectedRowOffset || lastScrollOffset != scrollOffset
         let indexChanged = lastSelectedIndex != selectedIndex
         let pinMoved = pinnedScrollOffset != nil && lastScrollOffset != scrollOffset
         // The modern look scrolls with a quadratic ease-out, except while a held arrow sweeps.
         let movement = isModern && !menu.useLinearSelectionSweepAnimation ? Animation.smooth(duration: 0.34) : menu.selectionMovementAnimation
-        let selectionAnimation = lastSelectedRowOffset == nil ? nil : pass.animation(movement, when: selectionMoved)
+        let selectionAnimation = lastSelectedRowOffset == nil || unseen ? nil : pass.animation(movement, when: selectionMoved)
         let isFreshList = lastScrollOffset == nil
         // A list following a finger moves with it, unanimated.
         let scrollAnimation: Animation?
-        if isFreshList || menu.pointer.tracksFinger {
+        if isFreshList || menu.pointer.tracksFinger || unseen {
             scrollAnimation = nil
         } else if pinMoved, let coast = menu.pointer.scrollAnimation {
             // A flick coasting on, or a list springing back from past its end.
@@ -179,13 +195,16 @@ final class MenuListLayer {
         let visualHeight = selectedIsNormalHeight ? menu.selectionBoxHeight + menu.selectionTextureVisualHeightDelta : selectionVisualHeight
         let visualYOffset = selectedIsNormalHeight ? -(menu.selectionTextureVisualHeightDelta * 0.5) : selectionVisualYOffset
         // Modern rows show focus themselves: it jumps to the row, which grows a little.
+        // Shown again (a finger landing in touch mode), the selection starts where it is,
+        // not sliding over from where it was last.
+        let revealsSelection = selectionBox.layer.isHidden
         selectionBox.layer.isHidden = items.isEmpty || isModern || c.hidesSelection
         ModernMenuRowLayer.focusAnimation = menu.useLinearSelectionSweepAnimation ? nil : .smooth(duration: ModernTheme.focusDuration)
         if !isModern {
             selectionBox.update(
                 frame: CGRect(x: visualXOffset, y: selectedRowOffset + scrollOffset + visualYOffset, width: visualWidth, height: visualHeight),
                 selectionBoxHeight: menu.selectionBoxHeight,
-                animation: selectionAnimation,
+                animation: revealsSelection ? nil : selectionAnimation,
             )
         }
 

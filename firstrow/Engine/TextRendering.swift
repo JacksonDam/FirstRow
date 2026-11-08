@@ -574,6 +574,52 @@ enum SymbolFallback {
                 context.addPath(roundedPolygon([(16, 80, 3), (44, 42, 4), (64, 66, 3), (76, 54, 3), (104, 80, 3)]))
                 context.fillPath(using: .evenOdd)
             }
+        case "photo.fill.on.rectangle.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 124, height: 100)) { context in
+                // The frame behind, then a gap, then the photo in front.
+                context.addPath(CGPath(roundedRect: CGRect(x: 26, y: 6, width: 94, height: 68), cornerWidth: 10, cornerHeight: 10, transform: nil))
+                context.fillPath()
+                context.setBlendMode(.clear)
+                context.addPath(CGPath(roundedRect: CGRect(x: -2, y: 18, width: 106, height: 80), cornerWidth: 14, cornerHeight: 14, transform: nil))
+                context.fillPath()
+                context.setBlendMode(.normal)
+                context.addPath(CGPath(roundedRect: CGRect(x: 4, y: 24, width: 94, height: 68), cornerWidth: 10, cornerHeight: 10, transform: nil))
+                context.addEllipse(in: CGRect(x: 66, y: 34, width: 15, height: 15))
+                context.addPath(roundedPolygon([(14, 84, 3), (38, 52, 4), (56, 72, 3), (66, 62, 3), (88, 84, 3)]))
+                context.fillPath(using: .evenOdd)
+            }
+        case "calendar":
+            return Shape(referenceSize: 100, box: CGSize(width: 100, height: 100)) { context in
+                context.setLineWidth(7)
+                context.addPath(CGPath(roundedRect: CGRect(x: 8, y: 14, width: 84, height: 78), cornerWidth: 14, cornerHeight: 14, transform: nil))
+                context.strokePath()
+                context.addPath(CGPath(roundedRect: CGRect(x: 8, y: 14, width: 84, height: 22), cornerWidth: 10, cornerHeight: 10, transform: nil))
+                context.addRect(CGRect(x: 8, y: 26, width: 84, height: 10))
+                for x in [28.0, 72.0] as [CGFloat] {
+                    context.addPath(CGPath(roundedRect: CGRect(x: x - 4.5, y: 4, width: 9, height: 20), cornerWidth: 4.5, cornerHeight: 4.5, transform: nil))
+                }
+                for row in 0 ..< 3 {
+                    for column in 0 ..< 4 where !(row == 2 && column == 3) {
+                        context.addPath(CGPath(roundedRect: CGRect(x: 21 + CGFloat(column) * 16, y: 45 + CGFloat(row) * 14, width: 10, height: 9), cornerWidth: 2, cornerHeight: 2, transform: nil))
+                    }
+                }
+                context.fillPath()
+            }
+        case "square.and.arrow.down.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 100, height: 108)) { context in
+                // A box with an arrow going down into it, a gap around the arrow.
+                context.addPath(CGPath(roundedRect: CGRect(x: 10, y: 38, width: 80, height: 66), cornerWidth: 13, cornerHeight: 13, transform: nil))
+                context.fillPath()
+                context.setBlendMode(.clear)
+                context.setLineWidth(10)
+                context.addPath(CGPath(roundedRect: CGRect(x: 44.5, y: 0, width: 11, height: 74), cornerWidth: 5.5, cornerHeight: 5.5, transform: nil))
+                context.addPath(roundedPolygon([(26, 52, 4), (74, 52, 4), (50, 84, 4)]))
+                context.drawPath(using: .fillStroke)
+                context.setBlendMode(.normal)
+                context.addPath(CGPath(roundedRect: CGRect(x: 45.5, y: 2, width: 9, height: 64), cornerWidth: 4.5, cornerHeight: 4.5, transform: nil))
+                context.addPath(roundedPolygon([(31, 55, 3), (69, 55, 3), (50, 79, 3)]))
+                context.fillPath()
+            }
         case "gearshape.fill":
             return Shape(referenceSize: 100, box: CGSize(width: 100, height: 100)) { context in
                 let center = CGPoint(x: 50, y: 50)

@@ -90,6 +90,7 @@ extension MenuView {
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
         if key == musicNowPlayingFullscreenKey {
             clearMusicSongSwitchTransitionState()
+            resetNowPlayingExtras()
         }
         if key == screenSaverFullscreenKey {
             clearScreenSaverNowPlayingToast()
@@ -323,11 +324,11 @@ extension MenuView {
         var instant = Transaction()
         instant.disablesAnimations = true
         withTransaction(instant) {
-            fullscreenSceneScale = 1.06
+            fullscreenSceneScale = ModernTheme.sceneNearScale
         }
         withAnimation(modernSceneLeave) {
             menuSceneOpacity = 0
-            menuSceneScale = 0.94
+            menuSceneScale = ModernTheme.sceneRecedeScale
         }
         Task {
             try? await firstRowSleep(modernSceneLeave.duration * 0.5)
@@ -355,11 +356,11 @@ extension MenuView {
         var instant = Transaction()
         instant.disablesAnimations = true
         withTransaction(instant) {
-            menuSceneScale = 1.06
+            menuSceneScale = ModernTheme.sceneNearScale
         }
         withAnimation(modernSceneLeave) {
             fullscreenSceneOpacity = 0
-            fullscreenSceneScale = 0.94
+            fullscreenSceneScale = ModernTheme.sceneRecedeScale
         }
         Task {
             try? await firstRowSleep(modernSceneLeave.duration * 0.75)

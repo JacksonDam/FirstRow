@@ -39,6 +39,8 @@ extension MenuView {
             case swiping
             /// On one of touch mode's buttons; lifting over it presses it.
             case button(TouchControl)
+            /// On Now Playing's list: a tap chooses a song, a drag scrolls.
+            case queue
             case ignored
         }
 
@@ -67,6 +69,12 @@ extension MenuView {
         var pendingPreview: (@MainActor () -> Void)?
         var isFingerDown = false
         var motionStarted: CFTimeInterval = 0
+        /// Now Playing's list: where a drag on it started, whether it has moved, and the list
+        /// moving on its own after a flick.
+        var queueStartScroll: CGFloat = 0
+        var queueOriginY: CGFloat?
+        var queueWasMoving = false
+        var queueMotion: TouchListMotion?
         /// Frames at the screen's full rate while a finger is down or a list moves on its own.
         let clock = TouchFrameClock()
     }
@@ -207,8 +215,8 @@ extension MenuView {
     /// finger is down: touching a row selects it, sliding moves the selection a row at a time,
     /// and lifting chooses. Long lists scroll with a drag and coast; holding still first slides
     /// the selection instead. Swiping right goes back. In playback, a tap plays or pauses,
-    /// dragging the bar scrubs, Now Playing swipes change song and a movie swipe down opens its
-    /// options.
+    /// dragging the bar scrubs, Now Playing swipes change song, and a movie's Subtitles & Speed
+    /// button (or a swipe down) opens its options.
     extension MenuView {
         private static let touchSlop: CGFloat = 10
         private static let touchHighlightDelay: TimeInterval = 0.1
@@ -267,10 +275,23 @@ extension MenuView {
                 state.mode = .ignored
                 return
             }
+            let queueWasMoving = state.queueMotion.map { abs($0.velocity) > 20 * $0.scenePerPoint } ?? false
+            state.queueMotion = nil
+            if activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !areNowPlayingTouchControlsHidden {
+                // Any touch keeps Now Playing's buttons up a while longer.
+                scheduleNowPlayingTouchControlsHide()
+            }
             // The on-screen buttons come first.
             if let control = pointer.hitTester?.touchControl(at: point) {
                 state.mode = .button(control)
                 pointer.hitTester?.highlightTouchControl(control)
+                return
+            }
+            if isNowPlayingQueueVisible, let geometry = pointer.hitTester?.nowPlayingQueueGeometry, geometry.panel.contains(point) {
+                state.mode = .queue
+                state.queueStartScroll = nowPlayingQueueScroll
+                state.queueOriginY = nil
+                state.queueWasMoving = queueWasMoving
                 return
             }
             // A finger on a list that's still moving stops it there, as a scroll view does.
@@ -335,6 +356,17 @@ extension MenuView {
                 pointer.hitTester?.highlightTouchControl(over ? control : nil)
             case .scrubbing:
                 continueProgressDrag(at: point)
+            case .queue:
+                if state.queueOriginY == nil {
+                    guard (dx * dx + dy * dy).squareRoot() > Self.touchSlop else { return }
+                    if abs(dx) > abs(dy) {
+                        // Sideways: a swipe (to the right, it puts the list away).
+                        state.mode = .swiping
+                        return
+                    }
+                    state.queueOriginY = point.y
+                }
+                scrollNowPlayingQueue(by: point.y - (state.queueOriginY ?? point.y))
             case .selecting:
                 slideTouchSelection(to: point)
             case .undecided:
@@ -376,6 +408,18 @@ extension MenuView {
                 }
             case .scrubbing:
                 finishProgressDrag(at: point)
+            case .queue:
+                if state.queueOriginY == nil {
+                    // A tap: a song, unless the finger only stopped the list moving.
+                    if !state.queueWasMoving, let geometry = pointer.hitTester?.nowPlayingQueueGeometry,
+                       let row = geometry.row(at: point, scroll: nowPlayingQueueScroll, count: nowPlayingQueueCount)
+                    {
+                        chooseNowPlayingQueueRow(row)
+                    }
+                } else {
+                    state.samples.append((time, point.y))
+                    releaseNowPlayingQueue(velocity: releaseVelocity(at: time))
+                }
             case .selecting:
                 // Lifting over a row chooses it; anywhere else lets it go.
                 if case let .menuRow(level, index)? = pointer.hitTester?.pointerTarget(at: point), level == pointerActiveListLevel {
@@ -393,7 +437,7 @@ extension MenuView {
                     pointer.tracksFinger = false
                 }
             case .swiping:
-                handleTouchSwipe(dx: dx, dy: dy, startX: state.start.x)
+                handleTouchSwipe(dx: dx, dy: dy, start: state.start)
             case .undecided:
                 handleTouchTap(at: point, target: state.startTarget)
             case .ignored:
@@ -412,6 +456,9 @@ extension MenuView {
             }
             if state.mode == .scrolling, let level = state.level {
                 releaseTouchList(level: level, velocity: 0)
+            }
+            if state.mode == .queue, state.queueOriginY != nil {
+                releaseNowPlayingQueue(velocity: 0)
             }
             state.mode = .ignored
             endTouchSelection()
@@ -432,13 +479,15 @@ extension MenuView {
 
         private func showTouchSelection(level: MenuListLevel, index: Int) {
             touch.selectionTarget = nil
-            isTouchSelecting = true
+            // The row changes before the selection shows, so the first frame with a selection
+            // has it under the finger rather than on the row chosen last time.
             if index != pointerSelectionIndex(for: level) {
-                selectRowFromPointer(level: level, index: index)
+                selectRowFromPointer(level: level, index: index, touchSliding: true)
             } else if let scroll = pointer.hitTester?.menuListScrollState(level) {
                 // Keep the list still under the finger.
                 pointer.pin = (scroll.identity, scroll.scrollOffset)
             }
+            isTouchSelecting = true
         }
 
         /// The selection follows the finger to whichever visible row it is over, a row a frame,
@@ -487,7 +536,8 @@ extension MenuView {
             if index != pointerSelectionIndex(for: level) {
                 selectRowFromPointer(level: level, index: index)
             }
-            pointer.clearPin()
+            // The list stays where it is, as it goes and when it comes back.
+            pointer.tracksFinger = false
             endTouchSelection()
             pressTouchKey(.enter)
         }
@@ -532,6 +582,16 @@ extension MenuView {
         private func touchFrame(_ seconds: Double) -> Bool {
             var wantsMore = touch.isFingerDown
             if stepTouchSelection() { wantsMore = true }
+            if var motion = touch.queueMotion {
+                if isNowPlayingQueueVisible {
+                    let moving = motion.advance(seconds)
+                    nowPlayingQueueScroll = -motion.offset
+                    touch.queueMotion = moving ? motion : nil
+                    if moving { wantsMore = true }
+                } else {
+                    touch.queueMotion = nil
+                }
+            }
             if var motion = touch.motion {
                 guard isMenuTouchContext, motion.level == pointerActiveListLevel,
                       let scroll = pointer.hitTester?.menuListScrollState(motion.level), scroll.identity == motion.identity
@@ -675,6 +735,17 @@ extension MenuView {
                 skipMovie(bySeconds: -10)
             case .skipForward:
                 skipMovie(bySeconds: 10)
+            case .movieOptions:
+                if isMovieOptionsVisible {
+                    closeMovieOptions()
+                } else {
+                    openMovieOptions()
+                }
+            case .lyrics:
+                toggleNowPlayingLyrics()
+            }
+            if activeFullscreenScene?.key == musicNowPlayingFullscreenKey {
+                scheduleNowPlayingTouchControlsHide()
             }
             if isMoviePlaybackVisible {
                 scheduleMovieControlsAutoHide()
@@ -697,7 +768,16 @@ extension MenuView {
                 return
             }
             if let scene = activeFullscreenScene {
-                if scene.key == musicNowPlayingFullscreenKey || scene.key == photoSlideshowFullscreenKey {
+                if scene.key == musicNowPlayingFullscreenKey {
+                    // A tap beside the list puts it away; with the buttons away, it brings them back.
+                    if isNowPlayingQueueVisible {
+                        hideNowPlayingQueue()
+                    } else if areNowPlayingTouchControlsHidden {
+                        showNowPlayingTouchControls()
+                    } else {
+                        pressTouchKey(.space)
+                    }
+                } else if scene.key == photoSlideshowFullscreenKey {
                     pressTouchKey(.space)
                 } else if scene.key != screenSaverFullscreenKey {
                     // Errors and messages go away with a tap.
@@ -716,23 +796,79 @@ extension MenuView {
             }
         }
 
+        /// Now Playing's own swipes: in from the right edge for its list (and back out to the
+        /// right), up for its buttons and down to put them away. Returns whether it took it.
+        private func handleNowPlayingSwipe(dx: CGFloat, dy: CGFloat, start: CGPoint) -> Bool {
+            let sideways = abs(dx) > abs(dy) * 1.5 && abs(dx) > Self.touchSwipeDistance
+            let upright = abs(dy) > abs(dx) * 1.5 && abs(dy) > Self.touchSwipeDistance * 0.7
+            if sideways {
+                if isNowPlayingQueueVisible {
+                    if dx > 0 { hideNowPlayingQueue() }
+                    return true
+                }
+                if dx < 0, let geometry = pointer.hitTester?.nowPlayingQueueGeometry, geometry.edgeZone.contains(start) {
+                    showNowPlayingQueue()
+                    return true
+                }
+                return false
+            }
+            if upright, !isNowPlayingQueueVisible {
+                if dy < 0 {
+                    showNowPlayingTouchControls()
+                } else if isMusicPlaybackRunning() {
+                    hideNowPlayingTouchControls()
+                }
+                return true
+            }
+            return false
+        }
+
+        /// Drags Now Playing's list, `dy` window points from where the drag started, past its
+        /// ends less and less.
+        private func scrollNowPlayingQueue(by dy: CGFloat) {
+            guard let geometry = pointer.hitTester?.nowPlayingQueueGeometry else { return }
+            var scroll = touch.queueStartScroll - dy * geometry.canvasPerPoint
+            if scroll < 0 {
+                scroll = -Self.band(-scroll)
+            } else if scroll > geometry.scrollLimit {
+                scroll = geometry.scrollLimit + Self.band(scroll - geometry.scrollLimit)
+            }
+            nowPlayingQueueScroll = scroll
+        }
+
+        /// Lets Now Playing's list go, coasting or springing back as the menus' lists do.
+        private func releaseNowPlayingQueue(velocity: CGFloat) {
+            guard let geometry = pointer.hitTester?.nowPlayingQueueGeometry else { return }
+            let motion = TouchListMotion(
+                level: .third,
+                identity: "now-playing-list",
+                offset: -nowPlayingQueueScroll,
+                velocity: velocity * geometry.canvasPerPoint,
+                lower: -geometry.scrollLimit,
+                upper: 0,
+                scenePerPoint: geometry.canvasPerPoint,
+            )
+            guard motion.isWorthMoving else { return }
+            touch.queueMotion = motion
+            startTouchClock()
+        }
+
         private func handleMovieTouchTap(at point: CGPoint) {
             guard !isMovieTransitioning, moviePlayer != nil else { return }
             if var options = movieOptions {
-                guard let row = pointer.hitTester?.movieOptionsRow(at: point) else {
+                guard let hit = pointer.hitTester?.movieOptionsRow(at: point) else {
                     closeMovieOptions()
                     return
                 }
-                guard options.rows.indices.contains(row) else { return }
-                if row == options.focusedRow {
-                    _ = handleMovieOptionsInput(.enter)
-                } else {
-                    options.focusedRow = row
+                guard options.rows.indices.contains(hit.index) else { return }
+                // A tap changes the row it lands on: on its "‹" back a value, anywhere else
+                // on to the next one, round to the first after the last.
+                if hit.index != options.focusedRow {
+                    options.focusedRow = hit.index
                     options.hasMoved = true
                     movieOptions = options
-                    playSound(named: "SelectionChange")
-                    showMovieControlsInstantly()
                 }
+                _ = handleMovieOptionsInput(hit.backward ? .leftArrow : .enter)
                 return
             }
             if areMovieControlsVisible {
@@ -743,8 +879,12 @@ extension MenuView {
             }
         }
 
-        private func handleTouchSwipe(dx: CGFloat, dy: CGFloat, startX: CGFloat) {
+        private func handleTouchSwipe(dx: CGFloat, dy: CGFloat, start: CGPoint) {
+            let startX = start.x
             let fromEdge = startX < Self.touchEdgeWidth
+            if activeFullscreenScene?.key == musicNowPlayingFullscreenKey, handleNowPlayingSwipe(dx: dx, dy: dy, start: start) {
+                return
+            }
             #if DEBUG || FIRSTROW_HARNESS_BUILD
                 FirstRowHarness.touchLog("[touch] swipe dx \(Int(dx)) dy \(Int(dy))\(fromEdge ? " from the edge" : "")")
             #endif

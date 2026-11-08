@@ -110,18 +110,35 @@ extension MenuView {
     func startMoviePlaybackWithStandardTransition(from url: URL) {
         clearMoviePlaybackControlState()
         isMovieTransitioning = true
+        let isModern = ModernTheme.isActive
         withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
             movieTransitionOverlayOpacity = 1
             menuSceneOpacity = 0
+            // The modern look's menu recedes as it goes.
+            if isModern { menuSceneScale = ModernTheme.sceneRecedeScale }
         }
         Task {
             try? await firstRowSleep(movieEntryFadeDuration + movieEntryBlackHoldDuration)
             guard !Task.isCancelled else { return }
-            activateMoviePlayback(from: url, startSeconds: 0, showsPlayGlyphOnStart: false)
             var instant = Transaction()
             instant.animation = nil
+            if isModern {
+                withTransaction(instant) {
+                    menuSceneScale = 1
+                    movieSceneScale = ModernTheme.sceneNearScale
+                    movieSceneOpacity = 0
+                }
+            }
+            activateMoviePlayback(from: url, startSeconds: 0, showsPlayGlyphOnStart: false)
             withTransaction(instant) {
                 movieTransitionOverlayOpacity = 0
+            }
+            if isModern {
+                // And the movie comes in from a little nearer.
+                withAnimation(.smooth(duration: 0.5)) {
+                    movieSceneScale = 1
+                    movieSceneOpacity = 1
+                }
             }
             isMovieTransitioning = false
         }
@@ -343,6 +360,10 @@ extension MenuView {
             lastClosedMovieURL = nil
             lastClosedMovieTimestamp = 0
         }
+        if ModernTheme.isActive {
+            recedeMovieToMenu()
+            return
+        }
         Task {
             try? await firstRowSleep(movieExitFreezeHoldDuration)
             guard !Task.isCancelled else { return }
@@ -351,12 +372,7 @@ extension MenuView {
             }
             try? await firstRowSleep(movieExitFadeDuration)
             guard !Task.isCancelled else { return }
-            removeMoviePlaybackObservation()
-            moviePlayer = nil
-            isMoviePlaybackVisible = false
-            clearMoviePlaybackControlState()
-            isCurrentMoviePlaybackEphemeralPreview = false
-            removeCurrentMoviePlaybackTemporaryFileIfNeeded()
+            tearDownMoviePlayback()
             withAnimation(.easeInOut(duration: 0.24)) {
                 menuSceneOpacity = 1
                 movieTransitionOverlayOpacity = 0
@@ -366,6 +382,54 @@ extension MenuView {
             resetScreenSaverIdleTimer()
             isMovieTransitioning = false
         }
+    }
+
+    /// The modern look's way out of a movie, with no black between: the movie shrinks back
+    /// and fades, and the menu comes in from a little nearer, as full-screen scenes do.
+    private func recedeMovieToMenu() {
+        let leave = Animation.smoothInOut(duration: 0.36)
+        let arrive = Animation.smooth(duration: 0.5)
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        Task {
+            // Long enough to see the movie stop where it was.
+            try? await firstRowSleep(0.12)
+            guard !Task.isCancelled else { return }
+            withTransaction(instant) {
+                menuSceneScale = ModernTheme.sceneNearScale
+            }
+            withAnimation(leave) {
+                movieSceneOpacity = 0
+                movieSceneScale = ModernTheme.sceneRecedeScale
+            }
+            try? await firstRowSleep(leave.duration * 0.7)
+            guard !Task.isCancelled else { return }
+            withAnimation(arrive) {
+                menuSceneOpacity = 1
+                menuSceneScale = 1
+            }
+            try? await firstRowSleep(leave.duration * 0.3 + 0.02)
+            guard !Task.isCancelled else { return }
+            tearDownMoviePlayback()
+            withTransaction(instant) {
+                movieSceneOpacity = 1
+                movieSceneScale = 1
+            }
+            try? await firstRowSleep(max(0, arrive.duration - leave.duration * 0.3))
+            guard !Task.isCancelled else { return }
+            resetScreenSaverIdleTimer()
+            isMovieTransitioning = false
+        }
+    }
+
+    /// Lets go of the movie once it's out of sight.
+    private func tearDownMoviePlayback() {
+        removeMoviePlaybackObservation()
+        moviePlayer = nil
+        isMoviePlaybackVisible = false
+        clearMoviePlaybackControlState()
+        isCurrentMoviePlaybackEphemeralPreview = false
+        removeCurrentMoviePlaybackTemporaryFileIfNeeded()
     }
 
     func handleMoviePlaybackInput(_ key: KeyCode, isRepeat: Bool) {
@@ -588,7 +652,8 @@ extension MenuView {
         cancelMovieControlsAutoHide()
         movieControlsHideWorkItem = Task {
             try? await firstRowSleep(movieControlsAutoHideDelay)
-            guard !Task.isCancelled else { return }
+            // The controls stay while the options are open; closing them starts the wait again.
+            guard !Task.isCancelled, movieOptions == nil else { return }
             hideMovieControlsWithFade()
         }
     }

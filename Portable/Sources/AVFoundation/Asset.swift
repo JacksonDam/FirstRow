@@ -38,6 +38,8 @@ public struct AVMetadataIdentifier: RawRepresentable, Hashable, Sendable {
     public static let id3MetadataContentType = AVMetadataIdentifier("id3/TCON")
     public static let id3MetadataPartOfASet = AVMetadataIdentifier("id3/TPOS")
     public static let id3MetadataTrackNumber = AVMetadataIdentifier("id3/TRCK")
+    public static let id3MetadataUnsynchronizedLyric = AVMetadataIdentifier("id3/USLT")
+    public static let iTunesMetadataLyrics = AVMetadataIdentifier("itsk/©lyr")
     public static let iTunesMetadataCoverArt = AVMetadataIdentifier("itsk/covr")
     public static let quickTimeMetadataArtwork = AVMetadataIdentifier("mdta/com.apple.quicktime.artwork")
 }

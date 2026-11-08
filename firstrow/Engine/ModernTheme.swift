@@ -70,6 +70,10 @@ enum ModernTheme {
     static let focusDuration: Double = 0.34
     /// Lists slide this far as they come and go.
     static let listSlideDistance: CGFloat = 70
+    /// Moving between the menus and a full-screen scene or a movie, what leaves shrinks to
+    /// this and what arrives starts from `sceneNearScale`.
+    static let sceneRecedeScale: CGFloat = 0.88
+    static let sceneNearScale: CGFloat = 1.1
 
     /// Where the card and the list sit in a scene of this size.
     struct SceneLayout {
@@ -423,6 +427,47 @@ extension CoverCarouselConfiguration {
 
 extension ModernTheme {
     private static var placeholders: [String: NSImage] = [:]
+
+    /// The symbol a row shows before its title in the modern look, in place of the classic
+    /// look's own icons, or nil to keep the row's picture.
+    static func rowSymbol(forItemID id: String, assetName: String?) -> String? {
+        switch id {
+        case "photos_library": "photo.fill.on.rectangle.fill"
+        case "photos_last_12_months": "calendar"
+        case "photos_last_import": "square.and.arrow.down.fill"
+        default: assetName == "photos" ? "photo.fill" : nil
+        }
+    }
+
+    /// A row's small picture: a grey tile with a white symbol, light enough for the row's
+    /// own capsule and dark enough for the white focus.
+    @MainActor
+    static func rowIcon(symbol: String) -> NSImage? {
+        let key = "row|\(symbol)"
+        if let cached = placeholders[key] { return cached }
+        let side = 192
+        guard let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
+        ) else { return nil }
+        let rect = CGRect(x: 0, y: 0, width: side, height: side)
+        context.addPath(CGPath(roundedRect: rect, cornerWidth: 42, cornerHeight: 42, transform: nil))
+        context.clip()
+        let colors = [CGColor(gray: 0.4, alpha: 1), CGColor(gray: 0.26, alpha: 1)] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: colors, locations: [0, 1]) {
+            // Lighter at the top (bitmap y is up).
+            context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: rect.maxY), end: .zero, options: [])
+        }
+        let glyph = SymbolRenderer.render(symbol, pointSize: CGFloat(side) * 0.48, weight: .semibold, color: RGBA(white: 1, alpha: 0.95), scale: 1)
+        if let image = glyph.image {
+            let box = glyph.imageFrame(at: CGPoint(x: (CGFloat(side) - glyph.size.width) / 2, y: (CGFloat(side) - glyph.size.height) / 2))
+            context.draw(image, in: CGRect(x: box.minX, y: CGFloat(side) - box.maxY, width: box.width, height: box.height))
+        }
+        guard let cgImage = context.makeImage() else { return nil }
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: side, height: side))
+        placeholders[key] = image
+        return image
+    }
 
     /// Artwork for items without any, in the modern look: a quiet grey tile with a symbol.
     @MainActor

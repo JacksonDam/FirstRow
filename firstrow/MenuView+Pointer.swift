@@ -23,13 +23,35 @@ final class PointerInputState {
 
     weak var hitTester: (any PointerHitTesting)?
     /// A list scrolled by the pointer stays put until the arrows take over again.
-    var pin: (identity: String, offset: CGFloat)?
+    var pin: (identity: String, offset: CGFloat)? {
+        didSet {
+            // In touch mode each list is left where the finger left it, to come back to, when
+            // the finger moves on to another list (not when the arrows take one over).
+            guard isTouchMode, let pin else { return }
+            leftScrollOffsets[pin.identity] = nil
+            guard let old = oldValue, old.identity != pin.identity else { return }
+            if leftScrollOffsets.count > 40 { leftScrollOffsets.removeAll() }
+            leftScrollOffsets[old.identity] = old.offset
+        }
+    }
+
+    /// Touch mode's lists, by identity, as they were last left.
+    private var leftScrollOffsets: [String: CGFloat] = [:]
+    private var isTouchMode: Bool {
+        #if os(iOS)
+            AppSettings.isTouchEnabled
+        #else
+            false
+        #endif
+    }
     /// The pin follows a finger: no nudging to show the selected row, and no easing.
     var tracksFinger = false
     /// How the next move of the pin animates (a flick coasting to a stop), used once.
     var scrollAnimation: Animation?
     fileprivate(set) var location: CGPoint?
     fileprivate var pressTarget: PointerTarget?
+    /// The row of Now Playing's list a click started on.
+    fileprivate var queuePressRow: Int?
     var drag: Drag?
     fileprivate var screenSaverWakeOrigin: CGPoint?
     fileprivate var wheelAccumulator: CGFloat = 0
@@ -44,8 +66,12 @@ final class PointerInputState {
         viewportHeight: CGFloat,
         contentHeight: CGFloat,
     ) -> CGFloat? {
-        guard let pin, pin.identity == identity else { return nil }
         let minOffset = min(0, viewportHeight - contentHeight)
+        guard let pin, pin.identity == identity else {
+            // A list touch mode left scrolled, come back to.
+            guard isTouchMode, let left = leftScrollOffsets[identity] else { return nil }
+            return max(minOffset, min(0, left))
+        }
         var offset = max(minOffset, min(0, pin.offset))
         // A list moved by a finger stays where it was left, wherever the selection is, and may
         // be pulled past its ends for a moment (it springs back when let go).
@@ -85,6 +111,7 @@ final class PointerInputState {
 
     func clearPin() {
         pin = nil
+        leftScrollOffsets.removeAll()
         tracksFinger = false
     }
 }
@@ -133,6 +160,13 @@ extension MenuView {
     /// Keys put the arrows back in charge of the lists.
     func notePointerAwareKey(_ key: KeyCode) {
         if key == .enter || key == .escape || key == .delete {
+            #if os(iOS)
+                // Touch mode's lists stay where the finger left them, as other apps' do.
+                if AppSettings.isTouchEnabled {
+                    pointer.tracksFinger = false
+                    return
+                }
+            #endif
             pointer.clearPin()
         }
     }
@@ -166,6 +200,10 @@ extension MenuView {
             scheduleMovieControlsAutoHide()
             return
         }
+        if activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isFullscreenSceneTransitioning {
+            pointerMovedOverNowPlaying(point)
+            return
+        }
         guard activeFullscreenScene == nil, let target = pointer.hitTester?.pointerTarget(at: point) else { return }
         switch target {
         case let .resumeOption(index):
@@ -192,6 +230,16 @@ extension MenuView {
             handleKeyDown(.escape)
             return
         }
+        // Now Playing's list takes clicks on it; one beside it puts it away.
+        if isNowPlayingQueueVisible, let geometry = pointer.hitTester?.nowPlayingQueueGeometry {
+            pointer.pressTarget = nil
+            if geometry.panel.contains(point) {
+                pointer.queuePressRow = geometry.row(at: point, scroll: nowPlayingQueueScroll, count: nowPlayingQueueCount)
+            } else {
+                hideNowPlayingQueue()
+            }
+            return
+        }
         let target = pointer.hitTester?.pointerTarget(at: point)
         pointer.pressTarget = target
         // The bars react on the press, so a drag can start from it.
@@ -210,6 +258,15 @@ extension MenuView {
         guard button == .primary else { return }
         if pointer.drag != nil {
             finishProgressDrag(at: point)
+            return
+        }
+        if let pressedRow = pointer.queuePressRow {
+            pointer.queuePressRow = nil
+            if isNowPlayingQueueVisible, let geometry = pointer.hitTester?.nowPlayingQueueGeometry,
+               geometry.row(at: point, scroll: nowPlayingQueueScroll, count: nowPlayingQueueCount) == pressedRow
+            {
+                chooseNowPlayingQueueRow(pressedRow)
+            }
             return
         }
         guard let pressed = pointer.pressTarget else { return }
@@ -267,6 +324,13 @@ extension MenuView {
             return
         }
         guard pointer.drag == nil, !isPointerInputPaused else { return }
+        // Now Playing's list scrolls under the pointer.
+        if isNowPlayingQueueVisible, let geometry = pointer.hitTester?.nowPlayingQueueGeometry, geometry.panel.contains(point) {
+            let step = precise ? dy * geometry.canvasPerPoint : dy * Self.nowPlayingQueueRowPitch
+            setNowPlayingQueueScroll(nowPlayingQueueScroll - step, limit: geometry.scrollLimit, animation: precise ? nil : .smooth(duration: 0.2))
+            pointerMovedOverNowPlaying(point)
+            return
+        }
         // Movies go forward for down or right; lists move towards the top for up.
         let amount = isMoviePlaybackVisible ? -dy + dx : dy
         let now = Date()
@@ -338,7 +402,7 @@ extension MenuView {
     }
 
     /// Moves the selection to the row under the pointer, keeping the list still under it.
-    func selectRowFromPointer(level: MenuListLevel, index: Int, pinsList: Bool = true) {
+    func selectRowFromPointer(level: MenuListLevel, index: Int, pinsList: Bool = true, touchSliding: Bool = false) {
         guard level == pointerActiveListLevel, index != pointerSelectionIndex(for: level) else { return }
         guard index >= 0, index < pointerListItemCount(for: level) else { return }
         if pinsList, let state = pointer.hitTester?.menuListScrollState(level) {
@@ -360,7 +424,7 @@ extension MenuView {
             rememberCurrentMoviesFolderSelectionIndex()
         }
         #if os(iOS)
-            if AppSettings.isTouchEnabled, isTouchSelecting {
+            if AppSettings.isTouchEnabled, isTouchSelecting || touchSliding {
                 deferTouchPreviewRefresh { [weak self] in self?.refreshPreviewForPointerSelection(level) }
                 objectWillChange.send()
                 return

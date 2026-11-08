@@ -77,7 +77,9 @@ final class ModernMenuRowLayer: MenuRowLayering {
 
         // A picture before the title (photo albums and the like).
         var textStart = ModernTheme.rowTextInset
-        let image = spec.dynamicLeadingImage ?? item.leadingImage ?? item.leadingImageAssetName.flatMap { menu.cachedMenuRowLeadingImage(named: $0) }
+        let image = spec.dynamicLeadingImage ?? item.leadingImage
+            ?? ModernTheme.rowSymbol(forItemID: item.id, assetName: item.leadingImageAssetName).flatMap { ModernTheme.rowIcon(symbol: $0) }
+            ?? item.leadingImageAssetName.flatMap { menu.cachedMenuRowLeadingImage(named: $0) }
         if let image {
             let usesWordmark = item.leadingImage == nil && item.leadingImageAssetName == "appleTVNameImage"
             let side = min(capsuleHeight - 12, 64)

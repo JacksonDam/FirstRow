@@ -139,6 +139,9 @@
 		781A33AC847A1B379B9B7A18 /* TouchHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2E5BC75E266992AE5994D7 /* TouchHarness.swift */; };
 		83AA467F517B5B26A6116F7C /* LoudnessMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F62CD15712C4CBFFE4EC47 /* LoudnessMeter.swift */; };
 		A3364B0EF45819410C3F68A9 /* TouchControlsLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6D0192C9E7940A48F1A7319 /* TouchControlsLayer.swift */; };
+		69833E3C6AAFCCEA6577BBE4 /* MusicLyrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = D98C0BD6410800723338868E /* MusicLyrics.swift */; };
+		0C9DA29CB164F36610FC007F /* MenuView+NowPlayingExtras.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F99887355B4E39ACAAC389F /* MenuView+NowPlayingExtras.swift */; };
+		53D2760FBF3ECF731A0CF301 /* NowPlayingExtrasLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D94F1CD991053A6EFB6EA143 /* NowPlayingExtrasLayers.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -293,6 +296,9 @@
 		AC2E5BC75E266992AE5994D7 /* TouchHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchHarness.swift; sourceTree = "<group>"; };
 		E6F62CD15712C4CBFFE4EC47 /* LoudnessMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoudnessMeter.swift; sourceTree = "<group>"; };
 		A6D0192C9E7940A48F1A7319 /* TouchControlsLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControlsLayer.swift; sourceTree = "<group>"; };
+		D98C0BD6410800723338868E /* MusicLyrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLyrics.swift; sourceTree = "<group>"; };
+		9F99887355B4E39ACAAC389F /* MenuView+NowPlayingExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+NowPlayingExtras.swift"; sourceTree = "<group>"; };
+		D94F1CD991053A6EFB6EA143 /* NowPlayingExtrasLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingExtrasLayers.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -373,6 +379,8 @@
 		7A73DE3B2F5776A20021C281 /* Music.frappliance */ = {
 			isa = PBXGroup;
 			children = (
+				9F99887355B4E39ACAAC389F /* MenuView+NowPlayingExtras.swift */,
+				D98C0BD6410800723338868E /* MusicLyrics.swift */,
 				E6F62CD15712C4CBFFE4EC47 /* LoudnessMeter.swift */,
 				E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */,
 				7A73DE352F5776A20021C281 /* MenuView+MusicLibrary.swift */,
@@ -575,6 +583,7 @@
 		2C8096D62CAC0F80B1BDAF5E /* Engine */ = {
 			isa = PBXGroup;
 			children = (
+				D94F1CD991053A6EFB6EA143 /* NowPlayingExtrasLayers.swift */,
 				A6D0192C9E7940A48F1A7319 /* TouchControlsLayer.swift */,
 				FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */,
 				175661ABA5C3D2DB7A570244 /* ModernMenuRowLayer.swift */,
@@ -772,6 +781,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53D2760FBF3ECF731A0CF301 /* NowPlayingExtrasLayers.swift in Sources */,
+				0C9DA29CB164F36610FC007F /* MenuView+NowPlayingExtras.swift in Sources */,
+				69833E3C6AAFCCEA6577BBE4 /* MusicLyrics.swift in Sources */,
 				A3364B0EF45819410C3F68A9 /* TouchControlsLayer.swift in Sources */,
 				83AA467F517B5B26A6116F7C /* LoudnessMeter.swift in Sources */,
 				781A33AC847A1B379B9B7A18 /* TouchHarness.swift in Sources */,

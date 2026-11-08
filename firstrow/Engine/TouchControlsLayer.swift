@@ -15,21 +15,33 @@ enum TouchControl: Equatable {
     case next
     case skipBack
     case skipForward
+    /// A movie's subtitles, audio and speed.
+    case movieOptions
+    /// Now Playing's lyrics.
+    case lyrics
 }
 
 /// Round buttons over everything else: Back at the top left wherever there's somewhere to go
 /// back to, and the transport for Now Playing and movies. Shown only in touch mode. Buttons
-/// come and go by fading through a blurred copy of themselves, sharpening as they appear.
+/// come and go by fading through a blurred copy of themselves, sharpening as they appear;
+/// Now Playing's own buttons instead belong to it, scaling and fading with the rest of it.
 @MainActor
 final class TouchControlsLayer {
     let layer = SceneLayer()
+    /// Follows the full-screen scene's scale and opacity.
+    private let sceneGroup = SceneLayer()
+    /// Now Playing's buttons, which slide down off the screen while a song plays untouched,
+    /// leaving a faint bar to pull them back up with.
+    private let transportGroup = SceneLayer()
+    private let transportHint = HintBarLayer()
 
     private final class Button {
         /// Positioned at the button's frame; fades and shrinks when pressed.
         let base = SceneLayer()
-        /// The circle and its symbol.
+        /// The circle (or capsule) and what's on it.
         let sharp = SceneLayer()
         let glyph = SceneLayer()
+        let label = SceneLayer()
         /// A soft, blurred copy of `sharp`, shown while the button fades in or out.
         let blurred = SceneLayer()
         var isShown = false
@@ -40,6 +52,7 @@ final class TouchControlsLayer {
         init() {
             base.addSublayer(sharp)
             sharp.addSublayer(glyph)
+            sharp.addSublayer(label)
             base.addSublayer(blurred)
             blurred.contentsGravity = .resize
             base.isHidden = true
@@ -47,18 +60,41 @@ final class TouchControlsLayer {
         }
     }
 
-    private var buttons: [TouchControl: Button] = [:]
+    private struct Wanted {
+        let control: TouchControl
+        var frame: CGRect
+        let symbol: String
+        let pointSize: CGFloat
+        var label: RenderedGraphic?
+        /// Part of the full-screen scene rather than laid over it.
+        var inScene = false
+    }
+
+    private struct Key: Hashable {
+        let control: TouchControl
+        let inScene: Bool
+    }
+
+    private var buttons: [Key: Button] = [:]
     /// Each shown button's circle in window points, for touches.
     private(set) var frames: [TouchControl: CGRect] = [:]
     private var pressed: TouchControl?
     private static let appear = Animation.smooth(duration: 0.34)
     private static let disappear = Animation.smoothInOut(duration: 0.3)
 
+    init() {
+        layer.addSublayer(sceneGroup)
+        sceneGroup.addSublayer(transportGroup)
+        sceneGroup.addSublayer(transportHint.layer)
+    }
+
     func setPressed(_ control: TouchControl?) {
         guard control != pressed else { return }
-        if let old = pressed, let button = buttons[old] { button.base.setTransform(CATransform3DIdentity, .smooth(duration: 0.18)) }
+        for (key, button) in buttons where key.control == pressed {
+            button.base.setTransform(CATransform3DIdentity, .smooth(duration: 0.18))
+        }
         pressed = control
-        if let control, let button = buttons[control] {
+        for (key, button) in buttons where key.control == control && button.isShown {
             let size = button.base.bounds.size
             var shrink = CATransform3DMakeTranslation(size.width / 2, size.height / 2, 0)
             shrink = CATransform3DScale(shrink, 0.9, 0.9, 1)
@@ -67,95 +103,164 @@ final class TouchControlsLayer {
     }
 
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
-        var wanted: [(TouchControl, CGRect, String, CGFloat)] = []
+        var wanted: [Wanted] = []
         #if os(iOS)
             let enabled = AppSettings.isTouchEnabled
         #else
             let enabled = false
         #endif
+        let isModern = ModernTheme.isActive
         // Laid out in the screen's own points, so the buttons are finger-sized on any screen,
         // and kept clear of the notch or Dynamic Island and of the screen's rounded corners.
         let size = bounds.size
         let insets = Self.safeAreaInsets
+        let isNowPlaying = menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey
         if enabled, !menu.isMovieTransitioning, menu.textEntry == nil, menu.codeDisplay == nil {
             let backFrame = CGRect(x: max(insets.left + 16, 38), y: max(insets.top + 10, 32), width: 46, height: 46)
+            let back = Wanted(control: .back, frame: backFrame, symbol: "chevron.left", pointSize: 19)
             if menu.isMoviePlaybackVisible {
                 // With the movie's controls, coming and going together.
                 if menu.areMovieControlsVisible, menu.movieControlsOpacity > 0.01 {
                     let middle = CGPoint(x: size.width / 2, y: size.height / 2)
+                    // Labelled, since it opens a page of its own.
+                    let label = TextRenderer.render(TextSpec(
+                        text: "Subtitles & Speed",
+                        fontName: isModern ? ModernTheme.mediumFontName : firstRowBoldFontName,
+                        size: 17,
+                    ), scale: scale)
+                    let optionsWidth = (18 + 22 + 8 + label.size.width + 20).rounded()
+                    let optionsFrame = CGRect(x: size.width - max(insets.right + 16, 38) - optionsWidth, y: backFrame.minY, width: optionsWidth, height: 46)
                     wanted = [
-                        (.back, backFrame, "chevron.left", 19),
-                        (.skipBack, CGRect(x: middle.x - 36 - 44 - 56, y: middle.y - 28, width: 56, height: 56), "gobackward.10", 22),
-                        (.playPause, CGRect(x: middle.x - 36, y: middle.y - 36, width: 72, height: 72), menu.movieControlsGlyphState == .pause ? "play.fill" : "pause.fill", 28),
-                        (.skipForward, CGRect(x: middle.x + 36 + 44, y: middle.y - 28, width: 56, height: 56), "goforward.10", 22),
+                        back,
+                        Wanted(control: .movieOptions, frame: optionsFrame, symbol: "captions.bubble", pointSize: 18, label: label),
+                        Wanted(control: .skipBack, frame: CGRect(x: middle.x - 36 - 44 - 56, y: middle.y - 28, width: 56, height: 56), symbol: "gobackward.10", pointSize: 22),
+                        Wanted(control: .playPause, frame: CGRect(x: middle.x - 36, y: middle.y - 36, width: 72, height: 72), symbol: menu.movieControlsGlyphState == .pause ? "play.fill" : "pause.fill", pointSize: 28),
+                        Wanted(control: .skipForward, frame: CGRect(x: middle.x + 36 + 44, y: middle.y - 28, width: 56, height: 56), symbol: "goforward.10", pointSize: 22),
                     ]
                 }
-            } else if menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey {
+            } else if isNowPlaying {
                 let middle = size.width / 2
                 let play: CGFloat = 64
                 let side: CGFloat = 52
                 let centerY = size.height - max(insets.bottom, 10) - 16 - play / 2
                 wanted = [
-                    (.back, backFrame, "chevron.left", 19),
-                    (.previous, CGRect(x: middle - play / 2 - 36 - side, y: centerY - side / 2, width: side, height: side), "backward.fill", 20),
-                    (.playPause, CGRect(x: middle - play / 2, y: centerY - play / 2, width: play, height: play), menu.isMusicPlaybackRunning() ? "pause.fill" : "play.fill", 26),
-                    (.next, CGRect(x: middle + play / 2 + 36, y: centerY - side / 2, width: side, height: side), "forward.fill", 20),
+                    back,
+                    Wanted(control: .playPause, frame: CGRect(x: middle - play / 2, y: centerY - play / 2, width: play, height: play), symbol: menu.isMusicPlaybackRunning() ? "pause.fill" : "play.fill", pointSize: 26, inScene: true),
                 ]
+                var rightEdge = middle + play / 2
+                // Only for something with songs either side (not a single preview).
+                if menu.canSwitchMusicNowPlayingTrack {
+                    wanted += [
+                        Wanted(control: .previous, frame: CGRect(x: middle - play / 2 - 36 - side, y: centerY - side / 2, width: side, height: side), symbol: "backward.fill", pointSize: 20, inScene: true),
+                        Wanted(control: .next, frame: CGRect(x: middle + play / 2 + 36, y: centerY - side / 2, width: side, height: side), symbol: "forward.fill", pointSize: 20, inScene: true),
+                    ]
+                    rightEdge += 36 + side
+                }
+                // The words, when the song has some.
+                if menu.hasNowPlayingLyrics {
+                    let small: CGFloat = 46
+                    wanted.append(Wanted(control: .lyrics, frame: CGRect(x: rightEdge + 40, y: centerY - small / 2, width: small, height: small), symbol: menu.isNowPlayingLyricsVisible ? "quote.bubble.fill" : "quote.bubble", pointSize: 19, inScene: true))
+                }
             } else if menu.activeFullscreenScene != nil, menu.activeFullscreenScene?.key != menu.screenSaverFullscreenKey {
-                wanted = [(.back, backFrame, "chevron.left", 19)]
+                wanted = [back]
             } else if menu.activeFullscreenScene == nil, menu.isInSubmenu || menu.isMovieResumePromptVisible {
-                wanted = [(.back, backFrame, "chevron.left", 19)]
+                wanted = [back]
             }
         }
-        frames = [:]
-        let shown = Set(wanted.map(\.0))
-        for (control, button) in buttons where button.isShown && !shown.contains(control) {
-            hide(button)
-        }
+
         layer.place(bounds)
-        let isModern = ModernTheme.isActive
-        for (control, frame, symbol, pointSize) in wanted {
-            let button = buttons[control] ?? {
+        // Now Playing's buttons move with it: they shrink and fade as it goes, and come in
+        // with it, without a fade of their own.
+        sceneGroup.place(CGRect(origin: .zero, size: size))
+        if isNowPlaying {
+            let depth = isModern ? menu.fullscreenSceneScale : 1
+            sceneGroup.setTransform(MenuSceneRenderer.scale(depth, about: CGPoint(x: size.width / 2, y: size.height / 2)), pass.animation)
+            sceneGroup.setOpacity(menu.fullscreenSceneOpacity * (1 - menu.fullscreenTransitionOverlayOpacity), pass.animation)
+        }
+        let sceneMoving = menu.isFullscreenSceneTransitioning || !isNowPlaying
+        // Slid away, the buttons go below the bottom of the screen, and a bar stays behind.
+        // The list beside Now Playing has the right of the screen, so they make way for it too.
+        let transportHidden = isNowPlaying && (menu.areNowPlayingTouchControlsHidden || menu.isNowPlayingQueueVisible)
+        transportGroup.place(CGRect(origin: .zero, size: size))
+        let drop = 64 + max(insets.bottom, 10) + 40
+        transportGroup.setTransform(transportHidden ? CATransform3DMakeTranslation(0, drop, 0) : CATransform3DIdentity, pass.animation)
+        transportGroup.setOpacity(transportHidden ? 0 : 1, pass.animation)
+        transportHint.update(
+            frame: CGRect(x: size.width / 2 - 40, y: size.height - max(insets.bottom, 8) - 16, width: 80, height: 5),
+            shown: enabled && transportHidden && !menu.isNowPlayingQueueVisible && !menu.isFullscreenSceneTransitioning,
+        )
+
+        frames = [:]
+        let shown = Set(wanted.map { Key(control: $0.control, inScene: $0.inScene) })
+        for (key, button) in buttons where button.isShown && !shown.contains(key) {
+            hide(button, instantly: key.inScene && sceneMoving)
+        }
+        for item in wanted {
+            let key = Key(control: item.control, inScene: item.inScene)
+            let button = buttons[key] ?? {
                 let made = Button()
-                layer.addSublayer(made.base)
-                buttons[control] = made
+                (item.inScene ? transportGroup : layer).addSublayer(made.base)
+                buttons[key] = made
                 return made
             }()
+            let frame = item.frame
             if button.base.frame != frame { button.base.place(frame) }
             let local = CGRect(origin: .zero, size: frame.size)
+            let radius = frame.height / 2
             let fill = isModern ? CGColor(gray: 0.2, alpha: 0.72) : CGColor(gray: 0, alpha: 0.6)
             button.sharp.frame = local
-            button.sharp.cornerRadius = frame.width / 2
+            button.sharp.cornerRadius = radius
             button.sharp.backgroundColor = fill
             button.sharp.borderWidth = isModern ? 0 : 1
             button.sharp.borderColor = CGColor(gray: 1, alpha: 0.35)
             button.sharp.shadowColor = CGColor(gray: 0, alpha: 1)
             button.sharp.shadowOpacity = 0.35
             button.sharp.shadowRadius = 10
-            button.sharp.shadowPath = CGPath(ellipseIn: local, transform: nil)
-            let graphic = SymbolRenderer.render(symbol, pointSize: pointSize, weight: .semibold, color: .white, scale: scale)
-            // Play's triangle looks centred a touch to the right of its box's middle.
-            let nudge: CGFloat = symbol == "play.fill" ? pointSize * 0.06 : 0
-            let glyphOrigin = CGPoint(x: (frame.width - graphic.size.width) / 2 + nudge, y: (frame.height - graphic.size.height) / 2)
-            button.glyph.show(graphic, at: glyphOrigin)
-            let blurKey = "\(symbol)|\(frame.size.width)|\(isModern)"
+            button.sharp.shadowPath = CGPath(roundedRect: local, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            let graphic = SymbolRenderer.render(item.symbol, pointSize: item.pointSize, weight: .semibold, color: .white, scale: scale)
+            var parts: [(RenderedGraphic, CGPoint)] = []
+            if let label = item.label {
+                // A capsule: the symbol, then the words.
+                let glyphOrigin = CGPoint(x: 18 + (22 - graphic.size.width) / 2, y: ((frame.height - graphic.size.height) / 2).rounded())
+                let labelOrigin = CGPoint(x: 18 + 22 + 8, y: ((frame.height - label.size.height) / 2).rounded())
+                button.glyph.show(graphic, at: glyphOrigin)
+                button.label.isHidden = false
+                button.label.show(label, at: labelOrigin)
+                parts = [(graphic, glyphOrigin), (label, labelOrigin)]
+            } else {
+                // Play's triangle looks centred a touch to the right of its box's middle.
+                let nudge: CGFloat = item.symbol == "play.fill" ? item.pointSize * 0.06 : 0
+                let glyphOrigin = CGPoint(x: (frame.width - graphic.size.width) / 2 + nudge, y: (frame.height - graphic.size.height) / 2)
+                button.glyph.show(graphic, at: glyphOrigin)
+                button.label.isHidden = true
+                parts = [(graphic, glyphOrigin)]
+            }
+            let blurKey = "\(item.symbol)|\(frame.size.width)|\(frame.size.height)|\(isModern)|\(item.label.map { ObjectIdentifier($0.image ?? Self.placeholderImage) }.map(String.init(describing:)) ?? "")"
             if button.blurKey != blurKey {
                 button.blurKey = blurKey
-                let blur = Self.blurredButton(size: frame.size, fill: fill, border: !isModern, graphic: graphic, glyphOrigin: glyphOrigin)
+                let blur = Self.blurredButton(size: frame.size, fill: fill, border: !isModern, parts: parts)
                 button.blurred.contents = blur?.image
                 button.blurred.frame = local.insetBy(dx: -(blur?.margin ?? 0), dy: -(blur?.margin ?? 0))
             }
-            frames[control] = frame
-            if !button.isShown { show(button) }
+            // Slid away, they can't be pressed.
+            if !(item.inScene && transportHidden) { frames[item.control] = frame }
+            if !button.isShown { show(button, instantly: item.inScene && sceneMoving) }
         }
     }
 
-    /// Fades a button in from its blurred copy.
-    private func show(_ button: Button) {
+    /// Fades a button in from its blurred copy (or puts it straight up, when what it belongs
+    /// to is fading in anyway).
+    private func show(_ button: Button, instantly: Bool) {
         button.isShown = true
         button.fadeGeneration += 1
         let fresh = button.base.isHidden || button.base.opacity < 0.01
         button.base.isHidden = false
+        if instantly {
+            button.base.setOpacity(1, nil)
+            button.sharp.setOpacity(1, nil)
+            button.blurred.setOpacity(0, nil)
+            return
+        }
         if fresh {
             button.base.opacity = 0
             button.sharp.opacity = 0
@@ -167,9 +272,14 @@ final class TouchControlsLayer {
     }
 
     /// Fades a button out through its blurred copy, then hides it.
-    private func hide(_ button: Button) {
+    private func hide(_ button: Button, instantly: Bool) {
         button.isShown = false
         button.fadeGeneration += 1
+        if instantly {
+            button.base.setOpacity(0, nil)
+            button.base.isHidden = true
+            return
+        }
         let generation = button.fadeGeneration
         button.base.setOpacity(0, Self.disappear)
         button.sharp.setOpacity(0, Self.disappear)
@@ -186,9 +296,9 @@ final class TouchControlsLayer {
 
     /// The button drawn soft, as if out of focus: its circle and symbol under a near-Gaussian
     /// blur, with room around them for the blur to spread into. Small enough to make at once.
-    private static func blurredButton(size: CGSize, fill: CGColor, border: Bool, graphic: RenderedGraphic, glyphOrigin: CGPoint) -> (image: CGImage, margin: CGFloat)? {
+    private static func blurredButton(size: CGSize, fill: CGColor, border: Bool, parts: [(RenderedGraphic, CGPoint)]) -> (image: CGImage, margin: CGFloat)? {
         #if os(iOS)
-            let key = "\(size.width)|\(border)|\(ObjectIdentifier(graphic.image ?? Self.emptyImage))"
+            let key = "\(size.width)|\(size.height)|\(border)|" + parts.map { "\(ObjectIdentifier($0.0.image ?? Self.placeholderImage))@\($0.1.x),\($0.1.y)" }.joined(separator: "|")
             if let cached = blurCache[key] { return cached }
             #if DEBUG || FIRSTROW_HARNESS_BUILD
                 let started = CACurrentMediaTime()
@@ -205,17 +315,22 @@ final class TouchControlsLayer {
                 space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
             ) else { return nil }
             context.scaleBy(x: pixels, y: pixels)
-            let circle = CGRect(x: margin, y: margin, width: size.width, height: size.height)
+            let shape = CGRect(x: margin, y: margin, width: size.width, height: size.height)
+            let corner = size.height / 2
             context.setFillColor(fill)
-            context.fillEllipse(in: circle)
+            context.addPath(CGPath(roundedRect: shape, cornerWidth: corner, cornerHeight: corner, transform: nil))
+            context.fillPath()
             if border {
                 context.setStrokeColor(CGColor(gray: 1, alpha: 0.35))
                 context.setLineWidth(1)
-                context.strokeEllipse(in: circle.insetBy(dx: 0.5, dy: 0.5))
+                let inner = shape.insetBy(dx: 0.5, dy: 0.5)
+                context.addPath(CGPath(roundedRect: inner, cornerWidth: corner - 0.5, cornerHeight: corner - 0.5, transform: nil))
+                context.strokePath()
             }
-            if let image = graphic.image {
-                // Bitmap y is up: flip the glyph's top-left placement.
-                let box = graphic.imageFrame(at: glyphOrigin)
+            for (graphic, origin) in parts {
+                guard let image = graphic.image else { continue }
+                // Bitmap y is up: flip the top-left placement.
+                let box = graphic.imageFrame(at: origin)
                 context.draw(image, in: CGRect(x: margin + box.minX, y: margin + size.height - box.maxY, width: box.width, height: box.height))
             }
             guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
@@ -263,22 +378,24 @@ final class TouchControlsLayer {
             }
         }
 
-        private static let emptyImage: CGImage = {
-            let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo)!
-            return context.makeImage()!
-        }()
     #endif
 
-    private static var safeAreaInsets: (left: CGFloat, top: CGFloat, bottom: CGFloat) {
+    /// Stands in for a missing picture in cache keys.
+    private static let placeholderImage: CGImage = {
+        let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo)!
+        return context.makeImage()!
+    }()
+
+    private static var safeAreaInsets: (left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat) {
         #if os(iOS)
             let window = UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }
                 .flatMap(\.windows)
                 .first { $0.isKeyWindow }
             let insets = window?.safeAreaInsets ?? .zero
-            return (insets.left, insets.top, insets.bottom)
+            return (insets.left, insets.top, insets.right, insets.bottom)
         #else
-            return (0, 0, 0)
+            return (0, 0, 0, 0)
         #endif
     }
 

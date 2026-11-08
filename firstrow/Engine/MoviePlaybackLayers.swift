@@ -12,6 +12,8 @@ import QuartzCore
 /// Movie playback: the video itself and the transport bar shown over it.
 @MainActor
 final class MoviePlaybackLayers {
+    /// Holds the rest, so the movie can shrink and fade as one.
+    let group = SceneLayer()
     let playerLayer = AVPlayerLayer()
     let controls = MovieControlsLayer()
     let modernControls = ModernMovieControlsLayer()
@@ -23,9 +25,16 @@ final class MoviePlaybackLayers {
         playerLayer.isHidden = true
         playerLayer.actions = ["position": NSNull(), "bounds": NSNull(), "opacity": NSNull(), "hidden": NSNull()]
         controls.layer.isHidden = true
+        for sublayer in [playerLayer, controls.layer, modernControls.layer, options.layer] {
+            group.addSublayer(sublayer)
+        }
     }
 
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
+        group.place(bounds)
+        let depth = ModernTheme.isActive ? menu.movieSceneScale : 1
+        group.setTransform(MenuSceneRenderer.scale(depth, about: CGPoint(x: bounds.midX, y: bounds.midY)), pass.animation)
+        group.setOpacity(ModernTheme.isActive ? menu.movieSceneOpacity : 1, pass.animation)
         let showsPlayer = menu.isMoviePlaybackVisible && menu.moviePlayer != nil
         if playerLayer.player !== menu.moviePlayer, showsPlayer || menu.moviePlayer == nil {
             playerLayer.player = menu.moviePlayer

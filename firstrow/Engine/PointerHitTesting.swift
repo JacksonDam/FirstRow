@@ -67,7 +67,9 @@ protocol PointerHitTesting: AnyObject {
     func progressBarFraction(at windowPoint: CGPoint) -> Double?
     /// The movie options panel's row at `windowPoint`: its index, -1 on the panel between rows,
     /// or nil off the panel.
-    func movieOptionsRow(at windowPoint: CGPoint) -> Int?
+    func movieOptionsRow(at windowPoint: CGPoint) -> (index: Int, backward: Bool)?
+    /// Where Now Playing's list is, when Now Playing could show one.
+    var nowPlayingQueueGeometry: NowPlayingQueueGeometry? { get }
     /// The touch mode button at `windowPoint`, if one is showing there.
     func touchControl(at windowPoint: CGPoint) -> TouchControl?
     /// Shows a touch mode button as held down (nil for none).
@@ -164,6 +166,31 @@ struct PointerScene {
 }
 
 extension MenuSceneRenderer: PointerHitTesting {
+    var nowPlayingQueueGeometry: NowPlayingQueueGeometry? {
+        let scene = pointerScene
+        let queue = scene.fullscreenScene.queue
+        guard menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey, queue.isAvailable else { return nil }
+        let scale = max(FullscreenCanvas(screenSize: scene.fullscreenSize).scale, 0.0001)
+        func window(_ rect: CGRect) -> CGRect {
+            CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
+        }
+        let size = scene.fullscreenSize
+        #if os(iOS)
+            let edgeWidth: CGFloat = AppSettings.isTouchEnabled ? 34 : max(24, size.width * 0.03)
+        #else
+            let edgeWidth = max(24, size.width * 0.03)
+        #endif
+        return NowPlayingQueueGeometry(
+            panel: window(queue.panelFrame),
+            edgeZone: CGRect(x: size.width - edgeWidth, y: 0, width: edgeWidth, height: size.height),
+            viewport: window(queue.viewport),
+            listTop: queue.listTop * scale,
+            rowPitch: MenuView.nowPlayingQueueRowPitch * scale,
+            canvasPerPoint: 1 / scale,
+            scrollLimit: queue.scrollLimit,
+        )
+    }
+
     func touchControl(at windowPoint: CGPoint) -> TouchControl? {
         touchControls.control(at: windowPoint)
     }
