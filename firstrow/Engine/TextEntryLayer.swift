@@ -27,8 +27,38 @@ struct TextEntryStyle {
     var caret = CGColor(gray: 1, alpha: 0.9)
     /// The glossy bar behind the focused key.
     var usesGlossySelection = true
+    /// The modern look's keys: a translucent tile each, the focused one white with dark text.
+    var keyBackground: CGColor?
+    var focusFill: CGColor?
+    var focusedText = RGBA.black
+    var keyCornerRadius: CGFloat = 0
 
-    static var current: TextEntryStyle { TextEntryStyle() }
+    static var current: TextEntryStyle {
+        guard ModernTheme.isActive else { return TextEntryStyle() }
+        return TextEntryStyle(
+            titleFont: ModernTheme.boldFontName,
+            titleSize: 54,
+            bodyFont: ModernTheme.regularFontName,
+            promptSize: 30,
+            fieldFont: ModernTheme.mediumFontName,
+            fieldSize: 42,
+            keyFont: ModernTheme.mediumFontName,
+            keySize: 36,
+            wordKeySize: 27,
+            codeSize: 140,
+            text: ModernTheme.text,
+            secondaryText: ModernTheme.secondaryText,
+            fieldBackground: ModernTheme.rowFill.cgColor,
+            fieldBorder: CGColor(gray: 1, alpha: 0),
+            fieldCornerRadius: 24,
+            caret: CGColor(gray: 1, alpha: 0.9),
+            usesGlossySelection: false,
+            keyBackground: CGColor(gray: 1, alpha: 0.1),
+            focusFill: ModernTheme.focusFill.cgColor,
+            focusedText: ModernTheme.focusedText,
+            keyCornerRadius: 14,
+        )
+    }
 }
 
 /// Draws `MenuView.textEntry` (a field and a grid of keys) or `codeDisplay` (a big code)
@@ -43,6 +73,8 @@ final class TextEntryLayer {
     private let caret = SceneLayer()
     private let selection = SelectionBoxLayer()
     private var keys: [[SceneLayer]] = []
+    private var keyTiles: [[SceneLayer]] = []
+    private let focusTile = SceneLayer()
     private let code = SceneLayer()
     private let status = SceneLayer()
     private var wasVisible = false
@@ -63,6 +95,18 @@ final class TextEntryLayer {
         }
         field.addSublayer(fieldText)
         field.addSublayer(caret)
+        for row in TextEntryKey.rows {
+            keyTiles.append(row.map { _ in
+                let tile = SceneLayer()
+                layer.addSublayer(tile)
+                return tile
+            })
+        }
+        focusTile.shadowColor = CGColor(gray: 0, alpha: 1)
+        focusTile.shadowOpacity = 0.45
+        focusTile.shadowRadius = 12
+        focusTile.shadowOffset = CGSize(width: 0, height: 6)
+        layer.addSublayer(focusTile)
         for row in TextEntryKey.rows {
             keys.append(row.map { _ in
                 let key = SceneLayer()
@@ -104,7 +148,8 @@ final class TextEntryLayer {
         }
 
         if let display {
-            for row in keys { for key in row { key.isHidden = true } }
+            for row in keys + keyTiles { for key in row { key.isHidden = true } }
+            focusTile.isHidden = true
             field.isHidden = true
             selection.layer.isHidden = true
             place(title, TextSpec(text: display.title, fontName: style.titleFont, size: style.titleSize, color: style.text, maxWidth: sceneSize.width - 200), centerX: centerX, top: 150)
@@ -153,11 +198,17 @@ final class TextEntryLayer {
                     let frame = CGRect(x: x, y: gridTop + CGFloat(rowIndex) * Self.rowPitch, width: width, height: Self.keyHeight)
                     units += key.units
                     let isWord: Bool = if case .character = key { false } else { true }
+                    let isFocused = rowIndex == entry.focusRow && columnIndex == entry.focusColumn && !entry.lastInputWasTyping
+                    let tile = keyTiles[rowIndex][columnIndex]
+                    tile.isHidden = style.keyBackground == nil
+                    tile.backgroundColor = style.keyBackground
+                    tile.cornerRadius = style.keyCornerRadius
+                    tile.frame = frame
                     let graphic = TextRenderer.render(TextSpec(
                         text: key.label(shifted: entry.isShifted),
                         fontName: style.keyFont,
                         size: isWord ? style.wordKeySize : style.keySize,
-                        color: style.text,
+                        color: isFocused && style.focusFill != nil ? style.focusedText : style.text,
                         maxWidth: width - 8,
                         minimumScaleFactor: 0.6,
                     ), scale: scale)
@@ -171,6 +222,15 @@ final class TextEntryLayer {
             let slide = appearing ? nil : pass.animation(.easeInOut(duration: 0.14), when: moved)
             lastFocus = (entry.focusRow, entry.focusColumn)
             selection.layer.isHidden = !style.usesGlossySelection || entry.lastInputWasTyping
+            focusTile.isHidden = style.focusFill == nil || entry.lastInputWasTyping
+            if let fill = style.focusFill {
+                // The focused key grows a little past its tile, as on a TV.
+                let grown = focusFrame.insetBy(dx: -5, dy: -5)
+                focusTile.backgroundColor = fill
+                focusTile.cornerRadius = style.keyCornerRadius + 3
+                focusTile.setFrame(grown, appearing ? nil : pass.animation(.focus(duration: 0.26), when: moved))
+                focusTile.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: grown.size), cornerWidth: style.keyCornerRadius + 3, cornerHeight: style.keyCornerRadius + 3, transform: nil)
+            }
             let boxHeight: CGFloat = 75
             selection.update(
                 frame: CGRect(x: focusFrame.minX - 46.5, y: focusFrame.midY - boxHeight * 0.5 - 29, width: focusFrame.width + 93, height: boxHeight + 58),
