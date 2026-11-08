@@ -88,7 +88,7 @@ Copy-Item (Join-Path (Split-Path $swiftCore) "*.dll") $out
 $crt = if ($env:VCToolsRedistDir) { Get-ChildItem (Join-Path $env:VCToolsRedistDir $Arch) -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue | Select-Object -First 1 }
 if (-not $crt) { throw "The Visual C++ runtime wasn't found: run this from a Developer PowerShell" }
 Copy-Item (Join-Path $crt.FullName "*.dll") $out
-foreach ($folder in "Assets.xcassets", "Sounds", "ScreenSaverDefaultPhotos", "Videos") {
+foreach ($folder in "Assets.xcassets", "Sounds", "ScreenSaverDefaultPhotos", "Videos", "Fonts") {
     $source = Join-Path $root "firstrow\$folder"
     if (Test-Path $source) { Copy-Item $source (Join-Path $out "Resources") -Recurse }
 }

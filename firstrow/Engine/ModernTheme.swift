@@ -71,9 +71,8 @@ enum ModernTheme {
     /// Lists slide this far as they come and go.
     static let listSlideDistance: CGFloat = 70
 
-    /// Where the title, the card and the list sit in a scene of this size.
+    /// Where the card and the list sit in a scene of this size.
     struct SceneLayout {
-        let titleTop: CGFloat
         let cardFrame: CGRect
         let menuFrame: CGRect
     }
@@ -85,7 +84,6 @@ enum ModernTheme {
         let cardSide = min(540, (width * 0.281).rounded())
         let cardCenter = CGPoint(x: (width * 0.274).rounded(), y: (sceneSize.height * 0.47).rounded())
         return SceneLayout(
-            titleTop: (sceneSize.height * 0.054).rounded(),
             cardFrame: CGRect(x: cardCenter.x - cardSide / 2, y: cardCenter.y - cardSide / 2, width: cardSide, height: cardSide),
             menuFrame: CGRect(x: listX, y: (sceneSize.height * 0.209).rounded(), width: listWidth, height: menuHeight),
         )

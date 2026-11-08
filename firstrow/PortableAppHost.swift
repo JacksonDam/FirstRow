@@ -9,6 +9,10 @@
         private var started = false
 
         init() {
+            // Inter, which ships with First Row, stands in for the Apple system font of the modern look.
+            if let fonts = AppResources.url("Fonts") {
+                FontRegistry.extraDirectories.append(fonts)
+            }
             Harness.customCommand = { command in
                 let parts = command.split(separator: ":", maxSplits: 2).map(String.init)
                 switch parts.first {

@@ -334,10 +334,10 @@ final class MenuSceneRenderer: TransactionRendering {
             : TextRenderer.render(TextSpec(text: menu.headerText, fontName: firstRowBoldFontName, size: 60, maxWidth: sceneSize.width), scale: scale)
         let hidesChrome = menu.shouldHidePodcastsSubmenuChromeUntilLoadCompletes
 
-        // Main menu title, over the middle of the list's selection (centred at the top in the modern look).
+        // Main menu title, over the middle of the list's selection.
         rootHeader.setPresent(!showsSubmenuHeader, transition)
         if !showsSubmenuHeader {
-            let centerX = isModern ? sceneSize.width * 0.5 : sceneSize.width * 0.5 + menu.rootMenuHeaderOffsetX(sceneSize: sceneSize)
+            let centerX = sceneSize.width * 0.5 + menu.rootMenuHeaderOffsetX(sceneSize: sceneSize)
             rootHeader.show(graphic, centerX: centerX, top: frames.headerTop)
             let changed = memo.headerOpacity != nil && memo.headerOpacity != menu.headerOpacity
             rootHeader.content.setOpacity(menu.headerOpacity, pass.animation(.easeInOut(duration: 0.25), when: changed))
@@ -346,7 +346,8 @@ final class MenuSceneRenderer: TransactionRendering {
         // Section title, beside the section's icon.
         submenuHeader.setPresent(showsSubmenuHeader, transition)
         if showsSubmenuHeader {
-            let centerX = isModern ? sceneSize.width * 0.5 : sceneSize.width * 0.5 + menu.firstRowHeaderOffsetX(sceneSize: sceneSize) + menu.landedIconWidth * 0.6
+            // Beside the section's icon in the classic look; over the list in the modern one, which has no icon there.
+            let centerX = isModern ? frames.menuFrame.midX : sceneSize.width * 0.5 + menu.firstRowHeaderOffsetX(sceneSize: sceneSize) + menu.landedIconWidth * 0.6
             submenuHeader.show(graphic, centerX: centerX, top: frames.headerTop)
             let titleChanged = memo.submenuTitleOpacity != nil && memo.submenuTitleOpacity != menu.submenuTitleOpacity
             let chromeChanged = memo.hidesPodcastsChrome != nil && memo.hidesPodcastsChrome != hidesChrome

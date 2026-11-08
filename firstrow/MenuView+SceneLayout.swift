@@ -89,12 +89,13 @@ extension MenuView {
         // The row is shifted down by the cluster compensation, and the carousel back up by it.
         let carouselY = rowTop + (rowHeight - carouselBoxHeight) * 0.5 + carouselOffsetY()
         if ModernTheme.isActive {
-            // The title at the top, a card on the left and the list on the right. The carousel
-            // keeps its place for when the classic look comes back.
+            // A card on the left and the list on the right, with the title over the list as in
+            // the classic look. The carousel keeps its place for when the classic look comes back.
             let modern = ModernTheme.layout(sceneSize: sceneSize, menuHeight: stableMenuListLayoutHeight)
+            let modernTitleHeight = FontMetrics.lineHeight(fontName: ModernTheme.boldFontName, size: ModernTheme.titleSize)
             return MenuSceneFrames(
                 sceneSize: sceneSize,
-                headerTop: modern.titleTop,
+                headerTop: modern.menuFrame.minY - modernTitleHeight - MenuSceneFrames.titleToRowSpacing + menuHeaderVerticalOffset,
                 carouselFrame: CGRect(x: carouselX + carouselSceneOffsetX, y: carouselY, width: carouselLaneWidth, height: carouselBoxHeight),
                 menuFrame: modern.menuFrame,
             )

@@ -9,7 +9,7 @@ out=dist/linux/FirstRow
 rm -rf "$out"
 mkdir -p "$out/Resources"
 cp .build/release/FirstRow "$out/first-row"
-cp -R firstrow/Assets.xcassets firstrow/Sounds firstrow/ScreenSaverDefaultPhotos "$out/Resources/"
+cp -R firstrow/Assets.xcassets firstrow/Sounds firstrow/ScreenSaverDefaultPhotos firstrow/Fonts "$out/Resources/"
 if [ -d firstrow/Videos ]; then cp -R firstrow/Videos "$out/Resources/"; fi
 cp firstrow/Assets.xcassets/AppIcon.appiconset/icon-mac-512x512.png "$out/first-row.png"
 cat > "$out/first-row.desktop" <<DESKTOP
