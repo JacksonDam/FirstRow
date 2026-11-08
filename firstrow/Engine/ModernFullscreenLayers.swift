@@ -40,6 +40,7 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
     private var size: CGSize = .zero
     private var isSwitchingSong = false
     private var lastFlipAway: CGFloat = 0
+    private var lastBarHeld = false
 
     private static func scale(_ factor: CGFloat, about center: CGPoint) -> CATransform3D {
         var transform = CATransform3DMakeTranslation(center.x, center.y, 0)
@@ -107,7 +108,10 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         }
 
         incoming.layer.place(bounds)
-        incoming.update(snapshot, mirrored: mirrored, size: size, scale: scale)
+        let barHeld = menu.isMusicProgressBarHeld
+        let barAnimation: Animation? = barHeld != lastBarHeld ? (barHeld ? .smooth(duration: 0.28) : .smoothInOut(duration: 0.32)) : nil
+        lastBarHeld = barHeld
+        incoming.update(snapshot, mirrored: mirrored, barHeld: barHeld, barAnimation: barAnimation, size: size, scale: scale)
         let inShift = hasTransition ? 90 * direction * (1 - incomingProgress) : 0
         incoming.layer.setTransform(CATransform3DMakeTranslation(inShift, 0, 0), arrive)
         incoming.layer.setOpacity(hasTransition ? Double(incomingProgress) : 1, arrive)
@@ -171,7 +175,14 @@ final class ModernNowPlayingPanelLayer {
     }
 
     /// Lays the panel out, the artwork on the left or, `mirrored`, on the right.
-    func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, mirrored: Bool = false, size: CGSize, scale: CGFloat) {
+    /// A scale about `anchor` (in the layer's own points), then a move.
+    private static func scale(_ factor: CGFloat, about anchor: CGPoint, then offset: CGPoint) -> CATransform3D {
+        var transform = CATransform3DMakeTranslation(offset.x + anchor.x, offset.y + anchor.y, 0)
+        transform = CATransform3DScale(transform, factor, factor, 1)
+        return CATransform3DTranslate(transform, -anchor.x, -anchor.y, 0)
+    }
+
+    func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, mirrored: Bool = false, barHeld: Bool = false, barAnimation: Animation? = nil, size: CGSize, scale: CGFloat) {
         cover.place(CGRect(origin: .zero, size: size))
         details.place(CGRect(origin: .zero, size: size))
         let width = size.width
@@ -221,16 +232,31 @@ final class ModernNowPlayingPanelLayer {
         let duration = max(0, snapshot.durationSeconds.isFinite ? snapshot.durationSeconds : 0)
         let elapsedSeconds = min(max(0, snapshot.elapsedSeconds.isFinite ? snapshot.elapsedSeconds : 0), duration > 0 ? duration : .infinity)
         let progress = duration > 0 ? CGFloat(elapsedSeconds / duration) : 0
-        barFrame = CGRect(x: columnLeft, y: y, width: columnWidth, height: barHeight)
-        track.frame = barFrame
-        track.cornerRadius = barHeight / 2
-        fill.frame = CGRect(x: 0, y: 0, width: columnWidth * max(0, min(1, progress)), height: barHeight)
+        // Held for scrubbing, the bar swells (taller, a little wider, its fill bright white)
+        // and the times come out with its ends, brighter and a touch larger.
+        let rest = CGRect(x: columnLeft, y: y, width: columnWidth, height: barHeight)
+        let grownBy = CGSize(width: 22, height: 6)
+        barFrame = barHeld ? rest.insetBy(dx: -grownBy.width, dy: -grownBy.height) : rest
+        track.setFrame(barFrame, barAnimation)
+        track.set("cornerRadius", to: barFrame.height / 2, unchanged: track.cornerRadius == barFrame.height / 2, animation: barAnimation)
+        // Taller than the bar ever gets: the bar's rounded clip gives it its shape at any size.
+        fill.setFrame(CGRect(x: 0, y: 0, width: barFrame.width * max(0, min(1, progress)), height: 60), barAnimation)
+        let fillAlpha: CGFloat = barHeld ? 1 : 0.8
+        fill.set("backgroundColor", to: CGColor(gray: 1, alpha: fillAlpha), unchanged: fill.backgroundColor?.alpha == fillAlpha, animation: barAnimation)
         y += barHeight + 12
-        let timeColor = RGBA(white: 1, alpha: 0.6)
+        let timeColor = RGBA(white: 1, alpha: 1)
         let elapsedGraphic = TextRenderer.render(TextSpec(text: formatfirstRowPlaybackTime(elapsedSeconds), fontName: ModernTheme.mediumFontName, size: 26, color: timeColor), scale: scale)
         elapsed.show(elapsedGraphic, at: CGPoint(x: columnLeft, y: y))
         let remainingGraphic = TextRenderer.render(TextSpec(text: formatfirstRowRemainingTime(duration: duration, elapsed: elapsedSeconds), fontName: ModernTheme.mediumFontName, size: 26, color: timeColor), scale: scale)
         remaining.show(remainingGraphic, at: CGPoint(x: columnLeft + columnWidth - remainingGraphic.size.width, y: y))
+        let timeScale: CGFloat = barHeld ? 1.08 : 1
+        let drop = barHeld ? grownBy.height + 2 : 0
+        let out = barHeld ? grownBy.width : 0
+        elapsed.setTransform(Self.scale(timeScale, about: .zero, then: CGPoint(x: -out, y: drop)), barAnimation)
+        remaining.setTransform(Self.scale(timeScale, about: CGPoint(x: remainingGraphic.size.width, y: 0), then: CGPoint(x: out, y: drop)), barAnimation)
+        for label in [elapsed, remaining] {
+            label.setOpacity(barHeld ? 1 : 0.6, barAnimation)
+        }
         if let state = snapshot.leadingGlyphState {
             glyph.layer.isHidden = false
             glyph.update(state, pointSize: 26, shadows: [], scale: scale)

@@ -146,6 +146,9 @@ final class MenuListLayer {
         }
         // While the pointer drives the list, it stays where the pointer left it.
         let identity = Self.identity(of: items)
+        if lastScrollOffset == nil || lastIdentity != identity {
+            menu.pointer.listAppears(identity: identity)
+        }
         let pinnedScrollOffset = menu.pointer.pinnedScrollOffset(
             identity: identity,
             selectedRowTop: selectedRowOffset,

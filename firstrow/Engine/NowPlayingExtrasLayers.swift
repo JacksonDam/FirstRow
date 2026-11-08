@@ -71,7 +71,7 @@ final class HintBarLayer {
     private var isShown = false
     private var introducedSession: Int?
     /// How bright it rests, against its brightest.
-    private static let resting: Float = 0.3
+    private static let resting: Float = 0.15
 
     init() {
         layer.addSublayer(bar)

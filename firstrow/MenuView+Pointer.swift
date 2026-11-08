@@ -115,9 +115,25 @@ final class PointerInputState {
         leftScrollOffsets[identity] = nil
     }
 
+    /// Lists gone back out of, whose scroll is dropped when they next appear (not as they go,
+    /// or they'd jump while fading).
+    private var forgetWhenShownAgain: Set<String> = []
+
+    func forgetScrollWhenShownAgain(identity: String) {
+        forgetWhenShownAgain.insert(identity)
+    }
+
+    /// A list is appearing afresh.
+    func listAppears(identity: String) {
+        if forgetWhenShownAgain.remove(identity) != nil {
+            forgetScroll(identity: identity)
+        }
+    }
+
     func clearPin() {
         pin = nil
         leftScrollOffsets.removeAll()
+        forgetWhenShownAgain.removeAll()
         tracksFinger = false
     }
 }
@@ -176,7 +192,8 @@ extension MenuView {
                        !isMovieResumePromptVisible, textEntry == nil, let level = pointerActiveListLevel,
                        let identity = pointer.hitTester?.menuListScrollState(level)?.identity
                     {
-                        pointer.forgetScroll(identity: identity)
+                        // Not yet: it stays where it is as it fades, and starts afresh next time.
+                        pointer.forgetScrollWhenShownAgain(identity: identity)
                     }
                     return
                 }
@@ -512,6 +529,12 @@ extension MenuView {
         movieScrubDirection = 1
         movieControlsGlyphState = .pause
         seekMovie(toFraction: fraction, exact: false)
+    }
+
+    /// A finger or the pointer has hold of Now Playing's progress bar.
+    var isMusicProgressBarHeld: Bool {
+        if case .music = pointer.drag { return true }
+        return false
     }
 
     func beginMusicProgressDrag(at fraction: Double) {

@@ -1812,9 +1812,10 @@ extension MenuView {
         noteNowPlayingPlaybackChanged()
         let isMusicSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
         let isMusicPlaying = isMusicPlaybackRunning()
-        // Not while the list or the words are beside it.
+        // Not while the list or the words are beside it, nor while the song is being scrubbed
+        // (the wait starts again once it's let go).
         let shouldRun = isMusicSceneVisible && isMusicPlaying && !isMovieTransitioning && !isMoviePlaybackVisible &&
-            !isNowPlayingQueueVisible && !isNowPlayingLyricsVisible
+            !isNowPlayingQueueVisible && !isNowPlayingLyricsVisible && musicScrubDirection == 0
         if !shouldRun {
             invalidateMusicNowPlayingFlipTimer()
             // Let a flip under way finish, or the panel is left edge-on until the next song.
@@ -1843,6 +1844,10 @@ extension MenuView {
     func performMusicNowPlayingFlip() {
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
         guard !isNowPlayingQueueVisible, nowPlayingQueueReveal <= 0, !isNowPlayingLyricsVisible else { return }
+        guard musicScrubDirection == 0 else {
+            invalidateMusicNowPlayingFlipTimer()
+            return
+        }
         guard isMusicPlaybackRunning() else { return }
         guard !isMusicSongTransitioning else { return }
         guard !isMusicNowPlayingFlipAnimating else { return }
@@ -2370,6 +2375,7 @@ extension MenuView {
     }
 
     func stopMusicScrubbing(showPauseGlyph: Bool) {
+        let wasScrubbing = musicScrubDirection != 0
         let wasSpotifyScrubbing = musicScrubDirection != 0 && musicAudioPlayer == nil &&
             isCurrentMusicPlaybackUsingSpotify && activeMusicPlaybackSongID != nil
         #if os(macOS)
@@ -2415,6 +2421,8 @@ extension MenuView {
         if showPauseGlyph {
             musicNowPlayingLeadingGlyphState = .pause
         }
+        // A scrub puts off the next turn of Now Playing by a whole wait.
+        if wasScrubbing { invalidateMusicNowPlayingFlipTimer() }
         updateMusicNowPlayingFlipTimerState()
     }
 
