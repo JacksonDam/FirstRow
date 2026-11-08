@@ -24,6 +24,7 @@ final class ModernMenuRowLayer: MenuRowLayering {
     /// How focus growth animates for the rows being updated (nil while a held arrow sweeps
     /// through a list, so rows don't trail behind it). Set by the list before each update.
     static var focusAnimation: Animation? = .smooth(duration: ModernTheme.focusDuration)
+    private static let unfocusAnimation = Animation.smooth(duration: 0.22)
 
     init() {
         capsule.backgroundColor = ModernTheme.rowFill.cgColor
@@ -50,6 +51,10 @@ final class ModernMenuRowLayer: MenuRowLayering {
         let sameItem = previous?.item.id == item.id
         let wasFocused = previous?.isSelected ?? false
         let growth = sameItem && wasFocused != focused ? Self.focusAnimation : nil
+        // Focus arrives at once, and leaves with a quick fade, so a row the selection only
+        // passed through still shows that it was there.
+        let unfocus = sameItem && wasFocused && !focused && Self.focusAnimation != nil ? Self.unfocusAnimation : nil
+        let focusChanged = previous == nil || !sameItem || wasFocused != focused
         let height = spec.rowHeight
         let width = spec.rowWidth
         let capsuleHeight = height - ModernTheme.rowCapsuleInset
@@ -57,9 +62,11 @@ final class ModernMenuRowLayer: MenuRowLayering {
         let grow = ModernTheme.focusGrowth
         let capsuleFrame = focused ? restFrame.insetBy(dx: -grow.width, dy: -grow.height) : restFrame
 
-        // The colour changes at once; the size eases.
-        capsule.backgroundColor = (focused ? ModernTheme.focusFill : ModernTheme.rowFill).cgColor
-        capsule.shadowOpacity = focused ? 0.45 : 0
+        // The size eases; the colour changes at once, or fades on the way out.
+        if focusChanged {
+            capsule.set("backgroundColor", to: (focused ? ModernTheme.focusFill : ModernTheme.rowFill).cgColor, unchanged: false, animation: unfocus)
+            capsule.set("shadowOpacity", to: Float(focused ? 0.45 : 0), unchanged: false, animation: unfocus)
+        }
         capsule.setFrame(capsuleFrame, growth)
         capsule.set("cornerRadius", to: capsuleFrame.height * 0.5, unchanged: capsule.cornerRadius == capsuleFrame.height * 0.5, animation: growth)
         capsule.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: capsuleFrame.size), cornerWidth: capsuleFrame.height * 0.5, cornerHeight: capsuleFrame.height * 0.5, transform: nil)
@@ -95,12 +102,23 @@ final class ModernMenuRowLayer: MenuRowLayering {
             blueDot.isHidden = true
         }
 
-        light.layer.isHidden = focused
-        dark.layer.isHidden = !focused
         if focused {
+            light.layer.isHidden = true
+            dark.layer.isHidden = false
+            if focusChanged { dark.layer.setOpacity(1, nil) }
             dark.update(spec, focused: true, textStart: textStart, scrollsLongTitle: spec.isSettled)
         } else {
+            light.layer.isHidden = false
             light.update(spec, focused: false, textStart: textStart, scrollsLongTitle: false)
+            if let unfocus {
+                // The dark title, as last drawn, fades out over the light one fading in.
+                light.layer.setOpacity(0, nil)
+                light.layer.setOpacity(1, unfocus)
+                dark.layer.setOpacity(0, unfocus)
+            } else if focusChanged {
+                light.layer.setOpacity(1, nil)
+                dark.layer.isHidden = true
+            }
         }
     }
 

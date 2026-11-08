@@ -355,17 +355,36 @@ extension MenuView {
             selectedIndex = index
         case .submenu:
             selectedSubIndex = index
-            refreshDetailPreviewForCurrentContext()
         case .third:
             selectedThirdIndex = index
             rememberCurrentMoviesFolderSelectionIndex()
+        }
+        #if os(iOS)
+            if AppSettings.isTouchEnabled, isTouchSelecting {
+                deferTouchPreviewRefresh { [weak self] in self?.refreshPreviewForPointerSelection(level) }
+                objectWillChange.send()
+                return
+            }
+        #endif
+        refreshPreviewForPointerSelection(level)
+        objectWillChange.send()
+    }
+
+    /// The preview (and what it loads) for a row the pointer or a finger selected.
+    private func refreshPreviewForPointerSelection(_ level: MenuListLevel) {
+        guard level == pointerActiveListLevel else { return }
+        switch level {
+        case .root:
+            break
+        case .submenu:
+            refreshDetailPreviewForCurrentContext()
+        case .third:
             if activeRootItemID == "music", thirdMenuMode == .musicSongs {
                 refreshMusicPreviewForCurrentContext()
             } else if !(activeRootItemID == "photos" && thirdMenuMode == .photosDateAlbums) {
                 refreshDetailPreviewForCurrentContext()
             }
         }
-        objectWillChange.send()
     }
 
     /// Scrolls a list by whole rows (positive: towards the top) and selects the row now under the pointer.

@@ -220,7 +220,44 @@ final class MenuSceneRenderer: TransactionRendering {
         max(1, (canvasScale * backingScale * 100).rounded(.up) / 100)
     }
 
+    #if DEBUG || FIRSTROW_HARNESS_BUILD
+        /// `FIRSTROW_DEBUG_RENDER=1`: how long each pass takes, printed every second or so.
+        private static let timesPasses = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_RENDER"] == "1"
+        private var passTimes: [Double] = []
+        private var sectionTimes: [String: Double] = [:]
+        private var sectionStart: CFTimeInterval = 0
+        private func lap(_ name: String) {
+            guard Self.timesPasses else { return }
+            let now = CACurrentMediaTime()
+            sectionTimes[name, default: 0] += (now - sectionStart) * 1000
+            sectionStart = now
+        }
+    #else
+        @inline(__always) private func lap(_: String) {}
+    #endif
+
     private func update(_ pass: RenderPass, includesCarousel: Bool) {
+        #if DEBUG || FIRSTROW_HARNESS_BUILD
+            let started = CACurrentMediaTime()
+            sectionStart = started
+            defer {
+                if Self.timesPasses {
+                    lap("rest")
+                    passTimes.append((CACurrentMediaTime() - started) * 1000)
+                    if passTimes.count >= 30 {
+                        let sorted = passTimes.sorted()
+                        let sections = sectionTimes.sorted { $0.key < $1.key }.map { String(format: "%@ %.2f", $0.key, $0.value / Double(sorted.count)) }.joined(separator: ", ")
+                        let line = String(format: "[render] %d passes: median %.2f ms, worst %.2f ms (mean %@)", sorted.count, sorted[sorted.count / 2], sorted.last ?? 0, sections)
+                        FileHandle.standardError.write(Data((line + "\n").utf8))
+                        #if os(iOS)
+                            FirstRowHarness.touchLog(line)
+                        #endif
+                        passTimes.removeAll()
+                        sectionTimes.removeAll()
+                    }
+                }
+            }
+        #endif
         let menu = menu
         menu.keepMusicSubmenuSelectionOnItsRow()
         let sceneSize = menu.activeMenuVirtualSceneSize
@@ -236,7 +273,9 @@ final class MenuSceneRenderer: TransactionRendering {
         menuGroup.setOpacity(isModern ? menu.modernSwapOpacity : 1, pass.animation)
         menuGroup.setTransform(CATransform3DMakeTranslation(isModern ? menu.modernSwapOffset : 0, 0, 0), pass.animation)
 
+        lap("setup")
         updateHeaders(pass, sceneSize: sceneSize, frames: frames, scale: scale)
+        lap("headers")
 
         // The carousel and the section's preview content, or in the modern look the card.
         carouselBox.isHidden = isModern
@@ -288,9 +327,11 @@ final class MenuSceneRenderer: TransactionRendering {
             scale: scale,
         )
 
+        lap("card")
         // The menu lists.
         menuArea.frame = frames.menuFrame
         updateLists(pass, sceneSize: sceneSize, frames: frames, scale: scale)
+        lap("lists")
 
         // Movie resume prompt over the scene.
         resumePrompt.update(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale)

@@ -8,6 +8,13 @@
     /// - `touch:down|move|up|cancel:x:y` in the view's points
     /// - `touchmove:x:y:seconds` moves the finger there from where it is, steadily
     /// - `swipe:x1:y1:x2:y2:seconds` puts a finger down, moves it and lifts it
+    /// - `rowtap:<index>`, `rowtitle:<title>` tap a visible row of the list in front
+    /// - `listswipe:<from>:<to>:<seconds>[:<hold>]` drags the list in front (heights as fractions
+    ///   of its visible part); `listslide:<from>:<to>:<seconds>:<hold>` slides the selection and
+    ///   lets go without choosing; `back` taps the Back button
+    /// - `wait:<seconds>` pauses the script (for a script copied into the app's own folder on a
+    ///   device, where relative `FIRSTROW_HARNESS_FIFO`/`_LOG` paths resolve to its tmp folder)
+    /// - `FIRSTROW_DEBUG_RENDER=1` logs render pass times and frame pacing
     /// - `theme:classic|modern`, `setting:touch|theme:...`
     /// - `nopicker` stops Movies Folder offering the folder picker this session
     /// - `down`, `up`, `left`, `right`, `enter`, `escape`, `delete`, `space`
@@ -19,7 +26,8 @@
 
         @MainActor
         static func startTouchHarness(menu: MenuView, touchView: TouchNavigationInputView) {
-            guard isActive, commandThread == nil, let path = ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_FIFO"] else { return }
+            guard isActive, commandThread == nil, let named = ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_FIFO"] else { return }
+            let path = resolvedHarnessPath(named)
             self.touchView = touchView
             touchMenu = menu
             let thread = Thread {
@@ -39,6 +47,11 @@
                         pending.removeSubrange(pending.startIndex ... newline)
                         let command = line.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !command.isEmpty else { continue }
+                        // `wait:seconds` pauses the script, so a whole script can sit in a file.
+                        if command.hasPrefix("wait:"), let seconds = Double(command.dropFirst(5)) {
+                            Thread.sleep(forTimeInterval: seconds)
+                            continue
+                        }
                         DispatchQueue.main.async { MainActor.assumeIsolatedIfPossible { performTouchCommand(command) } }
                     }
                 }
@@ -46,11 +59,60 @@
             thread.name = "FirstRowTouchHarness"
             commandThread = thread
             thread.start()
+            if ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_RENDER"] == "1" {
+                FrameProbe.shared.start()
+            }
+        }
+
+        /// Logs how evenly frames arrive, once a second, so dropped frames show in the log.
+        @MainActor
+        final class FrameProbe: NSObject {
+            static let shared = FrameProbe()
+            private var link: CADisplayLink?
+            private var last: CFTimeInterval = 0
+            private var frames = 0
+            private var hitches = 0
+            private var worst: CFTimeInterval = 0
+            private var windowStart: CFTimeInterval = 0
+
+            func start() {
+                let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+                if #available(iOS 15.0, *) { link.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120) }
+                link.add(to: .main, forMode: .common)
+                self.link = link
+            }
+
+            @objc private func tick(_ link: CADisplayLink) {
+                let now = link.timestamp
+                let expected = link.targetTimestamp - link.timestamp
+                if last > 0 {
+                    let interval = now - last
+                    frames += 1
+                    if interval > expected * 1.5 { hitches += 1 }
+                    worst = max(worst, interval)
+                }
+                last = now
+                if windowStart == 0 { windowStart = now }
+                if now - windowStart >= 1 {
+                    FirstRowHarness.touchLog(String(format: "[frames] %d in %.2f s (%.0f Hz), %d late, worst %.1f ms", frames, now - windowStart, 1 / max(0.001, expected), hitches, worst * 1000))
+                    frames = 0
+                    hitches = 0
+                    worst = 0
+                    windowStart = now
+                }
+            }
+        }
+
+        /// A path as given, or for a relative one (on a device, where the app can't reach the
+        /// Mac), the same path inside the app's temporary folder.
+        static func resolvedHarnessPath(_ path: String) -> String {
+            path.hasPrefix("/") ? path : (NSTemporaryDirectory() as NSString).appendingPathComponent(path)
         }
 
         /// Appends a line to the file named in `FIRSTROW_HARNESS_LOG`, for checking what a touch did.
         static func touchLog(_ message: String) {
-            guard isActive, let path = ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_LOG"] else { return }
+            guard isActive, let named = ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_LOG"] else { return }
+            let path = resolvedHarnessPath(named)
             guard let handle = FileHandle(forWritingAtPath: path) ?? {
                 FileManager.default.createFile(atPath: path, contents: nil)
                 return FileHandle(forWritingAtPath: path)
@@ -87,6 +149,78 @@
                 fingerLocation = CGPoint(x: numbers[0], y: numbers[1])
                 touchView?.injectTouch(.began, at: fingerLocation)
                 moveFinger(to: CGPoint(x: numbers[2], y: numbers[3]), over: Double(numbers[4]), liftingAtEnd: true)
+            case "rowtitle" where parts.count == 2:
+                // rowtitle:<title>: a tap on the visible row with that title.
+                guard let menu = touchMenu, let level = menu.pointerActiveListLevel else { return }
+                let items: [MenuListItemConfig] = switch level {
+                case .root: menu.rootListItems()
+                case .submenu: menu.submenuListItems()
+                case .third: menu.thirdMenuListItems()
+                }
+                guard let index = items.firstIndex(where: { $0.title == parts[1] }) else {
+                    touchLog("[harness] no row called \(parts[1]) in \(items.map(\.title))")
+                    return
+                }
+                performTouchCommand("rowtap:\(index)")
+            case "rowtap" where numbers.count == 1:
+                // A tap on a visible row of the list in front, wherever it is on this screen.
+                guard let row = scanActiveList()?.rows[Int(numbers[0])] else {
+                    touchLog("[harness] row \(Int(numbers[0])) isn't showing")
+                    return
+                }
+                let point = CGPoint(x: row.midX, y: row.midY)
+                touchView?.injectTouch(.began, at: point)
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    touchView?.injectTouch(.ended, at: point)
+                }
+            case "listswipe" where numbers.count == 3 || numbers.count == 4:
+                // listswipe:from:to:seconds[:hold], heights as fractions of the list's visible
+                // part: down, an optional wait, a steady move, and up.
+                guard let list = scanActiveList()?.frame else {
+                    touchLog("[harness] no list showing")
+                    return
+                }
+                let from = CGPoint(x: list.midX, y: list.minY + list.height * numbers[0])
+                let to = CGPoint(x: list.midX, y: list.minY + list.height * numbers[1])
+                fingerLocation = from
+                touchView?.injectTouch(.began, at: from)
+                let hold = numbers.count == 4 ? Double(numbers[3]) : 0
+                Task { @MainActor in
+                    if hold > 0 { try? await Task.sleep(nanoseconds: UInt64(hold * 1_000_000_000)) }
+                    moveFinger(to: to, over: Double(numbers[2]), liftingAtEnd: true)
+                }
+            case "listslide" where numbers.count == 4:
+                // listslide:from:to:seconds:hold: holds, slides the selection and lets it go
+                // without choosing anything.
+                guard let list = scanActiveList()?.frame else { return }
+                let from = CGPoint(x: list.midX, y: list.minY + list.height * numbers[0])
+                let to = CGPoint(x: list.midX, y: list.minY + list.height * numbers[1])
+                fingerLocation = from
+                touchView?.injectTouch(.began, at: from)
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: UInt64(Double(numbers[3]) * 1_000_000_000))
+                    moveFinger(to: to, over: Double(numbers[2]), liftingAtEnd: false)
+                    try? await Task.sleep(nanoseconds: UInt64((Double(numbers[2]) + 0.3) * 1_000_000_000))
+                    touchView?.injectTouch(.cancelled, at: fingerLocation)
+                }
+            case "back":
+                guard let view = touchView, let hitTester = touchMenu?.pointer.hitTester else { return }
+                var found: CGPoint?
+                for y in stride(from: CGFloat(0), to: view.bounds.height * 0.4, by: 4) {
+                    for x in stride(from: CGFloat(0), to: view.bounds.width * 0.4, by: 4) where hitTester.touchControl(at: CGPoint(x: x, y: y)) == .back {
+                        found = found ?? CGPoint(x: x + 20, y: y + 20)
+                    }
+                }
+                guard let point = found else {
+                    touchLog("[harness] no Back button")
+                    return
+                }
+                touchView?.injectTouch(.began, at: point)
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    touchView?.injectTouch(.ended, at: point)
+                }
             case "theme" where parts.count == 2:
                 AppSettings.theme = InterfaceTheme(rawValue: parts[1]) ?? .classic
             case "setting":
@@ -104,14 +238,35 @@
             }
         }
 
-        /// Moves the finger in steps of a sixtieth of a second, as a real drag arrives.
+        /// Finds the list in front by asking what lies under points all over the window: each
+        /// visible row's rectangle, and the box around them.
+        @MainActor
+        private static func scanActiveList() -> (frame: CGRect, rows: [Int: CGRect])? {
+            guard let view = touchView, let menu = touchMenu, let hitTester = menu.pointer.hitTester,
+                  let level = menu.pointerActiveListLevel
+            else { return nil }
+            var rows: [Int: CGRect] = [:]
+            let size = view.bounds.size
+            for y in stride(from: CGFloat(1), to: size.height, by: 3) {
+                for x in stride(from: CGFloat(1), to: size.width, by: 12) {
+                    let point = CGPoint(x: x, y: y)
+                    guard case let .menuRow(rowLevel, index)? = hitTester.pointerTarget(at: point), rowLevel == level else { continue }
+                    rows[index] = rows[index].map { $0.union(CGRect(origin: point, size: .zero)) } ?? CGRect(origin: point, size: .zero)
+                }
+            }
+            guard let frame = rows.values.reduce(nil, { (partial: CGRect?, rect) in partial.map { $0.union(rect) } ?? rect }) else { return nil }
+            touchLog(String(format: "[harness] window %.0fx%.0f, list %.0f,%.0f %.0fx%.0f, rows %@", size.width, size.height, frame.minX, frame.minY, frame.width, frame.height, rows.keys.sorted().map(String.init).joined(separator: ",")))
+            return (frame, rows)
+        }
+
+        /// Moves the finger in steps of a 120th of a second, as a real drag arrives on ProMotion.
         @MainActor
         private static func moveFinger(to target: CGPoint, over seconds: Double, liftingAtEnd: Bool) {
             let from = fingerLocation
-            let steps = max(1, Int(seconds * 60))
+            let steps = max(1, Int(seconds * 120))
             Task { @MainActor in
                 for step in 1 ... steps {
-                    try? await Task.sleep(nanoseconds: UInt64(1_000_000_000 / 60))
+                    try? await Task.sleep(nanoseconds: UInt64(1_000_000_000 / 120))
                     let progress = CGFloat(step) / CGFloat(steps)
                     fingerLocation = CGPoint(x: from.x + (target.x - from.x) * progress, y: from.y + (target.y - from.y) * progress)
                     touchView?.injectTouch(.moved, at: fingerLocation)

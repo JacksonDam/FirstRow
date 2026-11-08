@@ -43,6 +43,7 @@ final class MenuListLayer {
     private var lastScrollOffset: CGFloat?
     private var lastScrollingUp: Bool?
     private var lastScrollingDown: Bool?
+    private var lastEdgeFades: (top: Bool, bottom: Bool)?
     /// Where the rows were last laid out, for finding the one under the pointer.
     private(set) var hitGeometry: MenuListHitGeometry?
     private static let clipOverhang: CGFloat = 2500
@@ -72,6 +73,7 @@ final class MenuListLayer {
         lastScrollOffset = nil
         lastScrollingUp = nil
         lastScrollingDown = nil
+        lastEdgeFades = nil
         hitGeometry = nil
     }
 
@@ -306,18 +308,25 @@ final class MenuListLayer {
 
         // The modern look: rows fade to transparent at an edge with more rows past it.
         if isModern, contentHeight > viewportHeight + 1 {
-            if clip.mask !== edgeMask { clip.mask = edgeMask }
+            let attaching = clip.mask !== edgeMask
+            if attaching { clip.mask = edgeMask }
             edgeMask.frame = clip.bounds
             let fade = min(0.25, 44 / max(1, viewportHeight))
-            let fadesTop = scrollOffset < -1
-            let fadesBottom = scrollOffset > viewportHeight - contentHeight + 1
-            edgeMask.colors = [
-                CGColor(gray: 0, alpha: fadesTop ? 0 : 1), CGColor(gray: 0, alpha: 1),
-                CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: fadesBottom ? 0 : 1),
-            ]
+            let fades = (top: scrollOffset < -1, bottom: scrollOffset > viewportHeight - contentHeight + 1)
+            // An edge fades in as rows go past it, and out as the last of them comes back.
+            if attaching || isFreshList || lastEdgeFades?.top != fades.top || lastEdgeFades?.bottom != fades.bottom {
+                let colors = [
+                    CGColor(gray: 0, alpha: fades.top ? 0 : 1), CGColor(gray: 0, alpha: 1),
+                    CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: fades.bottom ? 0 : 1),
+                ]
+                let animates = !attaching && !isFreshList && lastEdgeFades != nil
+                edgeMask.set("colors", to: colors, unchanged: false, animation: animates ? .smoothInOut(duration: 0.28) : nil)
+                lastEdgeFades = fades
+            }
             edgeMask.locations = [0, NSNumber(value: Double(fade)), NSNumber(value: Double(1 - fade)), 1]
         } else if clip.mask != nil {
             clip.mask = nil
+            lastEdgeFades = nil
         }
 
         // Fades at the edges while the list scrolls past more rows.
