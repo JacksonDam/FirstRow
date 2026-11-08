@@ -86,6 +86,8 @@ final class MovieControlsLayer {
     private let duration = SceneLayer()
     private let currentTime = SceneLayer()
     private var artworkKey: String?
+    /// The track the position diamond travels, in canvas points: its box and the stretch the diamond's centre covers.
+    private(set) var seekTrack: (frame: CGRect, travel: ClosedRange<CGFloat>)?
 
     private static let trackTop = RGBA(red: 70 / 255, green: 140 / 255, blue: 205 / 255)
     private static let trackMid = RGBA(red: 55 / 255, green: 165 / 255, blue: 210 / 255)
@@ -132,6 +134,10 @@ final class MovieControlsLayer {
         let diamondCenterX = travelStartX + travelWidth * CGFloat(progress)
         let barFrame = CGRect(x: (size.width - controlWidth) * 0.5, y: size.height - 52 - 28 - trackHeight, width: controlWidth, height: trackHeight)
         bar.frame = barFrame
+        seekTrack = (
+            CGRect(x: barFrame.minX + centerStartX, y: barFrame.minY, width: centerWidth, height: trackHeight),
+            (barFrame.minX + travelStartX) ... (barFrame.minX + travelStartX + travelWidth),
+        )
         bar.shadowPath = CGPath(roundedRect: CGRect(x: 0, y: 0, width: controlWidth, height: trackHeight), cornerWidth: trackHeight * 0.5, cornerHeight: trackHeight * 0.5, transform: nil)
 
         let key = "\(controlWidth)|\(isLoading)|\(scale)"
@@ -274,6 +280,8 @@ final class MovieResumePromptLayer {
     private let modernFocus = SceneLayer()
     private let modernLabels = [SceneLayer(), SceneLayer()]
     private let modernDarkLabels = [SceneLayer(), SceneLayer()]
+    /// The two options' rows in scene points, top first.
+    private(set) var optionFrames: [CGRect] = []
 
     init() {
         layer.opacity = 0
@@ -341,6 +349,9 @@ final class MovieResumePromptLayer {
         let selectedOffset = CGFloat(menu.movieResumePromptSelectedIndex) * (optionHeight + rowSpacing)
         let stackHeight = optionHeight * 2 + rowSpacing
         options.frame = CGRect(x: (sceneSize.width - optionWidth) * 0.5, y: (sceneSize.height - stackHeight) * 0.5, width: optionWidth, height: stackHeight)
+        optionFrames = (0 ..< 2).map { index in
+            CGRect(x: options.frame.minX, y: options.frame.minY + CGFloat(index) * (optionHeight + rowSpacing), width: optionWidth, height: optionHeight)
+        }
         let moved = lastSelectedIndex != nil && lastSelectedIndex != menu.movieResumePromptSelectedIndex
         let slide = appearing ? nil : pass.animation(.easeInOut(duration: menu.movieResumePromptSelectionSlideDuration), when: moved)
         lastSelectedIndex = menu.movieResumePromptSelectedIndex
@@ -365,6 +376,9 @@ final class MovieResumePromptLayer {
         let capsuleHeight = rowHeight - ModernTheme.rowCapsuleInset
         let pitch = rowHeight + 5
         options.frame = CGRect(x: (sceneSize.width - width) * 0.5, y: (sceneSize.height - pitch * 2) * 0.5, width: width, height: pitch * 2)
+        optionFrames = (0 ..< 2).map { index in
+            CGRect(x: options.frame.minX, y: options.frame.minY + CGFloat(index) * pitch, width: width, height: rowHeight)
+        }
         let selected = menu.movieResumePromptSelectedIndex
         let moved = lastSelectedIndex != nil && lastSelectedIndex != selected
         lastSelectedIndex = selected

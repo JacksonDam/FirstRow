@@ -93,6 +93,8 @@ public enum Harness {
             if let key = keys[parts[1]] { PortableApplication.injectKey(key, down: true) }
         case "release" where parts.count == 2:
             if let key = keys[parts[1]] { PortableApplication.injectKey(key, down: false) }
+        case "mouse" where parts.count == 2:
+            performPointer(parts[1].split(separator: ":").map(String.init))
         case "volume" where parts.count == 2:
             NotificationCenter.default.post(name: Notification.Name("firstRowVolumeChanged"), object: nil, userInfo: ["volume": Double(parts[1]) ?? 0])
         default:
@@ -108,6 +110,38 @@ public enum Harness {
                 FileHandle.standardError.write(Data("First Row harness: unknown command \(line)\n".utf8))
             }
         }
+    }
+
+    /// `mouse:move|down|up|click|right|back:x:y` and `mouse:scroll:dx:dy`, in window points.
+    private static func performPointer(_ words: [String]) {
+        guard words.count >= 3, let a = Double(words[1]), let b = Double(words[2]) else {
+            FileHandle.standardError.write(Data("First Row harness: bad mouse command\n".utf8))
+            return
+        }
+        let point = CGPoint(x: a, y: b)
+        switch words[0] {
+        case "move":
+            PortableApplication.injectPointerMoved(to: point)
+        case "down":
+            PortableApplication.injectPointerButton(.primary, pressed: true, at: point)
+        case "up":
+            PortableApplication.injectPointerButton(.primary, pressed: false, at: point)
+        case "click":
+            PortableApplication.injectPointerMoved(to: point)
+            PortableApplication.injectPointerButton(.primary, pressed: true, at: point)
+            PortableApplication.injectPointerButton(.primary, pressed: false, at: point)
+        case "right":
+            PortableApplication.injectPointerButton(.secondary, pressed: true, at: point)
+            PortableApplication.injectPointerButton(.secondary, pressed: false, at: point)
+        case "back":
+            PortableApplication.injectPointerButton(.back, pressed: true, at: point)
+            PortableApplication.injectPointerButton(.back, pressed: false, at: point)
+        case "scroll":
+            PortableApplication.injectPointerScroll(dx: CGFloat(a), dy: CGFloat(b))
+        default:
+            FileHandle.standardError.write(Data("First Row harness: unknown mouse command \(words[0])\n".utf8))
+        }
+        CATransaction.onChange?()
     }
 
     static func frameDrawn(compositor: Compositor, width: Int, height: Int, framebuffer: GLuint) {

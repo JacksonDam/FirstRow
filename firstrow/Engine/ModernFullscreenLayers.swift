@@ -32,8 +32,12 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         }
     }
 
-    /// Where the progress bar is, in canvas points (for pointing at it).
-    var progressBarFrame: CGRect { incoming.barFrame }
+    private var isSwitchingSong = false
+
+    /// Where the progress bar is in canvas points, or nil while songs change over.
+    var progressBar: CGRect? {
+        isSwitchingSong || incoming.barFrame.width <= 0 ? nil : incoming.barFrame
+    }
 
     override func update(menu: MenuView, scene _: FullscreenScenePresentation, pass: RenderPass, size: CGSize, scale: CGFloat) {
         let bounds = CGRect(origin: .zero, size: size)
@@ -56,6 +60,7 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         }
 
         let hasTransition = menu.musicSongTransitionSnapshot != nil
+        isSwitchingSong = hasTransition
         let incomingProgress = min(max(menu.musicSongTransitionIncomingProgress, 0), 1)
         let outgoingProgress = min(max(menu.musicSongTransitionOutgoingOpacityProgress, 0), 1)
         let direction: CGFloat = menu.musicSongTransitionDirection > 0 ? 1 : -1
@@ -192,6 +197,11 @@ final class ModernMovieControlsLayer {
     private let remaining = SceneLayer()
     /// Where the progress bar is, in canvas points.
     private(set) var barFrame: CGRect = .zero
+
+    /// The bar and the span the playhead travels, for pointing at it.
+    var seekTrack: (frame: CGRect, travel: ClosedRange<CGFloat>)? {
+        barFrame.width > 0 ? (barFrame, barFrame.minX ... barFrame.maxX) : nil
+    }
 
     init() {
         scrim.colors = [CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0.7)]

@@ -77,6 +77,8 @@ final class RunLoopFlushObserver {
         var onLayout: ((CGSize, CGFloat) -> Void)?
         var onKeyDown: ((NSEvent) -> Void)?
         var onKeyUp: ((NSEvent) -> Void)?
+        /// Mouse and trackpad events, in points from the top left.
+        var onPointer: ((PointerEvent) -> Void)?
         private var lastLayout: (CGSize, CGFloat)?
 
         override init(frame frameRect: NSRect) {
@@ -149,6 +151,47 @@ final class RunLoopFlushObserver {
 
         override func hitTest(_ point: NSPoint) -> NSView? {
             bounds.contains(convert(point, from: superview)) ? self : nil
+        }
+
+        override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+
+        private func topLeftPoint(_ event: NSEvent) -> CGPoint {
+            let point = convert(event.locationInWindow, from: nil)
+            return CGPoint(x: point.x, y: isFlipped ? point.y : bounds.height - point.y)
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            onPointer?(.moved(topLeftPoint(event)))
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            onPointer?(.moved(topLeftPoint(event)))
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            onPointer?(.pressed(.primary, topLeftPoint(event)))
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            onPointer?(.released(.primary, topLeftPoint(event)))
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            onPointer?(.pressed(.secondary, topLeftPoint(event)))
+        }
+
+        override func rightMouseUp(with event: NSEvent) {
+            onPointer?(.released(.secondary, topLeftPoint(event)))
+        }
+
+        override func otherMouseDown(with event: NSEvent) {
+            // Button 4 (number 3) is the side button that means back.
+            guard event.buttonNumber == 3 else { return }
+            onPointer?(.pressed(.back, topLeftPoint(event)))
+        }
+
+        override func scrollWheel(with event: NSEvent) {
+            onPointer?(.scrolled(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas, at: topLeftPoint(event)))
         }
     }
 #elseif FIRSTROW_PORTABLE

@@ -134,6 +134,19 @@ final class RootCarouselLayerController: LayerController {
         previous = configuration
     }
 
+    /// The icon under `point` (in the carousel's box, origin top left), the front ones first.
+    func iconIndex(at point: CGPoint) -> Int? {
+        let shown = icons.enumerated().compactMap { index, icon -> (Int, IconState)? in
+            guard let state = icon.state, state.opacity > 0.05, state.size > 1 else { return nil }
+            return (index, state)
+        }
+        for (index, state) in shown.sorted(by: { abs($0.1.position) < abs($1.1.position) }) {
+            let frame = CGRect(x: state.center.x - state.size * 0.5, y: state.center.y - state.size * 0.5, width: state.size, height: state.size)
+            if frame.contains(point) { return index }
+        }
+        return nil
+    }
+
     private func updateImages(_ configuration: RootCarouselConfiguration) {
         for (index, icon) in icons.enumerated() {
             let image = configuration.images[index]

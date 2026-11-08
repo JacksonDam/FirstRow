@@ -126,6 +126,8 @@
 		FD12DD474D5A4F5FB7E0FDC7 /* ModernSelectionChange.aif in Resources */ = {isa = PBXBuildFile; fileRef = 24EFAA60856E197241F520F8 /* ModernSelectionChange.aif */; };
 		5042887DDC5095E20FFC08B5 /* ModernFullscreenLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */; };
 		1E8230663BC561B608D79CC1 /* MovieResumeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F2F789615C5335A6A3C2C4E /* MovieResumeStore.swift */; };
+		BC1792E2B28C5716761A048F /* PointerHitTesting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9E40ACF710D67D04BA3E9A /* PointerHitTesting.swift */; };
+		FC4A6FD84E72A96516329813 /* MenuView+Pointer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -267,6 +269,8 @@
 		24EFAA60856E197241F520F8 /* ModernSelectionChange.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernSelectionChange.aif; sourceTree = "<group>"; };
 		FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModernFullscreenLayers.swift; sourceTree = "<group>"; };
 		4F2F789615C5335A6A3C2C4E /* MovieResumeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieResumeStore.swift; sourceTree = "<group>"; };
+		0E9E40ACF710D67D04BA3E9A /* PointerHitTesting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointerHitTesting.swift; sourceTree = "<group>"; };
+		FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Pointer.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -448,6 +452,7 @@
 		7A73DE812F5776A20021C281 /* firstrow */ = {
 			isa = PBXGroup;
 			children = (
+				FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */,
 				8D4F326CA84EB1E7A13354E6 /* AppSettings.swift */,
 				694828879CE0237F9751EE79 /* FirstRowMain.swift */,
 				041BD18E34BB81CF5869D66C /* MenuView+SceneLayout.swift */,
@@ -542,6 +547,7 @@
 				FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */,
 				175661ABA5C3D2DB7A570244 /* ModernMenuRowLayer.swift */,
 				6848BC75830F2ECA0E0230DC /* ModernTheme.swift */,
+				0E9E40ACF710D67D04BA3E9A /* PointerHitTesting.swift */,
 				E44528C2E0BAA59065CDCC87 /* MoviePlaybackLayers.swift */,
 				7C2B85D63C210DF7938822F2 /* FullscreenLayers.swift */,
 				FEF55A9E3A2B28D43783747D /* MetadataPreviewLayer.swift */,
@@ -738,6 +744,8 @@
 				5042887DDC5095E20FFC08B5 /* ModernFullscreenLayers.swift in Sources */,
 				0478771795FD6F2B1727EE99 /* ModernMenuRowLayer.swift in Sources */,
 				416B372B6FEC6A31DFCD77A0 /* ModernTheme.swift in Sources */,
+				FC4A6FD84E72A96516329813 /* MenuView+Pointer.swift in Sources */,
+				BC1792E2B28C5716761A048F /* PointerHitTesting.swift in Sources */,
 				E23A15D2B8390FBD221D10A8 /* MenuView+Settings.swift in Sources */,
 				3F11956CC34E36784FAD18F4 /* AppSettings.swift in Sources */,
 				0FDEDCC7287D2A0897F3CDDC /* MenuView+MediaFolders.swift in Sources */,
