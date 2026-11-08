@@ -225,7 +225,13 @@
                 seekSpotify(toSeconds: target)
                 return true
             }
-            return false
+            #if os(iOS) || os(tvOS)
+                musicNowPlayingElapsedSeconds = target
+                seekSystemMusicPlayer(toSeconds: target)
+                return true
+            #else
+                return false
+            #endif
         }
     }
 #endif

@@ -66,9 +66,10 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         let direction: CGFloat = menu.musicSongTransitionDirection > 0 ? 1 : -1
         // The old song eases out as the new one eases in a moment later, on quadratic curves of
         // their own rather than the classic look's slower zoom.
-        let still = pass.transaction.disablesAnimations
-        let leave: Animation? = still ? nil : .smoothInOut(duration: 0.42)
-        let arrive: Animation? = still ? nil : .smooth(duration: 0.55)
+        // Only the moves animate: setting up a change (the new song placed off to the side) is instant.
+        let moves = pass.animation != nil
+        let leave: Animation? = moves ? .smoothInOut(duration: 0.42) : nil
+        let arrive: Animation? = moves ? .smooth(duration: 0.55) : nil
 
         incoming.layer.place(bounds)
         incoming.update(snapshot, size: size, scale: scale)

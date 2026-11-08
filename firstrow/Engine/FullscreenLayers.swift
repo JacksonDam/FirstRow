@@ -63,7 +63,9 @@ final class FullscreenSceneLayer {
     }
 
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
-        layer.frame = bounds
+        layer.place(bounds)
+        let depth = ModernTheme.isActive ? menu.fullscreenSceneScale : 1
+        layer.setTransform(MenuSceneRenderer.scale(depth, about: CGPoint(x: bounds.midX, y: bounds.midY)), pass.animation)
         guard let scene = menu.activeFullscreenScene else {
             if content != nil {
                 content?.tearDown()

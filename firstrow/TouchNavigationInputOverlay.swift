@@ -12,7 +12,9 @@
         var onSpace: (() -> Void)?
         var onSingleFingerTap: (() -> Bool)?
         /// Direct touch: one finger's movements, in this view's points.
-        var onTouch: ((TouchPhase, CGPoint, TimeInterval) -> Void)?
+        var onTouch: ((TouchPhase, CGPoint, TimeInterval) -> Void)? {
+            didSet { updateSingleFingerRecognizers() }
+        }
         private var activeHoldArrowKey: KeyCode?
         private var trackedTouch: UITouch?
         private var singleFingerRecognizers: [UIGestureRecognizer] = []
@@ -43,6 +45,25 @@
             singleFingerTap.require(toFail: fourFingerTap)
             singleFingerTap.require(toFail: singleFingerHold)
             singleFingerRecognizers = [singleFingerTap, singleFingerHold]
+            updateSingleFingerRecognizers()
+            settingsObserver = NotificationCenter.default.addObserver(forName: AppSettings.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolatedIfPossible { self?.updateSingleFingerRecognizers() }
+            }
+        }
+
+        private var settingsObserver: NSObjectProtocol?
+
+        /// The quarter taps and holds are switched off outright while direct touch is on, so a
+        /// slide or swipe can never also press an arrow.
+        private func updateSingleFingerRecognizers() {
+            let enabled = !usesDirectTouch
+            for recognizer in singleFingerRecognizers where recognizer.isEnabled != enabled {
+                recognizer.isEnabled = enabled
+            }
+            if !enabled, let key = activeHoldArrowKey {
+                activeHoldArrowKey = nil
+                onArrowKeyUp?(key)
+            }
         }
 
         override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
@@ -121,7 +142,7 @@
         }
 
         @objc private func handleSingleFingerTap(_ gesture: UITapGestureRecognizer) {
-            guard gesture.state == .ended else { return }
+            guard gesture.state == .ended, !usesDirectTouch else { return }
             if onSingleFingerTap?() == true { return }
             guard let key = arrowKey(for: gesture) else { return }
             onArrowKeyDown?(key)
@@ -131,7 +152,7 @@
         @objc private func handleSingleFingerHold(_ gesture: UILongPressGestureRecognizer) {
             switch gesture.state {
             case .began:
-                guard let key = arrowKey(for: gesture) else { return }
+                guard !usesDirectTouch, let key = arrowKey(for: gesture) else { return }
                 activeHoldArrowKey = key
                 onArrowKeyDown?(key)
             case .ended, .cancelled, .failed:

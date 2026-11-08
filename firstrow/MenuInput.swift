@@ -45,6 +45,7 @@ extension MenuView {
         preloadITunesTopChartsInBackground()
         registerUserInteractionForScreenSaver()
         startScreenSaverIdleMonitor()
+        pauseScreenSaverIdleWhileInBackground()
         startupSoundWarmUpWorkItem?.cancel()
         startupSoundWarmUpWorkItem = Task {
             try? await firstRowSleep(0.75)

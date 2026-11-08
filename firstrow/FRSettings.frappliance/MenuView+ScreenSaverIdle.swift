@@ -38,6 +38,33 @@ extension MenuView {
         screenSaverIdleMonitorTimer = nil
     }
 
+    /// Time spent in the background doesn't count: the idle count stops when First Row leaves
+    /// the front and starts again from nothing when it comes back.
+    func pauseScreenSaverIdleWhileInBackground() {
+        guard appActivityObservers.isEmpty else { return }
+        #if os(macOS)
+            let resign = NSApplication.willResignActiveNotification
+            let active = NSApplication.didBecomeActiveNotification
+        #elseif canImport(UIKit)
+            let resign = UIApplication.willResignActiveNotification
+            let active = UIApplication.didBecomeActiveNotification
+        #else
+            return
+        #endif
+        #if os(macOS) || canImport(UIKit)
+            appActivityObservers.append(NotificationCenter.default.addObserver(forName: resign, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolatedIfPossible { self?.stopScreenSaverIdleMonitor() }
+            })
+            appActivityObservers.append(NotificationCenter.default.addObserver(forName: active, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolatedIfPossible {
+                    guard let self else { return }
+                    self.resetScreenSaverIdleTimer()
+                    self.startScreenSaverIdleMonitor()
+                }
+            })
+        #endif
+    }
+
     func evaluateScreenSaverIdleActivation() {
         guard shouldAutoActivateScreenSaver else { return }
         let elapsedIdleTime = Date().timeIntervalSince(lastUserInteractionAt)

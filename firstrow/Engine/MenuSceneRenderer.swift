@@ -174,7 +174,7 @@ final class MenuSceneRenderer: TransactionRendering {
             #endif
             canvasScale = scale
             canvas.transform = CATransform3DMakeScale(scale, scale, 1)
-            sceneContent.frame = canvas.bounds
+            sceneContent.place(canvas.bounds)
         }
         isDirty = true
         render(Transaction.instant)
@@ -227,6 +227,7 @@ final class MenuSceneRenderer: TransactionRendering {
         let themeChanged = memo.theme != nil && memo.theme != theme
         memo.theme = theme
         sceneContent.setOpacity(menu.menuSceneOpacity, pass.animation)
+        sceneContent.setTransform(Self.scale(isModern ? menu.menuSceneScale : 1, about: CGPoint(x: sceneSize.width * 0.5, y: sceneSize.height * 0.5)), pass.animation)
         menuGroup.place(CGRect(origin: .zero, size: sceneSize))
         menuGroup.setOpacity(isModern ? menu.modernSwapOpacity : 1, pass.animation)
         menuGroup.setTransform(CATransform3DMakeTranslation(isModern ? menu.modernSwapOffset : 0, 0, 0), pass.animation)
@@ -468,6 +469,13 @@ final class MenuSceneRenderer: TransactionRendering {
         }
         sortPill.setOpacity(showsPill ? 1 : 0, pass.animation(.easeInOut(duration: 0.2), when: pillChanged))
         memo.showsSortPill = showsPill
+    }
+
+    static func scale(_ factor: CGFloat, about center: CGPoint) -> CATransform3D {
+        guard factor != 1 else { return CATransform3DIdentity }
+        var transform = CATransform3DMakeTranslation(center.x, center.y, 0)
+        transform = CATransform3DScale(transform, factor, factor, 1)
+        return CATransform3DTranslate(transform, -center.x, -center.y, 0)
     }
 
     /// In the modern look a list slides out as it fades (left when the next level comes in,

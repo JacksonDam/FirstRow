@@ -300,10 +300,16 @@ extension MenuView {
     }
 }
 
-/// The modern look has no fades through black: full-screen scenes crossfade with the menus.
+/// The modern look has no fades through black. Going to a full-screen scene, the menu recedes
+/// a little as it fades and the scene comes in from slightly nearer; coming back, the scene
+/// recedes and fades, then the menu comes in the same way.
 extension MenuView {
-    private var modernSceneCrossfade: Animation {
-        .smoothInOut(duration: 0.5)
+    private var modernSceneLeave: Animation {
+        .smoothInOut(duration: 0.32)
+    }
+
+    private var modernSceneArrive: Animation {
+        .smooth(duration: 0.5)
     }
 
     func crossfadeToFullscreenScene(key: String, revealsDeferredNowPlaying: Bool) {
@@ -314,13 +320,27 @@ extension MenuView {
             modernSwapOpacity = 1
             modernSwapOffset = 0
         }
-        withAnimation(modernSceneCrossfade) {
-            fullscreenSceneOpacity = 1
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            fullscreenSceneScale = 1.06
+        }
+        withAnimation(modernSceneLeave) {
             menuSceneOpacity = 0
+            menuSceneScale = 0.94
         }
         Task {
-            try? await firstRowSleep(modernSceneCrossfade.duration)
+            try? await firstRowSleep(modernSceneLeave.duration * 0.5)
             guard !Task.isCancelled else { return }
+            withAnimation(self.modernSceneArrive) {
+                self.fullscreenSceneOpacity = 1
+                self.fullscreenSceneScale = 1
+            }
+            try? await firstRowSleep(self.modernSceneArrive.duration)
+            guard !Task.isCancelled else { return }
+            withTransaction(instant) {
+                self.menuSceneScale = 1
+            }
             if revealsDeferredNowPlaying {
                 self.revealDeferredNowPlayingMenuItemIfNeeded()
             }
@@ -332,14 +352,30 @@ extension MenuView {
     }
 
     func crossfadeFromFullscreenScene(dismissedKey: String?, preservesMusicPlayback: Bool) {
-        withAnimation(modernSceneCrossfade) {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            menuSceneScale = 1.06
+        }
+        withAnimation(modernSceneLeave) {
             fullscreenSceneOpacity = 0
-            menuSceneOpacity = 1
+            fullscreenSceneScale = 0.94
         }
         Task {
-            try? await firstRowSleep(modernSceneCrossfade.duration)
+            try? await firstRowSleep(modernSceneLeave.duration * 0.75)
+            guard !Task.isCancelled else { return }
+            // Now Playing may have moved on to another song while it was up.
+            self.refreshDetailPreviewForCurrentContext()
+            withAnimation(self.modernSceneArrive) {
+                self.menuSceneOpacity = 1
+                self.menuSceneScale = 1
+            }
+            try? await firstRowSleep(self.modernSceneArrive.duration)
             guard !Task.isCancelled else { return }
             self.activeFullscreenScene = nil
+            withTransaction(instant) {
+                self.fullscreenSceneScale = 1
+            }
             if dismissedKey == self.musicNowPlayingFullscreenKey {
                 self.updateMusicNowPlayingFlipTimerState()
                 if !preservesMusicPlayback {

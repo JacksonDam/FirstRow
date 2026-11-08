@@ -1,5 +1,10 @@
 import AVFoundation
 import Foundation
+#if os(iOS)
+    import MediaPlayer
+#elseif os(tvOS)
+    import MusicKit
+#endif
 #if os(macOS)
     import AppKit
 #elseif canImport(UIKit)
@@ -461,6 +466,8 @@ extension MenuView {
             let target = musicNowPlayingElapsedSeconds
             if let player = musicAudioPlayer {
                 player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+            } else {
+                seekSystemMusicPlayer(toSeconds: target)
             }
             // Ends the hold on progress updates, and moves players that seek by themselves.
             stopMusicScrubbing(showPauseGlyph: false)
@@ -520,5 +527,22 @@ extension MenuView {
             guard !Task.isCancelled, let self, self.pointer.drag == nil else { return }
             PointerCursor.hideUntilMoved()
         }
+    }
+}
+
+extension MenuView {
+    /// Moves the system's own music player (Apple Music and library songs on iPhone, iPad and
+    /// Apple TV), which plays without an AVPlayer of First Row's.
+    func seekSystemMusicPlayer(toSeconds seconds: Double) {
+        guard activeMusicPlaybackSongID != nil, !isCurrentMusicPlaybackUsingSpotify else { return }
+        #if os(iOS)
+            if isCurrentMusicPlaybackUsingMediaPlayer {
+                MPMusicPlayerController.applicationQueuePlayer.currentPlaybackTime = seconds
+            }
+        #elseif os(tvOS)
+            if !isCurrentMusicPlaybackUsingAppleScript {
+                ApplicationMusicPlayer.shared.playbackTime = seconds
+            }
+        #endif
     }
 }

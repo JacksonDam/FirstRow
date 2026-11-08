@@ -86,6 +86,13 @@ extension MenuView {
 
         // MARK: - Phases
 
+        /// A key press with its release straight after: without the release an arrow would
+        /// count as held and repeat.
+        private func pressTouchKey(_ key: KeyCode) {
+            handleKeyDown(key)
+            handleKeyUp(key)
+        }
+
         private func touchBegan(at point: CGPoint, time: TimeInterval) {
             stopTouchMomentum()
             let state = touch
@@ -278,7 +285,7 @@ extension MenuView {
             }
             pointer.clearPin()
             endTouchSelection()
-            handleKeyDown(.enter)
+            pressTouchKey(.enter)
         }
 
         /// Moves a long list with the finger, `dy` window points from where the drag started.
@@ -344,7 +351,7 @@ extension MenuView {
             if isMovieResumePromptVisible {
                 if case let .resumeOption(index)? = target {
                     selectResumeOptionFromPointer(index)
-                    handleKeyDown(.enter)
+                    pressTouchKey(.enter)
                 }
                 return
             }
@@ -354,10 +361,10 @@ extension MenuView {
             }
             if let scene = activeFullscreenScene {
                 if scene.key == musicNowPlayingFullscreenKey || scene.key == photoSlideshowFullscreenKey {
-                    handleKeyDown(.space)
+                    pressTouchKey(.space)
                 } else if scene.key != screenSaverFullscreenKey {
                     // Errors and messages go away with a tap.
-                    handleKeyDown(.escape)
+                    pressTouchKey(.escape)
                 }
                 return
             }
@@ -392,7 +399,7 @@ extension MenuView {
                 return
             }
             if areMovieControlsVisible {
-                handleKeyDown(.space)
+                pressTouchKey(.space)
             } else {
                 showMovieControlsInstantly()
                 scheduleMovieControlsAutoHide()
@@ -411,11 +418,11 @@ extension MenuView {
                     #if DEBUG || FIRSTROW_HARNESS_BUILD
                         FirstRowHarness.touchLog("[touch] \(rightward ? "previous" : "next") song")
                     #endif
-                    handleKeyDown(rightward ? .upArrow : .downArrow)
+                    pressTouchKey(rightward ? .upArrow : .downArrow)
                     return
                 }
                 if isMoviePlaybackVisible, !fromEdge { return }
-                if rightward { handleKeyDown(.escape) }
+                if rightward { pressTouchKey(.escape) }
                 return
             }
             if abs(dy) > abs(dx) * 1.5, abs(dy) > Self.touchSwipeDistance, isMoviePlaybackVisible {

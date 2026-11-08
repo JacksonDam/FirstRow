@@ -297,6 +297,10 @@ final class MenuView: ObservableObject {
 
     @Published var menuSceneOpacity: Double = 1
     @Published var menuFolderSwapOverlayOpacity: Double = 0
+    /// The modern look's moves between the menus and full-screen scenes: each recedes a little
+    /// as it fades, and the next comes in from slightly nearer.
+    @Published var menuSceneScale: CGFloat = 1
+    @Published var fullscreenSceneScale: CGFloat = 1
     /// The modern look's menu changes: the title and list's opacity and sideways offset.
     @Published var modernSwapOpacity: Double = 1
     @Published var modernSwapOffset: CGFloat = 0
@@ -515,6 +519,8 @@ final class MenuView: ObservableObject {
     @Published var screenSaverPendingMusicTrackSwitchWorkItem: Task<Void, Never>?
     @Published var lastUserInteractionAt = Date()
     @Published var screenSaverIdleMonitorTimer: Timer?
+    /// Watches First Row leaving and coming back to the front, to pause the idle count.
+    var appActivityObservers: [NSObjectProtocol] = []
 
     // MARK: - Settings
 

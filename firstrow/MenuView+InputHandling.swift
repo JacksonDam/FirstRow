@@ -1038,6 +1038,8 @@ extension MenuView {
 
     func playSound(named fileName: String) {
         guard isUISoundEffectsEnabled else { return }
+        // The modern look stays quiet at the end of a list.
+        if fileName == "Limit", ModernTheme.isActive { return }
         if isMusicPlaybackRunning() {
             return
         }
@@ -1050,7 +1052,7 @@ extension MenuView {
         return "Modern" + name
     }
 
-    private static let modernSoundNames: Set<String> = ["Selection", "SelectionChange", "Exit", "Limit", "Key"]
+    private static let modernSoundNames: Set<String> = ["Selection", "SelectionChange", "Exit", "Key"]
 
     func menuImage(forRootID rootID: String) -> NSImage? {
         MenuConfiguration.imageName(forRootID: rootID).flatMap { NSImage(named: $0) }
