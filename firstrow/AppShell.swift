@@ -38,7 +38,7 @@ final class FirstRowAppController {
     private var gameControllers: GameControllerInput?
     #if os(iOS)
         private var touchInput: TouchNavigationInputView?
-        private var launchHoldInput: LaunchBackTouchHoldView?
+        private var launchHoldInput: LaunchBackTouchHold?
         private var folderPickerObservation: Any?
         private var isPresentingFolderPicker = false
     #endif
@@ -114,7 +114,6 @@ final class FirstRowAppController {
         renderer?.layout(containerSize: size, backingScale: scale)
         #if os(iOS)
             touchInput?.frame = hostView.bounds
-            launchHoldInput?.frame = hostView.bounds
         #endif
     }
 
@@ -308,10 +307,10 @@ final class FirstRowAppController {
         isLaunchBackPressActive = false
         didToggleIntroMovie = false
         #if os(iOS)
-            let hold = LaunchBackTouchHoldView(frame: hostView.bounds)
+            let hold = LaunchBackTouchHold()
             hold.onHoldBegan = { [weak self] in self?.handleLaunchBackPressBegan() }
             hold.onHoldEnded = { [weak self] in self?.handleLaunchBackPressEnded() }
-            hostView.addSubview(hold)
+            hold.attach(to: hostView)
             launchHoldInput = hold
         #endif
         #if os(tvOS)
@@ -334,7 +333,7 @@ final class FirstRowAppController {
         isLaunchToggleWindowActive = false
         isLaunchBackPressActive = false
         #if os(iOS)
-            launchHoldInput?.removeFromSuperview()
+            launchHoldInput?.detach()
             launchHoldInput = nil
         #endif
         #if os(tvOS)

@@ -368,13 +368,16 @@ extension MenuView {
         12
     }
 
+    private static let holdsMusicForStartupLibraryLoad = false
+
     var blocksMenuForStartupMusicLibraryPreload: Bool {
         !isStartupMusicLibraryPreloadComplete || startupMusicLibraryPreloadOverlayOpacity > 0.001
     }
 
-    /// Holds back opening Music until the launch library load is done, then opens it by itself.
+    /// Music used to wait for the launch library load before it opened. It opens at once now:
+    /// nothing in its own menu needs the load, and a list that does waits for it instead.
     func deferForStartupMusicLibraryPreload(_ key: KeyCode) -> Bool {
-        guard blocksMenuForStartupMusicLibraryPreload else { return false }
+        guard Self.holdsMusicForStartupLibraryLoad, blocksMenuForStartupMusicLibraryPreload else { return false }
         guard key == .enter, !isInSubmenu, !isEnteringSubmenu, activeFullscreenScene == nil,
               menuItems.indices.contains(selectedIndex), menuItems[selectedIndex].id == "music"
         else { return false }
@@ -786,18 +789,40 @@ extension MenuView {
             {
                 return generatedArtwork
             }
-            if let libraryArtworkData = await MainActor.run(body: {
-                self.loadMusicLibraryArtworkData(for: song)
-            }) {
-                return cachedDecodedDisplayArtworkImage(
-                    from: libraryArtworkData,
-                    sourceKey: cacheKey,
-                    maxPixelSize: 900,
-                )
-            }
-            return nil
+            #if os(iOS)
+                // The library's own picture, read off the main thread (it took the main thread a
+                // moment for every cover, and more for an 800-pixel PNG to be made and read back).
+                let songID = song.id
+                return await Task.detached(priority: .userInitiated) { Self.mediaLibraryArtwork(persistentID: songID) }.value
+            #else
+                if let libraryArtworkData = await MainActor.run(body: {
+                    self.loadMusicLibraryArtworkData(for: song)
+                }) {
+                    return cachedDecodedDisplayArtworkImage(
+                        from: libraryArtworkData,
+                        sourceKey: cacheKey,
+                        maxPixelSize: 900,
+                    )
+                }
+                return nil
+            #endif
         #endif
     }
+
+    #if os(iOS)
+        /// A library song's cover, from anywhere but the main thread. Streamed songs can have
+        /// none yet; the caller asks again later.
+        nonisolated static func mediaLibraryArtwork(persistentID: String) -> NSImage? {
+            guard MPMediaLibrary.authorizationStatus() == .authorized, let id = UInt64(persistentID) else { return nil }
+            let query = MPMediaQuery.songs()
+            query.addFilterPredicate(MPMediaPropertyPredicate(
+                value: NSNumber(value: id),
+                forProperty: MPMediaItemPropertyPersistentID,
+                comparisonType: .equalTo,
+            ))
+            return query.items?.first?.artwork?.image(at: CGSize(width: 800, height: 800))
+        }
+    #endif
 
     func currentMusicPreviewSongIndex() -> Int? {
         guard !musicSongsThirdMenuItems.isEmpty else { return nil }
@@ -1125,26 +1150,21 @@ extension MenuView {
                     userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
                 )
             }
-            let mediaItems = MPMediaQuery.songs().items ?? []
-            var seenAlbumKeys: Set<String> = []
-            var matchedIndex = 0
-            var artworks: [NSImage?] = []
-            artworks.reserveCapacity(resolvedLimit)
-            for item in mediaItems {
-                guard let song = makeMusicLibrarySongEntry(from: item) else { continue }
-                let albumKey = musicTopLevelCarouselAlbumKey(for: item)
-                guard seenAlbumKeys.insert(albumKey).inserted else { continue }
-                guard matchedIndex >= resolvedStartIndex else {
-                    matchedIndex += 1
-                    continue
+            // Album by album rather than song by song, and off the main thread: reading the
+            // whole library there held up everything while Music opened.
+            let fallback = musicFallbackImage
+            return await Task.detached(priority: .userInitiated) { () -> [NSImage?] in
+                let albums = MPMediaQuery.albums().collections ?? []
+                var artworks: [NSImage?] = []
+                artworks.reserveCapacity(resolvedLimit)
+                for album in albums.dropFirst(resolvedStartIndex) {
+                    guard let item = album.representativeItem else { continue }
+                    if item.assetURL == nil, item.mediaType.contains(.anyVideo) { continue }
+                    artworks.append(item.artwork?.image(at: CGSize(width: 800, height: 800)) ?? fallback)
+                    if artworks.count >= resolvedLimit { break }
                 }
-                artworks.append(song.artwork ?? musicFallbackImage)
-                if artworks.count >= resolvedLimit {
-                    break
-                }
-                matchedIndex += 1
-            }
-            return artworks
+                return artworks
+            }.value
         #elseif os(tvOS)
             guard MusicAuthorization.currentStatus == .authorized else {
                 throw NSError(
@@ -2317,6 +2337,19 @@ extension MenuView {
                 self.refreshMusicPreviewForCurrentContext()
                 if cachedSongs.isEmpty {
                     self.presentMusicLibraryEmptyError(for: requestedMediaType)
+                }
+                return
+            }
+            // The launch load is still reading the whole library: wait for it rather than read
+            // it all again alongside.
+            if requestedMediaType == .songs, self.hasStartedStartupMusicLibraryPreload, !self.isStartupMusicLibraryPreloadComplete {
+                Task { @MainActor in
+                    while !self.isStartupMusicLibraryPreloadComplete {
+                        try? await firstRowSleep(0.1)
+                        guard self.musicSongsRequestID == requestID else { return }
+                    }
+                    guard self.musicSongsRequestID == requestID, self.thirdMenuMode == .musicSongs else { return }
+                    self.requestMusicLibraryAuthorizationAndLoadSongs()
                 }
                 return
             }

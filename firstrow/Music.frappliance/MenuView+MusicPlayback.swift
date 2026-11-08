@@ -169,13 +169,18 @@ extension MenuView {
         let activeSongID = song.id
         Task.detached(priority: .userInitiated) {
             var resolvedArtwork: NSImage?
-            // A streamed song's cover can reach the library only once the song has started, so
-            // a song still playing without one is asked about again a few times.
-            for wait in [0.0, 1, 2, 4] {
+            // A streamed song's cover can reach the library only once the song has started (and
+            // later still while the library is busy, just after launch), so a song still playing
+            // without one is asked about again for a good while.
+            for wait in [0.0, 0.6, 1, 1.5, 2, 3, 4, 6, 8, 12] {
                 if wait > 0 {
                     try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
-                    let stillPlaying = await MainActor.run { self.activeMusicPlaybackSongID == activeSongID }
-                    guard stillPlaying else { return }
+                    // Only while that song plays on without a cover (another lookup may have found it).
+                    let stillWaiting = await MainActor.run {
+                        self.activeMusicPlaybackSongID == activeSongID &&
+                            (self.musicNowPlayingArtwork == nil || self.musicNowPlayingArtwork === self.musicFallbackImage)
+                    }
+                    guard stillWaiting else { return }
                 }
                 resolvedArtwork = await self.resolveMusicArtworkImage(for: song, cacheKey: cacheKey)
                 if resolvedArtwork != nil { break }
