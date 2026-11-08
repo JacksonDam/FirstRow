@@ -429,8 +429,10 @@ extension MenuView {
             )
         #else
             let songs = try await fetchMusicLibrarySongsForShuffle()
+            // Sorting thousands of titles takes a while too.
+            let sorted = await Task.detached(priority: .userInitiated) { self.sortedMusicLibraryEntries(songs) }.value
             return (
-                sortedSongs: sortedMusicLibraryEntries(songs),
+                sortedSongs: sorted,
                 shuffleSongs: songs,
                 itemIndices: [:],
             )
@@ -1317,7 +1319,7 @@ extension MenuView {
         }
     #endif
 
-    func normalizedMusicTopLevelCarouselAlbumKey(
+    nonisolated func normalizedMusicTopLevelCarouselAlbumKey(
         albumTitle: String?,
         albumArtist: String?,
         persistentAlbumID: String?,
@@ -1339,7 +1341,7 @@ extension MenuView {
     }
 
     #if os(iOS)
-        func musicTopLevelCarouselAlbumKey(for item: MPMediaItem) -> String {
+        nonisolated func musicTopLevelCarouselAlbumKey(for item: MPMediaItem) -> String {
             let albumPersistentID = (item.value(forProperty: MPMediaItemPropertyAlbumPersistentID) as? NSNumber)?.stringValue
             return normalizedMusicTopLevelCarouselAlbumKey(
                 albumTitle: item.albumTitle,
@@ -1881,24 +1883,28 @@ extension MenuView {
                     userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
                 )
             }
-            let mediaItems: [MPMediaItem]
-            switch mediaType {
-            case .songs:
-                mediaItems = MPMediaQuery.songs().items ?? []
-            case .musicVideos:
-                let query = MPMediaQuery.songs()
-                let predicate = MPMediaPropertyPredicate(
-                    value: MPMediaType.musicVideo.rawValue,
-                    forProperty: MPMediaItemPropertyMediaType,
-                    comparisonType: .equalTo,
-                )
-                query.addFilterPredicate(predicate)
-                mediaItems = query.items ?? []
-            case .audiobooks:
-                mediaItems = MPMediaQuery.audiobooks().items ?? []
-            }
-            let entries = mediaItems.compactMap { makeMusicLibrarySongEntry(from: $0, includeArtwork: includeArtwork) }
-            return shouldSort ? sortedMusicLibraryEntries(entries) : entries
+            // A big library takes seconds to read and turn into entries: well away from the main
+            // thread, which would otherwise ignore every touch meanwhile (at launch, say).
+            return await Task.detached(priority: .userInitiated) { () -> [MusicLibrarySongEntry] in
+                let mediaItems: [MPMediaItem]
+                switch mediaType {
+                case .songs:
+                    mediaItems = MPMediaQuery.songs().items ?? []
+                case .musicVideos:
+                    let query = MPMediaQuery.songs()
+                    let predicate = MPMediaPropertyPredicate(
+                        value: MPMediaType.musicVideo.rawValue,
+                        forProperty: MPMediaItemPropertyMediaType,
+                        comparisonType: .equalTo,
+                    )
+                    query.addFilterPredicate(predicate)
+                    mediaItems = query.items ?? []
+                case .audiobooks:
+                    mediaItems = MPMediaQuery.audiobooks().items ?? []
+                }
+                let entries = mediaItems.compactMap { self.makeMusicLibrarySongEntry(from: $0, includeArtwork: includeArtwork) }
+                return shouldSort ? self.sortedMusicLibraryEntries(entries) : entries
+            }.value
         #elseif os(tvOS)
             switch mediaType {
             case .songs:
@@ -2019,19 +2025,19 @@ extension MenuView {
         }
     #endif
 
-    func normalizedMusicLibraryText(_ rawValue: String?, fallback: String) -> String {
+    nonisolated func normalizedMusicLibraryText(_ rawValue: String?, fallback: String) -> String {
         let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? fallback : trimmed
     }
 
-    func sortedMusicLibraryEntries(_ entries: [MusicLibrarySongEntry]) -> [MusicLibrarySongEntry] {
+    nonisolated func sortedMusicLibraryEntries(_ entries: [MusicLibrarySongEntry]) -> [MusicLibrarySongEntry] {
         entries.sorted { lhs, rhs in
             lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
     }
 
     #if os(iOS)
-        func makeMusicLibrarySongEntry(from item: MPMediaItem, includeArtwork: Bool = true) -> MusicLibrarySongEntry? {
+        nonisolated func makeMusicLibrarySongEntry(from item: MPMediaItem, includeArtwork: Bool = true) -> MusicLibrarySongEntry? {
             // Apple Music and cloud songs have no file and play through the system player, which can't show video.
             let locationURL = item.assetURL
             if locationURL == nil, item.mediaType.contains(.anyVideo) { return nil }

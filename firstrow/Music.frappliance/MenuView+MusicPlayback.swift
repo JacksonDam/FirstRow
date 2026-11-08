@@ -316,9 +316,9 @@ extension MenuView {
             }
         #elseif os(iOS)
             guard isCurrentMusicPlaybackUsingMediaPlayer, activeMusicPlaybackSongID != nil else { return false }
-            // Asking the system player waits on the media server; while the progress timer polls
-            // it ten times a second, its last answer will do.
-            return musicKitProgressTimer != nil ? musicMediaPlayerWasPlaying : isMediaPlayerPlaying()
+            // Asking the system player waits on the media server, so the main thread never does:
+            // the progress reads (ten a second, off it) and play and pause keep this up to date.
+            return musicMediaPlayerWasPlaying
         #else
             return false
         #endif
@@ -1545,16 +1545,8 @@ extension MenuView {
         }
         #endif
         #if os(iOS)
-        func isMediaPlayerPlaying() -> Bool {
-            switch MPMusicPlayerController.applicationQueuePlayer.playbackState {
-            case .playing, .seekingForward, .seekingBackward:
-                true
-            default:
-                false
-            }
-        }
-
-        func setMediaPlayerQueue(for song: MusicLibrarySongEntry) -> Bool {
+        /// Run on `SystemMusicPlayerCalls`' queue.
+        nonisolated func setMediaPlayerQueue(for song: MusicLibrarySongEntry) -> Bool {
             guard let persistentID = UInt64(song.id) else { return false }
             let predicate = MPMediaPropertyPredicate(
                 value: NSNumber(value: persistentID),
@@ -1577,56 +1569,78 @@ extension MenuView {
             musicKitDidHandleTrackEnd = false
             musicMediaPlayerWasPlaying = false
             musicSongsLoadError = nil
-            guard setMediaPlayerQueue(for: song) else { return }
+            // A stop still waiting for the song before gives way to this one.
+            SystemMusicPlayerCalls.noteStart()
             isCurrentMusicPlaybackUsingMediaPlayer = true
-            // Mix with other audio, or each interface sound stops the system player.
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            let player = MPMusicPlayerController.applicationQueuePlayer
             Task { @MainActor in
-                do {
-                    try await player.prepareToPlay()
-                } catch {
+                // Everything the system player is told goes through one queue off the main
+                // thread, in order, after any stop still under way.
+                let queued = await SystemMusicPlayerCalls.run { () -> Bool in
+                    // Mix with other audio, or each interface sound stops the system player.
+                    try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                    return self.setMediaPlayerQueue(for: song)
+                }
+                guard activeMusicPlaybackSongID == song.id else { return }
+                guard queued else {
+                    isCurrentMusicPlaybackUsingMediaPlayer = false
+                    return
+                }
+                if let error = await SystemMusicPlayerCalls.prepareToPlay() {
                     guard activeMusicPlaybackSongID == song.id else { return }
                     musicSongsLoadError = musicLibraryErrorMessage(for: error)
                     return
                 }
                 guard activeMusicPlaybackSongID == song.id else { return }
-                player.play()
+                SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.play() }
+                musicMediaPlayerWasPlaying = true
                 refreshMusicKitPlaybackProgress()
                 startMusicKitProgressTimerIfNeeded()
                 // Straight after another song the player can drop a new song as it starts;
                 // start it again if it stops before it has really played.
-                @MainActor func hasDropped() -> Bool {
-                    let state = player.playbackState
-                    return (state == .stopped || state == .paused) &&
-                        player.currentPlaybackTime < 0.5 &&
+                @MainActor func hasDropped() async -> Bool {
+                    let state = await SystemMusicPlayerCalls.state()
+                    return (state.playbackState == .stopped || state.playbackState == .paused) &&
+                        state.time < 0.5 &&
                         musicNowPlayingLeadingGlyphState != .pause
                 }
                 var retries = 0
                 for _ in 0 ..< 30 {
                     try? await firstRowSleep(0.1)
                     guard activeMusicPlaybackSongID == song.id else { return }
-                    if hasDropped(), retries < 2 {
+                    if retries < 2, await hasDropped() {
                         try? await firstRowSleep(0.3)
                         guard activeMusicPlaybackSongID == song.id else { return }
-                        guard hasDropped() else { continue }
+                        guard await hasDropped() else { continue }
                         retries += 1
-                        guard setMediaPlayerQueue(for: song) else { return }
-                        try? await player.prepareToPlay()
+                        guard await SystemMusicPlayerCalls.run({ self.setMediaPlayerQueue(for: song) }) else { return }
+                        _ = await SystemMusicPlayerCalls.prepareToPlay()
                         guard activeMusicPlaybackSongID == song.id else { return }
-                        player.play()
+                        SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.play() }
                     }
                 }
             }
         }
 
+        /// Reads where the system player is (off the main thread) and follows it: the time, a
+        /// pause, and the end of the song.
         func refreshMusicKitPlaybackProgress() {
             guard isCurrentMusicPlaybackUsingMediaPlayer, activeMusicPlaybackSongID != nil else {
                 stopMusicKitProgressTimer()
                 return
             }
-            let player = MPMusicPlayerController.applicationQueuePlayer
-            let isPlaying = isMediaPlayerPlaying()
+            guard !SystemMusicPlayerCalls.isReadingProgress else { return }
+            SystemMusicPlayerCalls.isReadingProgress = true
+            let songID = activeMusicPlaybackSongID
+            Task { @MainActor in
+                let state = await SystemMusicPlayerCalls.state()
+                SystemMusicPlayerCalls.isReadingProgress = false
+                guard self.activeMusicPlaybackSongID == songID, self.isCurrentMusicPlaybackUsingMediaPlayer else { return }
+                self.followMediaPlayer(state)
+            }
+        }
+
+        private func followMediaPlayer(_ state: SystemMusicPlayerCalls.State) {
+            let isPlaying = state.isPlaying
             if isPlaying != musicMediaPlayerWasPlaying {
                 musicMediaPlayerWasPlaying = isPlaying
                 updateMusicNowPlayingFlipTimerState()
@@ -1645,9 +1659,8 @@ extension MenuView {
             if isPlaying {
                 musicKitDidHandleTrackEnd = false
             }
-            let currentTime = player.currentPlaybackTime
-            if musicScrubDirection == 0, player.nowPlayingItem != nil, currentTime.isFinite {
-                musicNowPlayingElapsedSeconds = max(0, currentTime)
+            if musicScrubDirection == 0, state.hasItem, state.time.isFinite {
+                musicNowPlayingElapsedSeconds = max(0, state.time)
             }
         }
         #endif
@@ -1734,18 +1747,18 @@ extension MenuView {
         /// the system player has been given a new song meanwhile (its new queue replaces the
         /// old); a song that plays from its file instead still needs the old one stopped.
         private func stopSystemMusicPlayerSoon() {
-            Task { @MainActor in
-                try? await firstRowSleep(0.05)
-                #if os(iOS)
-                    guard !self.isCurrentMusicPlaybackUsingMediaPlayer else { return }
-                    MPMusicPlayerController.applicationQueuePlayer.stop()
-                    try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
-                #else
+            #if os(iOS)
+                // Off the main thread altogether: the stop can take a second or more, and on the
+                // main thread it held up whatever moved next.
+                SystemMusicPlayerCalls.stop()
+            #else
+                Task { @MainActor in
+                    try? await firstRowSleep(0.05)
                     let systemPlayerHasNewSong = self.activeMusicPlaybackSongID != nil && self.musicAudioPlayer == nil
                     guard !systemPlayerHasNewSong else { return }
                     ApplicationMusicPlayer.shared.stop()
-                #endif
-            }
+                }
+            #endif
         }
     #endif
 
@@ -2147,15 +2160,17 @@ extension MenuView {
         #endif
         #if os(iOS)
             if musicAudioPlayer == nil, isCurrentMusicPlaybackUsingMediaPlayer, activeMusicPlaybackSongID != nil {
-                let player = MPMusicPlayerController.applicationQueuePlayer
                 stopMusicScrubbing(showPauseGlyph: false)
-                if isMediaPlayerPlaying() {
-                    player.pause()
+                // As the progress reads last found it; the play or pause itself goes off the
+                // main thread.
+                if musicMediaPlayerWasPlaying {
+                    SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.pause() }
                     musicNowPlayingLeadingGlyphState = .pause
                 } else {
                     musicNowPlayingLeadingGlyphState = nil
-                    player.play()
+                    SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.play() }
                 }
+                musicMediaPlayerWasPlaying.toggle()
                 startMusicKitProgressTimerIfNeeded()
                 refreshMusicKitPlaybackProgress()
                 updateMusicNowPlayingFlipTimerState()
@@ -2255,7 +2270,7 @@ extension MenuView {
                activeMusicPlaybackSongID != nil,
                musicScrubDirection != direction
             {
-                MPMusicPlayerController.applicationQueuePlayer.pause()
+                SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.pause() }
             }
         #endif
         if musicAudioPlayer == nil, activeMusicPlaybackSongID == nil { return }
@@ -2343,7 +2358,7 @@ extension MenuView {
                 }
             #elseif os(iOS)
                 if isCurrentMusicPlaybackUsingMediaPlayer, activeMusicPlaybackSongID != nil {
-                    MPMusicPlayerController.applicationQueuePlayer.currentPlaybackTime = targetSeconds
+                    SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.currentPlaybackTime = targetSeconds }
                 }
             #endif
         }
@@ -2438,3 +2453,88 @@ extension MenuView {
         )
     }
 }
+
+#if os(iOS)
+    /// The system music player's stop, made one at a time on a queue of its own: it waits on
+    /// the media server, sometimes for a second or more. A stop still waiting when a new song
+    /// starts is dropped (the new queue replaces the old), and the new song waits for one
+    /// already under way.
+    enum SystemMusicPlayerCalls {
+        private static let queue = DispatchQueue(label: "firstrow.system-music-player", qos: .userInitiated)
+        private static let lock = NSLock()
+        private static var startCount = 0
+
+        @MainActor
+        static func noteStart() {
+            lock.lock()
+            startCount += 1
+            lock.unlock()
+        }
+
+        private static var currentStartCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return startCount
+        }
+
+        @MainActor
+        static func stop() {
+            let startsBefore = currentStartCount
+            queue.async {
+                guard currentStartCount == startsBefore else { return }
+                MPMusicPlayerController.applicationQueuePlayer.stop()
+                guard currentStartCount == startsBefore else { return }
+                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+            }
+        }
+
+        /// Returns once every stop asked for so far has finished.
+        static func waitForStops() async {
+            await withCheckedContinuation { continuation in
+                queue.async { continuation.resume() }
+            }
+        }
+
+        /// Runs `work` on the queue, after everything asked for before it.
+        static func run<T>(_ work: @escaping () -> T) async -> T {
+            await withCheckedContinuation { continuation in
+                queue.async { continuation.resume(returning: work()) }
+            }
+        }
+
+        /// Asks the queue to do something, without waiting for it.
+        static func send(_ work: @escaping () -> Void) {
+            queue.async(execute: work)
+        }
+
+        static func prepareToPlay() async -> Error? {
+            await withCheckedContinuation { continuation in
+                queue.async {
+                    MPMusicPlayerController.applicationQueuePlayer.prepareToPlay { error in
+                        continuation.resume(returning: error)
+                    }
+                }
+            }
+        }
+
+        struct State {
+            let playbackState: MPMusicPlaybackState
+            let time: TimeInterval
+            let hasItem: Bool
+
+            var isPlaying: Bool {
+                playbackState == .playing || playbackState == .seekingForward || playbackState == .seekingBackward
+            }
+        }
+
+        static func state() async -> State {
+            await run {
+                let player = MPMusicPlayerController.applicationQueuePlayer
+                return State(playbackState: player.playbackState, time: player.currentPlaybackTime, hasItem: player.nowPlayingItem != nil)
+            }
+        }
+
+        /// A progress read is on its way (they don't queue up behind a slow one).
+        @MainActor static var isReadingProgress = false
+    }
+#endif

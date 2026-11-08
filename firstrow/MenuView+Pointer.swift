@@ -109,6 +109,12 @@ final class PointerInputState {
         return pin.offset
     }
 
+    /// Drops what's kept of one list's scroll.
+    func forgetScroll(identity: String) {
+        if pin?.identity == identity { pin = nil }
+        leftScrollOffsets[identity] = nil
+    }
+
     func clearPin() {
         pin = nil
         leftScrollOffsets.removeAll()
@@ -161,9 +167,17 @@ extension MenuView {
     func notePointerAwareKey(_ key: KeyCode) {
         if key == .enter || key == .escape || key == .delete {
             #if os(iOS)
-                // Touch mode's lists stay where the finger left them, as other apps' do.
+                // Touch mode's lists stay where the finger left them, as other apps' do: the one
+                // a choice was made in, for coming back to. Going back up out of a list forgets
+                // it, so next time it opens afresh.
                 if AppSettings.isTouchEnabled {
                     pointer.tracksFinger = false
+                    if key == .escape || key == .delete, activeFullscreenScene == nil, !isMoviePlaybackVisible,
+                       !isMovieResumePromptVisible, textEntry == nil, let level = pointerActiveListLevel,
+                       let identity = pointer.hitTester?.menuListScrollState(level)?.identity
+                    {
+                        pointer.forgetScroll(identity: identity)
+                    }
                     return
                 }
             #endif
@@ -623,7 +637,7 @@ extension MenuView {
         guard activeMusicPlaybackSongID != nil, !isCurrentMusicPlaybackUsingSpotify else { return }
         #if os(iOS)
             if isCurrentMusicPlaybackUsingMediaPlayer {
-                MPMusicPlayerController.applicationQueuePlayer.currentPlaybackTime = seconds
+                SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.currentPlaybackTime = seconds }
             }
         #elseif os(tvOS)
             if !isCurrentMusicPlaybackUsingAppleScript {
