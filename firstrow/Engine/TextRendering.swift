@@ -531,6 +531,14 @@ enum SymbolFallback {
                     context.strokePath()
                 }
             }
+        case "checkmark":
+            return Shape(referenceSize: 34, box: CGSize(width: 35, height: 33)) { context in
+                context.setLineWidth(weight == .regular ? 3 : 4.3)
+                context.move(to: CGPoint(x: 6.5, y: 18.5))
+                context.addLine(to: CGPoint(x: 13.6, y: 26.4))
+                context.addLine(to: CGPoint(x: 28.5, y: 6))
+                context.strokePath()
+            }
         case "music.note":
             return Shape(referenceSize: 40, box: CGSize(width: 34, height: 46)) { context in
                 context.addEllipse(in: CGRect(x: 5, y: 31.2, width: 12.7, height: 12))

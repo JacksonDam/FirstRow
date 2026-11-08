@@ -115,6 +115,8 @@
 		17E42F7C552D8439E00D62BC /* MenuView+SceneLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 041BD18E34BB81CF5869D66C /* MenuView+SceneLayout.swift */; };
 		9B478C5FFEAECEAE013838B4 /* FirstRowMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 694828879CE0237F9751EE79 /* FirstRowMain.swift */; };
 		0FDEDCC7287D2A0897F3CDDC /* MenuView+MediaFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91FA96CF633C107507E42E8 /* MenuView+MediaFolders.swift */; };
+		3F11956CC34E36784FAD18F4 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4F326CA84EB1E7A13354E6 /* AppSettings.swift */; };
+		E23A15D2B8390FBD221D10A8 /* MenuView+Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3221A20525FB90A70CCEC3BD /* MenuView+Settings.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -245,6 +247,8 @@
 		041BD18E34BB81CF5869D66C /* MenuView+SceneLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+SceneLayout.swift"; sourceTree = "<group>"; };
 		694828879CE0237F9751EE79 /* FirstRowMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstRowMain.swift; sourceTree = "<group>"; };
 		F91FA96CF633C107507E42E8 /* MenuView+MediaFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MediaFolders.swift"; sourceTree = "<group>"; };
+		8D4F326CA84EB1E7A13354E6 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		3221A20525FB90A70CCEC3BD /* MenuView+Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Settings.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -283,6 +287,7 @@
 		7A73DE282F5776A20021C281 /* FRSettings.frappliance */ = {
 			isa = PBXGroup;
 			children = (
+				3221A20525FB90A70CCEC3BD /* MenuView+Settings.swift */,
 				F91FA96CF633C107507E42E8 /* MenuView+MediaFolders.swift */,
 				7A73DE242F5776A20021C281 /* MenuView+ScreenSaverIdle.swift */,
 				7A73DE252F5776A20021C281 /* MenuView+ScreenSaverNowPlaying.swift */,
@@ -419,6 +424,7 @@
 		7A73DE812F5776A20021C281 /* firstrow */ = {
 			isa = PBXGroup;
 			children = (
+				8D4F326CA84EB1E7A13354E6 /* AppSettings.swift */,
 				694828879CE0237F9751EE79 /* FirstRowMain.swift */,
 				041BD18E34BB81CF5869D66C /* MenuView+SceneLayout.swift */,
 				D0133167D30CE00D7FEBEBEA /* AppleRemoteInput.swift */,
@@ -696,6 +702,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E23A15D2B8390FBD221D10A8 /* MenuView+Settings.swift in Sources */,
+				3F11956CC34E36784FAD18F4 /* AppSettings.swift in Sources */,
 				0FDEDCC7287D2A0897F3CDDC /* MenuView+MediaFolders.swift in Sources */,
 				9B478C5FFEAECEAE013838B4 /* FirstRowMain.swift in Sources */,
 				17E42F7C552D8439E00D62BC /* MenuView+SceneLayout.swift in Sources */,

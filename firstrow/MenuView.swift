@@ -72,7 +72,11 @@ final class MenuView: ObservableObject {
     let musicSongIncomingTransitionDelay: Double = 0.2
     let musicNowPlayingFlipInterval: TimeInterval = 18.0
     let musicNowPlayingFlipDuration: TimeInterval = 1.2
-    let screenSaverIdleActivationDelay: TimeInterval = 60.0
+    /// How long the menus sit idle before the screen saver starts (0 = never), from Settings.
+    var screenSaverIdleActivationDelay: TimeInterval {
+        AppSettings.screenSaverDelay
+    }
+
     let screenSaverIdleCheckInterval: TimeInterval = 1.0
 
     // MARK: - Input constants
@@ -490,11 +494,7 @@ final class MenuView: ObservableObject {
     }
 
     var isScreenSaverEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "isScreenSaverEnabled") as? Bool ?? true }
-        set {
-            objectWillChange.send()
-            UserDefaults.standard.set(newValue, forKey: "isScreenSaverEnabled")
-        }
+        AppSettings.screenSaverDelay > 0
     }
 
     #if os(iOS)

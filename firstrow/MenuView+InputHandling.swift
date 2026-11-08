@@ -516,14 +516,7 @@ extension MenuView {
                 return
             }
         #endif
-        if activeRootItemID == "settings", item.id == "settings_soundeffects" {
-            isUISoundEffectsEnabled.toggle()
-            playSound(named: "Selection")
-            return
-        }
-        if activeRootItemID == "settings", item.id == "settings_screensaver" {
-            isScreenSaverEnabled.toggle()
-            playSound(named: "Selection")
+        if activeRootItemID == "settings", triggerSettingsItem(item) {
             return
         }
         playSound(named: "Selection")
@@ -601,6 +594,8 @@ extension MenuView {
             startPodcastEpisodePlayback(episode)
         case .mediaFolders:
             triggerMediaFoldersAction()
+        case .screenSaverSettings:
+            triggerScreenSaverSettingsAction()
         case .spotify:
             triggerSpotifyMenuAction()
         case .none:

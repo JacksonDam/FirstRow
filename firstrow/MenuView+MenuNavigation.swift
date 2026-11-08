@@ -20,6 +20,7 @@ extension MenuView {
         case photosDateAlbums
         case podcastsEpisodes
         case mediaFolders
+        case screenSaverSettings
         case spotify
     }
 }
@@ -64,7 +65,7 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos, .spotify:
             true
-        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .none:
+        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .screenSaverSettings, .none:
             false
         }
         if isExitingMusicThirdMenu {
@@ -174,6 +175,9 @@ extension MenuView {
         case .mediaFolders:
             playSound(named: "Exit")
             navigateUpInMediaFolders()
+        case .screenSaverSettings:
+            playSound(named: "Exit")
+            exitScreenSaverSettings()
         case .spotify:
             playSound(named: "Exit")
             navigateUpInSpotifyMenu()

@@ -17,10 +17,12 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
         submenuItems = [
             .init(id: "settings_name", title: "Name", trailingText: deviceName),
             .init(id: "settings_swversion", title: "SW Version", trailingText: "2.2.1 (314)"),
-            .init(id: "settings_screensaver", title: "Screen Saver", trailingText: "On"),
+            .init(id: "settings_screensaver", title: "Screen Saver", leadsToMenu: true, trailingText: "1 Minute"),
             .init(id: "settings_soundeffects", title: "Sound Effects", trailingText: "On"),
+            .init(id: "settings_theme", title: "Theme", trailingText: "Classic"),
         ]
         #if os(macOS) || FIRSTROW_PORTABLE
+            submenuItems.append(.init(id: "settings_mouse", title: "Mouse", trailingText: "Off"))
             submenuItems.append(.init(id: "settings_media_folders", title: "Media Folders", trailingText: "..."))
         #endif
     }

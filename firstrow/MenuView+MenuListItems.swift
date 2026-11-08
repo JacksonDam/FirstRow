@@ -150,7 +150,7 @@ extension MenuView {
             isLoadingPodcasts &&
                 podcastEpisodesThirdMenuItems.isEmpty &&
                 podcastsLoadError == nil
-        case .mediaFolders:
+        case .mediaFolders, .screenSaverSettings:
             false
         case .spotify:
             shouldHideSpotifyMenuUntilLoaded
@@ -187,10 +187,8 @@ extension MenuView {
             let resolvedTrailingText: String?
             var resolvedLeadingImageAssetName = $0.leadingImageAssetName
             var resolvedLeadingImage: NSImage?
-            if activeRootItemID == "settings", $0.id == "settings_soundeffects" {
-                resolvedTrailingText = isUISoundEffectsEnabled ? "On" : "Off"
-            } else if activeRootItemID == "settings", $0.id == "settings_screensaver" {
-                resolvedTrailingText = isScreenSaverEnabled ? "On" : "Off"
+            if activeRootItemID == "settings", let settingText = settingsTrailingText(forItemID: $0.id) {
+                resolvedTrailingText = settingText
             } else if activeRootItemID == "photos", let album = photoAlbumForSubmenuItemID($0.id) {
                 resolvedTrailingText = "(\(album.count))"
                 resolvedLeadingImage = photoLeadingImage(for: album)
@@ -320,6 +318,8 @@ extension MenuView {
             }
         case .mediaFolders:
             return mediaFoldersListItems()
+        case .screenSaverSettings:
+            return screenSaverSettingsListItems()
         case .spotify:
             return spotifyMenuListItems()
         case .none:
