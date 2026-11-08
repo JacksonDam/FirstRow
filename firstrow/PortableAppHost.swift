@@ -20,6 +20,8 @@
                     guard let kind = MediaSources.LibraryKind(rawValue: parts[1]) else { return false }
                     MediaSources.shared.setLibrary(URL(fileURLWithPath: parts[2]), kind: kind)
                     return true
+                case "setting":
+                    return FirstRowHarness.performSettingCommand(parts)
                 default:
                     return false
                 }
@@ -61,6 +63,25 @@
 
         func gamepad(_ button: GamepadButton, pressed: Bool) {
             GameControllerInput.current?.handle(button, pressed: pressed)
+        }
+
+        func pointerMoved(to point: CGPoint) {
+            controller.handlePointer(.moved(point))
+        }
+
+        func pointerButton(_ button: PortablePointerButton, pressed: Bool, at point: CGPoint) {
+            let resolved: PointerButton
+            switch button {
+            case .primary: resolved = .primary
+            case .secondary: resolved = .secondary
+            case .back: resolved = .back
+            case .middle, .forward: return
+            }
+            controller.handlePointer(pressed ? .pressed(resolved, point) : .released(resolved, point))
+        }
+
+        func pointerScrolled(dx: CGFloat, dy: CGFloat, at point: CGPoint) {
+            controller.handlePointer(.scrolled(dx: dx, dy: dy, precise: false, at: point))
         }
 
         func shouldQuitImmediately() -> Bool {

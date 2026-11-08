@@ -23,6 +23,10 @@ public enum GamepadButton: Sendable {
     case up, down, left, right, south, east, west, north, start, back
 }
 
+public enum PortablePointerButton: Sendable {
+    case primary, secondary, middle, back, forward
+}
+
 /// What the window shows and where its input goes.
 @MainActor
 public protocol PortableHost: AnyObject {
@@ -34,6 +38,17 @@ public protocol PortableHost: AnyObject {
     func gamepad(_ button: GamepadButton, pressed: Bool)
     /// The window was asked to close; return false to handle it (for a fade out) yourself.
     func shouldQuitImmediately() -> Bool
+    /// The mouse moved, in window points from the top left.
+    func pointerMoved(to point: CGPoint)
+    func pointerButton(_ button: PortablePointerButton, pressed: Bool, at point: CGPoint)
+    /// Wheel notches (fractions from trackpads); positive `dy` scrolls towards the top.
+    func pointerScrolled(dx: CGFloat, dy: CGFloat, at point: CGPoint)
+}
+
+public extension PortableHost {
+    func pointerMoved(to _: CGPoint) {}
+    func pointerButton(_: PortablePointerButton, pressed _: Bool, at _: CGPoint) {}
+    func pointerScrolled(dx _: CGFloat, dy _: CGFloat, at _: CGPoint) {}
 }
 
 /// Work to run once per frame, just before layer changes are committed and drawn.
@@ -86,7 +101,7 @@ public enum PortableApplication {
     /// The SDL window, for dialogs that sit over it.
     static var windowHandle: OpaquePointer? { window }
 
-    static func hideCursorIfFullscreen() {
+    public static func hideCursorIfFullscreen() {
         if let window, SDL_GetWindowFlags(window) & WindowFlag.fullscreen != 0 { SDL_HideCursor() }
     }
 
@@ -318,6 +333,17 @@ public enum PortableApplication {
             host?.keyUp(portableKey(event.key.key))
         case SDL_EVENT_MOUSE_MOTION:
             SDL_ShowCursor()
+            pointerLocation = CGPoint(x: CGFloat(event.motion.x), y: CGFloat(event.motion.y))
+            host?.pointerMoved(to: pointerLocation)
+        case SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_EVENT_MOUSE_BUTTON_UP:
+            SDL_ShowCursor()
+            pointerLocation = CGPoint(x: CGFloat(event.button.x), y: CGFloat(event.button.y))
+            if let button = pointerButton(event.button.button) {
+                host?.pointerButton(button, pressed: type == SDL_EVENT_MOUSE_BUTTON_DOWN, at: pointerLocation)
+            }
+        case SDL_EVENT_MOUSE_WHEEL:
+            // The values already follow the system's scroll direction setting.
+            host?.pointerScrolled(dx: CGFloat(event.wheel.x), dy: CGFloat(event.wheel.y), at: pointerLocation)
         case SDL_EVENT_GAMEPAD_ADDED:
             if let pad = SDL_OpenGamepad(event.gdevice.which) {
                 gamepads[event.gdevice.which] = pad
@@ -336,6 +362,19 @@ public enum PortableApplication {
     }
 
     private static var stickState: [UInt8: GamepadButton?] = [:]
+    private static var pointerLocation = CGPoint.zero
+
+    private static func pointerButton(_ button: UInt8) -> PortablePointerButton? {
+        // SDL_BUTTON_LEFT, MIDDLE, RIGHT, X1, X2.
+        switch button {
+        case 1: .primary
+        case 2: .middle
+        case 3: .secondary
+        case 4: .back
+        case 5: .forward
+        default: nil
+        }
+    }
 
     private static func handleAxis(_ axis: SDL_GamepadAxisEvent) {
         let value = Int(axis.value)
@@ -398,6 +437,21 @@ public enum PortableApplication {
         if mod & SDL_Keymod(SDL_KMOD_SHIFT) != 0 { result.insert(.shift) }
         if mod & SDL_Keymod(SDL_KMOD_GUI) != 0 { result.insert(.meta) }
         return result
+    }
+
+    /// Pointer events from the harness, as if from the mouse.
+    static func injectPointerMoved(to point: CGPoint) {
+        pointerLocation = point
+        host?.pointerMoved(to: point)
+    }
+
+    static func injectPointerButton(_ button: PortablePointerButton, pressed: Bool, at point: CGPoint) {
+        pointerLocation = point
+        host?.pointerButton(button, pressed: pressed, at: point)
+    }
+
+    static func injectPointerScroll(dx: CGFloat, dy: CGFloat) {
+        host?.pointerScrolled(dx: dx, dy: dy, at: pointerLocation)
     }
 
     static func injectKey(_ key: PortableKey, down: Bool) {
