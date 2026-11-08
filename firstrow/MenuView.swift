@@ -43,9 +43,10 @@ final class MenuView: ObservableObject {
 
     // MARK: - Duration constants
 
-    let iconFlightAnimationDuration: Double = 0.5
+    /// The modern look has no icon flight, so its menus come and go sooner.
+    var iconFlightAnimationDuration: Double { ModernTheme.isActive ? 0.3 : 0.5 }
     let submenuBackgroundIconTransitionDuration: Double = 0.5
-    let submenuBackgroundIconReturnDuration: Double = 0.5
+    var submenuBackgroundIconReturnDuration: Double { ModernTheme.isActive ? 0.3 : 0.5 }
     let movieEntryFadeDuration: Double = 0.48
     let movieEntryBlackHoldDuration: Double = 1.0
     let movieExitFreezeHoldDuration: Double = 0.5
@@ -201,6 +202,9 @@ final class MenuView: ObservableObject {
     @Published var thirdMenuRootURL: URL?
     @Published var thirdMenuCurrentURL: URL?
     @Published var movieLibraryRootURLs: [URL] = []
+    /// The movies list is Continue Watching rather than a folder.
+    @Published var isShowingContinueWatching = false
+    var continueWatchingRemainingText: [String: String] = [:]
 
     // MARK: - iTunes Top state
 

@@ -445,6 +445,7 @@ extension MenuView {
     }
 
     func resetThirdMenuDirectoryState() {
+        isShowingContinueWatching = false
         thirdMenuItems = []
         thirdMenuCurrentURL = nil
         thirdMenuRootURL = nil
@@ -717,6 +718,7 @@ extension MenuView {
 
     func enterMoviesFolderMenu() {
         transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
+            self.isShowingContinueWatching = false
             self.thirdMenuMode = .moviesFolder
             self.resetAllITunesTopMenusForNonITunesContext()
             self.resetMusicCategoryStateForNonMusicITunesTop()

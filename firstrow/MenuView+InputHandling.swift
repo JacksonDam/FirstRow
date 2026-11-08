@@ -369,6 +369,11 @@ extension MenuView {
             presentFullscreenScene(key: musicNowPlayingFullscreenKey)
             return
         }
+        if activeRootItemID == "movies", item.id == Self.continueWatchingItemID {
+            playSound(named: "Selection")
+            enterContinueWatchingMenu()
+            return
+        }
         if activeRootItemID == "movies", item.id == "movies_folder" {
             playSound(named: "Selection")
             enterMoviesFolderMenu()

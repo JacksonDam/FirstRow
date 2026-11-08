@@ -125,6 +125,7 @@
 		CA9F9456A2EE20F6B7086E6C /* ModernSelection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 375BB57713E15DCC94725F7F /* ModernSelection.aif */; };
 		FD12DD474D5A4F5FB7E0FDC7 /* ModernSelectionChange.aif in Resources */ = {isa = PBXBuildFile; fileRef = 24EFAA60856E197241F520F8 /* ModernSelectionChange.aif */; };
 		5042887DDC5095E20FFC08B5 /* ModernFullscreenLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */; };
+		1E8230663BC561B608D79CC1 /* MovieResumeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F2F789615C5335A6A3C2C4E /* MovieResumeStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -265,6 +266,7 @@
 		375BB57713E15DCC94725F7F /* ModernSelection.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernSelection.aif; sourceTree = "<group>"; };
 		24EFAA60856E197241F520F8 /* ModernSelectionChange.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernSelectionChange.aif; sourceTree = "<group>"; };
 		FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModernFullscreenLayers.swift; sourceTree = "<group>"; };
+		4F2F789615C5335A6A3C2C4E /* MovieResumeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieResumeStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -325,6 +327,7 @@
 		7A73DE342F5776A20021C281 /* Movies.frappliance */ = {
 			isa = PBXGroup;
 			children = (
+				4F2F789615C5335A6A3C2C4E /* MovieResumeStore.swift */,
 				7A73DE2C2F5776A20021C281 /* IOSFolderPicker.swift */,
 				7A73DE2D2F5776A20021C281 /* MenuView+ITunesTopLibrary.swift */,
 				7A73DE2E2F5776A20021C281 /* MenuView+ITunesTopPlayback.swift */,
@@ -731,6 +734,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1E8230663BC561B608D79CC1 /* MovieResumeStore.swift in Sources */,
 				5042887DDC5095E20FFC08B5 /* ModernFullscreenLayers.swift in Sources */,
 				0478771795FD6F2B1727EE99 /* ModernMenuRowLayer.swift in Sources */,
 				416B372B6FEC6A31DFCD77A0 /* ModernTheme.swift in Sources */,

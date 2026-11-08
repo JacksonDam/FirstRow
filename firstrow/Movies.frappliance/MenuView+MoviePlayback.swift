@@ -128,14 +128,20 @@ extension MenuView {
     }
 
     func shouldPresentMovieResumePrompt(for url: URL) -> Bool {
-        guard let lastClosedMovieURL else { return false }
-        guard lastClosedMovieURL.standardizedFileURL == url.standardizedFileURL else { return false }
-        return lastClosedMovieTimestamp > 0.05
+        movieResumeSeconds(for: url) > 0.05
+    }
+
+    /// Where `url` was stopped: this session's last movie, or any file stopped in an earlier one.
+    func movieResumeSeconds(for url: URL) -> Double {
+        if let lastClosedMovieURL, lastClosedMovieURL.standardizedFileURL == url.standardizedFileURL, lastClosedMovieTimestamp > 0.05 {
+            return lastClosedMovieTimestamp
+        }
+        return MovieResumeStore.seconds(for: url) ?? 0
     }
 
     func presentMovieResumePrompt(for url: URL) {
         movieResumePromptTargetURL = url.standardizedFileURL
-        movieResumePromptResumeSeconds = max(0, lastClosedMovieTimestamp)
+        movieResumePromptResumeSeconds = max(0, movieResumeSeconds(for: url))
         movieResumePromptSelectedIndex = 0
         movieResumePromptHideUnselected = false
         movieResumePromptSolidBlackSelected = false
@@ -313,6 +319,8 @@ extension MenuView {
         if closedAt.isFinite, closedAt > 0.05 {
             lastClosedMovieURL = currentMoviePlaybackURL.standardizedFileURL
             lastClosedMovieTimestamp = closedAt
+            MovieResumeStore.record(currentMoviePlaybackURL, seconds: closedAt, duration: moviePlaybackDurationSeconds)
+            refreshContinueWatchingIfShown()
         } else {
             lastClosedMovieURL = nil
             lastClosedMovieTimestamp = 0
@@ -573,6 +581,11 @@ extension MenuView {
                     let resolvedDuration = self.resolvedMovieDurationSeconds(for: player)
                     self.moviePlaybackDurationSeconds = max(self.moviePlaybackDurationSeconds, resolvedDuration)
                     self.moviePlaybackCurrentSeconds = self.moviePlaybackDurationSeconds
+                    // Watched to the end: nothing left to resume.
+                    if let url = self.currentMoviePlaybackURL {
+                        MovieResumeStore.remove(url)
+                        self.refreshContinueWatchingIfShown()
+                    }
                     self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
                 }
             }

@@ -182,6 +182,11 @@ extension MenuView {
             playSound(named: "Exit")
             navigateUpInSpotifyMenu()
         case .moviesFolder:
+            if isShowingContinueWatching {
+                playSound(named: "Exit")
+                exitMoviesThirdMenuToSecondLevelWithSwap()
+                return
+            }
             guard let currentURL = thirdMenuCurrentURL else {
                 exitMoviesThirdMenuToSecondLevelWithSwap()
                 return

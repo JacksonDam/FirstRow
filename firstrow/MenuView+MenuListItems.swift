@@ -65,6 +65,9 @@ extension MenuView {
                 )
             }
         }
+        if activeRootItemID == "movies", !MovieResumeStore.entries().isEmpty {
+            items.insert(SubmenuItemConfig(id: Self.continueWatchingItemID, title: "Continue Watching", leadsToMenu: true), at: 0)
+        }
         if activeRootItemID == "music",
            shouldExposeMusicNowPlayingMenuItem
         {
@@ -81,14 +84,20 @@ extension MenuView {
         return items
     }
 
-    /// Keeps the Music menu selection on its row when the Now Playing row comes or goes.
+    /// Keeps the Music (or Movies) menu selection on its row when the Now Playing (or Continue
+    /// Watching) row comes or goes at the top.
     func keepMusicSubmenuSelectionOnItsRow() {
-        guard activeRootItemID == "music", isInSubmenu else {
+        let topRowID = switch activeRootItemID {
+        case "music": "music_now_playing"
+        case "movies": Self.continueWatchingItemID
+        default: ""
+        }
+        guard !topRowID.isEmpty, isInSubmenu else {
             musicSubmenuSelectionMemo = nil
             return
         }
         let items = currentSubmenuItems()
-        let hasNowPlayingRow = items.first?.id == "music_now_playing"
+        let hasNowPlayingRow = items.first?.id == topRowID
         if let memo = musicSubmenuSelectionMemo,
            memo.hasNowPlayingRow != hasNowPlayingRow,
            let previousID = memo.selectedID,
@@ -224,7 +233,12 @@ extension MenuView {
                 return []
             }
             return thirdMenuItems.map {
-                plainMenuListItem(id: $0.id, title: $0.title, leadsToMenu: $0.isDirectory)
+                plainMenuListItem(
+                    id: $0.id,
+                    title: $0.title,
+                    leadsToMenu: $0.isDirectory,
+                    trailingText: isShowingContinueWatching ? continueWatchingRemainingText[$0.id].flatMap { $0.isEmpty ? nil : $0 } : nil,
+                )
             }
         case .moviesITunesTop:
             return iTunesTopThirdMenuListItems(for: .movies)
