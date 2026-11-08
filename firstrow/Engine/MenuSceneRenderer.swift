@@ -71,6 +71,7 @@ final class MenuSceneRenderer: TransactionRendering {
         var showsThirdList = false
         var sortMode: MenuView.TVShowsSortMode?
         var theme: InterfaceTheme?
+        var sortPillTheme: InterfaceTheme?
     }
 
     init(menu: MenuView) {
@@ -437,13 +438,17 @@ final class MenuSceneRenderer: TransactionRendering {
         let showsPill = menu.shouldShowTVShowsSortPill
         let pillChanged = memo.showsSortPill != nil && memo.showsSortPill != showsPill
         if showsPill || sortPill.opacity > 0 {
-            if memo.sortMode != menu.tvShowsSortMode || sortPill.contentsScale != scale || sortPill.contents == nil {
-                let graphic = TVShowsSortPillRenderer.render(mode: menu.tvShowsSortMode, scale: scale)
+            let isModern = theme == .modern
+            if memo.sortMode != menu.tvShowsSortMode || sortPill.contentsScale != scale || sortPill.contents == nil || memo.sortPillTheme != theme {
+                let graphic = isModern
+                    ? TVShowsSortPillRenderer.renderModern(mode: menu.tvShowsSortMode, scale: scale)
+                    : TVShowsSortPillRenderer.render(mode: menu.tvShowsSortMode, scale: scale)
                 sortPill.contents = graphic.image
                 sortPill.contentsScale = graphic.scale
                 memo.sortMode = menu.tvShowsSortMode
+                memo.sortPillTheme = theme
             }
-            let size = TVShowsSortPillRenderer.size
+            let size = isModern ? TVShowsSortPillRenderer.modernSize : TVShowsSortPillRenderer.size
             let padding = TVShowsSortPillRenderer.padding
             sortPill.frame = CGRect(x: (menuWidth - size.width) * 0.5 - padding, y: 6 - padding, width: size.width + padding * 2, height: size.height + padding * 2)
         }
@@ -563,6 +568,45 @@ enum TVShowsSortPillRenderer {
             }
         }
         cache[key] = graphic
+        return graphic
+    }
+
+    static let modernSize = CGSize(width: 300, height: 52)
+    private static var modernCache: [String: RenderedGraphic] = [:]
+
+    /// The modern look's switch: a translucent capsule with the chosen half in white.
+    static func renderModern(mode: MenuView.TVShowsSortMode, scale: CGFloat) -> RenderedGraphic {
+        let key = "\(mode)|\(scale)"
+        if let cached = modernCache[key] { return cached }
+        let usesDate = mode == .date
+        let size = modernSize
+        let half = size.width * 0.5
+        let graphic = TextRenderer.draw(size: size, padding: padding, scale: scale, shadows: []) { context in
+            context.translateBy(x: padding, y: padding + size.height)
+            context.scaleBy(x: 1, y: -1)
+            let bounds = CGRect(origin: .zero, size: size)
+            context.addPath(CGPath(roundedRect: bounds, cornerWidth: size.height * 0.5, cornerHeight: size.height * 0.5, transform: nil))
+            context.setFillColor(ModernTheme.rowFill.cgColor)
+            context.fillPath()
+            let chosen = CGRect(x: usesDate ? 4 : half + 4, y: 4, width: half - 8, height: size.height - 8)
+            context.addPath(CGPath(roundedRect: chosen, cornerWidth: chosen.height * 0.5, cornerHeight: chosen.height * 0.5, transform: nil))
+            context.setFillColor(ModernTheme.focusFill.cgColor)
+            context.fillPath()
+            for (index, label) in ["Date", "Show"].enumerated() {
+                let selected = (index == 0) == usesDate
+                let font = FontMetrics.font(ModernTheme.mediumFontName, size: 26)
+                let line = CTLineCreateWithAttributedString(FontMetrics.attributed(label, font: font, color: selected ? ModernTheme.focusedText : ModernTheme.text))
+                let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+                let lineHeight = FontMetrics.lineHeight(font)
+                context.saveGState()
+                context.translateBy(x: CGFloat(index) * half + (half - lineWidth) * 0.5, y: (size.height - lineHeight) * 0.5 + FontMetrics.baseline(font))
+                context.scaleBy(x: 1, y: -1)
+                context.textPosition = .zero
+                CTLineDraw(line, context)
+                context.restoreGState()
+            }
+        }
+        modernCache[key] = graphic
         return graphic
     }
 
