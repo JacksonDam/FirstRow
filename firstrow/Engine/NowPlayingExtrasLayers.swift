@@ -299,7 +299,8 @@ final class NowPlayingQueueLayer {
             selection.update(
                 frame: frame.insetBy(dx: -40 * spill, dy: -29 * spill),
                 selectionBoxHeight: frame.height,
-                animation: appearing ? nil : (lastSelectionIndex != focus ? .easeInOut(duration: 0.2) : nil),
+                // On the list's own curve, so when the list scrolls under it, it stays still.
+                animation: appearing ? nil : (lastSelectionIndex != focus ? (pass.animation ?? .easeInOut(duration: 0.2)) : nil),
             )
             lastSelectionIndex = focus
         } else {

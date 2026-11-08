@@ -294,12 +294,21 @@ final class OnboardingLayer {
                 entry.picture.addSublayer(holder)
             } else {
                 entry.face.backgroundColor = CGColor(gray: 0, alpha: 1)
-                // A picture of the look, drawn at full scene size and shrunk onto the card.
-                let shrink = local.width / 1920
+                // A picture of the look, drawn at full scene size and shrunk onto the card. The
+                // classic one is laid out for this screen, as the menus are (4:3 on an iPad or
+                // an opened-out phone), and sits in the middle of the card.
+                let sceneSize = index == 0 ? menu.activeMenuVirtualSceneSize : MenuVirtualScenePreset.widescreen
+                let shrink = index == 0 ? min(local.width / sceneSize.width, local.height / sceneSize.height) : local.width / sceneSize.width
                 let preview = index == 0
-                    ? classicPreview(menu: menu, pixelScale: max(1, pixelScale * shrink * 1.1))
+                    ? classicPreview(menu: menu, sceneSize: sceneSize, pixelScale: max(1, pixelScale * shrink * 1.1))
                     : Self.modernPreview(pixelScale: max(1, pixelScale * shrink * 1.1))
-                preview.transform = CATransform3DMakeScale(shrink, shrink, 1)
+                var placement = CATransform3DMakeTranslation(
+                    index == 0 ? ((local.width - sceneSize.width * shrink) / 2).rounded() : 0,
+                    index == 0 ? ((local.height - sceneSize.height * shrink) / 2).rounded() : 0,
+                    0,
+                )
+                placement = CATransform3DScale(placement, shrink, shrink, 1)
+                preview.transform = placement
                 entry.picture.addSublayer(preview)
             }
         }
@@ -323,8 +332,7 @@ final class OnboardingLayer {
     private var previewCarousel: RootCarouselLayerController?
     private var previewList: MenuListLayer?
 
-    private func classicPreview(menu: MenuView, pixelScale: CGFloat) -> SceneLayer {
-        let sceneSize = MenuVirtualScenePreset.widescreen
+    private func classicPreview(menu: MenuView, sceneSize: CGSize, pixelScale: CGFloat) -> SceneLayer {
         let frames = menu.sceneFrames(sceneSize: sceneSize, classicLayout: true)
         let root = SceneLayer()
         root.frame = CGRect(origin: .zero, size: sceneSize)
@@ -358,7 +366,8 @@ final class OnboardingLayer {
 
         let heading = TextRenderer.render(TextSpec(text: "First Row", fontName: firstRowBoldFontName, size: 60, maxWidth: sceneSize.width), scale: pixelScale)
         let headingLayer = SceneLayer()
-        let centerX = sceneSize.width * 0.5 + menu.rootMenuHeaderOffsetX(sceneSize: sceneSize)
+        // Over the middle of the list, as the main menu's title is.
+        let centerX = frames.menuFrame.midX
         headingLayer.show(heading, at: CGPoint(x: (centerX - heading.size.width / 2).rounded(), y: frames.headerTop))
         root.addSublayer(headingLayer)
 

@@ -101,6 +101,9 @@ final class CoverCarouselLayerController: LayerController {
         refreshLaneImages()
         if animatedGeometryKey != geometryKey {
             animatedGeometryKey = geometryKey
+            // The covers go where they are in their trip straight away: the frame or two before
+            // the motion starts would otherwise show them piled up, full size, in the corner.
+            placeAtCurrentPhase(bounds: bounds)
             // Deferred out of the render pass's transaction so its animations can't touch these.
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.animatedGeometryKey == geometryKey else { return }
@@ -240,31 +243,56 @@ final class CoverCarouselLayerController: LayerController {
         return CoverState(x: x, y: side * 0.12, scale: scale, yawDegrees: -20 + 90 * u, depth: u)
     }
 
+    /// Where a cover is (in the carousel's own layer space) and how it's turned and sized.
+    private func pose(_ state: CoverState, size: CGSize, bounds: CGSize, configuration: CoverCarouselConfiguration) -> (position: CGPoint, transform: CATransform3D) {
+        // Scaling about a frame 100 pt taller than the artwork lifts it by 50 pt times the scale.
+        let position = LayerSpace(height: bounds.height).point(CGPoint(
+            x: bounds.width * 0.5 + configuration.horizontalOffset + state.x,
+            y: bounds.height * 0.5 + configuration.verticalOffset + state.y - 50 * state.scale,
+        ))
+        let transform = CATransform3DConcat(
+            yawTransform(degrees: state.yawDegrees, perspective: 0.75, viewSize: size),
+            CATransform3DMakeScale(state.scale, state.scale, 1),
+        )
+        return (position, transform)
+    }
+
+    private func laneProgress(slot: Int, elapsed: Double) -> Double {
+        let lanePosition = elapsed * Self.coversPerSecond - Double(slot) / Double(Self.laneCount)
+        return lanePosition - floor(lanePosition)
+    }
+
+    /// Each cover's still pose for now, held until the motion is installed.
+    private func placeAtCurrentPhase(bounds: CGSize) {
+        guard let configuration else { return }
+        let elapsed = max(0, CACurrentMediaTime() - phaseOrigin)
+        withoutLayerActions {
+            for (slot, lane) in lanes.enumerated() {
+                let progress = laneProgress(slot: slot, elapsed: elapsed)
+                let size = lane.size == .zero ? CGSize(width: configuration.baseIconSize * 1.2, height: configuration.baseIconSize * 1.2) : lane.size
+                let pose = pose(coverState(progress: progress, baseIconSize: configuration.baseIconSize), size: size, bounds: bounds, configuration: configuration)
+                for layer in [lane.reflection, lane.preview] {
+                    // Only the first look: running motion overrides these.
+                    guard layer.animation(forKey: "carousel") == nil else { continue }
+                    layer.position = pose.position
+                    layer.transform = pose.transform
+                }
+            }
+        }
+    }
+
     private func installAnimations(bounds: CGSize) {
         guard let configuration else { return }
-        let center = CGPoint(x: bounds.width * 0.5, y: bounds.height * 0.5)
         let count = Self.keyframeCount
         let keyTimes = (0 ... count).map { NSNumber(value: Double($0) / Double(count)) }
         let states = (0 ... count).map { coverState(progress: Double($0) / Double(count), baseIconSize: configuration.baseIconSize) }
-        // Scaling about a frame 100 pt taller than the artwork lifts it by 50 pt times the scale.
-        let space = LayerSpace(height: bounds.height)
-        let positions = states.map { state in
-            NSValue.layerPoint(space.point(CGPoint(
-                x: center.x + configuration.horizontalOffset + state.x,
-                y: center.y + configuration.verticalOffset + state.y - 50 * state.scale,
-            )))
-        }
         let elapsed = max(0, CACurrentMediaTime() - phaseOrigin)
         for (slot, lane) in lanes.enumerated() {
             let size = lane.size == .zero ? CGSize(width: configuration.baseIconSize * 1.2, height: configuration.baseIconSize * 1.2) : lane.size
-            let transforms = states.map { state in
-                NSValue(caTransform3D: CATransform3DConcat(
-                    yawTransform(degrees: state.yawDegrees, perspective: 0.75, viewSize: size),
-                    CATransform3DMakeScale(state.scale, state.scale, 1),
-                ))
-            }
-            let lanePosition = elapsed * Self.coversPerSecond - Double(slot) / Double(Self.laneCount)
-            let progress = lanePosition - floor(lanePosition)
+            let poses = states.map { pose($0, size: size, bounds: bounds, configuration: configuration) }
+            let positions = poses.map { NSValue.layerPoint($0.position) }
+            let transforms = poses.map { NSValue(caTransform3D: $0.transform) }
+            let progress = laneProgress(slot: slot, elapsed: elapsed)
             // Animated depth puts a cover that just wrapped behind the others from its first frame.
             lane.plane.removeAllAnimations()
             let depth = CAKeyframeAnimation(keyPath: "zPosition")

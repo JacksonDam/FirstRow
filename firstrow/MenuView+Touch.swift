@@ -41,6 +41,8 @@ extension MenuView {
             case button(TouchControl)
             /// On Now Playing's list: a tap chooses a song, a drag scrolls.
             case queue
+            /// Sliding the selection over Now Playing's list, as in the menus; lifting plays.
+            case queueSelecting
             /// Pulling Now Playing's list out from the right edge, or pushing it back.
             case queuePull
             case ignored
@@ -77,6 +79,8 @@ extension MenuView {
         var queueOriginY: CGFloat?
         var queueWasMoving = false
         var queueMotion: TouchListMotion?
+        /// The row of Now Playing's list under a sliding finger, walked to a row a frame.
+        var queueSelectionTarget: Int?
         /// How far out the list was, and where the finger was, when a pull began; and the
         /// finger's recent sideways positions, for how fast it let go.
         var pullStartReveal: CGFloat = 0
@@ -320,6 +324,24 @@ extension MenuView {
                 state.queueStartScroll = nowPlayingQueueScroll
                 state.queueOriginY = nil
                 state.queueWasMoving = queueWasMoving
+                state.queueSelectionTarget = nil
+                guard !queueWasMoving, geometry.row(at: point, scroll: nowPlayingQueueScroll, count: nowPlayingQueueCount) != nil else { return }
+                if geometry.scrollLimit <= 0 {
+                    // Nothing to scroll: the finger slides the selection straight away.
+                    state.mode = .queueSelecting
+                    showQueueTouchSelection(at: point)
+                    return
+                }
+                // As in the menus: a moment for the highlight, a little longer for sliding,
+                // and a drag before then scrolls.
+                state.holdTask = Task { @MainActor [weak self] in
+                    try? await firstRowSleep(Self.touchHighlightDelay)
+                    guard let self, !Task.isCancelled, self.touch.mode == .queue, self.touch.queueOriginY == nil else { return }
+                    self.showQueueTouchSelection(at: self.touch.last)
+                    try? await firstRowSleep(Self.touchHoldDelay - Self.touchHighlightDelay)
+                    guard !Task.isCancelled, self.touch.mode == .queue, self.touch.queueOriginY == nil else { return }
+                    self.touch.mode = .queueSelecting
+                }
                 return
             }
             // A finger on a list that's still moving stops it there, as a scroll view does.
@@ -395,6 +417,8 @@ extension MenuView {
             case .queue:
                 if state.queueOriginY == nil {
                     guard (dx * dx + dy * dy).squareRoot() > Self.touchSlop else { return }
+                    state.holdTask?.cancel()
+                    endQueueTouchSelection()
                     if abs(dx) > abs(dy) {
                         // Sideways: the list goes with the finger, back towards the edge.
                         beginNowPlayingQueuePull(at: point, time: time)
@@ -405,6 +429,8 @@ extension MenuView {
                 scrollNowPlayingQueue(by: point.y - (state.queueOriginY ?? point.y))
             case .selecting:
                 slideTouchSelection(to: point)
+            case .queueSelecting:
+                slideQueueTouchSelection(to: point)
             case .undecided:
                 guard (dx * dx + dy * dy).squareRoot() > Self.touchSlop else { return }
                 state.holdTask?.cancel()
@@ -470,6 +496,16 @@ extension MenuView {
                     state.samples.append((time, point.y))
                     releaseNowPlayingQueue(velocity: releaseVelocity(at: time))
                 }
+            case .queueSelecting:
+                // Lifting over a song plays it; anywhere else lets it go.
+                state.queueSelectionTarget = nil
+                if let geometry = pointer.hitTester?.nowPlayingQueueGeometry, geometry.panel.contains(point),
+                   let row = geometry.row(at: point, scroll: nowPlayingQueueScroll, count: nowPlayingQueueCount)
+                {
+                    chooseNowPlayingQueueRow(row)
+                } else {
+                    endQueueTouchSelection()
+                }
             case .selecting:
                 // Lifting over a row chooses it; anywhere else lets it go.
                 if case let .menuRow(level, index)? = pointer.hitTester?.pointerTarget(at: point), level == pointerActiveListLevel {
@@ -512,6 +548,9 @@ extension MenuView {
             }
             if state.mode == .queuePull {
                 finishNowPlayingQueuePull(velocity: 0)
+            }
+            if state.mode == .queue || state.mode == .queueSelecting {
+                endQueueTouchSelection()
             }
             state.mode = .ignored
             endTouchSelection()
@@ -635,6 +674,7 @@ extension MenuView {
         private func touchFrame(_ seconds: Double) -> Bool {
             var wantsMore = touch.isFingerDown
             if stepTouchSelection() { wantsMore = true }
+            if stepQueueTouchSelection() { wantsMore = true }
             if var motion = touch.queueMotion {
                 if isNowPlayingQueueVisible {
                     let moving = motion.advance(seconds)
@@ -795,16 +835,12 @@ extension MenuView {
             }
             if let scene = activeFullscreenScene {
                 if scene.key == musicNowPlayingFullscreenKey {
-                    // A tap beside the list puts it away; with the buttons away, it brings them back.
+                    // A tap beside the list puts it away; anywhere else it brings the buttons
+                    // back, or keeps them up. Only the play button plays and pauses.
                     if isNowPlayingQueueVisible {
                         hideNowPlayingQueue()
-                    } else if areNowPlayingTouchControlsHidden {
-                        showNowPlayingTouchControls()
                     } else {
-                        // The play button shows the state, so the glyph under the bar stays away.
-                        isPressingOnScreenPlaybackButton = true
-                        pressTouchKey(.space)
-                        isPressingOnScreenPlaybackButton = false
+                        showNowPlayingTouchControls()
                     }
                 } else if scene.key == photoSlideshowFullscreenKey {
                     // As on a movie: a tap shows or hides Back.
@@ -898,6 +934,54 @@ extension MenuView {
                 scroll = geometry.scrollLimit + Self.band(scroll - geometry.scrollLimit)
             }
             nowPlayingQueueScroll = scroll
+        }
+
+        /// Picks out the song under the finger in Now Playing's list.
+        private func showQueueTouchSelection(at point: CGPoint) {
+            guard let geometry = pointer.hitTester?.nowPlayingQueueGeometry,
+                  let row = geometry.row(at: point, scroll: nowPlayingQueueScroll, count: nowPlayingQueueCount),
+                  row != nowPlayingQueueHoverIndex
+            else { return }
+            touch.queueSelectionTarget = nil
+            nowPlayingQueueHoverIndex = row
+            playSound(named: "SelectionChange")
+        }
+
+        /// The selection follows the finger through Now Playing's list, a row a frame, so a
+        /// quick slide still picks out every song on the way.
+        private func slideQueueTouchSelection(to point: CGPoint) {
+            guard let geometry = pointer.hitTester?.nowPlayingQueueGeometry, geometry.panel.contains(point),
+                  let row = geometry.row(at: point, scroll: nowPlayingQueueScroll, count: nowPlayingQueueCount)
+            else { return }
+            if nowPlayingQueueHoverIndex == nil {
+                showQueueTouchSelection(at: point)
+                return
+            }
+            touch.queueSelectionTarget = row != nowPlayingQueueHoverIndex ? row : nil
+            startTouchClock()
+        }
+
+        /// Moves the list's selection one row nearer the finger's. Returns whether rows remain.
+        private func stepQueueTouchSelection() -> Bool {
+            guard let target = touch.queueSelectionTarget else { return false }
+            guard isNowPlayingQueueVisible, let current = nowPlayingQueueHoverIndex, current != target else {
+                touch.queueSelectionTarget = nil
+                return false
+            }
+            let next = current + (target > current ? 1 : -1)
+            nowPlayingQueueHoverIndex = next
+            playSound(named: "SelectionChange")
+            guard next != target else {
+                touch.queueSelectionTarget = nil
+                return false
+            }
+            return true
+        }
+
+        /// The finger left Now Playing's list without choosing: nothing stays picked out.
+        private func endQueueTouchSelection() {
+            touch.queueSelectionTarget = nil
+            if nowPlayingQueueHoverIndex != nil { nowPlayingQueueHoverIndex = nil }
         }
 
         /// Lets Now Playing's list go, coasting or springing back as the menus' lists do.

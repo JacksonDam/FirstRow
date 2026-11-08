@@ -578,6 +578,11 @@
                     return made
                 }()
                 let nudge: CGFloat = item.symbol == "play.fill" ? item.pointSize * 0.06 : 0
+                // Following the progress bar as Now Playing moves aside for the words.
+                if item.inScene, button.isShownState, button.frame != item.frame, !instantly.contains(key), let sceneAnimation {
+                    let target = item.frame
+                    animateViews(sceneAnimation, { button.frame = target })
+                }
                 button.place(item.frame, symbol: item.symbol, pointSize: item.pointSize, nudge: nudge)
                 #if os(macOS)
                     let shown = true

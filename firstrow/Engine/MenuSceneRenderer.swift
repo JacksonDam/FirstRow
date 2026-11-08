@@ -376,7 +376,16 @@ final class MenuSceneRenderer: TransactionRendering {
         toast.update(menu: menu, pass: pass, bounds: fullBounds, backingScale: backingScale)
         volumeOverlay.layout(screenSize: fullBounds.size)
         onboarding.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
-        touchControls.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
+        let canvasScale = FullscreenCanvas(screenSize: fullBounds.size).scale
+        touchControls.update(
+            menu: menu,
+            pass: pass,
+            bounds: fullBounds,
+            scale: backingScale,
+            nowPlayingBar: fullscreenScene.nowPlayingProgressBar.map {
+                CGRect(x: $0.minX * canvasScale, y: $0.minY * canvasScale, width: $0.width * canvasScale, height: $0.height * canvasScale)
+            },
+        )
         for (overlay, opacity) in [
             (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),
             (movieTransitionOverlay, menu.movieTransitionOverlayOpacity),

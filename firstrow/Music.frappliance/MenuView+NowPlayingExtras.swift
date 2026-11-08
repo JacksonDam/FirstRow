@@ -102,8 +102,8 @@ extension MenuView {
         }
     }
 
-    /// Up and down while the list is out: the row picked out moves, the list scrolling to keep
-    /// it in view.
+    /// Up and down while the list is out: the row picked out moves, and as in the menus it stays
+    /// on the fourth row while the list scrolls under it.
     func moveNowPlayingQueueFocus(by step: Int) {
         let count = nowPlayingQueueCount
         guard count > 0 else { return }
@@ -116,24 +116,20 @@ extension MenuView {
         playSound(named: "SelectionChange")
         withAnimation(.smooth(duration: 0.22)) {
             nowPlayingQueueHoverIndex = target
-            keepNowPlayingQueueRowInView(target)
+            scrollNowPlayingQueue(holdingRowOnFourth: target)
         }
     }
 
-    /// Scrolls the list just enough to show all of row `index`.
-    private func keepNowPlayingQueueRowInView(_ index: Int) {
-        guard let geometry = pointer.hitTester?.nowPlayingQueueGeometry else { return }
-        let pitch = Self.nowPlayingQueueRowPitch
-        let padding: CGFloat = 14
-        let visible = geometry.viewport.height * geometry.canvasPerPoint
-        let top = CGFloat(index) * pitch + padding
-        var scroll = nowPlayingQueueScroll
-        if top - pitch * 0.5 < scroll {
-            scroll = top - pitch * 0.5
-        } else if top + pitch * 1.5 > scroll + visible {
-            scroll = top + pitch * 1.5 - visible
-        }
-        nowPlayingQueueScroll = max(0, min(geometry.scrollLimit, scroll))
+    /// Scrolls the list so row `index` sits where the menus keep their selection (the fourth
+    /// row), as far as the list's ends allow.
+    private func scrollNowPlayingQueue(holdingRowOnFourth index: Int) {
+        nowPlayingQueueScroll = max(0, min(nowPlayingQueueScrollLimit, CGFloat(index - stickySelectionRowIndex) * Self.nowPlayingQueueRowPitch))
+    }
+
+    /// How far the list scrolls, for its length now (the last list's may have been different).
+    private var nowPlayingQueueScrollLimit: CGFloat {
+        guard let geometry = pointer.hitTester?.nowPlayingQueueGeometry else { return .greatestFiniteMagnitude }
+        return max(0, CGFloat(nowPlayingQueueCount) * Self.nowPlayingQueueRowPitch + 14 * 2 - geometry.viewport.height * geometry.canvasPerPoint)
     }
 
     /// Select while the list is out: plays the row picked out.
@@ -150,10 +146,10 @@ extension MenuView {
         settleNowPlayingQueue(open: false)
     }
 
-    /// Where the list was opened on: a couple of rows above the song playing.
+    /// Where the list was opened on: the song playing on the fourth row, where the arrows'
+    /// selection stays.
     func scrollNowPlayingQueueToActiveSong() {
-        let active = CGFloat(nowPlayingQueueActiveIndex ?? 0)
-        nowPlayingQueueScroll = max(0, (active - 2) * Self.nowPlayingQueueRowPitch)
+        scrollNowPlayingQueue(holdingRowOnFourth: nowPlayingQueueActiveIndex ?? 0)
     }
 
     /// Slides the list all the way out or back, from wherever it is (no fade: it's one sheet
@@ -362,7 +358,8 @@ struct NowPlayingQueueGeometry {
     /// The row under a window point with the list scrolled `scroll` canvas points.
     func row(at point: CGPoint, scroll: CGFloat, count: Int) -> Int? {
         guard viewport.contains(point) else { return nil }
-        let y = point.y - listTop + scroll / canvasPerPoint
+        // Held within the list's length, as it's drawn.
+        let y = point.y - listTop + max(0, min(scrollLimit, scroll)) / canvasPerPoint
         guard y >= 0 else { return nil }
         let index = Int(y / rowPitch)
         return index < count ? index : nil

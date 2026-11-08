@@ -111,7 +111,13 @@ final class TouchControlsLayer {
         }
     }
 
-    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
+    /// Now Playing's progress bar in window points: the last one seen, while songs change over.
+    private var nowPlayingBar: CGRect?
+    /// Where Now Playing's buttons start down from, when they're under its progress bar.
+    private var transportTop: CGFloat?
+
+    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil) {
+        if let bar { nowPlayingBar = bar }
         var wanted: [Wanted] = []
         // Shown for the pointer and fingers; a key or remote puts them straight away.
         let enabled = menu.showsOnScreenControls && menu.showsPointingHints && menu.onboardingStep == nil
@@ -123,6 +129,7 @@ final class TouchControlsLayer {
         let size = bounds.size
         let insets = Self.safeAreaInsets
         let isNowPlaying = menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey
+        transportTop = nil
         let backFrame = CGRect(x: max(insets.left + 16, 38), y: max(insets.top + 10, 32), width: 46, height: 46)
         let back = Wanted(control: .back, frame: backFrame, symbol: "chevron.left", pointSize: 19)
         if let step = menu.onboardingStep {
@@ -142,10 +149,34 @@ final class TouchControlsLayer {
                     ]
                 }
             } else if isNowPlaying {
-                let middle = size.width / 2
                 let play: CGFloat = 64
                 let side: CGFloat = 52
-                let centerY = size.height - max(insets.bottom, 10) - 16 - play / 2
+                let (middle, centerY): (CGFloat, CGFloat) = {
+                    let bottom = size.height - max(insets.bottom, 10) - 16 - play / 2
+                    #if os(iOS)
+                        // On a phone or an iPad, under the progress bar (and its times), clear of
+                        // the cover, rather than along the bottom of the screen.
+                        if let bar = nowPlayingBar {
+                            let canvasScale = FullscreenCanvas(screenSize: size).scale
+                            // From the bar's middle: the modern bar swells while it's held.
+                            let gap = (isModern ? 76 : 44) * canvasScale
+                            // With the words beside it, Now Playing is small: the buttons go
+                            // along the bottom under it, and stop short of the words.
+                            let besideWords = menu.isNowPlayingLyricsVisible
+                            let centerY = besideWords ? bottom : min(bar.midY + gap + play / 2, bottom)
+                            // The whole row on the screen: Previous on the left, the words'
+                            // button furthest right.
+                            let leftReach = menu.canSwitchMusicNowPlayingTrack ? play / 2 + 36 + side : play / 2
+                            var rightReach = menu.canSwitchMusicNowPlayingTrack ? play / 2 + 36 + side : play / 2
+                            if menu.hasNowPlayingLyrics { rightReach += 40 + 46 }
+                            var rightLimit = size.width - insets.right - 16
+                            if besideWords { rightLimit = min(rightLimit, bar.maxX + 24) }
+                            transportTop = centerY - play / 2
+                            return (max(min(bar.midX, rightLimit - rightReach), insets.left + 16 + leftReach), centerY)
+                        }
+                    #endif
+                    return (size.width / 2, bottom)
+                }()
                 wanted = [
                     back,
                     Wanted(control: .playPause, frame: CGRect(x: middle - play / 2, y: centerY - play / 2, width: play, height: play), symbol: menu.isMusicPlaybackRunning() ? "pause.fill" : "play.fill", pointSize: 26, inScene: true),
@@ -191,7 +222,8 @@ final class TouchControlsLayer {
         let isIdle = isNowPlaying && menu.areNowPlayingTouchControlsHidden
         let transportHidden = isNowPlaying && (isIdle || menu.nowPlayingQueueReveal > 0.001)
         transportGroup.place(CGRect(origin: .zero, size: size))
-        let drop = 64 + max(insets.bottom, 10) + 40
+        // (From under the progress bar, far enough to leave the screen.)
+        let drop = max(64 + max(insets.bottom, 10) + 40, transportTop.map { size.height - $0 + 12 } ?? 0)
         // Their own slide, even part way through a finger's pull on the list.
         let slide: Animation? = transportHidden == lastTransportHidden ? pass.animation : (transportHidden ? .smoothInOut(duration: 0.45) : .smooth(duration: 0.4))
         lastTransportHidden = transportHidden
@@ -274,7 +306,14 @@ final class TouchControlsLayer {
                 return made
             }()
             let frame = item.frame
-            if button.base.frame != frame { button.base.place(frame) }
+            if button.base.frame != frame {
+                // Following the progress bar as Now Playing moves aside for the words.
+                if item.inScene, button.isShown, !sceneMoving {
+                    button.base.setFrame(frame, pass.animation)
+                } else {
+                    button.base.place(frame)
+                }
+            }
             let local = CGRect(origin: .zero, size: frame.size)
             let radius = frame.height / 2
             let fill = isModern ? CGColor(gray: 0.2, alpha: 0.72) : CGColor(gray: 0, alpha: 0.6)

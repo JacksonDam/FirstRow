@@ -490,7 +490,7 @@ extension MenuView {
                 musicNowPlayingDurationSeconds = state.durationSeconds
             }
             if musicScrubDirection == 0, !isAwaitingSpotifySeek(state) {
-                musicNowPlayingElapsedSeconds = state.currentPositionSeconds()
+                musicNowPlayingElapsedSeconds = state.displayedPositionSeconds()
                 spotifyLastTrackPositionSeconds = musicNowPlayingElapsedSeconds
                 musicNowPlayingLeadingGlyphState = state.isPaused ? .pause : nil
             }
@@ -534,7 +534,7 @@ extension MenuView {
         }
         spotifyIsPlaying = !state.isPaused
         musicNowPlayingDurationSeconds = max(0, state.durationSeconds)
-        musicNowPlayingElapsedSeconds = state.currentPositionSeconds()
+        musicNowPlayingElapsedSeconds = state.displayedPositionSeconds()
         musicNowPlayingLeadingGlyphState = state.isPaused ? .pause : nil
         updateMusicNowPlayingFlipTimerState()
     }
@@ -606,7 +606,7 @@ extension MenuView {
             else { return }
         }
         guard !isAwaitingSpotifySeek(state) else { return }
-        musicNowPlayingElapsedSeconds = state.currentPositionSeconds()
+        musicNowPlayingElapsedSeconds = state.displayedPositionSeconds()
         if !spotifyShowsAdvert {
             spotifyLastTrackPositionSeconds = musicNowPlayingElapsedSeconds
         }

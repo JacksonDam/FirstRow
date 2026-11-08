@@ -67,6 +67,21 @@ struct SpotifyPlayerState {
             : positionSeconds + max(0, date.timeIntervalSince(positionDate))
         return durationSeconds > 0 ? min(position, durationSeconds) : position
     }
+
+    /// How long a report of "playing from the very start" is taken at its word before the
+    /// time counts on from it.
+    static let startHoldSeconds: TimeInterval = 2
+
+    /// The time to show. While a song loads, Spotify says it's playing from 0:00 again and
+    /// again, so counting on from each report made the time flick between 0:00 and 0:01. A
+    /// report at the very start stays at 0:00 until a newer one shows it moving, or until none
+    /// has come for a couple of seconds (then it really is playing, from that report).
+    func displayedPositionSeconds(at date: Date = Date()) -> Double {
+        if !isPaused, positionSeconds < 0.05, date.timeIntervalSince(positionDate) < Self.startHoldSeconds {
+            return positionSeconds
+        }
+        return currentPositionSeconds(at: date)
+    }
 }
 
 enum SpotifySessionSupport {
