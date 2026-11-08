@@ -221,7 +221,8 @@ extension MenuView {
     /// Direct touch, when Settings > Touch Controls is on. In menus nothing is selected until a
     /// finger is down: touching a row selects it, sliding moves the selection a row at a time,
     /// and lifting chooses. Long lists scroll with a drag and coast; holding still first slides
-    /// the selection instead. Swiping right goes back. In playback, a tap plays or pauses,
+    /// the selection instead. Swiping right goes back. In Now Playing a tap plays or pauses (in
+    /// a movie it shows or hides the controls),
     /// dragging the bar scrubs, Now Playing swipes change song, and a movie's Subtitles & Speed
     /// button (or a swipe down) opens its options.
     extension MenuView {
@@ -944,8 +945,11 @@ extension MenuView {
                 _ = handleMovieOptionsInput(hit.backward ? .leftArrow : .enter)
                 return
             }
+            // A tap away from the buttons shows or hides the controls; playing and pausing is
+            // the play button's job.
             if areMovieControlsVisible {
-                pressTouchKey(.space)
+                cancelMovieControlsAutoHide()
+                hideMovieControlsWithFade()
             } else {
                 showMovieControlsInstantly()
                 scheduleMovieControlsAutoHide()

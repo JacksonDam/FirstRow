@@ -239,8 +239,12 @@ final class ModernNowPlayingPanelLayer {
         barFrame = barHeld ? rest.insetBy(dx: -grownBy.width, dy: -grownBy.height) : rest
         track.setFrame(barFrame, barAnimation)
         track.set("cornerRadius", to: barFrame.height / 2, unchanged: track.cornerRadius == barFrame.height / 2, animation: barAnimation)
-        // Taller than the bar ever gets: the bar's rounded clip gives it its shape at any size.
-        fill.setFrame(CGRect(x: 0, y: 0, width: barFrame.width * max(0, min(1, progress)), height: 60), barAnimation)
+        // The fill spans the whole bar (and is taller than it ever gets: the bar's rounded clip
+        // gives it its shape), so it grows and shrinks with the bar in one animation; how much
+        // has played is a squeeze from its left end, which the progress ticks change without
+        // cutting that animation short.
+        fill.setFrame(CGRect(x: 0, y: 0, width: barFrame.width, height: 60), barAnimation)
+        fill.setTransform(CATransform3DMakeScale(max(0.0001, min(1, progress)), 1, 1), nil)
         let fillAlpha: CGFloat = barHeld ? 1 : 0.8
         fill.set("backgroundColor", to: CGColor(gray: 1, alpha: fillAlpha), unchanged: fill.backgroundColor?.alpha == fillAlpha, animation: barAnimation)
         y += barHeight + 12
