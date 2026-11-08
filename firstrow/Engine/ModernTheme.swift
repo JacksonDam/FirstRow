@@ -418,12 +418,14 @@ extension MenuView {
 
 extension CoverCarouselConfiguration {
     /// The first few covers that have loaded.
+    /// Real covers only: a placeholder is passed over for the next cover along.
+    @MainActor
     func firstArtworks(_ count: Int) -> [NSImage] {
         switch source {
         case let .images(images):
-            return Array(images.compactMap { $0 }.prefix(count))
+            return Array(images.compactMap { $0 }.filter { !ModernTheme.isPlaceholderArtwork($0) }.prefix(count))
         case let .dynamic(_, loaded, artwork, _, _):
-            return Array((0 ..< min(loaded, count * 3)).compactMap { artwork($0) }.prefix(count))
+            return Array((0 ..< min(loaded, count * 8)).compactMap { artwork($0) }.filter { !ModernTheme.isPlaceholderArtwork($0) }.prefix(count))
         }
     }
 }
@@ -432,6 +434,13 @@ extension CoverCarouselConfiguration {
 
 extension ModernTheme {
     private static var placeholders: [String: NSImage] = [:]
+
+    /// One of the stand-ins drawn for missing artwork (either look's).
+    @MainActor
+    static func isPlaceholderArtwork(_ image: NSImage) -> Bool {
+        if placeholders.values.contains(where: { $0 === image }) { return true }
+        return ["musicfallback", "moviesfallback"].contains { NSImage(named: $0) === image }
+    }
 
     /// The symbol a row shows before its title in the modern look, in place of the classic
     /// look's own icons, or nil to keep the row's picture.

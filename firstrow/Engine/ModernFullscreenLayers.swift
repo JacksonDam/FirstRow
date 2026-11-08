@@ -34,8 +34,11 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         stage.addSublayer(incoming.layer)
     }
 
-    /// The song's panels, which move aside for the list or the lyrics.
+    /// The song's panels, which move aside for the list or the lyrics, and scale as Now Playing
+    /// comes and goes while the blurred backdrop behind them stays put.
     private let stage = SceneLayer()
+
+    override var scalesItsOwnForeground: Bool { true }
     private var shift: (dx: CGFloat, scale: CGFloat) = (0, 1)
     private var size: CGSize = .zero
     private var isSwitchingSong = false
@@ -60,7 +63,8 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         self.size = size
         stage.place(bounds)
         shift = NowPlayingSideLayout.shift(menu: menu, size: size)
-        stage.setTransform(NowPlayingSideLayout.transform(shift, size: size), pass.animation)
+        let depth = MenuSceneRenderer.scale(menu.fullscreenSceneScale, about: CGPoint(x: size.width / 2, y: size.height / 2))
+        stage.setTransform(CATransform3DConcat(NowPlayingSideLayout.transform(shift, size: size), depth), pass.animation)
         let snapshot = menu.currentMusicNowPlayingSnapshot
         if snapshot.artworkImage !== backdropSource || backdropMissing {
             backdropSource = snapshot.artworkImage

@@ -1160,9 +1160,12 @@ extension MenuView {
                 for album in albums.dropFirst(resolvedStartIndex) {
                     guard let item = album.representativeItem else { continue }
                     if item.assetURL == nil, item.mediaType.contains(.anyVideo) { continue }
-                    artworks.append(item.artwork?.image(at: CGSize(width: 800, height: 800)) ?? fallback)
+                    // Albums whose cover isn't here (yet) are left out rather than shown blank.
+                    guard let cover = item.artwork?.image(at: CGSize(width: 800, height: 800)) else { continue }
+                    artworks.append(cover)
                     if artworks.count >= resolvedLimit { break }
                 }
+                if artworks.isEmpty, resolvedStartIndex == 0 { artworks.append(fallback) }
                 return artworks
             }.value
         #elseif os(tvOS)

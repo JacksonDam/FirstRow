@@ -40,7 +40,11 @@ struct FullscreenCanvas {
 /// an error or a loading message.
 @MainActor
 final class FullscreenSceneLayer {
+    /// The scene's black backdrop: it fades but never scales, so a scene coming or going in the
+    /// modern look has no edges of its own against the menu behind.
     let layer = SceneLayer()
+    /// What scales as the modern look moves to and from the scene.
+    private let foreground = SceneLayer()
     private var contentKey: String?
     private var content: FullscreenContent?
     /// Now Playing's list and lyrics, over its right side.
@@ -52,8 +56,9 @@ final class FullscreenSceneLayer {
         layer.opacity = 0
         layer.isHidden = true
         layer.masksToBounds = true
-        layer.addSublayer(lyrics.layer)
-        layer.addSublayer(queue.layer)
+        layer.addSublayer(foreground)
+        foreground.addSublayer(lyrics.layer)
+        foreground.addSublayer(queue.layer)
     }
 
     func tearDown() {
@@ -69,8 +74,9 @@ final class FullscreenSceneLayer {
 
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
         layer.place(bounds)
+        foreground.place(CGRect(origin: .zero, size: bounds.size))
         let depth = ModernTheme.isActive ? menu.fullscreenSceneScale : 1
-        layer.setTransform(MenuSceneRenderer.scale(depth, about: CGPoint(x: bounds.midX, y: bounds.midY)), pass.animation)
+        foreground.setTransform(MenuSceneRenderer.scale(depth, about: CGPoint(x: bounds.midX, y: bounds.midY)), pass.animation)
         guard let scene = menu.activeFullscreenScene else {
             if content != nil {
                 content?.tearDown()
@@ -90,7 +96,12 @@ final class FullscreenSceneLayer {
             content = Self.makeContent(for: scene, menu: menu)
             contentKey = key
             if let content {
-                layer.insertSublayer(content.layer, below: lyrics.layer)
+                // A scene with a backdrop of its own scales its foreground itself.
+                if content.scalesItsOwnForeground {
+                    layer.insertSublayer(content.layer, below: foreground)
+                } else {
+                    foreground.insertSublayer(content.layer, below: lyrics.layer)
+                }
             }
         }
         let canvas = FullscreenCanvas(screenSize: bounds.size)
@@ -126,6 +137,9 @@ final class FullscreenSceneLayer {
 @MainActor
 class FullscreenContent {
     let layer = SceneLayer()
+    /// Keeps its own full-screen backdrop still while the rest of it scales in the modern look's
+    /// moves (reading `fullscreenSceneScale` itself), rather than being scaled whole.
+    var scalesItsOwnForeground: Bool { false }
     func update(menu _: MenuView, scene _: FullscreenScenePresentation, pass _: RenderPass, size _: CGSize, scale _: CGFloat) {}
     func tearDown() {}
 }

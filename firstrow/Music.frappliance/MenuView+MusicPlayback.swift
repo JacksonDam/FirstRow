@@ -170,9 +170,14 @@ extension MenuView {
         Task.detached(priority: .userInitiated) {
             var resolvedArtwork: NSImage?
             // A streamed song's cover can reach the library only once the song has started (and
-            // later still while the library is busy, just after launch), so a song still playing
-            // without one is asked about again for a good while.
-            for wait in [0.0, 0.6, 1, 1.5, 2, 3, 4, 6, 8, 12] {
+            // later still while the library is busy, just after launch). So for as long as that
+            // song plays on showing the placeholder, it's asked about again: quickly at first,
+            // then every few seconds, from the library and from the player playing it.
+            let quickWaits: [Double] = [0, 0.6, 1, 1.5, 2, 3, 4]
+            var attempt = 0
+            while resolvedArtwork == nil, attempt < 400 {
+                let wait = attempt < quickWaits.count ? quickWaits[attempt] : 4
+                attempt += 1
                 if wait > 0 {
                     try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
                     // Only while that song plays on without a cover (another lookup may have found it).
@@ -183,7 +188,12 @@ extension MenuView {
                     guard stillWaiting else { return }
                 }
                 resolvedArtwork = await self.resolveMusicArtworkImage(for: song, cacheKey: cacheKey)
-                if resolvedArtwork != nil { break }
+                #if os(iOS)
+                    if resolvedArtwork == nil, song.url == nil {
+                        // The player streaming it fetches its cover sooner than the library has it.
+                        resolvedArtwork = await SystemMusicPlayerCalls.nowPlayingArtwork(persistentID: song.id)
+                    }
+                #endif
             }
             guard let resolvedArtwork else { return }
             await MainActor.run {
@@ -2549,5 +2559,15 @@ extension MenuView {
 
         /// A progress read is on its way (they don't queue up behind a slow one).
         @MainActor static var isReadingProgress = false
+
+        /// The cover of the song playing, if it's the one with `persistentID`.
+        static func nowPlayingArtwork(persistentID: String) async -> NSImage? {
+            await run {
+                guard let item = MPMusicPlayerController.applicationQueuePlayer.nowPlayingItem,
+                      String(item.persistentID) == persistentID
+                else { return nil }
+                return item.artwork?.image(at: CGSize(width: 800, height: 800))
+            }
+        }
     }
 #endif
