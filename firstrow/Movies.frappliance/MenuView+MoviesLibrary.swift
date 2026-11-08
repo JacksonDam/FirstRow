@@ -768,6 +768,6 @@ extension MenuView {
     }
 
     var moviesFallbackImage: NSImage? {
-        NSImage(named: "moviesfallback")
+        ModernTheme.isActive ? ModernTheme.placeholderArtwork(symbol: "film.fill", aspect: 2.0 / 3.0) : NSImage(named: "moviesfallback")
     }
 }

@@ -1271,6 +1271,7 @@ extension MenuView {
     }
 
     var podcastFallbackImage: NSImage? {
-        NSImage(named: "Podcast") ?? NSImage(named: "podcasts")
+        if ModernTheme.isActive { return ModernTheme.placeholderArtwork(symbol: "mic.fill") }
+        return NSImage(named: "Podcast") ?? NSImage(named: "podcasts")
     }
 }

@@ -2869,7 +2869,7 @@ extension MenuView {
     }
 
     var musicFallbackImage: NSImage? {
-        NSImage(named: "musicfallback")
+        ModernTheme.isActive ? ModernTheme.placeholderArtwork(symbol: "music.note") : NSImage(named: "musicfallback")
     }
 }
 

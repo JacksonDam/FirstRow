@@ -407,3 +407,37 @@ extension CoverCarouselConfiguration {
         }
     }
 }
+
+// MARK: - Placeholder artwork
+
+extension ModernTheme {
+    private static var placeholders: [String: NSImage] = [:]
+
+    /// Artwork for items without any, in the modern look: a quiet grey tile with a symbol.
+    @MainActor
+    static func placeholderArtwork(symbol: String, aspect: CGFloat = 1) -> NSImage? {
+        let key = "\(symbol)|\(aspect)"
+        if let cached = placeholders[key] { return cached }
+        let height = 600
+        let width = Int((CGFloat(height) * aspect).rounded())
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
+        ) else { return nil }
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        let colors = [CGColor(gray: 0.27, alpha: 1), CGColor(gray: 0.17, alpha: 1)] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: colors, locations: [0, 1]) {
+            // Lighter at the top (bitmap y is up).
+            context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: rect.maxY), end: .zero, options: [])
+        }
+        let glyph = SymbolRenderer.render(symbol, pointSize: CGFloat(min(width, height)) * 0.34, weight: .regular, color: RGBA(white: 1, alpha: 0.42), scale: 1)
+        if let image = glyph.image {
+            let box = glyph.imageFrame(at: CGPoint(x: (CGFloat(width) - glyph.size.width) / 2, y: (CGFloat(height) - glyph.size.height) / 2))
+            context.draw(image, in: box)
+        }
+        guard let cgImage = context.makeImage() else { return nil }
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+        placeholders[key] = image
+        return image
+    }
+}
