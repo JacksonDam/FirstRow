@@ -179,56 +179,24 @@ final class ModernBackgroundLayer {
         return context.makeImage()
     }()
 
-    /// The picture shrunk, blurred and darkened; upscaling it smoothly does the rest.
+    /// The picture shrunk to a few pixels and darkened. Shown stretched over the screen, the
+    /// layer's smooth scaling turns it into a very soft blur.
     static func blurredAmbient(_ image: NSImage) -> CGImage? {
-        guard let source = LayerImageCache.cgImage(for: image) else { return nil }
-        let width = 96
-        let height = 54
-        guard let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
-        ) else { return nil }
-        context.interpolationQuality = .high
+        guard let source = LayerImageCache.cgImage(for: image),
+              let tiny = CGContext(
+                  data: nil, width: 16, height: 9, bitsPerComponent: 8, bytesPerRow: 0,
+                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
+              )
+        else { return nil }
+        tiny.interpolationQuality = .high
         // Fill the frame, cropping the picture's longer side.
         let aspect = CGFloat(source.width) / CGFloat(max(1, source.height))
-        let target = CGFloat(width) / CGFloat(height)
-        let drawSize = aspect > target
-            ? CGSize(width: CGFloat(height) * aspect, height: CGFloat(height))
-            : CGSize(width: CGFloat(width), height: CGFloat(width) / aspect)
-        context.draw(source, in: CGRect(x: (CGFloat(width) - drawSize.width) / 2, y: (CGFloat(height) - drawSize.height) / 2, width: drawSize.width, height: drawSize.height))
-        guard let data = context.data else { return nil }
-        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
-        for _ in 0 ..< 3 {
-            boxBlur(pixels, width: width, height: height, radius: 5)
-        }
+        let drawSize = aspect > 16.0 / 9.0 ? CGSize(width: 9 * aspect, height: 9) : CGSize(width: 16, height: 16 / aspect)
+        tiny.draw(source, in: CGRect(x: (16 - drawSize.width) / 2, y: (9 - drawSize.height) / 2, width: drawSize.width, height: drawSize.height))
         // Darken towards black, keeping a little of the colour.
-        for index in 0 ..< width * height * 4 where index % 4 != 3 {
-            pixels[index] = UInt8(Double(pixels[index]) * 0.42)
-        }
-        return context.makeImage()
-    }
-
-    /// One horizontal and one vertical box blur pass over BGRA pixels, edges clamped.
-    private static func boxBlur(_ pixels: UnsafeMutablePointer<UInt8>, width: Int, height: Int, radius: Int) {
-        var line = [Int](repeating: 0, count: max(width, height) * 4)
-        func pass(count: Int, lines: Int, offset: (Int, Int) -> Int) {
-            for l in 0 ..< lines {
-                for i in 0 ..< count {
-                    for c in 0 ..< 4 { line[i * 4 + c] = Int(pixels[offset(l, i) + c]) }
-                }
-                for i in 0 ..< count {
-                    for c in 0 ..< 4 {
-                        var sum = 0
-                        for k in -radius ... radius {
-                            sum += line[min(count - 1, max(0, i + k)) * 4 + c]
-                        }
-                        pixels[offset(l, i) + c] = UInt8(sum / (radius * 2 + 1))
-                    }
-                }
-            }
-        }
-        pass(count: width, lines: height) { row, column in (row * width + column) * 4 }
-        pass(count: height, lines: width) { column, row in (row * width + column) * 4 }
+        tiny.setFillColor(CGColor(gray: 0, alpha: 0.58))
+        tiny.fill(CGRect(x: 0, y: 0, width: 16, height: 9))
+        return tiny.makeImage()
     }
 }
 
