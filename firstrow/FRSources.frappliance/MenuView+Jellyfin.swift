@@ -39,6 +39,21 @@ enum JellyfinList: Equatable {
         case .playlists: "Playlists"
         }
     }
+
+    var emptyTitle: String {
+        switch self {
+        case .resume: "Nothing to Continue"
+        case .nextUp: "No Episodes Up Next"
+        case .movies: "No Movies"
+        case .shows: "No Shows"
+        case .music, .folder: "Nothing Here"
+        case .artists: "No Artists"
+        case .albums: "No Albums"
+        case .playlists: "No Playlists"
+        case .seasons: "No Seasons"
+        case .episodes: "No Episodes"
+        }
+    }
 }
 
 enum JellyfinPage: Equatable {
@@ -184,7 +199,7 @@ extension MenuView {
             }
             guard state.isLoaded else { return items }
             if state.items.isEmpty, jellyfin.error == nil {
-                return [menuMessageItem(id: "jellyfin_empty", title: "Nothing Here Yet")]
+                return [menuMessageItem(id: "jellyfin_empty", title: list.emptyTitle)]
             }
             for (index, item) in state.items.enumerated() {
                 items.append(jellyfinRow(for: item, index: index, in: list))
@@ -815,8 +830,8 @@ extension MenuView {
                 message: "On a device signed in to \(info.name), open Quick Connect in your profile and enter this code.",
                 code: start.code,
                 status: "Waiting for approval...",
-            )) { [weak self] in
-                self?.jellyfin.quickConnectRequestID &+= 1
+            )) {
+                self.jellyfin.quickConnectRequestID &+= 1
             }
             // Asks every two seconds until it's approved, cancelled or ten minutes pass.
             for _ in 0 ..< 300 {
