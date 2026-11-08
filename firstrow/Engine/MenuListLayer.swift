@@ -33,6 +33,8 @@ final class MenuListLayer {
     private let rowsContainer = SceneLayer()
     private let topFade = SceneGradientLayer()
     private let bottomFade = SceneGradientLayer()
+    /// The modern look fades rows out at the list's edges rather than drawing black over them.
+    private let edgeMask = SceneGradientLayer()
     private var rows: [Int: any MenuRowLayering] = [:]
     private var spareRows: [any MenuRowLayering] = []
     private var rowTheme: InterfaceTheme?
@@ -57,6 +59,8 @@ final class MenuListLayer {
         }
         topFade.startPoint = CGPoint(x: 0.5, y: 0)
         topFade.endPoint = CGPoint(x: 0.5, y: 1)
+        edgeMask.startPoint = CGPoint(x: 0.5, y: 0)
+        edgeMask.endPoint = CGPoint(x: 0.5, y: 1)
         bottomFade.startPoint = CGPoint(x: 0.5, y: 1)
         bottomFade.endPoint = CGPoint(x: 0.5, y: 0)
     }
@@ -289,10 +293,26 @@ final class MenuListLayer {
             scrollOffset: scrollOffset,
         )
 
+        // The modern look: rows fade to transparent at an edge with more rows past it.
+        if isModern, contentHeight > viewportHeight + 1 {
+            if clip.mask !== edgeMask { clip.mask = edgeMask }
+            edgeMask.frame = clip.bounds
+            let fade = min(0.25, 44 / max(1, viewportHeight))
+            let fadesTop = scrollOffset < -1
+            let fadesBottom = scrollOffset > viewportHeight - contentHeight + 1
+            edgeMask.colors = [
+                CGColor(gray: 0, alpha: fadesTop ? 0 : 1), CGColor(gray: 0, alpha: 1),
+                CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: fadesBottom ? 0 : 1),
+            ]
+            edgeMask.locations = [0, NSNumber(value: Double(fade)), NSNumber(value: Double(1 - fade)), 1]
+        } else if clip.mask != nil {
+            clip.mask = nil
+        }
+
         // Fades at the edges while the list scrolls past more rows.
         let fadeWidth = max(visualWidth, menuWidth)
-        topFade.isHidden = !c.showsTopOverflowFade
-        bottomFade.isHidden = !c.showsTopOverflowFade
+        topFade.isHidden = !c.showsTopOverflowFade || isModern
+        bottomFade.isHidden = !c.showsTopOverflowFade || isModern
         topFade.frame = CGRect(x: 0, y: 0, width: fadeWidth, height: menu.submenuTopFadeHeight)
         bottomFade.frame = CGRect(x: 0, y: viewportHeight - menu.submenuTopFadeHeight, width: fadeWidth, height: menu.submenuTopFadeHeight)
         let fadeAnimation = Animation.easeInOut(duration: 0.12)
