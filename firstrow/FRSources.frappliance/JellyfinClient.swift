@@ -394,7 +394,8 @@ struct JellyfinClient: Sendable {
     /// A URL for a player or image loader, which can't send headers, so the token rides along.
     func mediaURL(_ path: String, _ query: [(String, String)] = []) -> URL {
         var query = query
-        if let accessToken { query.append(("api_key", accessToken)) }
+        // Newer servers read ApiKey, older ones api_key.
+        if let accessToken { query += [("ApiKey", accessToken), ("api_key", accessToken)] }
         return url(path, query)
     }
 
@@ -545,14 +546,21 @@ struct JellyfinClient: Sendable {
 
     /// The item's poster or cover, or the one of the album, season or series it belongs to.
     func primaryImageURL(for item: JellyfinItem, maxHeight: Int = 900) -> URL? {
+        // Episodes show their series' poster, which suits the preview better than a wide still.
+        if item.type == "Episode", let seriesID = item.seriesID, let tag = item.seriesPrimaryImageTag {
+            return url("/Items/\(seriesID)/Images/Primary", [("maxHeight", "\(maxHeight)"), ("quality", "90"), ("tag", tag)])
+        }
         if let tag = item.imageTags?["Primary"] {
             return url("/Items/\(item.id)/Images/Primary", [("maxHeight", "\(maxHeight)"), ("quality", "90"), ("tag", tag)])
         }
         if let albumID = item.albumID, let tag = item.albumPrimaryImageTag {
             return url("/Items/\(albumID)/Images/Primary", [("maxHeight", "\(maxHeight)"), ("quality", "90"), ("tag", tag)])
         }
-        if let seriesID = item.seriesID, let tag = item.seriesPrimaryImageTag {
-            return url("/Items/\(seriesID)/Images/Primary", [("maxHeight", "\(maxHeight)"), ("quality", "90"), ("tag", tag)])
+        if let seriesID = item.seriesID {
+            // Seasons often come without their series' picture tag; the series' own poster still loads.
+            var query: [(String, String)] = [("maxHeight", "\(maxHeight)"), ("quality", "90")]
+            if let tag = item.seriesPrimaryImageTag { query.append(("tag", tag)) }
+            return url("/Items/\(seriesID)/Images/Primary", query)
         }
         return nil
     }
@@ -622,7 +630,7 @@ struct JellyfinClient: Sendable {
         var items = components.queryItems ?? []
         let names = Set(items.map { $0.name.lowercased() })
         if let accessToken, !names.contains("api_key"), !names.contains("apikey") {
-            items.append(URLQueryItem(name: "api_key", value: accessToken))
+            items += [URLQueryItem(name: "ApiKey", value: accessToken), URLQueryItem(name: "api_key", value: accessToken)]
         }
         components.queryItems = items
         return components.url

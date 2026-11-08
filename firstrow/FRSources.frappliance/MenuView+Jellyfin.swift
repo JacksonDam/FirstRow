@@ -54,6 +54,8 @@ enum JellyfinPage: Equatable {
 struct JellyfinPageState {
     var page: JellyfinPage
     var selectedIndex = 0
+    /// The row to select again once the page has loaded, after coming back to it.
+    var selectedRowID: String?
     var items: [JellyfinItem] = []
     var hasResume = false
     var hasNextUp = false
@@ -204,8 +206,6 @@ extension MenuView {
             } else if let number = item.indexNumber {
                 title = "\(number). \(item.title)"
             }
-        case "Movie":
-            if list == .resume, let year = item.productionYear { trailing = "\(year)" }
         default:
             break
         }
@@ -298,10 +298,7 @@ extension MenuView {
 
     func pushJellyfinPage(_ page: JellyfinPage) {
         transitionMenuForFolderSwap(revealWhen: { !self.shouldHideJellyfinMenuUntilLoaded }) {
-            if var current = self.jellyfin.pages.popLast() {
-                current.selectedIndex = self.selectedThirdIndex
-                self.jellyfin.pages.append(current)
-            }
+            self.rememberJellyfinSelection()
             self.jellyfin.pages.append(JellyfinPageState(page: page))
             self.jellyfin.error = nil
             self.jellyfin.status = nil
@@ -332,17 +329,48 @@ extension MenuView {
             exitJellyfinToSources()
             return
         }
-        transitionMenuForFolderSwap {
+        transitionMenuForFolderSwap(revealWhen: { !self.shouldHideJellyfinMenuUntilLoaded }) {
             self.jellyfin.pages.removeLast()
             self.jellyfin.error = nil
             self.jellyfin.status = nil
             self.jellyfin.isLoading = false
-            let previous = self.jellyfin.pages.last ?? JellyfinPageState(page: .addServer)
-            self.selectedThirdIndex = min(previous.selectedIndex, max(0, self.jellyfinMenuListItems().count - 1))
-            self.headerText = self.jellyfinTitle(for: previous.page)
-            self.clearJellyfinPreview()
-            self.refreshDetailPreviewForCurrentContext()
+            self.showReturnedJellyfinPage()
         }
+    }
+
+    /// Saves which row is selected on the current page, before another page goes over it.
+    private func rememberJellyfinSelection() {
+        let rows = jellyfinMenuListItems()
+        guard var current = jellyfin.pages.popLast() else { return }
+        current.selectedIndex = selectedThirdIndex
+        current.selectedRowID = rows.indices.contains(selectedThirdIndex) ? rows[selectedThirdIndex].id : nil
+        jellyfin.pages.append(current)
+    }
+
+    /// Shows the page that's on top again, loading it first if playback made it stale.
+    private func showReturnedJellyfinPage() {
+        guard let page = currentJellyfinPage else { return }
+        headerText = jellyfinTitle(for: page.page)
+        clearJellyfinPreview()
+        if page.isLoaded {
+            selectJellyfinRememberedRow()
+            refreshDetailPreviewForCurrentContext()
+        } else {
+            selectedThirdIndex = 0
+            loadCurrentJellyfinPage()
+        }
+    }
+
+    private func selectJellyfinRememberedRow() {
+        guard let index = jellyfin.pages.indices.last else { return }
+        let page = jellyfin.pages[index]
+        let rows = jellyfinMenuListItems()
+        if let id = page.selectedRowID, let row = rows.firstIndex(where: { $0.id == id }) {
+            selectedThirdIndex = row
+        } else {
+            selectedThirdIndex = min(page.selectedIndex, max(0, rows.count - 1))
+        }
+        jellyfin.pages[index].selectedRowID = nil
     }
 
     private func exitJellyfinToSources() {
@@ -367,7 +395,7 @@ extension MenuView {
     func returnFromJellyfinSongs() {
         guard let pages = jellyfin.songsReturnPages else { return }
         jellyfin.requestID &+= 1
-        transitionMenuForFolderSwap {
+        transitionMenuForFolderSwap(revealWhen: { !self.shouldHideJellyfinMenuUntilLoaded }) {
             self.jellyfin.songsReturnPages = nil
             self.thirdMenuMode = .jellyfin
             self.jellyfin.pages = pages
@@ -376,11 +404,7 @@ extension MenuView {
             self.musicSongsLoadError = nil
             self.musicSongsShowsShuffleAction = false
             self.resetMusicPreviewState()
-            let page = pages.last ?? JellyfinPageState(page: .addServer)
-            self.selectedThirdIndex = min(page.selectedIndex, max(0, self.jellyfinMenuListItems().count - 1))
-            self.headerText = self.jellyfinTitle(for: page.page)
-            self.clearJellyfinPreview()
-            self.refreshDetailPreviewForCurrentContext()
+            self.showReturnedJellyfinPage()
         }
     }
 
@@ -393,9 +417,16 @@ extension MenuView {
         let pageIndex = jellyfin.pages.count - 1
         func finish(_ update: (inout JellyfinPageState) -> Void) {
             guard jellyfin.requestID == requestID, jellyfin.pages.indices.contains(pageIndex) else { return }
+            let rows = jellyfinMenuListItems()
+            let selectedID = quietly && rows.indices.contains(selectedThirdIndex) ? rows[selectedThirdIndex].id : nil
             update(&jellyfin.pages[pageIndex])
             jellyfin.pages[pageIndex].isLoaded = true
             jellyfin.isLoading = false
+            if let selectedID, let index = jellyfinMenuListItems().firstIndex(where: { $0.id == selectedID }) {
+                selectedThirdIndex = index
+            } else if jellyfin.pages[pageIndex].selectedRowID != nil {
+                selectJellyfinRememberedRow()
+            }
             let count = jellyfinMenuListItems().count
             if selectedThirdIndex >= count { selectedThirdIndex = max(0, count - 1) }
             refreshDetailPreviewForCurrentContext()
@@ -579,7 +610,7 @@ extension MenuView {
         case "Series":
             pushJellyfinPage(.list(serverKey: key, .seasons(seriesID: item.id, title: item.title)))
         case "Season":
-            pushJellyfinPage(.list(serverKey: key, .episodes(seriesID: item.seriesID ?? "", seasonID: item.id, title: item.seriesName.map { "\($0): \(item.title)" } ?? item.title)))
+            pushJellyfinPage(.list(serverKey: key, .episodes(seriesID: item.seriesID ?? "", seasonID: item.id, title: item.title)))
         case "MusicArtist":
             pushJellyfinPage(.list(serverKey: key, .albums(libraryID: nil, artistID: item.id, title: item.title)))
         case "MusicAlbum":
@@ -612,11 +643,8 @@ extension MenuView {
         guard let client = jellyfinClient(forKey: key) else { return }
         jellyfin.requestID &+= 1
         let requestID = jellyfin.requestID
-        var returnPages = jellyfin.pages
-        if var current = returnPages.popLast() {
-            current.selectedIndex = selectedThirdIndex
-            returnPages.append(current)
-        }
+        rememberJellyfinSelection()
+        let returnPages = jellyfin.pages
         transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMusicSongs }) {
             self.prepareMusicLibraryThirdMenu(
                 mode: .musicSongs,
@@ -887,13 +915,24 @@ extension MenuView {
         memo.jellyfinPreviewKey = key
         var items = [icon(image == nil ? 1 : 0, animation)]
         guard let item, let image else { return items }
+        if item.type == "CollectionFolder" || item.type == "UserView" || item.type == "Folder" {
+            // A library's picture, tilted like a movie's preview.
+            let descriptor = MovieGapPreviewDescriptor(id: "jellyfin:\(item.id)", image: image, aspectRatio: aspectRatio(for: image, fallback: 16.0 / 9.0), sizeScale: 1.0)
+            items.append(GapItemSpec(
+                key: "jellyfin_preview:\(item.id)",
+                kind: .moviePreview(moviePreviewSpec(descriptor)),
+                animation: animation,
+                transition: animation,
+                fade: .easeInOut(duration: 0.22),
+            ))
+            return items
+        }
         let isSquare = ["MusicAlbum", "MusicArtist", "Playlist", "Audio"].contains(item.type ?? "")
-        let isWide = item.type == "Episode" || item.type == "CollectionFolder" || item.type == "UserView"
         items.append(GapItemSpec(
             key: "jellyfin_metadata",
             kind: .metadata(MetadataPreviewSpec(
                 image: image,
-                aspectRatio: aspectRatio(for: image, fallback: isWide ? 16.0 / 9.0 : 2.0 / 3.0),
+                aspectRatio: aspectRatio(for: image, fallback: 2.0 / 3.0),
                 forcedPreviewAspectRatio: isSquare ? 1.0 : nil,
                 sizeScale: isSquare ? 0.92 : 0.75,
                 title: item.type == "Episode" ? (item.seriesName ?? item.title) : item.title,
