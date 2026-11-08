@@ -91,7 +91,7 @@ final class FullscreenSceneLayer {
 
     private static func makeContent(for scene: FullscreenScenePresentation, menu: MenuView) -> FullscreenContent {
         switch scene.key {
-        case menu.musicNowPlayingFullscreenKey: NowPlayingSceneLayer()
+        case menu.musicNowPlayingFullscreenKey: ModernTheme.isActive ? ModernNowPlayingSceneLayer() : NowPlayingSceneLayer()
         case menu.screenSaverFullscreenKey: ScreenSaverSceneLayer()
         case menu.featureErrorFullscreenKey: FeatureErrorSceneLayer()
         case menu.theatricalTrailersLoadingFullscreenKey: LoadingSceneLayer()

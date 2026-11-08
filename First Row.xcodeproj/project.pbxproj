@@ -124,6 +124,7 @@
 		328279BE0D230AFC6C820100 /* ModernLimit.aif in Resources */ = {isa = PBXBuildFile; fileRef = 5C8EE11956FA430ABA68B313 /* ModernLimit.aif */; };
 		CA9F9456A2EE20F6B7086E6C /* ModernSelection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 375BB57713E15DCC94725F7F /* ModernSelection.aif */; };
 		FD12DD474D5A4F5FB7E0FDC7 /* ModernSelectionChange.aif in Resources */ = {isa = PBXBuildFile; fileRef = 24EFAA60856E197241F520F8 /* ModernSelectionChange.aif */; };
+		5042887DDC5095E20FFC08B5 /* ModernFullscreenLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -263,6 +264,7 @@
 		5C8EE11956FA430ABA68B313 /* ModernLimit.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernLimit.aif; sourceTree = "<group>"; };
 		375BB57713E15DCC94725F7F /* ModernSelection.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernSelection.aif; sourceTree = "<group>"; };
 		24EFAA60856E197241F520F8 /* ModernSelectionChange.aif */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ModernSelectionChange.aif; sourceTree = "<group>"; };
+		FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModernFullscreenLayers.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -534,6 +536,7 @@
 		2C8096D62CAC0F80B1BDAF5E /* Engine */ = {
 			isa = PBXGroup;
 			children = (
+				FB9DC1D415E9050ACA2B5AD5 /* ModernFullscreenLayers.swift */,
 				175661ABA5C3D2DB7A570244 /* ModernMenuRowLayer.swift */,
 				6848BC75830F2ECA0E0230DC /* ModernTheme.swift */,
 				E44528C2E0BAA59065CDCC87 /* MoviePlaybackLayers.swift */,
@@ -728,6 +731,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5042887DDC5095E20FFC08B5 /* ModernFullscreenLayers.swift in Sources */,
 				0478771795FD6F2B1727EE99 /* ModernMenuRowLayer.swift in Sources */,
 				416B372B6FEC6A31DFCD77A0 /* ModernTheme.swift in Sources */,
 				E23A15D2B8390FBD221D10A8 /* MenuView+Settings.swift in Sources */,

@@ -14,6 +14,7 @@ import QuartzCore
 final class MoviePlaybackLayers {
     let playerLayer = AVPlayerLayer()
     let controls = MovieControlsLayer()
+    let modernControls = ModernMovieControlsLayer()
 
     init() {
         playerLayer.videoGravity = .resizeAspect
@@ -35,10 +36,26 @@ final class MoviePlaybackLayers {
         playerLayer.frame = bounds
 
         let showsControls = menu.isMoviePlaybackVisible && menu.areMovieControlsVisible
-        controls.layer.isHidden = !showsControls
+        let isModern = ModernTheme.isActive
+        controls.layer.isHidden = !showsControls || isModern
+        modernControls.layer.isHidden = !showsControls || !isModern
         guard showsControls else { return }
         // Laid out on the full-screen canvas so it keeps its proportions at any resolution.
         let canvas = FullscreenCanvas(screenSize: bounds.size)
+        if isModern {
+            canvas.apply(to: modernControls.layer)
+            modernControls.update(
+                glyphState: menu.movieControlsGlyphState,
+                currentTime: menu.moviePlaybackCurrentSeconds,
+                duration: menu.moviePlaybackDurationSeconds,
+                isLoading: menu.isMoviePreviewDownloadLoading,
+                loadingProgress: menu.moviePreviewDownloadProgress,
+                size: canvas.size,
+                scale: canvas.pixelScale(backingScale: scale),
+            )
+            modernControls.layer.setOpacity(menu.movieControlsOpacity, pass.animation)
+            return
+        }
         canvas.apply(to: controls.layer)
         controls.update(
             glyphState: menu.movieControlsGlyphState,
@@ -252,6 +269,11 @@ final class MovieResumePromptLayer {
     private var lastSelectedIndex: Int?
     private var backdropSource: NSImage?
     private var wasVisible = false
+    // The modern look's capsules and focus.
+    private let modernCapsules = [SceneLayer(), SceneLayer()]
+    private let modernFocus = SceneLayer()
+    private let modernLabels = [SceneLayer(), SceneLayer()]
+    private let modernDarkLabels = [SceneLayer(), SceneLayer()]
 
     init() {
         layer.opacity = 0
@@ -268,6 +290,17 @@ final class MovieResumePromptLayer {
         options.addSublayer(pressed)
         options.addSublayer(selection.layer)
         for label in labels { options.addSublayer(label) }
+        for capsule in modernCapsules {
+            capsule.backgroundColor = ModernTheme.rowFill.cgColor
+            options.addSublayer(capsule)
+        }
+        modernFocus.backgroundColor = ModernTheme.focusFill.cgColor
+        modernFocus.shadowColor = CGColor(gray: 0, alpha: 1)
+        modernFocus.shadowOpacity = 0.5
+        modernFocus.shadowRadius = 18
+        modernFocus.shadowOffset = CGSize(width: 0, height: 10)
+        options.addSublayer(modernFocus)
+        for label in modernLabels + modernDarkLabels { options.addSublayer(label) }
     }
 
     func update(menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat) {
@@ -288,6 +321,16 @@ final class MovieResumePromptLayer {
             backdropSource = menu.movieResumePromptBackdropImage
             backdrop.contents = backdropSource.flatMap { BlurredBackdrop.image(for: $0, size: sceneSize) }
         }
+        let isModern = ModernTheme.isActive
+        for sublayer in [pressed, selection.layer] + labels { sublayer.isHidden = isModern }
+        for sublayer in modernCapsules + modernLabels + modernDarkLabels + [modernFocus] { sublayer.isHidden = !isModern }
+        if isModern {
+            dim.backgroundColor = CGColor(gray: 0, alpha: 0.5)
+            updateModern(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale, appearing: appearing)
+            layer.setOpacity(menu.movieResumePromptOpacity, appearing ? nil : pass.animation)
+            return
+        }
+        dim.backgroundColor = CGColor(gray: 0, alpha: 0.33)
         let optionWidth = min(menu.menuWidthConstrained(sceneSize: sceneSize) * 0.88, 860)
         let optionHeight = menu.selectionBoxHeight
         let visualWidth = optionWidth + menu.selectionTextureVisualWidthDelta + menu.movieResumeSelectionTextureLeadingAdjustment + menu.movieResumeSelectionTextureTrailingAdjustment
@@ -313,6 +356,41 @@ final class MovieResumePromptLayer {
             labels[index].opacity = hidden ? 0 : 1
         }
         layer.setOpacity(menu.movieResumePromptOpacity, appearing ? nil : pass.animation)
+    }
+
+    /// Two capsules in the middle, with the white focus capsule under the chosen one.
+    private func updateModern(menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat, appearing: Bool) {
+        let width: CGFloat = 760
+        let rowHeight = menu.selectionBoxHeight
+        let capsuleHeight = rowHeight - ModernTheme.rowCapsuleInset
+        let pitch = rowHeight + 5
+        options.frame = CGRect(x: (sceneSize.width - width) * 0.5, y: (sceneSize.height - pitch * 2) * 0.5, width: width, height: pitch * 2)
+        let selected = menu.movieResumePromptSelectedIndex
+        let moved = lastSelectedIndex != nil && lastSelectedIndex != selected
+        lastSelectedIndex = selected
+        let move = appearing ? nil : pass.animation(.focus(duration: ModernTheme.focusDuration), when: moved)
+        let growth = ModernTheme.focusGrowth
+        let focusFrame = CGRect(x: -growth.width, y: CGFloat(selected) * pitch + (rowHeight - capsuleHeight) * 0.5 - growth.height, width: width + growth.width * 2, height: capsuleHeight + growth.height * 2)
+        modernFocus.setFrame(focusFrame, move)
+        modernFocus.cornerRadius = focusFrame.height * 0.5
+        modernFocus.isHidden = menu.movieResumePromptSolidBlackSelected
+        let textFade: Animation? = moved && !appearing ? .easeInOut(duration: 0.16) : nil
+        for (index, title) in ["Resume Playing", "Start from Beginning"].enumerated() {
+            let isSelected = index == selected
+            let top = CGFloat(index) * pitch
+            let capsule = modernCapsules[index]
+            capsule.frame = CGRect(x: 0, y: top + (rowHeight - capsuleHeight) * 0.5, width: width, height: capsuleHeight)
+            capsule.cornerRadius = capsuleHeight * 0.5
+            capsule.opacity = isSelected ? 0 : 1
+            let hidden = menu.movieResumePromptHideUnselected && !isSelected
+            for (label, color) in [(modernLabels[index], ModernTheme.text), (modernDarkLabels[index], ModernTheme.focusedText)] {
+                let graphic = TextRenderer.render(TextSpec(text: title, fontName: ModernTheme.mediumFontName, size: ModernTheme.rowTitleSize, color: color, maxWidth: width - ModernTheme.rowTextInset * 2), scale: scale)
+                label.show(graphic, at: CGPoint(x: ModernTheme.rowTextInset, y: top + (rowHeight - graphic.size.height) * 0.5))
+            }
+            let focused = isSelected && !menu.movieResumePromptSolidBlackSelected
+            modernLabels[index].setOpacity(hidden || focused ? 0 : 1, textFade)
+            modernDarkLabels[index].setOpacity(focused && !hidden ? 1 : 0, textFade)
+        }
     }
 }
 
