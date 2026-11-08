@@ -168,6 +168,9 @@ final class FirstRowAppController {
         )
         controllers.startMonitoringControllersIfNeeded()
         gameControllers = controllers
+        #if !FIRSTROW_PORTABLE
+            SystemMediaControls.shared.attach(menu)
+        #endif
         #if os(macOS)
             AppleRemoteInput.shared.tapsChangeSong = { [weak menu] in
                 guard let menu else { return false }

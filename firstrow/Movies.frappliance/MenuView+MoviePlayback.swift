@@ -373,12 +373,40 @@ extension MenuView {
         case .space, .enter:
             handleMovieSpacebarPressed()
         case .leftArrow:
-            beginMovieScrubbing(direction: -1, isRepeat: isRepeat)
+            handleMovieArrow(direction: -1, isRepeat: isRepeat)
         case .rightArrow:
-            beginMovieScrubbing(direction: 1, isRepeat: isRepeat)
+            handleMovieArrow(direction: 1, isRepeat: isRepeat)
         default:
             break
         }
+    }
+
+    /// A tap of left or right skips ten seconds; held, it scrubs as before.
+    func handleMovieArrow(direction: Int, isRepeat: Bool) {
+        if isRepeat || movieScrubDirection != 0 {
+            movieArrowPending = nil
+            beginMovieScrubbing(direction: direction, isRepeat: isRepeat)
+            return
+        }
+        guard moviePlayer != nil else { return }
+        // A new press means the last one was let go: if it was still undecided, it was a tap.
+        if let pending = movieArrowPending {
+            pending.task.cancel()
+            movieArrowPending = nil
+            skipMovie(bySeconds: Double(pending.direction) * 10)
+        }
+        showMovieControlsInstantly()
+        let task = Task { @MainActor in
+            try? await firstRowSleep(0.3)
+            guard !Task.isCancelled, isMoviePlaybackVisible, movieArrowPending?.direction == direction else { return }
+            movieArrowPending = nil
+            if isHoldingScrubKey(direction: direction) {
+                beginMovieScrubbing(direction: direction, isRepeat: false)
+            } else {
+                skipMovie(bySeconds: Double(direction) * 10)
+            }
+        }
+        movieArrowPending = (direction, task)
     }
 
     // MARK: - Movie Controls and Scrubbing

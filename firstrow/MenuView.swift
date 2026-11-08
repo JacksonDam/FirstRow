@@ -280,6 +280,8 @@ final class MenuView: ObservableObject {
     @Published var movieLastScrubInputDate: Date?
     @Published var movieLastScrubTickDate: Date?
     @Published var movieScrubTimer: Timer?
+    /// A left or right press in a movie that isn't yet known to be a tap or a hold.
+    var movieArrowPending: (direction: Int, task: Task<Void, Never>)?
     @Published var moviePlaybackValidationRequestID = 0
 
     // MARK: - Movies library state

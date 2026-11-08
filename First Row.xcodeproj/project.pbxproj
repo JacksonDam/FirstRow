@@ -128,6 +128,7 @@
 		1E8230663BC561B608D79CC1 /* MovieResumeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F2F789615C5335A6A3C2C4E /* MovieResumeStore.swift */; };
 		BC1792E2B28C5716761A048F /* PointerHitTesting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9E40ACF710D67D04BA3E9A /* PointerHitTesting.swift */; };
 		FC4A6FD84E72A96516329813 /* MenuView+Pointer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */; };
+		4306DCDBFF1D3C125FF51D1B /* SystemMediaControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18E6D1B66D0C9E0F6B346B4 /* SystemMediaControls.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -271,6 +272,7 @@
 		4F2F789615C5335A6A3C2C4E /* MovieResumeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieResumeStore.swift; sourceTree = "<group>"; };
 		0E9E40ACF710D67D04BA3E9A /* PointerHitTesting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointerHitTesting.swift; sourceTree = "<group>"; };
 		FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Pointer.swift"; sourceTree = "<group>"; };
+		B18E6D1B66D0C9E0F6B346B4 /* SystemMediaControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMediaControls.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -452,6 +454,7 @@
 		7A73DE812F5776A20021C281 /* firstrow */ = {
 			isa = PBXGroup;
 			children = (
+				B18E6D1B66D0C9E0F6B346B4 /* SystemMediaControls.swift */,
 				FD9F82A9F3C32B6440B60B5C /* MenuView+Pointer.swift */,
 				8D4F326CA84EB1E7A13354E6 /* AppSettings.swift */,
 				694828879CE0237F9751EE79 /* FirstRowMain.swift */,
@@ -740,6 +743,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4306DCDBFF1D3C125FF51D1B /* SystemMediaControls.swift in Sources */,
 				1E8230663BC561B608D79CC1 /* MovieResumeStore.swift in Sources */,
 				5042887DDC5095E20FFC08B5 /* ModernFullscreenLayers.swift in Sources */,
 				0478771795FD6F2B1727EE99 /* ModernMenuRowLayer.swift in Sources */,

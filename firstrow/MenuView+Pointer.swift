@@ -479,7 +479,7 @@ extension MenuView {
         player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance)
     }
 
-    private func skipMovie(bySeconds delta: Double) {
+    func skipMovie(bySeconds delta: Double) {
         guard let player = moviePlayer, !isMovieTransitioning else { return }
         let duration = moviePlaybackDurationSeconds
         guard duration.isFinite, duration > 0 else { return }
