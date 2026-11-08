@@ -65,7 +65,9 @@ extension MenuView {
         return .easeInOut(duration: selectionAnimationDuration)
     }
 
-    func sceneFrames(sceneSize: CGSize) -> MenuSceneFrames {
+    /// Where the scene's parts go; `classicLayout` asks for the classic look's whatever the
+    /// look is (the first-launch screen's picture of it).
+    func sceneFrames(sceneSize: CGSize, classicLayout: Bool = false) -> MenuSceneFrames {
         let carouselLaneWidth = carouselWidth(sceneSize: sceneSize)
         let menuLaneWidth = menuWidthConstrained(sceneSize: sceneSize)
         let carouselBoxHeight = iconSize * selectedCarouselAdjustedSizeMultiplier + 100
@@ -88,7 +90,7 @@ extension MenuView {
         }
         // The row is shifted down by the cluster compensation, and the carousel back up by it.
         let carouselY = rowTop + (rowHeight - carouselBoxHeight) * 0.5 + carouselOffsetY()
-        if ModernTheme.isActive {
+        if ModernTheme.isActive, !classicLayout {
             // A card on the left and the list on the right, with the title over the list as in
             // the classic look. The carousel keeps its place for when the classic look comes back.
             let modern = ModernTheme.layout(sceneSize: sceneSize, menuHeight: stableMenuListLayoutHeight)

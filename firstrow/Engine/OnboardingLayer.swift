@@ -297,7 +297,7 @@ final class OnboardingLayer {
                 // A picture of the look, drawn at full scene size and shrunk onto the card.
                 let shrink = local.width / 1920
                 let preview = index == 0
-                    ? Self.classicPreview(pixelScale: max(1, pixelScale * shrink * 1.1))
+                    ? classicPreview(menu: menu, pixelScale: max(1, pixelScale * shrink * 1.1))
                     : Self.modernPreview(pixelScale: max(1, pixelScale * shrink * 1.1))
                 preview.transform = CATransform3DMakeScale(shrink, shrink, 1)
                 entry.picture.addSublayer(preview)
@@ -317,58 +317,69 @@ final class OnboardingLayer {
 
     // MARK: - The two looks
 
-    /// The classic main menu: the Movies icon over its reflection, and the list with the glossy
-    /// selection bar on Movies.
-    private static func classicPreview(pixelScale: CGFloat) -> SceneLayer {
+    /// The classic main menu, made of the menus' own parts: the icon carousel (Movies at the
+    /// front, the others round the arc behind it, with their reflections), the title, and the
+    /// list with the glossy selection bar on Movies.
+    private var previewCarousel: RootCarouselLayerController?
+    private var previewList: MenuListLayer?
+
+    private func classicPreview(menu: MenuView, pixelScale: CGFloat) -> SceneLayer {
+        let sceneSize = MenuVirtualScenePreset.widescreen
+        let frames = menu.sceneFrames(sceneSize: sceneSize, classicLayout: true)
         let root = SceneLayer()
-        root.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        root.frame = CGRect(origin: .zero, size: sceneSize)
         root.backgroundColor = CGColor(gray: 0, alpha: 1)
-        if let icon = LayerImageCache.cgImage(for: NSImage(named: "movies")) {
-            let picture = SceneLayer()
-            picture.contents = icon
-            picture.contentsGravity = .resizeAspect
-            picture.frame = CGRect(x: 230, y: 220, width: 560, height: 560)
-            root.addSublayer(picture)
-            let reflection = SceneLayer()
-            reflection.contents = icon
-            reflection.contentsGravity = .resizeAspect
-            reflection.frame = CGRect(x: 230, y: 780, width: 560, height: 560)
-            reflection.transform = CATransform3DMakeScale(1, -1, 1)
-            reflection.opacity = 0.35
-            let fade = SceneGradientLayer()
-            fade.frame = reflection.bounds
-            fade.colors = [CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 1)]
-            fade.locations = [0, 0.6, 1]
-            fade.startPoint = CGPoint(x: 0.5, y: 0)
-            fade.endPoint = CGPoint(x: 0.5, y: 1)
-            reflection.mask = fade
-            root.addSublayer(reflection)
-        }
-        let listLeft: CGFloat = 990
-        let listWidth: CGFloat = 740
-        let rowHeight: CGFloat = 74
-        let pitch: CGFloat = 84
-        let firstTop: CGFloat = 250
-        let heading = TextRenderer.render(TextSpec(text: "First Row", fontName: firstRowBoldFontName, size: 52, color: .white), scale: pixelScale)
+
+        let carousel = previewCarousel ?? RootCarouselLayerController()
+        previewCarousel = carousel
+        var configuration = menu.rootCarouselConfiguration(sceneSize: sceneSize)
+        configuration.selectedIndex = 0
+        configuration.isIconAnimated = false
+        configuration.isEnteringSubmenu = false
+        configuration.isReturningToRoot = false
+        configuration.isInSubmenu = false
+        configuration.showsSettledLandedIcon = false
+        configuration.boxOriginInScene = frames.carouselFrame.origin
+        carousel.rootLayer.removeFromSuperlayer()
+        // Set up as the menus' own carousel is: a box, and a space inside it laid out as the
+        // carousel expects.
+        let box = SceneLayer()
+        box.frame = frames.carouselFrame
+        let space = SceneLayer()
+        space.frame = CGRect(origin: .zero, size: frames.carouselFrame.size)
+        #if os(macOS) || FIRSTROW_PORTABLE
+            space.isGeometryFlipped = true
+        #endif
+        box.addSublayer(space)
+        carousel.rootLayer.frame = space.bounds
+        space.addSublayer(carousel.rootLayer)
+        carousel.update(configuration, bounds: frames.carouselFrame.size)
+        root.addSublayer(box)
+
+        let heading = TextRenderer.render(TextSpec(text: "First Row", fontName: firstRowBoldFontName, size: 60, maxWidth: sceneSize.width), scale: pixelScale)
         let headingLayer = SceneLayer()
-        headingLayer.show(heading, at: CGPoint(x: (listLeft + (listWidth - heading.size.width) / 2).rounded(), y: 120))
+        let centerX = sceneSize.width * 0.5 + menu.rootMenuHeaderOffsetX(sceneSize: sceneSize)
+        headingLayer.show(heading, at: CGPoint(x: (centerX - heading.size.width / 2).rounded(), y: frames.headerTop))
         root.addSublayer(headingLayer)
-        let selection = SelectionBoxLayer()
-        let selected = CGRect(x: listLeft, y: firstTop, width: listWidth, height: rowHeight)
-        let spill = rowHeight / 75
-        selection.update(frame: selected.insetBy(dx: -40 * spill, dy: -29 * spill), selectionBoxHeight: rowHeight, animation: nil)
-        root.addSublayer(selection.layer)
-        let chevron = SymbolRenderer.render("chevron.right", pointSize: 30, weight: .bold, color: .white, scale: pixelScale)
-        for (index, name) in ["Movies", "TV Shows", "Music", "Podcasts", "Photos", "Settings"].enumerated() {
-            let top = firstTop + CGFloat(index) * pitch
-            let text = TextRenderer.render(TextSpec(text: name, fontName: firstRowBoldFontName, size: 46, color: .white), scale: pixelScale)
-            let label = SceneLayer()
-            label.show(text, at: CGPoint(x: listLeft + 36, y: (top + (rowHeight - text.size.height) / 2).rounded()))
-            root.addSublayer(label)
-            let arrow = SceneLayer()
-            arrow.show(chevron, at: CGPoint(x: listLeft + listWidth - 36 - chevron.size.width, y: (top + (rowHeight - chevron.size.height) / 2).rounded()))
-            root.addSublayer(arrow)
-        }
+
+        let list = previewList ?? MenuListLayer()
+        previewList = list
+        list.reset()
+        list.layer.removeFromSuperlayer()
+        let menuArea = SceneLayer()
+        menuArea.frame = frames.menuFrame
+        root.addSublayer(menuArea)
+        list.layer.place(CGRect(x: 0, y: 0, width: frames.menuFrame.width, height: menu.menuListLayoutHeight(for: menu.defaultVisibleMenuRowCount)))
+        list.update(MenuListLayer.Configuration(
+            items: menu.rootListItems(),
+            selectedIndex: 0,
+            menuWidth: frames.menuFrame.width,
+            arrowAppearance: menu.menuArrowAppearance,
+            showsTopOverflowFade: false,
+            visibleRowCount: menu.defaultVisibleMenuRowCount,
+            theme: .classic,
+        ), menu: menu, pass: RenderPass(transaction: .instant), scale: pixelScale)
+        menuArea.addSublayer(list.layer)
         return root
     }
 
