@@ -64,7 +64,10 @@ final class ModernMenuRowLayer: MenuRowLayering {
         capsule.set("cornerRadius", to: capsuleFrame.height * 0.5, unchanged: capsule.cornerRadius == capsuleFrame.height * 0.5, animation: growth)
         capsule.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: capsuleFrame.size), cornerWidth: capsuleFrame.height * 0.5, cornerHeight: capsuleFrame.height * 0.5, transform: nil)
 
-        content.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        // Bounds and position, not frame: a frame set while the content is grown would be
+        // measured through its scale and leave it shifted once it shrinks back.
+        content.bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        content.position = .zero
         let grown = Self.scale(ModernTheme.focusedContentScale, about: CGPoint(x: width * 0.5, y: height * 0.5))
         content.setTransform(focused ? grown : CATransform3DIdentity, growth)
 
