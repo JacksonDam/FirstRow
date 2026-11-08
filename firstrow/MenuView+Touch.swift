@@ -401,10 +401,16 @@ extension MenuView {
 
         private func handleTouchSwipe(dx: CGFloat, dy: CGFloat, startX: CGFloat) {
             let fromEdge = startX < Self.touchEdgeWidth
+            #if DEBUG || FIRSTROW_HARNESS_BUILD
+                FirstRowHarness.touchLog("[touch] swipe dx \(Int(dx)) dy \(Int(dy))\(fromEdge ? " from the edge" : "")")
+            #endif
             if abs(dx) > abs(dy) * 1.5, abs(dx) > Self.touchSwipeDistance {
                 let rightward = dx > 0
                 if activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !fromEdge {
                     // Left for the next song, right for the one before.
+                    #if DEBUG || FIRSTROW_HARNESS_BUILD
+                        FirstRowHarness.touchLog("[touch] \(rightward ? "previous" : "next") song")
+                    #endif
                     handleKeyDown(rightward ? .upArrow : .downArrow)
                     return
                 }

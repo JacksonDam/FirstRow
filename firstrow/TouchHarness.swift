@@ -48,6 +48,18 @@
             thread.start()
         }
 
+        /// Appends a line to the file named in `FIRSTROW_HARNESS_LOG`, for checking what a touch did.
+        static func touchLog(_ message: String) {
+            guard isActive, let path = ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_LOG"] else { return }
+            guard let handle = FileHandle(forWritingAtPath: path) ?? {
+                FileManager.default.createFile(atPath: path, contents: nil)
+                return FileHandle(forWritingAtPath: path)
+            }() else { return }
+            handle.seekToEndOfFile()
+            handle.write(Data((message + "\n").utf8))
+            handle.closeFile()
+        }
+
         private static let harnessKeys: [String: KeyCode] = [
             "down": .downArrow, "up": .upArrow, "left": .leftArrow, "right": .rightArrow,
             "enter": .enter, "escape": .escape, "delete": .delete, "space": .space,
