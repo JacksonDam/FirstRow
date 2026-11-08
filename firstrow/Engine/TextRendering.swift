@@ -540,6 +540,76 @@ enum SymbolFallback {
                     context.strokePath()
                 }
             }
+        case "film.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 120, height: 100)) { context in
+                context.addPath(CGPath(roundedRect: CGRect(x: 6, y: 12, width: 108, height: 76), cornerWidth: 10, cornerHeight: 10, transform: nil))
+                for column: CGFloat in [14, 98] {
+                    for row in 0 ..< 4 {
+                        context.addPath(CGPath(roundedRect: CGRect(x: column, y: 21 + CGFloat(row) * 16, width: 8, height: 9), cornerWidth: 2, cornerHeight: 2, transform: nil))
+                    }
+                }
+                context.addPath(CGPath(roundedRect: CGRect(x: 32, y: 47, width: 56, height: 6), cornerWidth: 3, cornerHeight: 3, transform: nil))
+                context.fillPath(using: .evenOdd)
+            }
+        case "tv.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 120, height: 100)) { context in
+                context.addPath(CGPath(roundedRect: CGRect(x: 4, y: 8, width: 112, height: 72), cornerWidth: 10, cornerHeight: 10, transform: nil))
+                context.addPath(CGPath(roundedRect: CGRect(x: 36, y: 87, width: 48, height: 7), cornerWidth: 3.5, cornerHeight: 3.5, transform: nil))
+                context.fillPath()
+            }
+        case "mic.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 100, height: 100)) { context in
+                context.addPath(CGPath(roundedRect: CGRect(x: 36, y: 4, width: 28, height: 60), cornerWidth: 14, cornerHeight: 14, transform: nil))
+                context.addPath(CGPath(roundedRect: CGRect(x: 47, y: 72, width: 6, height: 16), cornerWidth: 2, cornerHeight: 2, transform: nil))
+                context.addPath(CGPath(roundedRect: CGRect(x: 32, y: 86, width: 36, height: 7), cornerWidth: 3.5, cornerHeight: 3.5, transform: nil))
+                context.fillPath()
+                context.setLineWidth(6)
+                context.addArc(center: CGPoint(x: 50, y: 46), radius: 27, startAngle: 0, endAngle: .pi, clockwise: false)
+                context.strokePath()
+            }
+        case "photo.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 120, height: 100)) { context in
+                context.addPath(CGPath(roundedRect: CGRect(x: 4, y: 10, width: 112, height: 80), cornerWidth: 10, cornerHeight: 10, transform: nil))
+                context.addEllipse(in: CGRect(x: 76, y: 22, width: 18, height: 18))
+                context.addPath(roundedPolygon([(16, 80, 3), (44, 42, 4), (64, 66, 3), (76, 54, 3), (104, 80, 3)]))
+                context.fillPath(using: .evenOdd)
+            }
+        case "gearshape.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 100, height: 100)) { context in
+                let center = CGPoint(x: 50, y: 50)
+                var corners: [(x: CGFloat, y: CGFloat, radius: CGFloat)] = []
+                let teeth = 8
+                for tooth in 0 ..< teeth {
+                    let base = CGFloat(tooth) * 2 * .pi / CGFloat(teeth)
+                    for (offset, radius) in [(-0.2, 36.0), (-0.11, 46.0), (0.11, 46.0), (0.2, 36.0)] as [(CGFloat, CGFloat)] {
+                        let angle = base + offset
+                        corners.append((center.x + cos(angle) * radius, center.y + sin(angle) * radius, 2))
+                    }
+                }
+                context.addPath(roundedPolygon(corners))
+                context.addEllipse(in: CGRect(x: 36, y: 36, width: 28, height: 28))
+                context.fillPath(using: .evenOdd)
+            }
+        case "externaldrive.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 120, height: 100)) { context in
+                context.addPath(CGPath(roundedRect: CGRect(x: 4, y: 28, width: 112, height: 46), cornerWidth: 12, cornerHeight: 12, transform: nil))
+                context.addEllipse(in: CGRect(x: 92, y: 45, width: 11, height: 11))
+                context.addPath(CGPath(roundedRect: CGRect(x: 18, y: 48, width: 40, height: 6), cornerWidth: 3, cornerHeight: 3, transform: nil))
+                context.fillPath(using: .evenOdd)
+            }
+        case "play.rectangle.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 120, height: 100)) { context in
+                context.addPath(CGPath(roundedRect: CGRect(x: 4, y: 10, width: 112, height: 80), cornerWidth: 12, cornerHeight: 12, transform: nil))
+                context.addPath(roundedPolygon([(48, 32, 3), (78, 50, 3), (48, 68, 3)]))
+                context.fillPath(using: .evenOdd)
+            }
+        case "exclamationmark.triangle.fill":
+            return Shape(referenceSize: 100, box: CGSize(width: 112, height: 100)) { context in
+                context.addPath(roundedPolygon([(56, 6, 10), (108, 94, 8), (4, 94, 8)]))
+                context.addPath(CGPath(roundedRect: CGRect(x: 51, y: 34, width: 10, height: 34), cornerWidth: 5, cornerHeight: 5, transform: nil))
+                context.addEllipse(in: CGRect(x: 50, y: 73, width: 12, height: 12))
+                context.fillPath(using: .evenOdd)
+            }
         case "checkmark":
             return Shape(referenceSize: 34, box: CGSize(width: 35, height: 33)) { context in
                 context.setLineWidth(weight == .regular ? 3 : 4.3)

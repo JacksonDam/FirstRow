@@ -473,9 +473,9 @@ final class SpinnerLayer {
 
 /// "An error occurred." and friends: an alert sign, a headline and an explanation.
 final class FeatureErrorSceneLayer: FullscreenContent {
-    private let icon = SceneLayer()
-    private let header = SceneLayer()
-    private let subcaption = SceneLayer()
+    fileprivate let icon = SceneLayer()
+    fileprivate let header = SceneLayer()
+    fileprivate let subcaption = SceneLayer()
     private var key: String?
 
     override init() {
@@ -491,6 +491,10 @@ final class FeatureErrorSceneLayer: FullscreenContent {
         guard key != self.key else { return }
         self.key = key
         let copy = FeatureErrorCopy.resolve(from: scene.payload)
+        if ModernTheme.isActive {
+            updateModern(copy, size: size, scale: scale)
+            return
+        }
         let iconImage = NSImage(named: "ErrorTriangle_v1") ?? NSImage(named: "Alert!")
         let iconSide: CGFloat = iconImage == nil ? 0 : 84
         let iconSpacing: CGFloat = iconImage == nil ? 0 : 24
@@ -520,6 +524,29 @@ final class FeatureErrorSceneLayer: FullscreenContent {
     }
 }
 
+extension FeatureErrorSceneLayer {
+    /// The modern look: a sign, the headline and the explanation stacked in the middle.
+    fileprivate func updateModern(_ copy: FeatureErrorCopy, size: CGSize, scale: CGFloat) {
+        let width = min(1300, size.width - 200)
+        let sign = SymbolRenderer.render("exclamationmark.triangle.fill", pointSize: 84, weight: .semibold, color: RGBA(white: 1, alpha: 0.75), scale: scale)
+        let headerGraphic = TextRenderer.render(TextSpec(text: copy.headerText, fontName: ModernTheme.boldFontName, size: 52, color: ModernTheme.text, wrapWidth: width, alignment: .center), scale: scale)
+        let trimmed = copy.subcaptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let subGraphic: RenderedGraphic? = trimmed.isEmpty ? nil : TextRenderer.render(TextSpec(text: trimmed, fontName: ModernTheme.regularFontName, size: 32, color: ModernTheme.secondaryText, wrapWidth: width, alignment: .center, lineSpacing: 4), scale: scale)
+        let stack = sign.size.height + 34 + headerGraphic.size.height + (subGraphic.map { 18 + $0.size.height } ?? 0)
+        var top = (size.height - stack) * 0.5 - 40
+        icon.isHidden = false
+        icon.contents = nil
+        icon.show(sign, at: CGPoint(x: (size.width - sign.size.width) * 0.5, y: top))
+        top += sign.size.height + 34
+        header.show(headerGraphic, at: CGPoint(x: (size.width - headerGraphic.size.width) * 0.5, y: top))
+        top += headerGraphic.size.height + 18
+        subcaption.isHidden = subGraphic == nil
+        if let subGraphic {
+            subcaption.show(subGraphic, at: CGPoint(x: (size.width - subGraphic.size.width) * 0.5, y: top))
+        }
+    }
+}
+
 /// "Loading Theatrical Trailers..." with a spinner below it.
 final class LoadingSceneLayer: FullscreenContent {
     private let header = SceneLayer()
@@ -533,7 +560,9 @@ final class LoadingSceneLayer: FullscreenContent {
 
     override func update(menu: MenuView, scene: FullscreenScenePresentation, pass _: RenderPass, size: CGSize, scale: CGFloat) {
         let text = scene.payload["header"] ?? "Loading Theatrical Trailers..."
-        let graphic = TextRenderer.render(TextSpec(text: text, fontName: firstRowBoldFontName, size: 60, wrapWidth: min(1500, size.width), alignment: .center), scale: scale)
+        let graphic = ModernTheme.isActive
+            ? TextRenderer.render(TextSpec(text: text, fontName: ModernTheme.semiboldFontName, size: 50, color: ModernTheme.text, wrapWidth: min(1500, size.width), alignment: .center), scale: scale)
+            : TextRenderer.render(TextSpec(text: text, fontName: firstRowBoldFontName, size: 60, wrapWidth: min(1500, size.width), alignment: .center), scale: scale)
         let stackHeight = graphic.size.height + 42 + 72
         let top = (size.height - stackHeight) * 0.5
         header.show(graphic, at: CGPoint(x: (size.width - graphic.size.width) * 0.5, y: top))
