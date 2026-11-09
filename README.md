@@ -4,224 +4,126 @@
 https://github.com/user-attachments/assets/2ff954c0-50fe-403b-b0b7-39557c937d62
 
 
-A recreation of Apple's **Front Row**, the beautiful media frontend that shipped in Mac OS X Tiger through Snow Leopard. Front Row allowed users to navigate their media with an eye-catching and slick UI, and gave Mac users a living-room worthy experience that also featured in the first-generation Apple TV.
+First Row brings back **Front Row**, the media centre that came with Mac OS X Tiger through Snow Leopard and ran the first Apple TV. It's rebuilt from scratch in Swift on Core Animation, with the menus, carousels, sounds and transitions matched to the Leopard and Snow Leopard version.
 
-This project brings it back. The full menu system, animations, transitions, and overall experience are all faithfully recreated in modern Swift and UIKit, running on macOS 10.15 Catalina and later, and experimentally: iOS 15.6+, iPadOS 15.6+, tvOS 15.6+ (with limitations), and visionOS 1.0+.
+It runs on macOS 10.15 Catalina and later, on iPhone, iPad and Apple TV (iOS and tvOS 15.6 and later), and there are beta builds for Linux and Windows on the [Releases](https://github.com/JacksonDam/FirstRow/releases) page.
 
-Here, the Leopard/Snow Leopard version of the interface is used as a reference.
+There are two looks. **Classic** is the original, down to the pixel. **Modern** is a flatter take in the style of today's Apple TV, with capsule rows, a large preview card, artwork-tinted backgrounds, Liquid Glass controls on macOS 26 and iOS 26+, and its own softer sounds. You pick one the first time you open First Row and can switch any time in Settings.
 
-## Features
-
-- Beautiful and authentic interface, with animations and UI elements tuned obsessively to pixel-precision for an accurate recreation of the original Front Row interface
-- Features a meticulous recreation of Front Row's 3D icon carousel on the main menu
-- Highly accurate recreations of key components like 3D artwork carousels that characterised the beauty of the original UI
-- Music playback (Apple Music + local library) with a fantastic view of cover art and small details (like the player flipping around for burn-in protection)
-- Spotify: your Liked Songs, playlists, albums and artists under Music > Spotify, playing in the same Now Playing view. Sign in once on Spotify's own page and Spotify's web player does the playing out of sight (macOS, plus Linux and Windows with Chrome or Edge installed)
-- Photo slideshows (Apple Photos library) with background music from your library and a Ken Burns Effect
-- Local movie playback from macOS Movies folder `Users/<username>/Movies` (or iOS/iPadOS/visionOS file system) via AVFoundation
-- Basic support for music and movies on external volumes / network shares (under a `Movies` or `Music` folder in the root of any volumes)
-- Your own folders of movies, music and photos, an iTunes library file (`iTunes Music Library.xml`) and an iPhoto library, added on macOS in Settings > Media Folders inside First Row (`Cmd+,` jumps there)
-- Podcast viewing/listening on macOS if podcasts are downloaded on the device via Apple Podcasts
-- iTunes Top Charts and playable previews (movies, TV episodes, songs, music videos) via the iTunes RSS feeds
-- Screen saver with gorgeous floating photos, starting after 1, 2, 5, 10, 15 or 30 minutes or an hour of idle time, or never (Settings > Screen Saver, which can also preview it)
-- Keyboard, touch, and game controller driven navigation (Siri Remotes are supported on tvOS and on Macs they are paired with)
-- Jellyfin: add your Jellyfin servers under Sources (found on your network, or by address) and sign in with Quick Connect or a user name and password. Browse Continue Watching, Next Up, movies, shows, music and other libraries; videos and songs play in First Row's own players, resume where you left off, and report what you've watched back to the server
-- Modern theme (Settings > Theme): a flat look in the style of today's Apple TV, with capsule rows, a springy focus highlight, a large preview card, a black blurred background tinted by the selected artwork, its own Now Playing and transport bar, and its own softer interface sounds
-- Mouse and trackpad support (Settings > Mouse, on macOS, Linux and Windows): pointing at a row selects it, clicking chooses it, right-click or the back button goes back, the wheel scrolls lists, and clicking or dragging along a progress bar seeks
-- Continue Watching in Movies: every movie remembers where you stopped, even after quitting, and picks up from there
-- Subtitles, audio track and playback speed for movies (press `Down` while one plays)
-- Media keys, Control Center and headphone controls on macOS, iOS and tvOS, with the current song or movie shown in the system's Now Playing
-
-Playback of movies and TV shows originating from the Apple TV app is not supported due to DRM-protection, but local video content from elsewhere can be played.
-Theatrical Trailers does not work as the original servers for this are gone and I haven't made a substitute yet (contributions welcome).
-
-## Images
+## Classic
 
 <p align="center">
   <img src="docs/images/2026-03-09-20-30-17.png" width="32%" />
-  <img src="docs/images/2026-03-09-20-30-53.png" width="32%" />
   <img src="docs/images/2026-03-09-20-31-14.png" width="32%" />
+  <img src="docs/images/2026-03-09-20-30-53.png" width="32%" />
 </p>
-
 <p align="center">
-  <img src="docs/images/2026-03-09-20-32-16.png" width="32%" />
   <img src="docs/images/2026-03-09-20-33-43.png" width="32%" />
-  <img src="docs/images/2026-03-09-20-34-05.png" width="32%" />
-</p>
-
-<p align="center">
+  <img src="docs/images/2026-03-09-20-32-16.png" width="32%" />
   <img src="docs/images/2026-03-09-20-34-19.png" width="32%" />
 </p>
 
+## Modern
+
+<p align="center">
+  <img src="docs/images/modern-welcome.png" width="32%" />
+  <img src="docs/images/modern-main-menu.png" width="32%" />
+  <img src="docs/images/modern-itunes-top-movies.png" width="32%" />
+</p>
+<p align="center">
+  <img src="docs/images/modern-itunes-top-songs.png" width="32%" />
+  <img src="docs/images/modern-now-playing.png" width="32%" />
+  <img src="docs/images/modern-movie.png" width="32%" />
+</p>
+
+## What's in it
+
+- **Movies** from your Movies folder, external drives and network shares (anything in a `Movies` folder at the top of a volume), plus any folders you add in Settings. Movies remember where you stopped, even after quitting, and show up in Continue Watching. Press `Down` while one plays for subtitles, audio track and speed.
+- **Music** from your library and Apple Music, or folders and an iTunes library file you add in Settings (macOS), with a Now Playing screen that shows lyrics, lists the songs around the one playing and slowly flips the player round to protect the screen from burn-in.
+- **Spotify** under Music: your Liked Songs, playlists, albums and artists, playing in the same Now Playing screen. You sign in once on Spotify's own page.
+- **Jellyfin** under Sources: find servers on your network or add one by address, sign in with Quick Connect or a password, and browse Continue Watching, Next Up and your libraries. Videos and songs play in First Row's own players and your progress goes back to the server.
+- **Photos** from Apple Photos, an iPhoto library or folders you add in Settings, as slideshows with music and a Ken Burns effect.
+- **Podcasts** you've downloaded in Apple Podcasts (macOS).
+- **iTunes Top Charts** for movies, TV episodes, songs and music videos, with playable previews.
+- **A screen saver** of floating photos, after anything from a minute to an hour of inactivity.
+- **Media keys, Control Center and headphone buttons** on macOS, iOS and tvOS, with whatever's playing shown in the system's Now Playing.
+
+Movies and shows bought from the Apple TV app won't play because of their DRM, and Theatrical Trailers is empty because Apple's trailer servers are gone (a replacement would be welcome).
+
 ## Controls
 
-- `Keyboard`: Arrow keys navigate/allow scrubbing media, `Enter` selects, `Esc` or `Delete`/`Backspace` goes back, `Space` toggles playback in fullscreen media views. Cmd+Esc to gracefully quit.
-- `Siri Remote (tvOS)`: Directional pad or swipe gestures navigate/scrub, `Select` chooses, `Menu` goes back, `Play/Pause` toggles playback.
-- `Siri Remote paired with a Mac`: Clicking the clickpad's ring navigates/scrubs, its centre chooses, `Back` goes back, `Play/Pause` toggles playback, and the volume buttons set the Mac's volume. First Row takes over the remote while it's in front.
-- `Apple Remote (Macs with an infrared receiver)`: `+`/`-` navigate menus and change the Mac's volume during playback, `⏮`/`⏭` move left and right (in Now Playing, tap them to change song and hold them to scrub), the centre button selects and toggles playback, `Menu` goes back.
-- `Game controller`: D-pad or left stick navigates/scrubs, `A` selects, `B` or `Menu` goes back, `X` toggles playback.
-- `Touch (iOS/iPadOS)`: Tap screen quadrants to navigate/scrub, press and hold to repeat navigation, two-finger tap selects, three-finger tap goes back, four-finger tap toggles playback.
-- `Mouse or trackpad (macOS, Linux, Windows; turn on in Settings > Mouse)`: Point at a row to select it, click to choose it, right-click or the mouse's back button goes back, the scroll wheel scrolls lists. During playback, click to play or pause and click or drag along the progress bar to seek.
-- `Fullscreen media player`: `Up`/`Down` switches songs or podcast episodes, `Left`/`Right` scrubs through the current item.
-- `Movies`: tap `Left`/`Right` to skip 10 seconds back or forward, hold them to scrub, press `Down` for subtitles, audio and speed.
+| | |
+|---|---|
+| **Keyboard** | Arrow keys move, `Return` chooses, `Esc` or `Delete` goes back, `Space` plays and pauses. `Cmd+Esc` quits on a Mac, `Ctrl+Esc` or `Ctrl+Q` elsewhere. |
+| **Mouse or trackpad** (macOS, Linux, Windows; turn on in Settings) | Point at a row and click it. Scroll long lists, use the on-screen Back button, and click or drag the progress bar to seek. In Now Playing, move to the right edge for the song list. |
+| **Touch** (iPhone, iPad) | Tap a row to open it. Drag a list to scroll it, or hold and slide to move through it. Swipe in from the left or tap Back to go back. In Now Playing, swipe in from the right for the song list. |
+| **Siri Remote** (Apple TV, or paired with a Mac) | Swipe or click the clickpad to move, click the centre to choose, Back goes back, Play/Pause plays and pauses. On a Mac, the TV button opens Now Playing's song list and the volume buttons set the Mac's volume. |
+| **Apple Remote** (Macs with an infrared receiver) | `+` and `-` move in menus and set the volume during playback. `⏮` and `⏭` move left and right, or change song in Now Playing (hold them to scrub). The centre button chooses and plays, `Menu` goes back. |
+| **Game controller** | D-pad or left stick moves, `A` chooses, `B` or `Menu` goes back, `X` plays and pauses. |
 
-## Project structure
+In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, and `Return` shows the lyrics. In a movie, tap `Left` or `Right` to skip 10 seconds or hold them to scrub, and press `Down` for subtitles, audio and speed.
+
+## Building
+
+Open `First Row.xcodeproj` in Xcode and run the **First Row** scheme for macOS, iOS or tvOS. The Linux and Windows builds use the Swift package in `Package.swift` and need SDL 3 and mpv.
+
+## How it's put together
 
 ```
 firstrow/
-├── FirstRowMain.swift                 App entry point
-├── AppDelegate.swift                  macOS window, menu bar and Command-Escape
-├── IOSAppDelegate.swift               iOS/tvOS window
-├── AppShell.swift                     Launch flow, intro movie, key routing and quit fade
-├── MenuView.swift                     Core state container (@Published state, constants)
-├── MenuView+*.swift                   Domain extensions (navigation, layout, input...)
-├── Engine/                            Core Animation renderer: scene, menu lists, previews, carousels, full-screen scenes, text
-├── MenuFeatures.swift                 MenuFeatureConfiguration protocol + typealiases
-├── MenuConfiguration.swift            Feature registry - add new features here
-├── MenuCatalog.swift                  Structures to represent menu/submenu items and their actions
-├── MenuModels.swift                   RootMenuItemConfig, SubmenuItemConfig, etc.
-├── MenuInput.swift                    KeyCode and input model types
-├── SharedCacheTypes.swift             Cache utility types
-├── PlatformCompatibility.swift        Cross-platform shims
-├── PlaybackTimeFormatting.swift       Shared time formatting
-├── SoundEffectPlayer.swift            AVAudioPlayer wrapper
-├── FullscreenSceneSupport.swift       FullscreenScenePresentation type
-├── FeatureErrorFullscreenView.swift   Error screen wording
-├── TVRemoteInputOverlay.swift         Siri Remote input handling
-├── TouchNavigationInputOverlay.swift  Experimental touch input handling
-│
-├── Movies.frappliance/                Movies + iTunes Top playback
-├── TV.frappliance/                    A menu to access iTunes Top TV Episodes
-├── Music.frappliance/                 Music library, playback, and Now Playing UI
-├── Podcasts.frappliance/              Podcast series and episode browsing
-├── Photos.frappliance/                Photo library browsing and slideshows
-├── FRSettings.frappliance/            Settings screen, Media Folders + screen saver
-├── FRSources.frappliance/             Sources screen, Connect to iTunes and Jellyfin servers
-│
-├── Assets.xcassets/                   All image assets
-├── Sounds/                            Sound effects (.aif) and slideshow default music (.mp3)
-├── Videos/                            Intro movie (.mov)
-└── ScreenSaverDefaultPhotos/          Bundled photos for the screen saver (this will be updated to pull from real albums)
+├── AppShell.swift, AppDelegate.swift   Launch, windows, input routing
+├── MenuView.swift, MenuView+*.swift    The app's state and behaviour, split by area
+├── Engine/                             The Core Animation renderer: menus, carousels, previews, players
+├── MenuConfiguration.swift             The list of top-level menus
+├── Movies.frappliance/                 Movies, Continue Watching and iTunes Top Movies
+├── TV.frappliance/                     iTunes Top TV Episodes
+├── Music.frappliance/                  Music library, Spotify, Now Playing
+├── Podcasts.frappliance/               Podcasts
+├── Photos.frappliance/                 Photos and slideshows
+├── FRSettings.frappliance/             Settings, media folders and the screen saver
+├── FRSources.frappliance/              Sources and Jellyfin support
+├── Assets.xcassets, Sounds/, Videos/   Images, interface sounds and the intro movie
+└── ScreenSaverDefaultPhotos/           Photos for the screen saver
+Portable/                               Stand-ins for Apple's frameworks on Linux and Windows
 ```
 
-Each `.frappliance` folder is broadly intended to be a plugin, where each media domain (Movies, Music, Photos…) is a separately loadable `.frappliance` bundle.
+Each `.frappliance` folder holds one top-level menu, and the idea is for each to become a separately loadable plugin.
 
----
+### Adding a menu
 
-## Adding a new frappliance
+Say you want a **NewTube** item on the main menu.
 
-Adding a new top-level menu option (e.g. **NewTube**) takes five steps.
+1. Make a `NewTube.frappliance` folder with a feature that describes the item and its submenu:
 
-### 1. Create the frappliance folder
+   ```swift
+   struct NewTubeMenuFeature: MenuFeatureConfiguration {
+       let rootItem = RootMenuItemConfig(id: "newtube", title: "NewTube", iconAssetName: "newtube")
+       let submenuItems: [SubmenuItemConfig] = [
+           .init(id: "newtube_playlists", title: "Playlists", leadsToMenu: true),
+           .init(id: "newtube_videos", title: "Videos", leadsToMenu: true),
+       ]
+   }
+   ```
 
-```
-NewTube.frappliance/
-```
+   Set `leadsToMenu` for rows that open another list, and override `defaultSubmenuSelectedIndex` if the submenu shouldn't start on its first row.
 
-### 2. Create the feature struct
+2. Add a `newtube` image set to `Assets.xcassets` for the main menu's carousel.
 
-Create `NewTube.frappliance/NewTubeFeature.swift`:
+3. Add `NewTubeMenuFeature()` to the catalog in `MenuConfiguration.swift`. Its place in that list is its place on the main menu.
 
-```swift
-import Foundation
+   The item now shows up, opens and closes with the right sounds, and lists its rows.
 
-struct NewTubeFeature: MenuFeatureConfiguration {
-    let rootItem = RootMenuItemConfig(id: "newtube", title: "NewTube", iconAssetName: "newtube")
-    let submenuItems: [SubmenuItemConfig] = [
-        .init(id: "newtube_playlists", title: "Playlists", leadsToMenu: true),
-        .init(id: "newtube_videos",    title: "Videos",       leadsToMenu: true),
-    ]
-}
-```
+4. Make the rows do something in `triggerSubmenuAction()` in `MenuView+InputHandling.swift`:
 
-- **`rootItem.id`** — unique snake_case identifier for the root entry.
-- **`iconAssetName`** — name of the image in `Assets.xcassets` shown when this root item is selected (see step 3).
-- **`submenuItems`** — the list shown when the user enters the menu. Set `leadsToMenu: true` if selecting the item drills deeper; leave it `false` for leaf actions.
-- **`defaultSubmenuSelectedIndex`** — optionally override to start the submenu cursor on a specific row (defaults to 0).
+   ```swift
+   if activeRootItemID == "newtube", item.id == "newtube_playlists" {
+       playSound(named: "Selection")
+       enterNewTubePlaylistsMenu()
+       return
+   }
+   ```
 
-### 3. Add the icon image for the main carousel
-
-Add `newtube.png` as an image set in `Assets.xcassets`:
-
-```
-Assets.xcassets/
-└── newtube.imageset/
-    ├── newtube.png
-    └── Contents.json
-```
-
-`Contents.json`:
-```json
-{
-  "images" : [
-    {
-      "filename" : "newtube.png",
-      "idiom" : "universal"
-    }
-  ],
-  "info" : {
-    "author" : "xcode",
-    "version" : 1
-  }
-}
-```
-
-### 4. Register the feature
-
-Open `MenuConfiguration.swift` and add the new feature to the catalog:
-
-```swift
-private static let catalog = MenuCatalog(features: [
-    MoviesMenuFeature(),
-    TVShowsMenuFeature(),
-    MusicMenuFeature(),
-    PodcastsMenuFeature(),
-    PhotosMenuFeature(),
-    SettingsMenuFeature(),
-    SourcesMenuFeature(),
-    NewTubeMenuFeature(),   // ← add here
-])
-```
-
-Order in this array is the order items appear in the root menu.
-
-At this point the menu item appears, navigates in and out, and plays the correct sound effects. The submenu shows the rows you defined, but selecting them does nothing yet.
-
-### 5. Handle submenu actions
-
-Open `MenuView+InputHandling.swift` and find `triggerSubmenuAction()`. Add a handler for each interactive submenu item:
-
-```swift
-if activeRootItemID == "newtube", item.id == "newtube_playlists" {
-    playSound(named: "Selection")
-    // e.g. enter a third menu, present another fullscreen view, etc.
-    enterNewTubePlaylistsMenu()
-    return
-}
-```
-
-Any submenu item whose action is not handled here will print a `TODO` log line.
-
----
-
-### Gap content (left-side preview)
-
-The left half of the screen shows contextual content while the user scrolls through the menu. To add gap content for your feature, open `MenuView+GapContent.swift` and add a branch to `gapContentItems(sceneSize:pass:memo:)` that returns the pieces to show (each a `GapItemSpec` with an identity, a kind and how it fades).
-
-The simplest option is the default reflected menu icon (already shown automatically from `iconAssetName`). For richer previews, artwork carousels, video thumbnails, etc., use the existing kinds (`.moviePreview`, `.musicPreview`, `.metadata`, `.coverCarousel`) or add one in `Engine/GapContentLayer.swift`.
-
-### Optional: submenus of menu options ("third" menus)
-
-Add a case to `ThirdMenuMode` in `MenuView+MenuNavigation.swift`:
-
-```swift
-enum ThirdMenuMode {
-    // …existing cases…
-    case newtubePlaylists
-}
-```
-
-Then populate `thirdMenuItems` and set `thirdMenuMode = .newtubePlaylists` when the user enters that submenu item. Follow `enterMoviesFolderMenu()` in `Movies.frappliance/MenuView+MoviesLibrary.swift` as a reference.
+For a third level of lists, add a case to `ThirdMenuMode` in `MenuView+MenuNavigation.swift`, fill in `thirdMenuItems` and set `thirdMenuMode` when the row is chosen; `enterMoviesFolderMenu()` is a good example. The picture beside the list comes from `gapContentItems(sceneSize:pass:memo:)` in `MenuView+GapContent.swift`, which can show the item's icon (the default), a preview, details or a carousel of covers.
 
 ## Thanks
 
@@ -229,4 +131,4 @@ If you'd like to support the project, you can [buy me a coffee](https://buymeaco
 
 ## License
 
-Creative Commons Attribution 4.0: [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/)
+[Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/)
