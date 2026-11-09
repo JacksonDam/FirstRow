@@ -1284,6 +1284,8 @@ extension MenuView {
         struct Found {
             let stream: URL
             let artwork: NSImage?
+            /// A video episode (it plays in the movie player).
+            let isVideo: Bool
         }
 
         /// Episodes already found, by their id.
@@ -1304,16 +1306,18 @@ extension MenuView {
             return true
         }
 
-        /// The episode's audio online, by the show's name (and maker) and the episode's title.
-        static func find(seriesTitle: String, artist: String, episodeTitle: String) async -> Found? {
+        /// The episode online, by the show's name (and maker), and the episode's title, or (shows
+        /// rename old episodes) its day of release or its file's name.
+        static func find(seriesTitle: String, artist: String, episodeTitle: String, airedDate: Date? = nil, fileName: String? = nil) async -> Found? {
             guard let show = await lookUpShow(title: seriesTitle, artist: artist),
-                  let stream = await enclosure(in: show.feed, titled: episodeTitle)
+                  let item = await feedItem(in: show.feed, titled: episodeTitle, airedDate: airedDate, fileName: fileName)
             else { return nil }
             var artwork: NSImage?
             if let artworkURL = show.artwork, let (data, _) = try? await session.data(from: artworkURL) {
                 artwork = NSImage(data: data)
             }
-            return Found(stream: stream, artwork: artwork)
+            let isVideo = item.type.hasPrefix("video/") || ["m4v", "mp4", "mov"].contains(item.enclosure.pathExtension.lowercased())
+            return Found(stream: item.enclosure, artwork: artwork, isVideo: isVideo)
         }
 
         /// The show in Apple's podcast directory: its feed and artwork.
@@ -1343,17 +1347,36 @@ extension MenuView {
             return best.map { ($0.feed, $0.artwork) }
         }
 
-        /// The audio of the feed's episode with that title.
-        private static func enclosure(in feed: URL, titled title: String) async -> URL? {
-            guard let (data, _) = try? await session.data(from: feed) else { return nil }
+        /// The feed's episode with that title, else the one released that day, else the one
+        /// whose file has that name.
+        private static func feedItem(in feed: URL, titled title: String, airedDate: Date?, fileName: String?) async -> FeedReader.Item? {
+            // Feeds over https where they have it (plain http requests are refused).
+            var secure = URLComponents(url: feed, resolvingAgainstBaseURL: false)
+            if secure?.scheme == "http" { secure?.scheme = "https" }
+            var data: Data?
+            if let secureURL = secure?.url { data = try? await session.data(from: secureURL).0 }
+            if data == nil { data = try? await session.data(from: feed).0 }
+            guard let data else { return nil }
             let reader = FeedReader()
             let parser = XMLParser(data: data)
             parser.delegate = reader
             parser.parse()
+            let items = reader.items
             let wanted = comparable(title)
-            let item = reader.items.first { comparable($0.title) == wanted }
-                ?? reader.items.first { !wanted.isEmpty && (comparable($0.title).hasPrefix(wanted) || wanted.hasPrefix(comparable($0.title))) }
-            return item?.enclosure
+            if let item = items.first(where: { comparable($0.title) == wanted })
+                ?? items.first(where: { !wanted.isEmpty && (comparable($0.title).hasPrefix(wanted) || wanted.hasPrefix(comparable($0.title))) })
+            {
+                return item
+            }
+            if let airedDate {
+                let calendar = Calendar(identifier: .gregorian)
+                let sameDay = items.filter { $0.date.map { abs($0.timeIntervalSince(airedDate)) < 36 * 3600 && calendar.isDate($0, inSameDayAs: airedDate) } ?? false }
+                if sameDay.count == 1 { return sameDay[0] }
+            }
+            if let fileName, !fileName.isEmpty {
+                return items.first { $0.enclosure.lastPathComponent.lowercased() == fileName.lowercased() }
+            }
+            return nil
         }
 
         /// Letters and digits only, lowercased, for matching names that differ in punctuation.
@@ -1361,21 +1384,39 @@ extension MenuView {
             String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
         }
 
-        /// A feed's items: each one's title and audio.
+        /// A feed's items: each one's title, release date and media.
         private final class FeedReader: NSObject, XMLParserDelegate {
-            var items: [(title: String, enclosure: URL)] = []
+            struct Item {
+                let title: String
+                let enclosure: URL
+                let type: String
+                let date: Date?
+            }
+
+            var items: [Item] = []
             private var inItem = false
             private var title = ""
             private var enclosure: URL?
+            private var type = ""
+            private var date: Date?
             private var text = ""
+            private static let dateFormats = ["EEE, dd MMM yyyy HH:mm:ss zzz", "EEE, dd MMM yyyy HH:mm:ss Z", "dd MMM yyyy HH:mm:ss zzz", "EEE, dd MMM yyyy HH:mm zzz"]
+            private let dateFormatter: DateFormatter = {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                return formatter
+            }()
 
             func parser(_: XMLParser, didStartElement name: String, namespaceURI _: String?, qualifiedName _: String?, attributes: [String: String] = [:]) {
                 if name == "item" {
                     inItem = true
                     title = ""
                     enclosure = nil
+                    type = ""
+                    date = nil
                 } else if inItem, name == "enclosure", let url = attributes["url"].flatMap(URL.init(string:)) {
                     enclosure = url
+                    type = attributes["type"]?.lowercased() ?? ""
                 }
                 text = ""
             }
@@ -1391,9 +1432,18 @@ extension MenuView {
             func parser(_: XMLParser, didEndElement name: String, namespaceURI _: String?, qualifiedName _: String?) {
                 if inItem, name == "title", title.isEmpty {
                     title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else if inItem, name == "pubDate" {
+                    let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    for format in Self.dateFormats {
+                        dateFormatter.dateFormat = format
+                        if let parsed = dateFormatter.date(from: raw) {
+                            date = parsed
+                            break
+                        }
+                    }
                 } else if name == "item" {
                     inItem = false
-                    if let enclosure { items.append((title, enclosure)) }
+                    if let enclosure { items.append(Item(title: title, enclosure: enclosure, type: type, date: date)) }
                 }
             }
         }
@@ -1401,10 +1451,16 @@ extension MenuView {
 
     extension MenuView {
         /// Plays an episode whose download First Row can't open from the podcast's feed, once
-        /// it's found (and its show's artwork with it); says so if it can't be.
+        /// it's found (and its show's artwork with it), video in the movie player; says so if it
+        /// can't be found.
         func playPodcastEpisodeFromFeed(_ episode: PodcastEpisodeEntry, trackIndex: Int, trackCount: Int, presentsFullscreen: Bool, resetTransitionState: Bool) {
             let request = incrementRequestID(&podcastStreamRequestID)
             func play(_ found: PodcastFeedStreams.Found) {
+                if found.isVideo {
+                    clearActivePodcastAudioPlaybackContext()
+                    startMoviePlayback(from: found.stream)
+                    return
+                }
                 let streamed = PodcastEpisodeEntry(
                     id: episode.id, seriesID: episode.seriesID, seriesTitle: episode.seriesTitle, title: episode.title,
                     artist: episode.artist, description: episode.description, durationSeconds: episode.durationSeconds,
@@ -1419,8 +1475,10 @@ extension MenuView {
             let series = episode.seriesTitle
             let artist = episode.artist
             let title = episode.title
+            let airedDate = episode.airedDate
+            let fileName = episode.mediaURL?.lastPathComponent
             Task.detached(priority: .userInitiated) {
-                let found = await PodcastFeedStreams.find(seriesTitle: series, artist: artist, episodeTitle: title)
+                let found = await PodcastFeedStreams.find(seriesTitle: series, artist: artist, episodeTitle: title, airedDate: airedDate, fileName: fileName)
                 await MainActor.run {
                     // Something else chosen meanwhile, or Podcasts left.
                     guard self.podcastStreamRequestID == request,

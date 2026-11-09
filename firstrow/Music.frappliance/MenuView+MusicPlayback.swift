@@ -1548,6 +1548,15 @@ extension MenuView {
 
     func startPodcastEpisodePlayback(_ episode: PodcastEpisodeEntry) {
         guard let mediaURL = episode.mediaURL?.standardizedFileURL else { return }
+        #if os(macOS)
+            // A download macOS won't let First Row open (audio or video) plays from the podcast's
+            // feed instead.
+            if mediaURL.isFileURL, !PodcastFeedStreams.canRead(mediaURL) {
+                let context = podcastPlaybackContextForEpisode(episode)
+                playPodcastEpisodeFromFeed(episode, trackIndex: context.trackIndex, trackCount: context.trackCount, presentsFullscreen: true, resetTransitionState: true)
+                return
+            }
+        #endif
         let hasVideoTrack = mediaTrackFlags(for: mediaURL).hasVideo
         if hasVideoTrack {
             clearActivePodcastAudioPlaybackContext()
