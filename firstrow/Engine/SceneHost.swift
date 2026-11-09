@@ -69,6 +69,107 @@ final class RunLoopFlushObserver {
 #endif
 
 #if os(macOS)
+    /// Keeps a ProMotion screen at its fastest rate while something in First Row moves. Core
+    /// Animation plays animations at whatever rate the screen is running, and macOS only raises a
+    /// ProMotion screen above 60 Hz when something asks (a ProMotion MacBook ran First Row at 30-60
+    /// fps unless the menu bar's own animation happened to lift it). A display link asking for the
+    /// top rate does ask. It's paused whenever nothing moves, so the screen can slow down again.
+    @MainActor
+    final class ProMotionPacer: NSObject {
+        static let shared = ProMotionPacer()
+
+        /// An animation that never ends: it keeps the rate up while its layer is on screen.
+        private struct Endless {
+            weak var layer: CALayer?
+            let key: String
+            let animation: CAAnimation
+        }
+
+        private weak var view: NSView?
+        /// The display link (a `CADisplayLink`, which the Mac has from macOS 14).
+        private var link: AnyObject?
+        /// When the last animation with an end finishes, on `CACurrentMediaTime()`'s clock.
+        private var busyUntil: CFTimeInterval = 0
+        private var endless: [Endless] = []
+
+        /// Follows `view`'s screen (the scene's view, once it is in a window).
+        func attach(to view: NSView) {
+            guard self.view !== view else { return }
+            self.view = view
+            if #available(macOS 14.0, *) {
+                (link as? CADisplayLink)?.invalidate()
+                let link = view.displayLink(target: self, selector: #selector(tick(_:)))
+                link.isPaused = true
+                link.add(to: .main, forMode: .common)
+                self.link = link
+            }
+        }
+
+        /// Keeps the rate up for the next `seconds`.
+        func hold(for seconds: Double) {
+            busyUntil = max(busyUntil, CACurrentMediaTime() + seconds)
+            resumeIfNeeded()
+        }
+
+        /// Keeps the rate up while the animation just added to `layer` for `key` plays.
+        func didAdd(forKey key: String, to layer: CALayer) {
+            guard let animation = layer.animation(forKey: key), animation.speed > 0 else { return }
+            let once = (animation.duration > 0 ? animation.duration : 0.25) * (animation.autoreverses ? 2 : 1)
+            let length = animation.repeatDuration > 0 ? animation.repeatDuration : once * Double(max(1, animation.repeatCount))
+            guard length.isFinite, length < 3600 else {
+                endless.removeAll { $0.layer == nil || ($0.layer === layer && $0.key == key) }
+                endless.append(Endless(layer: layer, key: key, animation: animation))
+                resumeIfNeeded()
+                return
+            }
+            // A begin time of 0 means "when committed", which is about now.
+            let begin = animation.beginTime > 0 ? layer.convertTime(animation.beginTime, to: nil) : CACurrentMediaTime()
+            busyUntil = max(busyUntil, begin + length / Double(animation.speed))
+            resumeIfNeeded()
+        }
+
+        /// Starts the link if anything is moving (an endless animation may be back on screen).
+        func resumeIfNeeded() {
+            guard #available(macOS 14.0, *), let link = link as? CADisplayLink, link.isPaused, isNeeded() else { return }
+            let fastest = Float(max(60, view?.window?.screen?.maximumFramesPerSecond ?? 60))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: min(80, fastest), maximum: fastest, preferred: fastest)
+            link.isPaused = false
+        }
+
+        @available(macOS 14.0, *)
+        @objc private func tick(_ link: CADisplayLink) {
+            if !isNeeded() {
+                link.isPaused = true
+            }
+        }
+
+        private func isNeeded() -> Bool {
+            guard let view, let window = view.window, window.occlusionState.contains(.visible) else { return false }
+            // Low Power Mode keeps the screen at 60 Hz anyway.
+            if #available(macOS 12.0, *), ProcessInfo.processInfo.isLowPowerModeEnabled {
+                return false
+            }
+            if CACurrentMediaTime() < busyUntil {
+                return true
+            }
+            endless.removeAll { entry in
+                guard let layer = entry.layer else { return true }
+                return layer.animation(forKey: entry.key) !== entry.animation
+            }
+            return endless.contains { isShowing($0.layer, in: view.layer) }
+        }
+
+        private func isShowing(_ layer: CALayer?, in root: CALayer?) -> Bool {
+            var current = layer
+            while let shown = current {
+                if shown === root { return true }
+                if shown.isHidden || shown.opacity <= 0 { return false }
+                current = shown.superlayer
+            }
+            return false
+        }
+    }
+
     /// The view First Row draws into: it hosts a layer tree (origin top left) and passes on
     /// key presses.
     final class SceneHostView: NSView {
@@ -114,6 +215,9 @@ final class RunLoopFlushObserver {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            if window != nil {
+                ProMotionPacer.shared.attach(to: self)
+            }
             relayout()
         }
 
@@ -165,6 +269,7 @@ final class RunLoopFlushObserver {
         }
 
         override func mouseDragged(with event: NSEvent) {
+            ProMotionPacer.shared.hold(for: 0.3)
             onPointer?(.moved(topLeftPoint(event)))
         }
 
@@ -191,6 +296,7 @@ final class RunLoopFlushObserver {
         }
 
         override func scrollWheel(with event: NSEvent) {
+            ProMotionPacer.shared.hold(for: 0.3)
             onPointer?(.scrolled(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas, at: topLeftPoint(event)))
         }
     }

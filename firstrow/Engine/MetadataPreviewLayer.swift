@@ -170,7 +170,7 @@ final class MetadataPreviewLayer: GapItemLayer {
         }
         let states = samples.map { state(at: CGFloat($0), geometry) }
         func keyframes(_ keyPath: String, _ values: [Any]) -> CAKeyframeAnimation {
-            let animation = CAKeyframeAnimation(keyPath: keyPath).preferringProMotion()
+            let animation = CAKeyframeAnimation(keyPath: keyPath)
             animation.values = values
             animation.duration = 0.62
             animation.beginTime = begin
@@ -178,18 +178,18 @@ final class MetadataPreviewLayer: GapItemLayer {
             animation.calculationMode = .linear
             return animation
         }
-        unit.add(keyframes("position", states.map { NSValue.layerPoint($0.position) }), forKey: "move")
+        unit.addAtFullRate(keyframes("position", states.map { NSValue.layerPoint($0.position) }), forKey: "move")
         unit.add(keyframes("transform", states.map { NSValue(caTransform3D: $0.transform) }), forKey: "turn")
         sweep.add(keyframes("position", states.map { NSValue.layerPoint(CGPoint(x: 0, y: $0.sweepOffset - initialHeight)) }), forKey: "sweep")
         sweep.add(keyframes("colors", samples.map { Self.sweepColors(hidden: CGFloat($0)) }), forKey: "sweepFade")
-        let reveal = CABasicAnimation(keyPath: "opacity").preferringProMotion()
+        let reveal = CABasicAnimation(keyPath: "opacity")
         reveal.fromValue = 0
         reveal.toValue = 1
         reveal.duration = 0.3
         reveal.beginTime = begin + 0.22
         reveal.fillMode = .backwards
         reveal.timingFunction = Animation.easeInOut(duration: 0.3).timingFunction
-        details.add(reveal, forKey: "reveal")
+        details.addAtFullRate(reveal, forKey: "reveal")
     }
 
     /// The sweep mask's stops: fully shown above the line, `hidden` (0 to 1) of the way gone below it.

@@ -262,7 +262,7 @@ final class RootCarouselLayerController: LayerController {
             guard let final = states.last else { continue }
             func run(_ layer: CALayer, _ keyPath: String, _ values: [Any]) {
                 guard let last = values.last else { return }
-                let animation = CAKeyframeAnimation(keyPath: keyPath).preferringProMotion()
+                let animation = CAKeyframeAnimation(keyPath: keyPath)
                 animation.values = values
                 animation.keyTimes = keyTimes
                 animation.calculationMode = .linear
@@ -271,7 +271,7 @@ final class RootCarouselLayerController: LayerController {
                 // Begin when the start was computed, so later work in this pass can't delay it.
                 animation.beginTime = layer.convertTime(now, from: nil)
                 withoutLayerActions { layer.setValue(last, forKeyPath: keyPath) }
-                layer.add(animation, forKey: keyPath)
+                layer.addAtFullRate(animation, forKey: keyPath)
             }
             run(icon.container, "position", states.map { NSValue.layerPoint(space.point($0.center)) })
             run(icon.container, "opacity", states.map { NSNumber(value: $0.opacity) })
@@ -497,7 +497,7 @@ final class RootCarouselLayerController: LayerController {
             layer.setValue(value, forKeyPath: keyPath)
             return
         }
-        let animation = CABasicAnimation(keyPath: keyPath).preferringProMotion()
+        let animation = CABasicAnimation(keyPath: keyPath)
         // Use the model value unless mid-flight: the presentation layer lags a value set this update.
         let source: CALayer = layer.animation(forKey: keyPath) != nil ? (layer.presentation() ?? layer) : layer
         animation.fromValue = source.value(forKeyPath: keyPath)
@@ -505,7 +505,7 @@ final class RootCarouselLayerController: LayerController {
         animation.duration = duration
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         layer.setValue(value, forKeyPath: keyPath)
-        layer.add(animation, forKey: keyPath)
+        layer.addAtFullRate(animation, forKey: keyPath)
     }
 }
 

@@ -103,18 +103,18 @@ final class HintBarLayer {
         bar.removeAllAnimations()
         layer.opacity = Self.resting
         let duration: CFTimeInterval = 2.8
-        let fade = CAKeyframeAnimation(keyPath: "opacity").preferringProMotion()
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
         fade.values = [0, 1, 1, Self.resting]
         fade.keyTimes = [0, 0.14, 0.42, 1]
         fade.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .linear), CAMediaTimingFunction(name: .easeInEaseOut)]
         fade.duration = duration
-        layer.add(fade, forKey: "introduce")
-        let float = CAKeyframeAnimation(keyPath: "transform").preferringProMotion()
+        layer.addAtFullRate(fade, forKey: "introduce")
+        let float = CAKeyframeAnimation(keyPath: "transform")
         float.values = [CATransform3DIdentity, CATransform3DMakeTranslation(drift.width, drift.height, 0), CATransform3DIdentity].map { NSValue(caTransform3D: $0) }
         float.keyTimes = [0.1, 0.45, 0.85]
         float.timingFunctions = [CAMediaTimingFunction(name: .easeInEaseOut), CAMediaTimingFunction(name: .easeInEaseOut)]
         float.duration = duration
-        bar.add(float, forKey: "introduce")
+        bar.addAtFullRate(float, forKey: "introduce")
     }
 }
 

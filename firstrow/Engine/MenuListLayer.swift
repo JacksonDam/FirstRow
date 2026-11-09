@@ -776,14 +776,14 @@ final class MarqueeLayer {
         let cycle = max(1, graphic.size.width + Self.gap)
         strip.frame = CGRect(x: 0, y: 0, width: cycle * 2, height: height)
         strip.removeAllAnimations()
-        let scroll = CABasicAnimation(keyPath: "position.x").preferringProMotion()
+        let scroll = CABasicAnimation(keyPath: "position.x")
         scroll.fromValue = 0
         scroll.toValue = -cycle
         scroll.duration = Double(cycle / Self.speed)
         scroll.repeatCount = .infinity
         scroll.isRemovedOnCompletion = false
         scroll.beginTime = CACurrentMediaTime()
-        strip.add(scroll, forKey: "marquee")
+        strip.addAtFullRate(scroll, forKey: "marquee")
     }
 
     func stop() {

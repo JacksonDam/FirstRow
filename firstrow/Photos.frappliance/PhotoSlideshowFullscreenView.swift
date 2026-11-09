@@ -201,7 +201,7 @@ final class PhotoSlideshowLayerController: LayerController {
 
         // Pan and zoom over one block from when the photo appears, then hold.
         layer.transform = kenBurnsTransform(index: index, progress: 1)
-        let kenBurns = CABasicAnimation(keyPath: "transform").preferringProMotion()
+        let kenBurns = CABasicAnimation(keyPath: "transform")
         kenBurns.fromValue = NSValue(caTransform3D: kenBurnsTransform(index: index, progress: 0))
         kenBurns.toValue = NSValue(caTransform3D: kenBurnsTransform(index: index, progress: 1))
         kenBurns.duration = block
@@ -209,11 +209,11 @@ final class PhotoSlideshowLayerController: LayerController {
         kenBurns.isRemovedOnCompletion = false
         // A past beginTime resumes mid-pan. timeOffset would wrap a one-shot animation to its start.
         kenBurns.beginTime = layer.convertTime(appear, from: nil)
-        layer.add(kenBurns, forKey: "kenBurns")
+        layer.addAtFullRate(kenBurns, forKey: "kenBurns")
 
         // Fade in over the crossfade (not the first photo), and out over the next one's.
         let isLast = index == configuration.imageCount - 1
-        let fade = CAKeyframeAnimation(keyPath: "opacity").preferringProMotion()
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
         let fadeInEnd = appear + (index == 0 ? 0 : configuration.crossfadeDuration)
         let fadeOutEnd = isLast ? fadeInEnd + 3600 : fadeOutStart + configuration.crossfadeDuration
         let times = [appear, fadeInEnd, isLast ? fadeOutEnd : fadeOutStart, fadeOutEnd]
@@ -225,7 +225,7 @@ final class PhotoSlideshowLayerController: LayerController {
         fade.isRemovedOnCompletion = false
         fade.beginTime = layer.convertTime(appear, from: nil)
         layer.opacity = isLast ? 1 : 0
-        layer.add(fade, forKey: "fade")
+        layer.addAtFullRate(fade, forKey: "fade")
         return layer
     }
 

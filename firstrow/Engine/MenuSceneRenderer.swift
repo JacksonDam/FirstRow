@@ -212,6 +212,9 @@ final class MenuSceneRenderer: TransactionRendering {
         if isDirty {
             isDirty = false
             update(RenderPass(transaction: Transaction()), includesCarousel: true)
+            #if os(macOS)
+                ProMotionPacer.shared.resumeIfNeeded()
+            #endif
         } else if carouselNeedsUpdate, !ModernTheme.isActive {
             updateCarousel()
         }

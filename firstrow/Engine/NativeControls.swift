@@ -40,6 +40,7 @@
             return
         }
         #if os(macOS)
+            ProMotionPacer.shared.hold(for: animation.delay + animation.duration)
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = animation.duration
                 context.timingFunction = animation.timingFunction

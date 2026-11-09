@@ -295,7 +295,7 @@ final class CoverCarouselLayerController: LayerController {
             let progress = laneProgress(slot: slot, elapsed: elapsed)
             // Animated depth puts a cover that just wrapped behind the others from its first frame.
             lane.plane.removeAllAnimations()
-            let depth = CAKeyframeAnimation(keyPath: "zPosition").preferringProMotion()
+            let depth = CAKeyframeAnimation(keyPath: "zPosition")
             depth.values = [0, 1]
             depth.keyTimes = [0, 1]
             depth.duration = Self.cycleDuration
@@ -303,13 +303,13 @@ final class CoverCarouselLayerController: LayerController {
             depth.beginTime = 0
             depth.timeOffset = progress * Self.cycleDuration
             depth.isRemovedOnCompletion = false
-            lane.plane.add(depth, forKey: "depth")
+            lane.plane.addAtFullRate(depth, forKey: "depth")
             for layer in [lane.reflection, lane.preview] {
                 layer.removeAllAnimations()
                 // The fade-in at the back also hides the switch to the next picture.
                 let peakOpacity = layer === lane.reflection ? Double(Self.reflectionOpacity) : 1
                 let fades = keyTimes.map { NSNumber(value: peakOpacity * min(1, $0.doubleValue / Self.spawnFadeFraction)) }
-                let group = CAAnimationGroup().preferringProMotion()
+                let group = CAAnimationGroup()
                 group.animations = [
                     keyframes("position", positions, keyTimes),
                     keyframes("transform", transforms, keyTimes),
@@ -321,7 +321,7 @@ final class CoverCarouselLayerController: LayerController {
                 group.beginTime = 0
                 group.timeOffset = progress * Self.cycleDuration
                 group.isRemovedOnCompletion = false
-                layer.add(group, forKey: "carousel")
+                layer.addAtFullRate(group, forKey: "carousel")
                 // The model values match the animation's starting frame, in case it is ever removed.
                 let index = min(count, max(0, Int((progress * Double(count)).rounded())))
                 withoutLayerActions {
@@ -345,7 +345,7 @@ final class CoverCarouselLayerController: LayerController {
     }
 
     private func keyframes(_ keyPath: String, _ values: [Any], _ keyTimes: [NSNumber]) -> CAKeyframeAnimation {
-        let animation = CAKeyframeAnimation(keyPath: keyPath).preferringProMotion()
+        let animation = CAKeyframeAnimation(keyPath: keyPath)
         animation.values = values
         animation.keyTimes = keyTimes
         animation.calculationMode = .linear
