@@ -12,6 +12,7 @@ private let musicSongsMenuListItemsCache = BoundedCache<String, [MenuListItemCon
 extension MenuView {
     var shouldExposeMusicNowPlayingMenuItem: Bool {
         ((hasActiveMusicPlaybackSession() && !isPodcastAudioNowPlaying) ||
+            isRestartingMusicPlayback ||
             holdNowPlayingMenuItemDuringExitFade ||
             hasPendingExternalMusicRestore) &&
             !deferNowPlayingMenuItemUntilAfterFadeOut

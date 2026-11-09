@@ -427,6 +427,10 @@ extension MenuView {
             let willUseAppleScriptPlayback = song.spotify == nil && (song.prefersSystemMusicPlayerPlayback || song.url == nil)
         #endif
         let hadActiveSession = hasActiveMusicPlaybackSession()
+        // Song to song, the Music menu keeps its Now Playing row while one stops and the next
+        // starts: anything drawn in between (a cover fading in, say) would take it away a frame.
+        isRestartingMusicPlayback = hadActiveSession && !isPodcastAudioNowPlaying
+        defer { isRestartingMusicPlayback = false }
         // Spotify going from song to song is told what to play next, not stopped first.
         let staysOnSpotify = isCurrentMusicPlaybackUsingSpotify && song.spotify != nil
         stopMusicPlaybackSession(
