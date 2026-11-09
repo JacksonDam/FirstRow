@@ -485,14 +485,14 @@ extension MenuView {
             if spotifyShowsAdvert {
                 restoreSpotifySongDisplay(queue[index])
             }
-            spotifyIsPlaying = !state.isPaused
+            spotifyIsPlaying = AskedPlayState.settle(!state.isPaused, &spotifyAskedToPlay)
             if state.durationSeconds > 0 {
                 musicNowPlayingDurationSeconds = state.durationSeconds
             }
             if musicScrubDirection == 0, !isAwaitingSpotifySeek(state) {
                 musicNowPlayingElapsedSeconds = state.displayedPositionSeconds()
                 spotifyLastTrackPositionSeconds = musicNowPlayingElapsedSeconds
-                musicNowPlayingLeadingGlyphState = state.isPaused ? .pause : nil
+                musicNowPlayingLeadingGlyphState = spotifyIsPlaying ? nil : .pause
             }
             // Stopped at the end of the last song.
             if state.isPaused, index + 1 >= queue.count, state.durationSeconds > 0,
@@ -627,6 +627,7 @@ extension MenuView {
         stopMusicScrubbing(showPauseGlyph: false)
         let shouldPause = spotifyIsPlaying || pausing
         spotifyIsPlaying = !shouldPause
+        spotifyAskedToPlay = AskedPlayState(playing: !shouldPause)
         musicNowPlayingLeadingGlyphState = shouldPause ? .pause : nil
         Task {
             if shouldPause {

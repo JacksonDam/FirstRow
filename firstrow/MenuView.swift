@@ -521,6 +521,8 @@ final class MenuView: ObservableObject {
     #if os(iOS)
         @Published var isCurrentMusicPlaybackUsingMediaPlayer = false
         var musicMediaPlayerWasPlaying = false
+        /// What Play or Pause last asked the system player for, until it says so too.
+        var musicMediaPlayerAskedToPlay: AskedPlayState?
     #endif
     @Published var isCurrentMusicPlaybackManagedByFirstRow = false
     @Published var musicAppleScriptCurrentTrackPersistentIDHex: String?
@@ -547,6 +549,8 @@ final class MenuView: ObservableObject {
     var spotifySessionObserver: NSObjectProtocol?
     @Published var isCurrentMusicPlaybackUsingSpotify = false
     var spotifyIsPlaying = false
+    /// What Play or Pause last asked Spotify for, until it says so too.
+    var spotifyAskedToPlay: AskedPlayState?
     var spotifyShowsAdvert = false
     /// The song Spotify was asked to play and hasn't reported yet.
     var spotifyPendingTrackURI: String?

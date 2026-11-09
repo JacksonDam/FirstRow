@@ -373,6 +373,30 @@ extension MenuView {
 
     private static let musicPlaybackStartingGrace: TimeInterval = 5
 
+    /// Play or Pause just asked of a player that reports its state as it goes, which can still
+    /// report what it was doing for a moment: what was asked holds until a report agrees, or for
+    /// a few seconds, so the button doesn't flick back and forth.
+    struct AskedPlayState {
+        let playing: Bool
+        let until: Date
+
+        init(playing: Bool) {
+            self.playing = playing
+            until = Date().addingTimeInterval(3)
+        }
+
+        /// Whether to show playing for `reported`, clearing `asked` once the player agrees (or
+        /// the wait is over).
+        static func settle(_ reported: Bool, _ asked: inout AskedPlayState?) -> Bool {
+            guard let wanted = asked else { return reported }
+            if reported == wanted.playing || Date() > wanted.until {
+                asked = nil
+                return reported
+            }
+            return wanted.playing
+        }
+    }
+
     /// The next song is taking over from one that was playing.
     private func noteMusicPlaybackContinuing() {
         let until = Date().addingTimeInterval(Self.musicPlaybackStartingGrace)
@@ -1818,6 +1842,7 @@ extension MenuView {
                 guard activeMusicPlaybackSongID == song.id, musicNowPlayingLeadingGlyphState != .pause else { return }
                 SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.play() }
                 musicMediaPlayerWasPlaying = true
+                musicMediaPlayerAskedToPlay = AskedPlayState(playing: true)
                 refreshMusicKitPlaybackProgress()
                 startMusicKitProgressTimerIfNeeded()
                 // Straight after another song the player can drop a new song as it starts;
@@ -1865,7 +1890,7 @@ extension MenuView {
         }
 
         private func followMediaPlayer(_ state: SystemMusicPlayerCalls.State) {
-            let isPlaying = state.isPlaying
+            let isPlaying = AskedPlayState.settle(state.isPlaying, &musicMediaPlayerAskedToPlay)
             // Never two songs: a file player left going stops (the system player has the song).
             if isPlaying, let stray = musicAudioPlayer, stray.rate > 0.01 {
                 stray.pause()
@@ -2433,6 +2458,7 @@ extension MenuView {
                     SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.play() }
                 }
                 musicMediaPlayerWasPlaying = !pausing
+                musicMediaPlayerAskedToPlay = AskedPlayState(playing: !pausing)
                 startMusicKitProgressTimerIfNeeded()
                 refreshMusicKitPlaybackProgress()
                 updateMusicNowPlayingFlipTimerState()
