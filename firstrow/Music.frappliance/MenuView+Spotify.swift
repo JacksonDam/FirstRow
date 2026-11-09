@@ -622,9 +622,10 @@ extension MenuView {
         return true
     }
 
-    func toggleSpotifyPlayback() {
+    /// Plays or pauses; `pausing` pauses a song still getting going.
+    func toggleSpotifyPlayback(pausing: Bool = false) {
         stopMusicScrubbing(showPauseGlyph: false)
-        let shouldPause = spotifyIsPlaying
+        let shouldPause = spotifyIsPlaying || pausing
         spotifyIsPlaying = !shouldPause
         musicNowPlayingLeadingGlyphState = shouldPause ? .pause : nil
         Task {

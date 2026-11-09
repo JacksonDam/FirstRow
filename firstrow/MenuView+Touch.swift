@@ -881,7 +881,7 @@ extension MenuView {
             if upright, !isNowPlayingQueueVisible {
                 if dy < 0 {
                     showNowPlayingTouchControls()
-                } else if isMusicPlaybackRunning() {
+                } else if isMusicPlaybackRunningOrStarting() {
                     hideNowPlayingTouchControls()
                 }
                 return true

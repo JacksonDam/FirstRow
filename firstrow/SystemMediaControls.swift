@@ -151,7 +151,7 @@
                 album: musicNowPlayingAlbum,
                 duration: max(0, musicNowPlayingDurationSeconds),
                 elapsed: max(0, musicNowPlayingElapsedSeconds),
-                isPlaying: isMusicPlaybackRunning(),
+                isPlaying: isMusicPlaybackRunningOrStarting(),
                 isVideo: false,
                 artwork: musicNowPlayingArtwork,
             )
@@ -183,7 +183,7 @@
                 return true
             }
             guard hasActiveMusicPlaybackSession() else { return false }
-            if isMusicPlaybackRunning() != playing { handleMusicSpacebarPressed() }
+            if isMusicPlaybackRunningOrStarting() != playing { handleMusicSpacebarPressed() }
             return true
         }
 

@@ -308,7 +308,7 @@ extension MenuView {
         nowPlayingTouchControlsHideTask?.cancel()
         nowPlayingTouchControlsHideTask = nil
         guard showsOnScreenControls, activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
-        guard isMusicPlaybackRunning() else {
+        guard isMusicPlaybackRunningOrStarting() else {
             if areNowPlayingTouchControlsHidden {
                 withAnimation(.smooth(duration: 0.4)) { areNowPlayingTouchControlsHidden = false }
             }
@@ -318,7 +318,7 @@ extension MenuView {
             try? await firstRowSleep(Self.nowPlayingTouchControlsHideDelay)
             guard let self, !Task.isCancelled else { return }
             self.nowPlayingTouchControlsHideTask = nil
-            guard self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey, self.isMusicPlaybackRunning() else { return }
+            guard self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey, self.isMusicPlaybackRunningOrStarting() else { return }
             self.hideNowPlayingTouchControls()
         }
     }
@@ -327,8 +327,11 @@ extension MenuView {
     func noteNowPlayingPlaybackChanged() {
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
         refreshNowPlayingLyrics()
-        if showsOnScreenControls, nowPlayingTouchControlsHideTask == nil || !isMusicPlaybackRunning() {
-            if areNowPlayingTouchControlsHidden, !isMusicPlaybackRunning() {
+        // (A song taking over from one that was playing is as good as playing: the buttons
+        // don't come back for the moment between songs.)
+        let playing = isMusicPlaybackRunningOrStarting()
+        if showsOnScreenControls, nowPlayingTouchControlsHideTask == nil || !playing {
+            if areNowPlayingTouchControlsHidden, !playing {
                 showNowPlayingTouchControls()
             } else if !areNowPlayingTouchControlsHidden {
                 scheduleNowPlayingTouchControlsHide()

@@ -363,6 +363,29 @@ extension MenuView {
         #endif
     }
 
+    /// Playing, or a song taking over from one that was still getting going (for a few seconds
+    /// at most): what Now Playing's play button and its buttons' coming and going go by.
+    func isMusicPlaybackRunningOrStarting() -> Bool {
+        if isMusicPlaybackRunning() { return true }
+        guard let until = musicPlaybackStartingUntil else { return false }
+        return until > Date()
+    }
+
+    private static let musicPlaybackStartingGrace: TimeInterval = 5
+
+    /// The next song is taking over from one that was playing.
+    private func noteMusicPlaybackContinuing() {
+        let until = Date().addingTimeInterval(Self.musicPlaybackStartingGrace)
+        musicPlaybackStartingUntil = until
+        Task { @MainActor [weak self] in
+            try? await firstRowSleep(Self.musicPlaybackStartingGrace + 0.05)
+            guard let self, self.musicPlaybackStartingUntil == until else { return }
+            self.musicPlaybackStartingUntil = nil
+            // Not going by now: it shows as it is.
+            self.updateMusicNowPlayingFlipTimerState()
+        }
+    }
+
     func startMusicPlayback(
         from song: MusicLibrarySongEntry,
         trackIndex: Int,
@@ -1791,7 +1814,8 @@ extension MenuView {
                     musicSongsLoadError = musicLibraryErrorMessage(for: error)
                     return
                 }
-                guard activeMusicPlaybackSongID == song.id else { return }
+                // (Paused while it got ready: it waits for Play.)
+                guard activeMusicPlaybackSongID == song.id, musicNowPlayingLeadingGlyphState != .pause else { return }
                 SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.play() }
                 musicMediaPlayerWasPlaying = true
                 refreshMusicKitPlaybackProgress()
@@ -2142,6 +2166,9 @@ extension MenuView {
             }
             clearMusicSongSwitchTransitionState()
         }
+        // After one that was playing (or ran to its end), the next shows as playing while it
+        // gets going.
+        let continuesPlaying = isMusicPlaybackRunningOrStarting() || musicNowPlayingLeadingGlyphState != .pause
         if isPodcastAudioNowPlaying {
             let episodes = activePodcastPlaybackEpisodes()
             guard !episodes.isEmpty else { return }
@@ -2149,6 +2176,7 @@ extension MenuView {
             guard let currentIndex = episodes.firstIndex(where: { $0.id == currentEpisodeID }) else { return }
             let targetIndex = max(0, min(episodes.count - 1, explicitIndex ?? currentIndex + direction))
             guard targetIndex != currentIndex else { return }
+            if continuesPlaying { noteMusicPlaybackContinuing() }
             let direction = targetIndex > currentIndex ? 1 : -1
             let targetEpisode = episodes[targetIndex]
             let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
@@ -2226,6 +2254,7 @@ extension MenuView {
         let currentIndex = activeMusicPlaybackIndex() ?? fallbackIndex
         let targetIndex = max(0, min(playbackQueue.count - 1, explicitIndex ?? currentIndex + direction))
         guard targetIndex != currentIndex else { return }
+        if continuesPlaying { noteMusicPlaybackContinuing() }
         let direction = targetIndex > currentIndex ? 1 : -1
         let targetSong = playbackQueue[targetIndex]
         let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
@@ -2354,8 +2383,12 @@ extension MenuView {
     }
 
     func handleMusicSpacebarPressed() {
+        // A song still getting going after one that was playing shows as playing, so a press
+        // then pauses it (and keeps it from starting).
+        let startingUp = !isMusicPlaybackRunning() && isMusicPlaybackRunningOrStarting()
+        musicPlaybackStartingUntil = nil
         if musicAudioPlayer == nil, isCurrentMusicPlaybackUsingSpotify, activeMusicPlaybackSongID != nil {
-            toggleSpotifyPlayback()
+            toggleSpotifyPlayback(pausing: startingUp)
             return
         }
         #if os(tvOS)
@@ -2366,7 +2399,7 @@ extension MenuView {
                 let player = ApplicationMusicPlayer.shared
                 let status = player.state.playbackStatus
                 let isPlaying = status == .playing || status == .seekingForward || status == .seekingBackward
-                if isPlaying {
+                if isPlaying || startingUp {
                     player.pause()
                     stopMusicScrubbing(showPauseGlyph: false)
                     musicNowPlayingLeadingGlyphState = .pause
@@ -2391,14 +2424,15 @@ extension MenuView {
                 stopMusicScrubbing(showPauseGlyph: false)
                 // As the progress reads last found it; the play or pause itself goes off the
                 // main thread.
-                if musicMediaPlayerWasPlaying {
+                let pausing = musicMediaPlayerWasPlaying || startingUp
+                if pausing {
                     SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.pause() }
                     musicNowPlayingLeadingGlyphState = .pause
                 } else {
                     musicNowPlayingLeadingGlyphState = nil
                     SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.play() }
                 }
-                musicMediaPlayerWasPlaying.toggle()
+                musicMediaPlayerWasPlaying = !pausing
                 startMusicKitProgressTimerIfNeeded()
                 refreshMusicKitPlaybackProgress()
                 updateMusicNowPlayingFlipTimerState()
@@ -2408,7 +2442,7 @@ extension MenuView {
         #if os(macOS)
             if musicAudioPlayer == nil, isCurrentMusicPlaybackUsingAppleScript, activeMusicPlaybackSongID != nil {
                 stopMusicScrubbing(showPauseGlyph: false)
-                let shouldPause = musicAppleScriptIsPlaying
+                let shouldPause = musicAppleScriptIsPlaying || startingUp
                 Task(priority: .userInitiated) {
                     let didSucceed = await musicAppleScriptExecutor.run {
                         shouldPause
@@ -2442,7 +2476,7 @@ extension MenuView {
             }
         #endif
         guard let player = musicAudioPlayer else { return }
-        let isCurrentlyPlaying = player.rate > 0.01
+        let isCurrentlyPlaying = player.rate > 0.01 || startingUp
         if isCurrentlyPlaying {
             player.pause()
             stopMusicScrubbing(showPauseGlyph: false)

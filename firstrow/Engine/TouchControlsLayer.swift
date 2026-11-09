@@ -179,7 +179,7 @@ final class TouchControlsLayer {
                 }()
                 wanted = [
                     back,
-                    Wanted(control: .playPause, frame: CGRect(x: middle - play / 2, y: centerY - play / 2, width: play, height: play), symbol: menu.isMusicPlaybackRunning() ? "pause.fill" : "play.fill", pointSize: 26, inScene: true),
+                    Wanted(control: .playPause, frame: CGRect(x: middle - play / 2, y: centerY - play / 2, width: play, height: play), symbol: menu.isMusicPlaybackRunningOrStarting() ? "pause.fill" : "play.fill", pointSize: 26, inScene: true),
                 ]
                 var rightEdge = middle + play / 2
                 // Only for something with songs either side (not a single preview).

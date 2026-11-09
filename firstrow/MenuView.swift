@@ -346,6 +346,9 @@ final class MenuView: ObservableObject {
     /// Touch mode's Now Playing buttons, slid away while a song plays untouched.
     @Published var areNowPlayingTouchControlsHidden = false
     var nowPlayingTouchControlsHideTask: Task<Void, Never>?
+    /// Until when a song taking over from one that was playing counts as playing while it
+    /// gets going, so nothing flicks to paused and back between songs.
+    var musicPlaybackStartingUntil: Date?
     /// The songs Now Playing was started from, over its right side (mouse and touch modes):
     /// whether it's out, and how far (0 away to 1 out), which a finger can hold part way.
     @Published var isNowPlayingQueueVisible = false
