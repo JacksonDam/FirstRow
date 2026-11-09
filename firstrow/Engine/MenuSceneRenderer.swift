@@ -170,9 +170,13 @@ final class MenuSceneRenderer: TransactionRendering {
             #if os(iOS)
                 // The whole scene fits: by height on wide phones, by width on squarer screens.
                 let scale = min(containerSize.height / virtualSize.height, containerSize.width / virtualSize.width)
+                // Still upright (turning to landscape as it opens), it keeps its place for the
+                // screen's landscape width. Otherwise it's the drawing's own: all of the screen, or
+                // the top half of a half-folded one.
                 let screenBounds = menu.activeWindowScreen?.bounds ?? .zero
                 let deviceLandscapeWidth = max(screenBounds.width, screenBounds.height)
-                let horizontalCompensation = max(0, (deviceLandscapeWidth - containerSize.width) * 0.5)
+                let isTurning = containerSize.width < containerSize.height
+                let horizontalCompensation = isTurning ? max(0, (deviceLandscapeWidth - containerSize.width) * 0.5) : 0
                 let fittedWidth = virtualSize.width * scale
                 canvas.position = CGPoint(x: (containerSize.width - fittedWidth) * 0.5 - horizontalCompensation, y: (containerSize.height - virtualSize.height * scale) * 0.5)
             #else
@@ -405,8 +409,9 @@ final class MenuSceneRenderer: TransactionRendering {
 
     private var fullscreenContainerSize: CGSize {
         #if os(iOS)
+            // The screen's landscape size only while still upright, turning as it opens.
             let resolved = menu.activeFullscreenContainerSize
-            if resolved.width > 0, resolved.height > 0 { return resolved }
+            if containerSize.width < containerSize.height, resolved.width > 0, resolved.height > 0 { return resolved }
         #endif
         return containerSize
     }

@@ -515,7 +515,10 @@ final class TouchControlsLayer {
                 .compactMap { $0 as? UIWindowScene }
                 .flatMap(\.windows)
                 .first { $0.isKeyWindow }
-            let insets = window?.safeAreaInsets ?? .zero
+            // The drawing's own: on the top half of a half-folded screen, the bottom edge's
+            // inset is on the other half.
+            let drawing = (window?.rootViewController as? FirstRowViewController)?.drawingView
+            let insets = drawing?.safeAreaInsets ?? window?.safeAreaInsets ?? .zero
             return (insets.left, insets.top, insets.right, insets.bottom)
         #else
             return (0, 0, 0, 0)
