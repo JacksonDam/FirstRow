@@ -47,8 +47,10 @@
         private let appController = FirstRowAppController()
         private var didStart = false
         #if os(iOS)
-            /// A screen that folds, so held upright it turns upright too.
+            /// A screen that folds, so held upright it turns upright too (but not closed, on the
+            /// outside screen, which is like any iPhone's).
             private var isFoldable = false
+            private var isClosed = false
             /// Folded part way: held upright, First Row goes on the half above the fold.
             private var isHalfFolded = false
         #endif
@@ -65,7 +67,11 @@
                 #if compiler(>=6.4)
                     if #available(iOS 27.1, *) {
                         container.addInteraction(UIHingeInteraction { [weak self] _, update in
-                            self?.hingeChanged(hasHinge: update.hinge != nil, halfFolded: update.hinge?.status == .partiallyOpen)
+                            self?.hingeChanged(
+                                hasHinge: update.hinge != nil,
+                                closed: update.hinge?.status == .closed,
+                                halfFolded: update.hinge?.status == .partiallyOpen,
+                            )
                         })
                     }
                 #endif
@@ -102,9 +108,10 @@
                 return CGRect(x: bounds.minX, y: (bounds.midY - height / 2).rounded(), width: bounds.width, height: height)
             }
 
-            private func hingeChanged(hasHinge: Bool, halfFolded: Bool) {
-                if hasHinge != isFoldable {
+            private func hingeChanged(hasHinge: Bool, closed: Bool, halfFolded: Bool) {
+                if hasHinge != isFoldable || closed != isClosed {
                     isFoldable = hasHinge
+                    isClosed = closed
                     if #available(iOS 16.0, *) {
                         setNeedsUpdateOfSupportedInterfaceOrientations()
                     } else {
@@ -139,9 +146,9 @@
             override var prefersStatusBarHidden: Bool { true }
             override var prefersHomeIndicatorAutoHidden: Bool { true }
             override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-                // A foldable turns upright, keeping its landscape shape there (held upside down
-                // it stays as it is, as on any iPhone).
-                isFoldable ? .allButUpsideDown : .landscape
+                // An open foldable turns upright, keeping its landscape shape there (held upside
+                // down it stays as it is, as on any iPhone). Closed, it's sideways as ever.
+                isFoldable && !isClosed ? .allButUpsideDown : .landscape
             }
         #endif
     }
