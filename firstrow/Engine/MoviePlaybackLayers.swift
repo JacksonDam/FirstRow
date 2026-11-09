@@ -303,11 +303,9 @@ final class MovieResumePromptLayer {
     private var lastSelectedIndex: Int?
     private var backdropSource: NSImage?
     private var wasVisible = false
-    // The modern look's capsules and focus.
-    private let modernCapsules = [SceneLayer(), SceneLayer()]
-    private let modernFocus = SceneLayer()
-    private let modernLabels = [SceneLayer(), SceneLayer()]
-    private let modernDarkLabels = [SceneLayer(), SceneLayer()]
+    /// The modern look's two options: the menus' own rows, so focus moves between them as it
+    /// does in a menu.
+    private let modernRows = [ModernMenuRowLayer(), ModernMenuRowLayer()]
     /// The two options' rows in scene points, top first.
     private(set) var optionFrames: [CGRect] = []
 
@@ -326,17 +324,7 @@ final class MovieResumePromptLayer {
         options.addSublayer(pressed)
         options.addSublayer(selection.layer)
         for label in labels { options.addSublayer(label) }
-        for capsule in modernCapsules {
-            capsule.backgroundColor = ModernTheme.rowFill.cgColor
-            options.addSublayer(capsule)
-        }
-        modernFocus.backgroundColor = ModernTheme.focusFill.cgColor
-        modernFocus.shadowColor = CGColor(gray: 0, alpha: 1)
-        modernFocus.shadowOpacity = 0.5
-        modernFocus.shadowRadius = 18
-        modernFocus.shadowOffset = CGSize(width: 0, height: 10)
-        options.addSublayer(modernFocus)
-        for label in modernLabels + modernDarkLabels { options.addSublayer(label) }
+        for row in modernRows { options.addSublayer(row.layer) }
     }
 
     func update(menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat) {
@@ -359,7 +347,7 @@ final class MovieResumePromptLayer {
         }
         let isModern = ModernTheme.isActive
         for sublayer in [pressed, selection.layer] + labels { sublayer.isHidden = isModern }
-        for sublayer in modernCapsules + modernLabels + modernDarkLabels + [modernFocus] { sublayer.isHidden = !isModern }
+        for row in modernRows { row.layer.isHidden = !isModern }
         if isModern {
             dim.backgroundColor = CGColor(gray: 0, alpha: 0.5)
             updateModern(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale, appearing: appearing)
@@ -397,11 +385,12 @@ final class MovieResumePromptLayer {
         layer.setOpacity(menu.movieResumePromptOpacity, appearing ? nil : pass.animation)
     }
 
-    /// Two capsules in the middle, with the white focus capsule under the chosen one.
-    private func updateModern(menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat, appearing: Bool) {
+    /// Two of the menus' rows in the middle: focus jumps to the chosen one, which turns white and
+    /// grows as a menu row does, the other fading back. Choosing keeps them as they are (the
+    /// classic look's blanked bar is its own).
+    private func updateModern(menu: MenuView, pass _: RenderPass, sceneSize: CGSize, scale: CGFloat, appearing _: Bool) {
         let width: CGFloat = 760
         let rowHeight = menu.selectionBoxHeight
-        let capsuleHeight = rowHeight - ModernTheme.rowCapsuleInset
         let pitch = rowHeight + 5
         options.frame = CGRect(x: (sceneSize.width - width) * 0.5, y: (sceneSize.height - pitch * 2) * 0.5, width: width, height: pitch * 2)
         optionFrames = (0 ..< 2).map { index in
@@ -409,28 +398,30 @@ final class MovieResumePromptLayer {
         }
         let selected = menu.movieResumePromptSelectedIndex
         lastSelectedIndex = selected
-        let growth = ModernTheme.focusGrowth
-        let focusFrame = CGRect(x: -growth.width, y: CGFloat(selected) * pitch + (rowHeight - capsuleHeight) * 0.5 - growth.height, width: width + growth.width * 2, height: capsuleHeight + growth.height * 2)
-        // Focus jumps to the chosen option rather than sliding there.
-        modernFocus.setFrame(focusFrame, nil)
-        modernFocus.cornerRadius = focusFrame.height * 0.5
-        modernFocus.isHidden = menu.movieResumePromptSolidBlackSelected
-        let textFade: Animation? = nil
+        ModernMenuRowLayer.focusAnimation = .smooth(duration: ModernTheme.focusDuration)
         for (index, title) in ["Resume Playing", "Start from Beginning"].enumerated() {
-            let isSelected = index == selected
-            let top = CGFloat(index) * pitch
-            let capsule = modernCapsules[index]
-            capsule.frame = CGRect(x: 0, y: top + (rowHeight - capsuleHeight) * 0.5, width: width, height: capsuleHeight)
-            capsule.cornerRadius = capsuleHeight * 0.5
-            capsule.opacity = isSelected ? 0 : 1
-            let hidden = menu.movieResumePromptHideUnselected && !isSelected
-            for (label, color) in [(modernLabels[index], ModernTheme.text), (modernDarkLabels[index], ModernTheme.focusedText)] {
-                let graphic = TextRenderer.render(TextSpec(text: title, fontName: ModernTheme.mediumFontName, size: ModernTheme.rowTitleSize, color: color, maxWidth: width - ModernTheme.rowTextInset * 2), scale: scale)
-                label.show(graphic, at: CGPoint(x: ModernTheme.rowTextInset, y: top + (rowHeight - graphic.size.height) * 0.5))
-            }
-            let focused = isSelected && !menu.movieResumePromptSolidBlackSelected
-            modernLabels[index].setOpacity(hidden || focused ? 0 : 1, textFade)
-            modernDarkLabels[index].setOpacity(focused && !hidden ? 1 : 0, textFade)
+            let row = modernRows[index]
+            row.layer.frame = CGRect(x: 0, y: CGFloat(index) * pitch, width: width, height: rowHeight)
+            let item = MenuListItemConfig(
+                id: "movie-resume-\(index)", title: title, leadsToMenu: false,
+                leadingImageAssetName: nil, leadingImage: nil, trailingText: nil, trailingSymbolName: nil,
+                showsTopDivider: false, showsBlueDot: false, showsLightRowBackground: false, alignsTextToDividerStart: false,
+            )
+            row.update(MenuRowLayer.Spec(
+                item: item,
+                isSelected: index == selected,
+                isSettled: true,
+                rowWidth: width,
+                rowHeight: rowHeight,
+                leadingCompensation: 0,
+                showsPlaybackSpeaker: false,
+                arrowAppearance: menu.menuArrowAppearance,
+                isPhotosRoot: false,
+                isPhotosThirdMenu: false,
+                dynamicLeadingImage: nil,
+                scale: scale,
+                theme: .modern,
+            ), menu: menu)
         }
     }
 }
