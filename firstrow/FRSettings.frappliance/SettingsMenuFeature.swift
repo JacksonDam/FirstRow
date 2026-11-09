@@ -3,6 +3,16 @@ import Foundation
     import UIKit
 #endif
 
+/// First Row's version, as Settings shows it and Jellyfin is told.
+enum FirstRowVersion {
+    /// Kept the same as MARKETING_VERSION, for Linux and Windows, whose builds have no Info.plist.
+    static let number = "2.0.1"
+
+    static var current: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? number
+    }
+}
+
 struct SettingsMenuFeature: MenuFeatureConfiguration {
     let rootItem = RootMenuItemConfig(id: "settings", title: "Settings", iconAssetName: "settings")
     var submenuItems: [SubmenuItemConfig]
@@ -16,7 +26,7 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
         #endif
         submenuItems = [
             .init(id: "settings_name", title: "Name", trailingText: deviceName),
-            .init(id: "settings_swversion", title: "SW Version", trailingText: "2.2.1 (314)"),
+            .init(id: "settings_swversion", title: "SW Version", trailingText: FirstRowVersion.current),
             .init(id: "settings_screensaver", title: "Screen Saver", leadsToMenu: true, trailingText: "1 Minute"),
             .init(id: "settings_soundeffects", title: "Sound Effects", trailingText: "On"),
             .init(id: "settings_theme", title: "Theme", trailingText: "Classic"),

@@ -351,7 +351,7 @@ struct JellyfinClient: Sendable {
     var userID: String?
 
     static let clientName = "First Row"
-    static let clientVersion = "2.0.1"
+    static let clientVersion = FirstRowVersion.number
 
     @MainActor
     init(baseURL: URL, accessToken: String? = nil, userID: String? = nil) {
