@@ -1,5 +1,20 @@
 import QuartzCore
 
+extension CAAnimation {
+    /// Asks a ProMotion screen to run this animation at up to 120 Hz. Core Animation only goes above its
+    /// default rate when asked: without this a ProMotion Mac kept First Row at 30-60 fps (only the menu bar's
+    /// own animation, when it slid in, lifted the screen to 120 Hz).
+    @discardableResult
+    func preferringProMotion() -> Self {
+        #if !FIRSTROW_PORTABLE && (os(macOS) || os(iOS))
+            if #available(macOS 12.0, iOS 15.0, *) {
+                preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
+            }
+        #endif
+        return self
+    }
+}
+
 // Plain changes draw at the end of the run loop pass, `withAnimation` changes as it returns.
 
 /// A timing curve and duration for a state change.
@@ -332,13 +347,7 @@ extension CALayer {
         if animation.repeatsForever {
             basic.repeatCount = .infinity
         }
-        #if os(iOS)
-            // ProMotion screens run animations at up to 120 Hz when asked.
-            if #available(iOS 15.0, *) {
-                basic.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
-            }
-        #endif
-        add(basic, forKey: keyPath)
+        add(basic.preferringProMotion(), forKey: keyPath)
     }
 
     func setOpacity(_ value: Double, _ animation: Animation?) {

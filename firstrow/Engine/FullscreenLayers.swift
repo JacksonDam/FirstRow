@@ -520,7 +520,7 @@ final class SpinnerLayer {
             spoke.position = CGPoint(x: size.width * 0.5, y: length * 0.5)
         }
         guard spoke.animation(forKey: "fade") == nil else { return }
-        let fade = CABasicAnimation(keyPath: "opacity")
+        let fade = CABasicAnimation(keyPath: "opacity").preferringProMotion()
         fade.fromValue = 1
         fade.toValue = 0.25
         fade.duration = 1
@@ -891,7 +891,7 @@ final class VolumeHUDContent {
             transform = CATransform3DScale(transform, factor, factor, 1)
             return NSValue(caTransform3D: CATransform3DTranslate(transform, -size.width / 2, -size.height / 2, 0))
         }
-        let bounce = CAKeyframeAnimation(keyPath: "transform")
+        let bounce = CAKeyframeAnimation(keyPath: "transform").preferringProMotion()
         bounce.values = [scaled(1), scaled(1.18), scaled(0.95), scaled(1.02), scaled(1)]
         bounce.keyTimes = [0, 0.3, 0.62, 0.84, 1]
         bounce.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 4)

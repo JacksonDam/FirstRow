@@ -262,7 +262,7 @@ final class RootCarouselLayerController: LayerController {
             guard let final = states.last else { continue }
             func run(_ layer: CALayer, _ keyPath: String, _ values: [Any]) {
                 guard let last = values.last else { return }
-                let animation = CAKeyframeAnimation(keyPath: keyPath)
+                let animation = CAKeyframeAnimation(keyPath: keyPath).preferringProMotion()
                 animation.values = values
                 animation.keyTimes = keyTimes
                 animation.calculationMode = .linear
@@ -497,7 +497,7 @@ final class RootCarouselLayerController: LayerController {
             layer.setValue(value, forKeyPath: keyPath)
             return
         }
-        let animation = CABasicAnimation(keyPath: keyPath)
+        let animation = CABasicAnimation(keyPath: keyPath).preferringProMotion()
         // Use the model value unless mid-flight: the presentation layer lags a value set this update.
         let source: CALayer = layer.animation(forKey: keyPath) != nil ? (layer.presentation() ?? layer) : layer
         animation.fromValue = source.value(forKeyPath: keyPath)

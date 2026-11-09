@@ -77,7 +77,7 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
             backdropMissing = blurred == nil
             if backdrop.contents != nil {
                 backdrop.removeAnimation(forKey: "contents")
-                let fade = CABasicAnimation(keyPath: "contents")
+                let fade = CABasicAnimation(keyPath: "contents").preferringProMotion()
                 fade.duration = 0.8
                 fade.fromValue = backdrop.contents
                 fade.toValue = blurred

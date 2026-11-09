@@ -201,7 +201,7 @@ final class PhotoSlideshowLayerController: LayerController {
 
         // Pan and zoom over one block from when the photo appears, then hold.
         layer.transform = kenBurnsTransform(index: index, progress: 1)
-        let kenBurns = CABasicAnimation(keyPath: "transform")
+        let kenBurns = CABasicAnimation(keyPath: "transform").preferringProMotion()
         kenBurns.fromValue = NSValue(caTransform3D: kenBurnsTransform(index: index, progress: 0))
         kenBurns.toValue = NSValue(caTransform3D: kenBurnsTransform(index: index, progress: 1))
         kenBurns.duration = block
@@ -213,7 +213,7 @@ final class PhotoSlideshowLayerController: LayerController {
 
         // Fade in over the crossfade (not the first photo), and out over the next one's.
         let isLast = index == configuration.imageCount - 1
-        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        let fade = CAKeyframeAnimation(keyPath: "opacity").preferringProMotion()
         let fadeInEnd = appear + (index == 0 ? 0 : configuration.crossfadeDuration)
         let fadeOutEnd = isLast ? fadeInEnd + 3600 : fadeOutStart + configuration.crossfadeDuration
         let times = [appear, fadeInEnd, isLast ? fadeOutEnd : fadeOutStart, fadeOutEnd]

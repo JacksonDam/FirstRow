@@ -295,7 +295,7 @@ final class CoverCarouselLayerController: LayerController {
             let progress = laneProgress(slot: slot, elapsed: elapsed)
             // Animated depth puts a cover that just wrapped behind the others from its first frame.
             lane.plane.removeAllAnimations()
-            let depth = CAKeyframeAnimation(keyPath: "zPosition")
+            let depth = CAKeyframeAnimation(keyPath: "zPosition").preferringProMotion()
             depth.values = [0, 1]
             depth.keyTimes = [0, 1]
             depth.duration = Self.cycleDuration
@@ -309,7 +309,7 @@ final class CoverCarouselLayerController: LayerController {
                 // The fade-in at the back also hides the switch to the next picture.
                 let peakOpacity = layer === lane.reflection ? Double(Self.reflectionOpacity) : 1
                 let fades = keyTimes.map { NSNumber(value: peakOpacity * min(1, $0.doubleValue / Self.spawnFadeFraction)) }
-                let group = CAAnimationGroup()
+                let group = CAAnimationGroup().preferringProMotion()
                 group.animations = [
                     keyframes("position", positions, keyTimes),
                     keyframes("transform", transforms, keyTimes),
@@ -345,7 +345,7 @@ final class CoverCarouselLayerController: LayerController {
     }
 
     private func keyframes(_ keyPath: String, _ values: [Any], _ keyTimes: [NSNumber]) -> CAKeyframeAnimation {
-        let animation = CAKeyframeAnimation(keyPath: keyPath)
+        let animation = CAKeyframeAnimation(keyPath: keyPath).preferringProMotion()
         animation.values = values
         animation.keyTimes = keyTimes
         animation.calculationMode = .linear

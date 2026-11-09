@@ -776,7 +776,7 @@ final class MarqueeLayer {
         let cycle = max(1, graphic.size.width + Self.gap)
         strip.frame = CGRect(x: 0, y: 0, width: cycle * 2, height: height)
         strip.removeAllAnimations()
-        let scroll = CABasicAnimation(keyPath: "position.x")
+        let scroll = CABasicAnimation(keyPath: "position.x").preferringProMotion()
         scroll.fromValue = 0
         scroll.toValue = -cycle
         scroll.duration = Double(cycle / Self.speed)

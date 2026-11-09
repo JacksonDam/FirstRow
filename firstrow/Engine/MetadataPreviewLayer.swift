@@ -170,7 +170,7 @@ final class MetadataPreviewLayer: GapItemLayer {
         }
         let states = samples.map { state(at: CGFloat($0), geometry) }
         func keyframes(_ keyPath: String, _ values: [Any]) -> CAKeyframeAnimation {
-            let animation = CAKeyframeAnimation(keyPath: keyPath)
+            let animation = CAKeyframeAnimation(keyPath: keyPath).preferringProMotion()
             animation.values = values
             animation.duration = 0.62
             animation.beginTime = begin
@@ -182,7 +182,7 @@ final class MetadataPreviewLayer: GapItemLayer {
         unit.add(keyframes("transform", states.map { NSValue(caTransform3D: $0.transform) }), forKey: "turn")
         sweep.add(keyframes("position", states.map { NSValue.layerPoint(CGPoint(x: 0, y: $0.sweepOffset - initialHeight)) }), forKey: "sweep")
         sweep.add(keyframes("colors", samples.map { Self.sweepColors(hidden: CGFloat($0)) }), forKey: "sweepFade")
-        let reveal = CABasicAnimation(keyPath: "opacity")
+        let reveal = CABasicAnimation(keyPath: "opacity").preferringProMotion()
         reveal.fromValue = 0
         reveal.toValue = 1
         reveal.duration = 0.3
