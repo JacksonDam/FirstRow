@@ -796,6 +796,13 @@ enum SymbolFallback {
                 context.addEllipse(in: CGRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4))
                 context.fillPath()
             }
+        case "ellipsis":
+            return Shape(referenceSize: 20, box: CGSize(width: 24, height: 22)) { context in
+                for x: CGFloat in [4.5, 12, 19.5] {
+                    context.addEllipse(in: CGRect(x: x - 2.3, y: 11 - 2.3, width: 4.6, height: 4.6))
+                }
+                context.fillPath()
+            }
         case "xmark":
             return Shape(referenceSize: 20, box: CGSize(width: 22, height: 22)) { context in
                 context.setLineWidth(2.4)

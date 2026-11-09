@@ -76,21 +76,13 @@ extension MenuView {
         scheduleMovieControlsAutoHide()
     }
 
-    /// A tap or click on one of the buttons: opens the panel on that row, moves to it if the
-    /// panel's open on another, or closes it.
-    func toggleMovieOptions(focusing kind: MovieOptionRow.Kind) {
-        guard var state = movieOptions else {
-            openMovieOptions(focusing: kind)
-            return
-        }
-        guard let index = state.rows.firstIndex(where: { $0.kind == kind }), index != state.focusedRow else {
+    /// A tap or click on the options button: opens the panel on its first row, or closes it.
+    func toggleMovieOptions() {
+        if movieOptions == nil {
+            openMovieOptions()
+        } else {
             closeMovieOptions()
-            return
         }
-        state.focusedRow = index
-        state.hasMoved = true
-        movieOptions = state
-        playSound(named: "SelectionChange")
     }
 
     /// The panel's rows say what the movie offers, for its buttons.

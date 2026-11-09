@@ -199,6 +199,8 @@ extension MenuView {
                 return
             }
             guard let currentURL = thirdMenuCurrentURL else {
+                // The list of places movies come from (more than one folder or drive).
+                playSound(named: "Exit")
                 exitMoviesThirdMenuToSecondLevelWithSwap()
                 return
             }

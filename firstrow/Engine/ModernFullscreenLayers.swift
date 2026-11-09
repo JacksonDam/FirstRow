@@ -342,9 +342,10 @@ final class ModernMovieControlsLayer {
     }
 }
 
-/// The movie's subtitles, audio and speed: a row of buttons above the right end of the progress
-/// bar, as on iPhone, and the panel that grows out of them. Each row of the panel has its name on
-/// the left and its value, with arrows to change it, on the right.
+/// The movie's subtitles, audio and speed, in one panel: in the modern look it grows out of one
+/// options button above the right end of the progress bar, as on iPhone; in the classic look,
+/// which has no button, ↓ scales it open. Each row of the panel has its name on the left and its
+/// value, with arrows to change it, on the right.
 @MainActor
 final class MovieOptionsLayer {
     let layer = SceneLayer()
@@ -382,6 +383,9 @@ final class MovieOptionsLayer {
         panel.isHidden = true
     }
 
+    /// The one button's symbol, for all the options at once.
+    static let optionsSymbol = "ellipsis"
+
     static func symbol(for kind: MenuView.MovieOptionRow.Kind) -> String {
         switch kind {
         case .subtitles: "captions.bubble"
@@ -410,13 +414,14 @@ final class MovieOptionsLayer {
         if let state { shownState = state }
         let isOpen = state != nil && menu.movieOptionsReveal > 0.5
 
-        // The buttons: one for each thing the movie offers, the open one picked out.
-        let kinds = menu.movieOptionKinds
+        // One button for everything the movie offers (it opens the panel on its first row),
+        // picked out while the panel's open. The classic look has none: ↓ opens the panel.
+        let kinds = menu.movieOptionKinds.first.map { [$0] } ?? []
         let slot = Self.buttonSlot
-        let showsButtons = anchor != nil && menu.isMoviePlaybackVisible && !kinds.isEmpty
+        let showsButtons = isModern && anchor != nil && menu.isMoviePlaybackVisible && !kinds.isEmpty
         var clusterFrame = CGRect.zero
         if let anchor {
-            let width = slot.width * CGFloat(kinds.count) + 12
+            let width = slot.width * CGFloat(max(1, kinds.count)) + 12
             clusterFrame = CGRect(x: anchor.maxX - width, y: anchor.minY - 26 - slot.height, width: width, height: slot.height)
         }
         buttonFrames = []
@@ -433,7 +438,7 @@ final class MovieOptionsLayer {
                 buttonIcons = [:]
                 for (index, kind) in kinds.enumerated() {
                     let icon = SceneLayer()
-                    let graphic = SymbolRenderer.render(Self.symbol(for: kind), pointSize: 30, weight: .semibold, color: .white, scale: scale)
+                    let graphic = SymbolRenderer.render(Self.optionsSymbol, pointSize: 30, weight: .semibold, color: .white, scale: scale)
                     let center = CGPoint(x: 6 + slot.width * (CGFloat(index) + 0.5), y: slot.height / 2)
                     icon.show(graphic, at: CGPoint(x: (center.x - graphic.size.width / 2).rounded(), y: (center.y - graphic.size.height / 2).rounded()))
                     buttons.addSublayer(icon)
@@ -444,9 +449,8 @@ final class MovieOptionsLayer {
                 let local = CGRect(x: 6 + slot.width * CGFloat(index), y: 0, width: slot.width, height: slot.height)
                 buttonFrames.append((kind, local.offsetBy(dx: clusterFrame.minX, dy: clusterFrame.minY)))
             }
-            // The button of the row the panel is on wears a soft circle.
-            let focusedKind = isOpen ? state.flatMap { $0.rows.indices.contains($0.focusedRow) ? $0.rows[$0.focusedRow].kind : nil } : nil
-            if let focusedKind, let index = kinds.firstIndex(of: focusedKind) {
+            // The button wears a soft circle while the panel's open.
+            if isOpen, let index = kinds.indices.first {
                 let side = slot.height - 14
                 let frame = CGRect(x: 6 + slot.width * (CGFloat(index) + 0.5) - side / 2, y: 7, width: side, height: side)
                 let appearing = buttonHighlight.opacity < 0.01
@@ -461,14 +465,13 @@ final class MovieOptionsLayer {
         buttons.setOpacity(showsButtons && !usesNativeGlass ? controlsOpacity : 0, pass.animation)
         #if os(iOS) || os(macOS)
             if #available(macOS 26.0, iOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
-                // The system's glass instead, with the system's symbols, in window points.
-                let focusedKind = isOpen ? state.flatMap { $0.rows.indices.contains($0.focusedRow) ? $0.rows[$0.focusedRow].kind : nil } : nil
+                // The system's glass instead, with the system's symbol, in window points.
                 let windowFrame = CGRect(x: clusterFrame.minX * canvasScale, y: clusterFrame.minY * canvasScale, width: clusterFrame.width * canvasScale, height: clusterFrame.height * canvasScale)
                 glass.updateCluster(
                     frame: showsButtons && controlsOpacity > 0.5 ? windowFrame : nil,
-                    kinds: kinds,
+                    symbols: kinds.map { _ in Self.optionsSymbol },
                     slotWidth: slot.width * canvasScale,
-                    focused: focusedKind,
+                    focused: isOpen && !kinds.isEmpty ? 0 : nil,
                     iconSize: 30 * canvasScale,
                     animation: pass.animation ?? .smooth(duration: 0.3),
                 )
@@ -504,10 +507,16 @@ final class MovieOptionsLayer {
         let rowHeight: CGFloat = 72
         let inset: CGFloat = 16
         let height = CGFloat(content.rows.count) * rowHeight + inset * 2
-        let reference = showsButtons ? clusterFrame : CGRect(x: size.width - 110 - 260, y: size.height - 240, width: 260, height: slot.height)
+        // Above the right end of the bar, where the button is (or would be).
+        let buttonPlace = anchor.map { CGRect(x: $0.maxX - slot.width - 12, y: $0.minY - 26 - slot.height, width: slot.width + 12, height: slot.height) }
+        let reference = showsButtons ? clusterFrame : (buttonPlace ?? CGRect(x: size.width - 110 - 260, y: size.height - 240, width: 260, height: slot.height))
         let frame = CGRect(x: max(40, reference.maxX - width), y: reference.minY - 18 - height, width: width, height: height)
-        // Grows from (and shrinks back to) the middle of the buttons.
-        let origin = CGPoint(x: reference.midX - frame.minX, y: reference.midY - frame.minY)
+        // Grows from (and shrinks back to) the middle of the button; with no button, scales open
+        // about its own middle.
+        let origin = showsButtons
+            ? CGPoint(x: reference.midX - frame.minX, y: reference.midY - frame.minY)
+            : CGPoint(x: frame.width / 2, y: frame.height / 2)
+        let collapsedScale: CGFloat = showsButtons ? 0.2 : 0.86
         let move: Animation? = opening || closing ? (pass.animation ?? (opening ? .smooth(duration: 0.36) : .smoothInOut(duration: 0.3))) : nil
         if usesNativeGlass {
             #if os(iOS) || os(macOS)
@@ -524,7 +533,7 @@ final class MovieOptionsLayer {
                     let windowFrame = CGRect(x: frame.minX * canvasScale, y: frame.minY * canvasScale, width: frame.width * canvasScale, height: frame.height * canvasScale)
                     let pivot = CGPoint(x: origin.x * canvasScale, y: origin.y * canvasScale)
                     var collapsed = CATransform3DMakeTranslation(pivot.x, pivot.y, 0)
-                    collapsed = CATransform3DScale(collapsed, 0.2, 0.2, 1)
+                    collapsed = CATransform3DScale(collapsed, collapsedScale, collapsedScale, 1)
                     collapsed = CATransform3DTranslate(collapsed, -pivot.x, -pivot.y, 0)
                     glass.updatePanel(frame: windowFrame, open: isOpen, collapsed: collapsed, animation: move)
                 }
@@ -536,10 +545,11 @@ final class MovieOptionsLayer {
             panel.borderWidth = isModern ? 0 : 1.5
             panel.borderColor = CGColor(gray: 1, alpha: 0.22)
             var collapsed = CATransform3DMakeTranslation(origin.x, origin.y, 0)
-            collapsed = CATransform3DScale(collapsed, 0.2, 0.2, 1)
+            collapsed = CATransform3DScale(collapsed, collapsedScale, collapsedScale, 1)
             collapsed = CATransform3DTranslate(collapsed, -origin.x, -origin.y, 0)
             if opening, (panel.presentation()?.opacity ?? panel.opacity) < 0.02 {
-                // Starts from the buttons (part way back in, it turns round where it is instead).
+                // Starts from the button, or a little smaller (part way back, it turns round
+                // where it is instead).
                 panel.setTransform(collapsed, nil)
                 panel.setOpacity(0, nil)
             }

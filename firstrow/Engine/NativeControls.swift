@@ -293,7 +293,7 @@
             private let panelHost = UIView()
             var panelLayerHost: CALayer { panelHost.layer }
         #endif
-        private var icons: [MenuView.MovieOptionRow.Kind: NativeView] = [:]
+        private var icons: [Int: NativeView] = [:]
         private var iconsKey = ""
         private let highlight = NativeView()
         private var clusterShown = false
@@ -332,36 +332,36 @@
 
         /// The buttons above the bar (window points): one icon per kind, the focused one with
         /// a soft circle; nil while the controls are away.
-        func updateCluster(frame: CGRect?, kinds: [MenuView.MovieOptionRow.Kind], slotWidth: CGFloat, focused: MenuView.MovieOptionRow.Kind?, iconSize: CGFloat, animation: Animation?) {
+        func updateCluster(frame: CGRect?, symbols: [String], slotWidth: CGFloat, focused: Int?, iconSize: CGFloat, animation: Animation?) {
             if let frame {
                 cluster.frame = frame
                 #if os(macOS)
                     cluster.cornerRadius = frame.height / 2
                     clusterContent.frame = CGRect(origin: .zero, size: frame.size)
                 #endif
-                let key = "\(kinds)|\(iconSize)|\(frame.size.width)|\(frame.size.height)"
+                let key = "\(symbols)|\(iconSize)|\(frame.size.width)|\(frame.size.height)"
                 if key != iconsKey {
                     iconsKey = key
                     for icon in icons.values { icon.removeFromSuperview() }
                     icons = [:]
-                    for (index, kind) in kinds.enumerated() {
+                    for (index, symbol) in symbols.enumerated() {
                         let slot = CGRect(x: frame.height * 0.08 + slotWidth * CGFloat(index), y: 0, width: slotWidth, height: frame.height)
                         #if os(macOS)
                             let icon = NSImageView(frame: slot)
-                            icon.image = nativeSymbol(MovieOptionsLayer.symbol(for: kind), pointSize: iconSize)
+                            icon.image = nativeSymbol(symbol, pointSize: iconSize)
                             icon.contentTintColor = .white
                             icon.imageScaling = .scaleNone
                         #else
                             let icon = UIImageView(frame: slot)
-                            icon.image = nativeSymbol(MovieOptionsLayer.symbol(for: kind), pointSize: iconSize)
+                            icon.image = nativeSymbol(symbol, pointSize: iconSize)
                             icon.tintColor = .white
                             icon.contentMode = .center
                         #endif
                         clusterContent.addSubview(icon)
-                        icons[kind] = icon
+                        icons[index] = icon
                     }
                 }
-                if let focused, let index = kinds.firstIndex(of: focused) {
+                if let index = focused, symbols.indices.contains(index) {
                     let side = frame.height * 0.8
                     let circle = CGRect(x: frame.height * 0.08 + slotWidth * (CGFloat(index) + 0.5) - side / 2, y: (frame.height - side) / 2, width: side, height: side)
                     #if os(macOS)
@@ -413,7 +413,7 @@
         }
 
         func hideAll() {
-            updateCluster(frame: nil, kinds: [], slotWidth: 0, focused: nil, iconSize: 0, animation: nil)
+            updateCluster(frame: nil, symbols: [], slotWidth: 0, focused: nil, iconSize: 0, animation: nil)
             setShown(false, glass: panel, shown: &panelShown, generation: &panelGeneration, content: panelHost, animation: nil)
         }
 

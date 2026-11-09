@@ -432,8 +432,8 @@ extension MenuView {
         switch target {
         case let .movieOptionRow(index, backward):
             chooseMovieOptionRow(index, backward: backward)
-        case let .movieOptionButton(kind):
-            toggleMovieOptions(focusing: kind)
+        case .movieOptionButton:
+            toggleMovieOptions()
         default:
             if isMovieOptionsVisible {
                 closeMovieOptions()

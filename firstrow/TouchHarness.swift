@@ -246,12 +246,11 @@
                     "back": .back, "play": .playPause, "previous": .previous, "next": .next,
                     "skipback": .skipBack, "skipforward": .skipForward, "lyrics": .lyrics,
                 ]
-                let optionKinds: [String: MenuView.MovieOptionRow.Kind] = ["subtitles": .subtitles, "audio": .audio, "speed": .speed]
-                if let kind = optionKinds[parts[1]], let view = touchView, let hitTester = touchMenu?.pointer.hitTester {
-                    // control:speed etc.: a movie option button above the bar.
+                if ["options", "subtitles", "audio", "speed"].contains(parts[1]), let view = touchView, let hitTester = touchMenu?.pointer.hitTester {
+                    // control:options: the movie's options button above the bar.
                     var found: CGPoint?
                     for y in stride(from: CGFloat(0), to: view.bounds.height, by: 4) {
-                        for x in stride(from: CGFloat(0), to: view.bounds.width, by: 4) where found == nil && hitTester.movieOptionsButton(at: CGPoint(x: x, y: y)) == kind {
+                        for x in stride(from: CGFloat(0), to: view.bounds.width, by: 4) where found == nil && hitTester.movieOptionsButton(at: CGPoint(x: x, y: y)) != nil {
                             found = CGPoint(x: x + 10, y: y + 10)
                         }
                     }

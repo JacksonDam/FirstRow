@@ -1003,9 +1003,9 @@ extension MenuView {
 
         private func handleMovieTouchTap(at point: CGPoint) {
             guard !isMovieTransitioning, moviePlayer != nil else { return }
-            // The options' buttons above the bar open, move or close the panel.
-            if let kind = pointer.hitTester?.movieOptionsButton(at: point) {
-                toggleMovieOptions(focusing: kind)
+            // The options button above the bar opens or closes the panel.
+            if pointer.hitTester?.movieOptionsButton(at: point) != nil {
+                toggleMovieOptions()
                 return
             }
             if movieOptions != nil {
