@@ -118,6 +118,8 @@
         var onPress: (() -> Void)?
         private(set) var isShownState = false
         private var generation = 0
+        /// Whether it's dimmed, and how far, as last set.
+        private var dimmedState: (Bool, CGFloat) = (false, 1)
         private var symbolName = ""
         private var symbolSize: CGFloat = 0
         #if os(macOS)
@@ -198,6 +200,9 @@
         /// Shown, dimmed (to `dimmedAlpha` of its symbol, without its glass on iPhone), or away.
         func setState(shown: Bool, dimmed: Bool, dimmedAlpha: CGFloat, animation: Animation?) {
             let wasShown = isShownState
+            // The same again leaves a change under way to finish.
+            guard shown != wasShown || dimmed != dimmedState.0 || dimmedAlpha != dimmedState.1 else { return }
+            dimmedState = (dimmed, dimmedAlpha)
             isShownState = shown
             generation += 1
             let current = generation
@@ -641,9 +646,18 @@
             instantly: Set<Key>,
         ) {
             let bounds = CGRect(origin: .zero, size: size)
-            for container in [view, sceneView, optionsView] where container.frame != bounds {
-                container.frame = bounds
-            }
+            #if os(macOS)
+                for container in [view, sceneView, optionsView] where container.frame != bounds {
+                    container.frame = bounds
+                }
+            #else
+                // By bounds and centre: a scaled view's frame is its scaled box.
+                let middle = CGPoint(x: bounds.midX, y: bounds.midY)
+                for container in [view, sceneView, optionsView] where container.bounds.size != size || container.center != middle {
+                    container.bounds = bounds
+                    container.center = middle
+                }
+            #endif
             #if os(macOS)
                 sceneView.layer?.setTransform(sceneTransform, sceneAnimation)
                 if abs(Double(sceneView.alphaValue) - sceneOpacity) > 0.001 {
@@ -663,7 +677,13 @@
                     transportView.bounds = bounds
                     transportView.center = CGPoint(x: bounds.midX, y: bounds.midY)
                 }
-                sceneView.layer.setTransform(sceneTransform, sceneAnimation)
+                // UIKit turns a view about its middle; the scene's transform is about the
+                // screen's top left, so it's moved to the middle and back around it.
+                let local = CATransform3DConcat(
+                    CATransform3DConcat(CATransform3DMakeTranslation(middle.x, middle.y, 0), sceneTransform),
+                    CATransform3DMakeTranslation(-middle.x, -middle.y, 0),
+                )
+                sceneView.layer.setTransform(local, sceneAnimation)
                 transportDown = transportHidden
                 transportView.layer.setTransform(transportHidden ? CATransform3DMakeTranslation(0, transportDrop, 0) : CATransform3DIdentity, transportAnimation)
                 // Glass can't be faded part way here: Now Playing's buttons materialise and
