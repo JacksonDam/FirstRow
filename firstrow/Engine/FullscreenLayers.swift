@@ -759,7 +759,9 @@ final class VolumeHUDContent {
     private let rim = CAGradientLayer()
     private let rimShape = CAShapeLayer()
 
-    init() {
+    /// `drawsRim`: the light edge, for the drawn capsule (Liquid Glass has its own).
+    init(drawsRim: Bool = true) {
+        rim.isHidden = !drawsRim
         rim.colors = [CGColor(gray: 1, alpha: 0.42), CGColor(gray: 1, alpha: 0.14), CGColor(gray: 1, alpha: 0.2)]
         rim.locations = [0, 0.55, 1]
         rimShape.fillColor = nil

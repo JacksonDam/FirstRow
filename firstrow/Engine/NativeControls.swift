@@ -475,22 +475,19 @@
             private let content = NSView()
             /// Top-left origin for the drawing, in the glass's own (y-up) layer.
             private let host = CALayer()
-            private let drawing = VolumeHUDContent()
+            /// (The glass draws its own edge.)
+            private let drawing = VolumeHUDContent(drawsRim: false)
             private var hideTimer: Timer?
             private var generation = 0
             private var isShown = false
 
             init(in container: NSView) {
+                // The same glass as the on-screen buttons beside it.
                 glass.style = .regular
-                // Lighter than the buttons' glass, as the system's own display is, even over
-                // First Row's near-black.
-                glass.tintColor = NSColor(white: 1, alpha: 0.3)
                 glass.alphaValue = 0
                 glass.isHidden = true
                 glass.contentView = content
                 content.wantsLayer = true
-                content.layer?.backgroundColor = CGColor(gray: 1, alpha: 0.08)
-                content.layer?.masksToBounds = true
                 host.isGeometryFlipped = true
                 content.layer?.addSublayer(host)
                 host.addSublayer(drawing.layer)
@@ -502,7 +499,6 @@
                     glass.frame = frame
                     glass.cornerRadius = frame.height / 2
                     content.frame = CGRect(origin: .zero, size: frame.size)
-                    content.layer?.cornerRadius = frame.height / 2
                     withoutLayerActions { host.frame = CGRect(origin: .zero, size: frame.size) }
                 }
                 drawing.update(volume: volume, scale: scale)
