@@ -41,6 +41,7 @@ enum FeatureErrorKind: String {
     case noMoviesInFolder
     case noPhotosInLibrary
     case noPodcasts
+    case podcastEpisodeUnavailable
     case noAudiobooks
     case noMusicVideos
     case noSongs
@@ -82,6 +83,11 @@ enum FeatureErrorKind: String {
             FeatureErrorCopy(
                 headerText: "First Row cannot find any podcasts.",
                 subcaptionText: "Use iTunes to subscribe to podcasts from the iTunes Store.",
+            )
+        case .podcastEpisodeUnavailable:
+            FeatureErrorCopy(
+                headerText: "This episode can't be played right now.",
+                subcaptionText: "First Row can't open the Podcasts app's download or find the episode online. Check your internet connection, or give First Row Full Disk Access in System Settings > Privacy & Security.",
             )
         case .noAudiobooks:
             FeatureErrorCopy(

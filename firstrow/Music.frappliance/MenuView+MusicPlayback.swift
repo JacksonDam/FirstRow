@@ -1505,6 +1505,13 @@ extension MenuView {
         resetTransitionState: Bool = true,
     ) {
         guard let mediaURL = episode.mediaURL?.standardizedFileURL else { return }
+        #if os(macOS)
+            // A download macOS won't let First Row open plays from the podcast's feed instead.
+            if mediaURL.isFileURL, !PodcastFeedStreams.canRead(mediaURL) {
+                playPodcastEpisodeFromFeed(episode, trackIndex: trackIndex, trackCount: trackCount, presentsFullscreen: presentsFullscreen, resetTransitionState: resetTransitionState)
+                return
+            }
+        #endif
         startAudioOnlyPlayback(
             from: mediaURL,
             title: episode.title,

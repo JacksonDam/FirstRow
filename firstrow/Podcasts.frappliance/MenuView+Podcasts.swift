@@ -1275,3 +1275,176 @@ extension MenuView {
         return NSImage(named: "Podcast") ?? NSImage(named: "podcasts")
     }
 }
+
+#if os(macOS)
+    /// Downloaded episodes sit in the Podcasts app's own folder, which macOS keeps other apps out
+    /// of unless they have Full Disk Access. Then an episode plays from the podcast's public feed,
+    /// found through Apple's podcast directory, with the show's artwork from there.
+    enum PodcastFeedStreams {
+        struct Found {
+            let stream: URL
+            let artwork: NSImage?
+        }
+
+        /// Episodes already found, by their id.
+        @MainActor static var found: [String: Found] = [:]
+
+        private static let session: URLSession = {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = 8
+            configuration.timeoutIntervalForResource = 20
+            return URLSession(configuration: configuration)
+        }()
+
+        /// Whether First Row may open the file itself.
+        static func canRead(_ url: URL) -> Bool {
+            guard url.isFileURL else { return true }
+            guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+            try? handle.close()
+            return true
+        }
+
+        /// The episode's audio online, by the show's name (and maker) and the episode's title.
+        static func find(seriesTitle: String, artist: String, episodeTitle: String) async -> Found? {
+            guard let show = await lookUpShow(title: seriesTitle, artist: artist),
+                  let stream = await enclosure(in: show.feed, titled: episodeTitle)
+            else { return nil }
+            var artwork: NSImage?
+            if let artworkURL = show.artwork, let (data, _) = try? await session.data(from: artworkURL) {
+                artwork = NSImage(data: data)
+            }
+            return Found(stream: stream, artwork: artwork)
+        }
+
+        /// The show in Apple's podcast directory: its feed and artwork.
+        private static func lookUpShow(title: String, artist: String) async -> (feed: URL, artwork: URL?)? {
+            var components = URLComponents(string: "https://itunes.apple.com/search")
+            components?.queryItems = [
+                URLQueryItem(name: "media", value: "podcast"),
+                URLQueryItem(name: "entity", value: "podcast"),
+                URLQueryItem(name: "limit", value: "15"),
+                URLQueryItem(name: "term", value: title),
+            ]
+            guard let url = components?.url,
+                  let (data, _) = try? await session.data(from: url),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let results = object["results"] as? [[String: Any]]
+            else { return nil }
+            let shows: [(name: String, artist: String, feed: URL, artwork: URL?)] = results.compactMap { result in
+                guard let feed = (result["feedUrl"] as? String).flatMap(URL.init(string:)) else { return nil }
+                let artwork = ((result["artworkUrl600"] ?? result["artworkUrl100"]) as? String).flatMap(URL.init(string:))
+                return (result["collectionName"] as? String ?? "", result["artistName"] as? String ?? "", feed, artwork)
+            }
+            let wantedTitle = comparable(title)
+            let wantedArtist = comparable(artist)
+            let best = shows.first { comparable($0.name) == wantedTitle && comparable($0.artist) == wantedArtist }
+                ?? shows.first { comparable($0.name) == wantedTitle }
+                ?? shows.first { comparable($0.artist) == wantedArtist && comparable($0.name).contains(wantedTitle) }
+            return best.map { ($0.feed, $0.artwork) }
+        }
+
+        /// The audio of the feed's episode with that title.
+        private static func enclosure(in feed: URL, titled title: String) async -> URL? {
+            guard let (data, _) = try? await session.data(from: feed) else { return nil }
+            let reader = FeedReader()
+            let parser = XMLParser(data: data)
+            parser.delegate = reader
+            parser.parse()
+            let wanted = comparable(title)
+            let item = reader.items.first { comparable($0.title) == wanted }
+                ?? reader.items.first { !wanted.isEmpty && (comparable($0.title).hasPrefix(wanted) || wanted.hasPrefix(comparable($0.title))) }
+            return item?.enclosure
+        }
+
+        /// Letters and digits only, lowercased, for matching names that differ in punctuation.
+        private static func comparable(_ text: String) -> String {
+            String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+        }
+
+        /// A feed's items: each one's title and audio.
+        private final class FeedReader: NSObject, XMLParserDelegate {
+            var items: [(title: String, enclosure: URL)] = []
+            private var inItem = false
+            private var title = ""
+            private var enclosure: URL?
+            private var text = ""
+
+            func parser(_: XMLParser, didStartElement name: String, namespaceURI _: String?, qualifiedName _: String?, attributes: [String: String] = [:]) {
+                if name == "item" {
+                    inItem = true
+                    title = ""
+                    enclosure = nil
+                } else if inItem, name == "enclosure", let url = attributes["url"].flatMap(URL.init(string:)) {
+                    enclosure = url
+                }
+                text = ""
+            }
+
+            func parser(_: XMLParser, foundCharacters string: String) {
+                text += string
+            }
+
+            func parser(_: XMLParser, foundCDATA block: Data) {
+                text += String(decoding: block, as: UTF8.self)
+            }
+
+            func parser(_: XMLParser, didEndElement name: String, namespaceURI _: String?, qualifiedName _: String?) {
+                if inItem, name == "title", title.isEmpty {
+                    title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else if name == "item" {
+                    inItem = false
+                    if let enclosure { items.append((title, enclosure)) }
+                }
+            }
+        }
+    }
+
+    extension MenuView {
+        /// Plays an episode whose download First Row can't open from the podcast's feed, once
+        /// it's found (and its show's artwork with it); says so if it can't be.
+        func playPodcastEpisodeFromFeed(_ episode: PodcastEpisodeEntry, trackIndex: Int, trackCount: Int, presentsFullscreen: Bool, resetTransitionState: Bool) {
+            let request = incrementRequestID(&podcastStreamRequestID)
+            func play(_ found: PodcastFeedStreams.Found) {
+                let streamed = PodcastEpisodeEntry(
+                    id: episode.id, seriesID: episode.seriesID, seriesTitle: episode.seriesTitle, title: episode.title,
+                    artist: episode.artist, description: episode.description, durationSeconds: episode.durationSeconds,
+                    airedDate: episode.airedDate, mediaURL: found.stream, artwork: episode.artwork ?? found.artwork, isVideo: false,
+                )
+                startPodcastEpisodeAudioPlayback(streamed, trackIndex: trackIndex, trackCount: trackCount, presentsFullscreen: presentsFullscreen, resetTransitionState: resetTransitionState)
+            }
+            if let found = PodcastFeedStreams.found[episode.id] {
+                play(found)
+                return
+            }
+            let series = episode.seriesTitle
+            let artist = episode.artist
+            let title = episode.title
+            Task.detached(priority: .userInitiated) {
+                let found = await PodcastFeedStreams.find(seriesTitle: series, artist: artist, episodeTitle: title)
+                await MainActor.run {
+                    // Something else chosen meanwhile, or Podcasts left.
+                    guard self.podcastStreamRequestID == request,
+                          self.activeRootItemID == "podcasts" || self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey
+                    else { return }
+                    guard let found else {
+                        self.presentFeatureErrorScreen(.podcastEpisodeUnavailable)
+                        return
+                    }
+                    PodcastFeedStreams.found[episode.id] = found
+                    // The show's picture, for its menus too, where the Podcasts app's own couldn't be read.
+                    if let artwork = found.artwork, let index = self.podcastSeriesItems.firstIndex(where: { $0.id == episode.seriesID }),
+                       self.podcastSeriesItems[index].artwork == nil
+                    {
+                        let entry = self.podcastSeriesItems[index]
+                        self.podcastSeriesItems[index] = PodcastSeriesEntry(
+                            id: entry.id, title: entry.title, artist: entry.artist, description: entry.description,
+                            artwork: artwork, episodes: entry.episodes,
+                        )
+                    }
+                    play(found)
+                }
+            }
+        }
+    }
+#endif
+

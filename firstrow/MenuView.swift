@@ -412,6 +412,8 @@ final class MenuView: ObservableObject {
     @Published var isLoadingPodcasts = false
     @Published var podcastsLoadError: String?
     @Published var podcastsRequestID = 0
+    /// The podcast episode being looked up online to stream (see PodcastFeedStreams).
+    var podcastStreamRequestID = 0
     @Published var podcastsHasLoadedAtLeastOnce = false
     @Published var hasPresentedNoPodcastsErrorInCurrentSession = false
     @Published var isResolvingPodcastsRootSelection = false
