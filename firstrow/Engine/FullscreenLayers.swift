@@ -72,6 +72,12 @@ final class FullscreenSceneLayer {
         (content as? NowPlayingSceneLayer)?.progressBar ?? (content as? ModernNowPlayingSceneLayer)?.progressBar
     }
 
+    /// Where that bar sits, in canvas points, songs changing over or not (the new song's): for
+    /// touch mode's buttons under it.
+    var nowPlayingBarPlace: CGRect? {
+        (content as? NowPlayingSceneLayer)?.barPlace ?? (content as? ModernNowPlayingSceneLayer)?.barPlace
+    }
+
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
         layer.place(bounds)
         foreground.place(CGRect(origin: .zero, size: bounds.size))
@@ -160,7 +166,12 @@ final class NowPlayingSceneLayer: FullscreenContent {
 
     /// The progress bar in canvas points, or nil while songs change over.
     var progressBar: CGRect? {
-        isSwitchingSong ? nil : incoming.progressBar.map { NowPlayingSideLayout.map($0, shift, size: size) }
+        isSwitchingSong ? nil : barPlace
+    }
+
+    /// Where the progress bar sits in canvas points, songs changing over or not.
+    var barPlace: CGRect? {
+        incoming.progressBar.map { NowPlayingSideLayout.map($0, shift, size: size) }
     }
 
     override init() {

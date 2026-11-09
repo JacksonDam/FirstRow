@@ -84,6 +84,9 @@ final class TouchControlsLayer {
     private(set) var frames: [TouchControl: CGRect] = [:]
     private var pressed: TouchControl?
     private var lastTransportHidden = false
+    /// When the buttons' last slide ends, and how far down it was going.
+    private var transportSlideEnds: CFTimeInterval = 0
+    private var transportSlideDrop: CGFloat = 0
     /// Now Playing's scale and visibility, as last set (the native buttons follow them too).
     private var sceneTransform = CATransform3DIdentity
     private var sceneOpacity: Double = 1
@@ -151,15 +154,19 @@ final class TouchControlsLayer {
             } else if isNowPlaying {
                 let play: CGFloat = 64
                 let side: CGFloat = 52
+                // With the list or the words beside it, Now Playing moves aside and shrinks; the
+                // buttons go with it (at their own size, for fingers).
+                let canvas = FullscreenCanvas(screenSize: size)
+                let aside = NowPlayingSideLayout.shift(menu: menu, size: canvas.size)
                 let (middle, centerY): (CGFloat, CGFloat) = {
                     let bottom = size.height - max(insets.bottom, 10) - 16 - play / 2
                     #if os(iOS)
                         // On a phone or an iPad, under the progress bar (and its times), clear of
                         // the cover, rather than along the bottom of the screen.
                         if let bar = nowPlayingBar {
-                            let canvasScale = FullscreenCanvas(screenSize: size).scale
+                            let canvasScale = canvas.scale
                             // From the bar's middle: the modern bar swells while it's held.
-                            let gap = (isModern ? 76 : 44) * canvasScale
+                            let gap = (isModern ? 76 : 44) * canvasScale * aside.scale
                             // With the words beside it, Now Playing is small: the buttons go
                             // along the bottom under it, and stop short of the words.
                             let besideWords = menu.isNowPlayingLyricsVisible
@@ -175,7 +182,7 @@ final class TouchControlsLayer {
                             return (max(min(bar.midX, rightLimit - rightReach), insets.left + 16 + leftReach), centerY)
                         }
                     #endif
-                    return (size.width / 2, bottom)
+                    return (size.width / 2 + aside.dx * canvas.scale, bottom)
                 }()
                 wanted = [
                     back,
@@ -218,14 +225,20 @@ final class TouchControlsLayer {
         }
         let sceneMoving = menu.isFullscreenSceneTransitioning || !isNowPlaying
         // Slid away, the buttons go below the bottom of the screen, and a bar stays behind.
-        // The list beside Now Playing has the right of the screen, so they make way for it too.
         let isIdle = isNowPlaying && menu.areNowPlayingTouchControlsHidden
-        let transportHidden = isNowPlaying && (isIdle || menu.nowPlayingQueueReveal > 0.001)
+        let transportHidden = isIdle
         transportGroup.place(CGRect(origin: .zero, size: size))
-        // (From under the progress bar, far enough to leave the screen.)
-        let drop = max(64 + max(insets.bottom, 10) + 40, transportTop.map { size.height - $0 + 12 } ?? 0)
-        // Their own slide, even part way through a finger's pull on the list.
+        // From under the progress bar, far enough to leave the screen. A slide away under way
+        // keeps to where it set out for: the bar moving meanwhile would cut it short.
+        let now = CACurrentMediaTime()
+        let drop = transportHidden && now < transportSlideEnds ? transportSlideDrop :
+            max(64 + max(insets.bottom, 10) + 40, transportTop.map { size.height - $0 + 12 } ?? 0)
+        // Their own slide, whatever else is moving.
         let slide: Animation? = transportHidden == lastTransportHidden ? pass.animation : (transportHidden ? .smoothInOut(duration: 0.45) : .smooth(duration: 0.4))
+        if transportHidden != lastTransportHidden {
+            transportSlideEnds = now + (slide?.duration ?? 0)
+            transportSlideDrop = drop
+        }
         lastTransportHidden = transportHidden
         transportGroup.setTransform(transportHidden ? CATransform3DMakeTranslation(0, drop, 0) : CATransform3DIdentity, slide)
         transportGroup.setOpacity(transportHidden ? 0 : 1, slide)

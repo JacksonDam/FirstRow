@@ -53,7 +53,12 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
 
     /// Where the progress bar is in canvas points, or nil while songs change over.
     var progressBar: CGRect? {
-        isSwitchingSong || incoming.barFrame.width <= 0 ? nil : NowPlayingSideLayout.map(incoming.barFrame, shift, size: size)
+        isSwitchingSong ? nil : barPlace
+    }
+
+    /// Where the progress bar sits in canvas points, songs changing over or not (the new song's).
+    var barPlace: CGRect? {
+        incoming.barFrame.width <= 0 ? nil : NowPlayingSideLayout.map(incoming.barFrame, shift, size: size)
     }
 
     override func update(menu: MenuView, scene _: FullscreenScenePresentation, pass: RenderPass, size: CGSize, scale: CGFloat) {

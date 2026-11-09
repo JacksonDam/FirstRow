@@ -303,11 +303,13 @@ extension MenuView {
     }
 
     /// Starts the wait before the buttons slide away, if they should: only with on-screen
-    /// buttons (touch or mouse mode), in Now Playing, while it plays. Paused, they stay.
+    /// buttons (touch or mouse mode), in Now Playing, while it plays. Paused, or with the list
+    /// out beside it, they stay.
     func scheduleNowPlayingTouchControlsHide() {
         nowPlayingTouchControlsHideTask?.cancel()
         nowPlayingTouchControlsHideTask = nil
         guard showsOnScreenControls, activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
+        guard nowPlayingQueueReveal <= 0 else { return }
         guard isMusicPlaybackRunningOrStarting() else {
             if areNowPlayingTouchControlsHidden {
                 withAnimation(.smooth(duration: 0.4)) { areNowPlayingTouchControlsHidden = false }
@@ -318,7 +320,8 @@ extension MenuView {
             try? await firstRowSleep(Self.nowPlayingTouchControlsHideDelay)
             guard let self, !Task.isCancelled else { return }
             self.nowPlayingTouchControlsHideTask = nil
-            guard self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey, self.isMusicPlaybackRunningOrStarting() else { return }
+            guard self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey, self.isMusicPlaybackRunningOrStarting(),
+                  self.nowPlayingQueueReveal <= 0 else { return }
             self.hideNowPlayingTouchControls()
         }
     }

@@ -390,7 +390,7 @@ final class MenuSceneRenderer: TransactionRendering {
             pass: pass,
             bounds: fullBounds,
             scale: backingScale,
-            nowPlayingBar: fullscreenScene.nowPlayingProgressBar.map {
+            nowPlayingBar: fullscreenScene.nowPlayingBarPlace.map {
                 CGRect(x: $0.minX * canvasScale, y: $0.minY * canvasScale, width: $0.width * canvasScale, height: $0.height * canvasScale)
             },
         )
