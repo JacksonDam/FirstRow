@@ -466,50 +466,86 @@
     }
 
     #if os(macOS)
-        /// The modern look's volume display in the system's own Liquid Glass, as macOS 26 shows
-        /// its own: it comes in, stays a moment after the last change, and goes.
+        /// The modern look's volume display in the system's own Liquid Glass, moving as macOS 26's
+        /// own does: in from a little smaller, the fill sweeping dash to dash, the speaker
+        /// bouncing on reaching either end, and away a second after the last change.
         @available(macOS 26.0, *)
         @MainActor
         final class NativeVolumeHUD {
+            /// Scales about its middle as it comes and goes.
+            private let holder = NativePassthroughView()
             private let glass = NativePassiveGlass()
             private let content = NSView()
-            /// Top-left origin for the drawing, in the glass's own (y-up) layer.
+            /// The system's own symbol, for its own bounce.
+            private let speaker = NSImageView()
+            /// Top-left origin for the dashes, in the glass's own (y-up) layer.
             private let host = CALayer()
             /// (The glass draws its own edge.)
-            private let drawing = VolumeHUDContent(drawsRim: false)
+            private let drawing = VolumeHUDContent(drawsRim: false, drawsSpeaker: false)
+            private var symbol = ""
             private var hideTimer: Timer?
             private var generation = 0
             private var isShown = false
 
             init(in container: NSView) {
+                holder.wantsLayer = true
                 // The same glass as the on-screen buttons beside it.
                 glass.style = .regular
                 glass.alphaValue = 0
-                glass.isHidden = true
+                holder.isHidden = true
                 glass.contentView = content
                 content.wantsLayer = true
+                speaker.imageScaling = .scaleNone
+                speaker.imageAlignment = .alignLeft
+                speaker.contentTintColor = .white
+                content.addSubview(speaker)
                 host.isGeometryFlipped = true
                 content.layer?.addSublayer(host)
                 host.addSublayer(drawing.layer)
-                container.addSubview(glass)
+                holder.addSubview(glass)
+                container.addSubview(holder)
             }
 
             func show(volume: Double, frame: CGRect, scale: CGFloat) {
-                if glass.frame != frame {
-                    glass.frame = frame
-                    glass.cornerRadius = frame.height / 2
-                    content.frame = CGRect(origin: .zero, size: frame.size)
-                    withoutLayerActions { host.frame = CGRect(origin: .zero, size: frame.size) }
+                let size = frame.size
+                if holder.frame != frame {
+                    holder.frame = frame
+                    let bounds = CGRect(origin: .zero, size: size)
+                    glass.frame = bounds
+                    glass.cornerRadius = size.height / 2
+                    content.frame = bounds
+                    // Room round the symbol for its bounce.
+                    speaker.frame = CGRect(x: 15, y: 0, width: 64, height: size.height)
+                    withoutLayerActions { host.frame = bounds }
                 }
-                drawing.update(volume: volume, scale: scale)
+                let change = drawing.update(volume: volume, scale: scale, opening: !isShown)
+                let name = VolumeHUDContent.symbolName(for: volume)
+                if name != symbol, let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 26, weight: .semibold))
+                {
+                    // The waves change at once.
+                    symbol = name
+                    speaker.image = image
+                }
+                if change.reachedEnd {
+                    // Once the fill has got there.
+                    let current = generation
+                    DispatchQueue.main.asyncAfter(deadline: .now() + change.sweep) { [weak self] in
+                        guard let self, self.isShown, self.generation == current else { return }
+                        self.speaker.addSymbolEffect(.bounce, options: .nonRepeating)
+                    }
+                }
                 hideTimer?.invalidate()
                 if !isShown {
                     isShown = true
                     generation += 1
-                    glass.isHidden = false
-                    animateViews(.smooth(duration: 0.2), { self.glass.animator().alphaValue = 1 })
+                    holder.isHidden = false
+                    // In from a little smaller, fading up.
+                    holder.layer?.setTransform(VolumeHUDContent.scale(VolumeHUDContent.openScale, size: size), nil)
+                    holder.layer?.setTransform(CATransform3DIdentity, VolumeHUDContent.openScaleAnimation)
+                    animateViews(VolumeHUDContent.openFadeAnimation, { self.glass.animator().alphaValue = 1 })
                 }
-                let timer = Timer(after: 1.6, repeats: false) { [weak self] _ in
+                let timer = Timer(after: VolumeHUDContent.linger, repeats: false) { [weak self] _ in
                     MainActor.assumeIsolatedIfPossible { self?.hide(animated: true) }
                 }
                 RunLoop.main.add(timer, forMode: .common)
@@ -523,9 +559,12 @@
                 isShown = false
                 generation += 1
                 let current = generation
-                animateViews(animated ? .smoothInOut(duration: 0.35) : nil, { self.glass.animator().alphaValue = 0 }, completion: { [weak self] in
+                let animation = animated ? VolumeHUDContent.closeAnimation : nil
+                // Away a little smaller again, fading out.
+                holder.layer?.setTransform(VolumeHUDContent.scale(VolumeHUDContent.closeScale, size: holder.frame.size), animation)
+                animateViews(animation, { self.glass.animator().alphaValue = 0 }, completion: { [weak self] in
                     guard let self, self.generation == current else { return }
-                    self.glass.isHidden = true
+                    self.holder.isHidden = true
                 })
             }
         }

@@ -752,15 +752,24 @@ final class ScreenSaverToastLayer {
 @MainActor
 final class VolumeHUDContent {
     static let size = CGSize(width: 308, height: 66)
+    /// How long the fill takes to sweep across one dash.
+    static let dashSweep: Double = 0.09
     let layer = SceneLayer()
     private let speaker = SceneLayer()
+    private let drawsSpeaker: Bool
     private let dashes: [(track: SceneLayer, fill: SceneLayer)] = (0 ..< 16).map { _ in (SceneLayer(), SceneLayer()) }
     /// The glass's light edge, brightest along the top.
     private let rim = CAGradientLayer()
     private let rimShape = CAShapeLayer()
+    /// The level shown, in dashes, and the volume it came from.
+    private var shownLevel: Double?
+    private(set) var volume: Double?
+    private var speakerSymbol = ""
 
     /// `drawsRim`: the light edge, for the drawn capsule (Liquid Glass has its own).
-    init(drawsRim: Bool = true) {
+    /// `drawsSpeaker`: off where the speaker is a system image view instead.
+    init(drawsRim: Bool = true, drawsSpeaker: Bool = true) {
+        self.drawsSpeaker = drawsSpeaker
         rim.isHidden = !drawsRim
         rim.colors = [CGColor(gray: 1, alpha: 0.42), CGColor(gray: 1, alpha: 0.14), CGColor(gray: 1, alpha: 0.2)]
         rim.locations = [0, 0.55, 1]
@@ -770,21 +779,56 @@ final class VolumeHUDContent {
         rim.mask = rimShape
         layer.addSublayer(rim)
         layer.addSublayer(speaker)
+        speaker.isHidden = !drawsSpeaker
         for dash in dashes {
             dash.track.addSublayer(dash.fill)
             layer.addSublayer(dash.track)
         }
     }
 
-    func update(volume: Double, scale: CGFloat) {
-        let symbol = switch volume {
+    /// The speaker for a volume: a slash at none, then one, two or three waves (up to five,
+    /// ten and sixteen dashes).
+    static func symbolName(for volume: Double) -> String {
+        switch (min(1, max(0, volume)) * 16).rounded() {
         case ...0: "speaker.slash.fill"
-        case ..<(1.0 / 3): "speaker.wave.1.fill"
-        case ..<(2.0 / 3): "speaker.wave.2.fill"
+        case ...5: "speaker.wave.1.fill"
+        case ...10: "speaker.wave.2.fill"
         default: "speaker.wave.3.fill"
         }
-        let graphic = SymbolRenderer.render(symbol, pointSize: 26, weight: .semibold, color: .white, scale: scale)
-        let level = min(1, max(0, volume)) * 16
+    }
+
+    /// The level as it shows right now, part way through a sweep or not, in dashes.
+    private var presentedLevel: Double {
+        dashes.reduce(0) { total, dash in
+            let width = (dash.fill.presentation() ?? dash.fill).bounds.width
+            return total + Double(width / 12)
+        }
+    }
+
+    /// Shows `volume`, the fill sweeping from dash to dash on its way there. `opening`: the
+    /// display is coming in, so the sweep is at most the last step (the level may have moved
+    /// on while it was away). Returns how long the sweep takes, and whether it ends at either end
+    /// of the scale having not been there (when the speaker bounces; pressing on past the end
+    /// doesn't).
+    @discardableResult
+    func update(volume: Double, scale: CGFloat, opening: Bool = false) -> (sweep: Double, reachedEnd: Bool) {
+        let volume = min(1, max(0, volume))
+        let level = volume * 16
+        var from = shownLevel == nil ? level : presentedLevel
+        if opening {
+            from = min(level + 1, max(level - 1, from))
+            // Straight to where the sweep starts.
+            for (index, dash) in dashes.enumerated() {
+                dash.fill.removeAllAnimations()
+                withoutLayerActions {
+                    dash.fill.place(CGRect(x: 0, y: 0, width: 12 * CGFloat(min(1, max(0, from - Double(index)))), height: 4))
+                }
+            }
+        }
+        let reachedEnd = (volume <= 0 || volume >= 1) && self.volume != nil && self.volume != volume
+        self.volume = volume
+        shownLevel = level
+        let symbol = Self.symbolName(for: volume)
         withoutLayerActions {
             layer.frame = CGRect(origin: .zero, size: Self.size)
             let bounds = CGRect(origin: .zero, size: Self.size)
@@ -792,25 +836,80 @@ final class VolumeHUDContent {
             rimShape.frame = bounds
             let edge = bounds.insetBy(dx: 0.5, dy: 0.5)
             rimShape.path = CGPath(roundedRect: edge, cornerWidth: edge.height / 2, cornerHeight: edge.height / 2, transform: nil)
-            // The speaker stays put as its waves come and go (its picture has a little room
-            // round it, so it starts a touch left of the speaker's own edge).
-            speaker.show(graphic, at: CGPoint(x: 14, y: ((Self.size.height - graphic.size.height) / 2).rounded()))
+            if drawsSpeaker, symbol != speakerSymbol {
+                // The waves change at once; the speaker stays put as they come and go (its
+                // picture has a little room round it, so it starts a touch left of its edge).
+                let graphic = SymbolRenderer.render(symbol, pointSize: 26, weight: .semibold, color: .white, scale: scale)
+                speaker.show(graphic, at: CGPoint(x: 14, y: ((Self.size.height - graphic.size.height) / 2).rounded()))
+            }
             for (index, dash) in dashes.enumerated() {
                 dash.track.frame = CGRect(x: 61 + CGFloat(index) * 13.5, y: (Self.size.height - 4) / 2, width: 12, height: 4)
                 dash.track.cornerRadius = 1.5
                 dash.track.backgroundColor = CGColor(gray: 1, alpha: 0.18)
                 dash.track.masksToBounds = true
-                let part = min(1, max(0, level - Double(index)))
-                dash.fill.frame = CGRect(x: 0, y: 0, width: 12 * CGFloat(part), height: 4)
                 dash.fill.backgroundColor = CGColor(gray: 1, alpha: 1)
             }
         }
+        speakerSymbol = symbol
+        // The fill runs from where it was to the new level a dash at a time, each dash filling
+        // left to right on the way up and emptying right to left on the way down.
+        let rising = level > from
+        for (index, dash) in dashes.enumerated() {
+            let was = min(1, max(0, from - Double(index)))
+            let now = min(1, max(0, level - Double(index)))
+            let target = CGRect(x: 0, y: 0, width: 12 * CGFloat(now), height: 4)
+            guard was != now else {
+                if dash.fill.animation(forKey: "bounds.size") == nil, dash.fill.frame != target { dash.fill.place(target) }
+                continue
+            }
+            let lead = rising ? max(0, Double(index) - from) : max(0, from - Double(index + 1))
+            dash.fill.setFrame(target, .linear(duration: Self.dashSweep * abs(now - was)).delay(Self.dashSweep * lead))
+        }
+        let sweep = Self.dashSweep * abs(level - from)
+        if drawsSpeaker, reachedEnd {
+            bounceSpeaker(after: sweep)
+        }
+        return (sweep, reachedEnd)
+    }
+
+    /// The drawn speaker's bounce at either end of the scale: up, a little under, and settled.
+    private func bounceSpeaker(after delay: Double) {
+        let size = speaker.bounds.size
+        func scaled(_ factor: CGFloat) -> NSValue {
+            var transform = CATransform3DMakeTranslation(size.width / 2, size.height / 2, 0)
+            transform = CATransform3DScale(transform, factor, factor, 1)
+            return NSValue(caTransform3D: CATransform3DTranslate(transform, -size.width / 2, -size.height / 2, 0))
+        }
+        let bounce = CAKeyframeAnimation(keyPath: "transform")
+        bounce.values = [scaled(1), scaled(1.18), scaled(0.95), scaled(1.02), scaled(1)]
+        bounce.keyTimes = [0, 0.3, 0.62, 0.84, 1]
+        bounce.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 4)
+        bounce.duration = 0.7
+        bounce.beginTime = speaker.convertTime(CACurrentMediaTime(), from: nil) + delay
+        bounce.fillMode = .backwards
+        speaker.add(bounce, forKey: "bounce")
     }
 
     /// Where the display goes on a screen `size` big (window points): top right, where macOS
     /// puts its own.
     static func frame(in size: CGSize) -> CGRect {
         CGRect(x: max(16, size.width - 132 - Self.size.width), y: 40, width: Self.size.width, height: Self.size.height)
+    }
+
+    /// Coming in: from a little smaller, fading up; going: a little smaller again, fading out.
+    static let openScale: CGFloat = 0.89
+    static let closeScale: CGFloat = 0.91
+    static let openScaleAnimation = Animation.smooth(duration: 0.48)
+    static let openFadeAnimation = Animation.smoothInOut(duration: 0.45)
+    static let closeAnimation = Animation.smooth(duration: 0.33)
+    /// How long it stays after the last change.
+    static let linger: Double = 1.0
+
+    /// A scale about the middle of a box `size` big.
+    static func scale(_ factor: CGFloat, size: CGSize) -> CATransform3D {
+        var transform = CATransform3DMakeTranslation(size.width / 2, size.height / 2, 0)
+        transform = CATransform3DScale(transform, factor, factor, 1)
+        return CATransform3DTranslate(transform, -size.width / 2, -size.height / 2, 0)
     }
 }
 
@@ -833,6 +932,8 @@ final class VolumeOverlayLayer {
     /// The modern capsule, where there's no Liquid Glass.
     private let capsule = SceneLayer()
     private let capsuleContent = VolumeHUDContent()
+    /// Whether the drawn capsule is up (for whether a change sweeps from where it was).
+    private var capsuleShown = false
     private var percent: CGFloat = 0
     private var volume: Double = 0
     private var screenSize: CGSize = .zero
@@ -895,13 +996,24 @@ final class VolumeOverlayLayer {
                 return
             }
         #endif
+        let wasShown = !layer.isHidden && layer.opacity > 0.5 && layer.animation(forKey: "opacity") == nil
         withoutLayerActions {
             layer.removeAnimation(forKey: "opacity")
             layer.opacity = 1
             layer.isHidden = false
             place()
         }
-        let fade = Timer(after: isModern ? 1.6 : 3, repeats: false) { [weak self] _ in
+        if isModern, !wasShown {
+            // In as the system's does: from a little smaller, fading up.
+            let size = VolumeHUDContent.size
+            withoutLayerActions {
+                capsule.transform = VolumeHUDContent.scale(VolumeHUDContent.openScale, size: size)
+                capsule.opacity = 0
+            }
+            capsule.setTransform(CATransform3DIdentity, VolumeHUDContent.openScaleAnimation)
+            capsule.setOpacity(1, VolumeHUDContent.openFadeAnimation)
+        }
+        let fade = Timer(after: isModern ? VolumeHUDContent.linger : 3, repeats: false) { [weak self] _ in
             MainActor.assumeIsolatedIfPossible { self?.fadeOut(modern: isModern) }
         }
         RunLoop.main.add(fade, forMode: .common)
@@ -909,7 +1021,11 @@ final class VolumeOverlayLayer {
     }
 
     private func fadeOut(modern: Bool) {
-        layer.setOpacity(0, modern ? .smoothInOut(duration: 0.35) : .linear(duration: 1))
+        if modern {
+            capsule.setTransform(VolumeHUDContent.scale(VolumeHUDContent.closeScale, size: VolumeHUDContent.size), VolumeHUDContent.closeAnimation)
+        }
+        layer.setOpacity(0, modern ? VolumeHUDContent.closeAnimation : .linear(duration: 1))
+        capsuleShown = false
         let hide = Timer(after: modern ? 0.4 : 1.05, repeats: false) { [weak self] _ in
             MainActor.assumeIsolatedIfPossible { self?.layer.isHidden = true }
         }
@@ -924,9 +1040,10 @@ final class VolumeOverlayLayer {
             classic.isHidden = isModern
             capsule.isHidden = !isModern
             if isModern {
-                capsule.frame = VolumeHUDContent.frame(in: screenSize)
+                capsule.place(VolumeHUDContent.frame(in: screenSize))
                 capsule.cornerRadius = capsule.bounds.height / 2
-                capsuleContent.update(volume: volume, scale: backingScale)
+                capsuleContent.update(volume: volume, scale: backingScale, opening: !capsuleShown)
+                capsuleShown = true
             }
         }
         if !isModern { placeClassic() }
