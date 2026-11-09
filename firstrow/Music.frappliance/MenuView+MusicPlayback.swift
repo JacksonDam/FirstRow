@@ -363,8 +363,8 @@ extension MenuView {
         #endif
     }
 
-    /// Playing, or a song taking over from one that was still getting going (for a few seconds
-    /// at most): what Now Playing's play button and its buttons' coming and going go by.
+    /// Playing, or a song just started still getting going (for a few seconds at most): what
+    /// Now Playing's play button and its buttons' coming and going go by.
     func isMusicPlaybackRunningOrStarting() -> Bool {
         if isMusicPlaybackRunning() { return true }
         guard let until = musicPlaybackStartingUntil else { return false }
@@ -397,8 +397,8 @@ extension MenuView {
         }
     }
 
-    /// The next song is taking over from one that was playing.
-    private func noteMusicPlaybackContinuing() {
+    /// A song has been started: it shows as playing while it gets going.
+    private func noteMusicPlaybackStarting() {
         let until = Date().addingTimeInterval(Self.musicPlaybackStartingGrace)
         musicPlaybackStartingUntil = until
         Task { @MainActor [weak self] in
@@ -549,6 +549,8 @@ extension MenuView {
         musicNowPlayingShowsShuffleGlyph = isMusicSongsShuffleMode
         musicNowPlayingLeadingGlyphState = nil
         activeMusicPlaybackSongID = song.id
+        // Started to play: shown so straight away, not paused until the player gets going.
+        noteMusicPlaybackStarting()
         let artworkRequestID = incrementRequestID(&musicNowPlayingArtworkRequestID)
         updateNowPlayingArtworkIfNeeded(for: song, requestID: artworkRequestID)
         if activeFullscreenScene?.key != screenSaverFullscreenKey {
@@ -1924,6 +1926,7 @@ extension MenuView {
         pauseSystemMusicPlayback: Bool = true,
     ) {
         stopMusicScrubbing(showPauseGlyph: false)
+        musicPlaybackStartingUntil = nil
         cancelScreenSaverMusicTrackSwitchQueue()
         endJellyfinMusicReporting()
         _ = incrementRequestID(&musicPlaybackRequestID)
@@ -2191,9 +2194,6 @@ extension MenuView {
             }
             clearMusicSongSwitchTransitionState()
         }
-        // After one that was playing (or ran to its end), the next shows as playing while it
-        // gets going.
-        let continuesPlaying = isMusicPlaybackRunningOrStarting() || musicNowPlayingLeadingGlyphState != .pause
         if isPodcastAudioNowPlaying {
             let episodes = activePodcastPlaybackEpisodes()
             guard !episodes.isEmpty else { return }
@@ -2201,7 +2201,6 @@ extension MenuView {
             guard let currentIndex = episodes.firstIndex(where: { $0.id == currentEpisodeID }) else { return }
             let targetIndex = max(0, min(episodes.count - 1, explicitIndex ?? currentIndex + direction))
             guard targetIndex != currentIndex else { return }
-            if continuesPlaying { noteMusicPlaybackContinuing() }
             let direction = targetIndex > currentIndex ? 1 : -1
             let targetEpisode = episodes[targetIndex]
             let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey
@@ -2279,7 +2278,6 @@ extension MenuView {
         let currentIndex = activeMusicPlaybackIndex() ?? fallbackIndex
         let targetIndex = max(0, min(playbackQueue.count - 1, explicitIndex ?? currentIndex + direction))
         guard targetIndex != currentIndex else { return }
-        if continuesPlaying { noteMusicPlaybackContinuing() }
         let direction = targetIndex > currentIndex ? 1 : -1
         let targetSong = playbackQueue[targetIndex]
         let isMusicNowPlayingSceneVisible = activeFullscreenScene?.key == musicNowPlayingFullscreenKey

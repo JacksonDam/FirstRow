@@ -330,8 +330,8 @@ extension MenuView {
     func noteNowPlayingPlaybackChanged() {
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
         refreshNowPlayingLyrics()
-        // (A song taking over from one that was playing is as good as playing: the buttons
-        // don't come back for the moment between songs.)
+        // (A song just started is as good as playing: the buttons don't come back for the
+        // moment it takes to get going, between songs say.)
         let playing = isMusicPlaybackRunningOrStarting()
         if showsOnScreenControls, nowPlayingTouchControlsHideTask == nil || !playing {
             if areNowPlayingTouchControlsHidden, !playing {
