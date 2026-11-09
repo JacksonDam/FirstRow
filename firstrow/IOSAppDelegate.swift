@@ -20,7 +20,7 @@
 
         #if os(iOS)
             func application(_: UIApplication, supportedInterfaceOrientationsFor _: UIWindow?) -> UIInterfaceOrientationMask {
-                // Upright only on a half-folded foldable (the view controller says when).
+                // Upright only on a foldable (the view controller says when).
                 .all
             }
         #endif
@@ -40,13 +40,16 @@
         }
     }
 
-    /// Hosts First Row full screen or, on a foldable half folded and held upright, on the half
-    /// above the fold.
+    /// Hosts First Row full screen. A foldable can also stand upright, and First Row keeps its
+    /// landscape shape on it: across the middle, or on the half above the fold when it's half
+    /// folded.
     final class FirstRowViewController: UIViewController {
         private let appController = FirstRowAppController()
         private var didStart = false
         #if os(iOS)
-            /// Folded part way, so it can stand upright with First Row on the top half.
+            /// A screen that folds, so held upright it turns upright too.
+            private var isFoldable = false
+            /// Folded part way: held upright, First Row goes on the half above the fold.
             private var isHalfFolded = false
         #endif
 
@@ -62,7 +65,7 @@
                 #if compiler(>=6.4)
                     if #available(iOS 27.1, *) {
                         container.addInteraction(UIHingeInteraction { [weak self] _, update in
-                            self?.hingeChanged(halfFolded: update.hinge?.status == .partiallyOpen)
+                            self?.hingeChanged(hasHinge: update.hinge != nil, halfFolded: update.hinge?.status == .partiallyOpen)
                         })
                     }
                 #endif
@@ -78,34 +81,55 @@
                 if appController.hostView.frame != frame { appController.hostView.frame = frame }
             }
 
-            /// All of the screen, or the part above the fold when the fold goes across it.
+            /// All of the screen held sideways. Upright, First Row keeps its landscape shape: on
+            /// the part above the fold when half folded, otherwise across the middle, with black
+            /// above and below.
             private var drawingFrame: CGRect {
                 let bounds = view.bounds
+                guard bounds.height > bounds.width else { return bounds }
                 #if compiler(>=6.4)
-                    if #available(iOS 27.1, *),
-                       let fold = view.reservedRegions(kind: .division).first(where: { $0.isActive && $0.frame.width > $0.frame.height }),
+                    if #available(iOS 27.1, *), isHalfFolded,
+                       let fold = view.reservedRegions(kind: .division, options: .includeInactive).first(where: { $0.frame.width > $0.frame.height }),
                        fold.frame.minY > bounds.height / 4
                     {
                         return CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: fold.frame.minY - bounds.minY)
                     }
                 #endif
-                return bounds
+                // As wide as it is upright, and as tall as the screen's sideways shape makes that.
+                let screen = view.window?.windowScene?.screen.bounds.size ?? bounds.size
+                let shape = min(screen.width, screen.height) / max(screen.width, screen.height)
+                let height = (bounds.width * shape).rounded()
+                return CGRect(x: bounds.minX, y: (bounds.midY - height / 2).rounded(), width: bounds.width, height: height)
             }
 
-            private func hingeChanged(halfFolded: Bool) {
-                view.setNeedsLayout()
-                guard halfFolded != isHalfFolded else { return }
+            private func hingeChanged(hasHinge: Bool, halfFolded: Bool) {
+                if hasHinge != isFoldable {
+                    isFoldable = hasHinge
+                    if #available(iOS 16.0, *) {
+                        setNeedsUpdateOfSupportedInterfaceOrientations()
+                    } else {
+                        UIViewController.attemptRotationToDeviceOrientation()
+                    }
+                }
+                guard halfFolded != isHalfFolded else {
+                    view.setNeedsLayout()
+                    return
+                }
                 isHalfFolded = halfFolded
-                if #available(iOS 16.0, *) {
-                    setNeedsUpdateOfSupportedInterfaceOrientations()
-                } else {
-                    UIViewController.attemptRotationToDeviceOrientation()
+                // Upright, it moves between the middle and the top half.
+                UIView.animate(withDuration: 0.4, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState]) {
+                    self.view.setNeedsLayout()
+                    self.view.layoutIfNeeded()
                 }
             }
         #endif
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
+            #if os(iOS)
+                // A hinge found before it was on screen can't have turned it yet.
+                if isFoldable, #available(iOS 16.0, *) { setNeedsUpdateOfSupportedInterfaceOrientations() }
+            #endif
             guard !didStart else { return }
             didStart = true
             appController.start()
@@ -115,7 +139,9 @@
             override var prefersStatusBarHidden: Bool { true }
             override var prefersHomeIndicatorAutoHidden: Bool { true }
             override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-                isHalfFolded ? .all : .landscape
+                // A foldable turns upright, keeping its landscape shape there (held upside down
+                // it stays as it is, as on any iPhone).
+                isFoldable ? .allButUpsideDown : .landscape
             }
         #endif
     }
