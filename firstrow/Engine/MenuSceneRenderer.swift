@@ -378,7 +378,7 @@ final class MenuSceneRenderer: TransactionRendering {
         playback.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         fullscreenScene.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         toast.update(menu: menu, pass: pass, bounds: fullBounds, backingScale: backingScale)
-        volumeOverlay.layout(screenSize: fullBounds.size)
+        volumeOverlay.layout(screenSize: fullBounds.size, backingScale: backingScale)
         onboarding.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         let canvasScale = FullscreenCanvas(screenSize: fullBounds.size).scale
         touchControls.update(

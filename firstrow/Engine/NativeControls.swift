@@ -465,6 +465,76 @@
         #endif
     }
 
+    #if os(macOS)
+        /// The modern look's volume display in the system's own Liquid Glass, as macOS 26 shows
+        /// its own: it comes in, stays a moment after the last change, and goes.
+        @available(macOS 26.0, *)
+        @MainActor
+        final class NativeVolumeHUD {
+            private let glass = NativePassiveGlass()
+            private let content = NSView()
+            /// Top-left origin for the drawing, in the glass's own (y-up) layer.
+            private let host = CALayer()
+            private let drawing = VolumeHUDContent()
+            private var hideTimer: Timer?
+            private var generation = 0
+            private var isShown = false
+
+            init(in container: NSView) {
+                glass.style = .regular
+                // Lighter than the buttons' glass, as the system's own display is, even over
+                // First Row's near-black.
+                glass.tintColor = NSColor(white: 1, alpha: 0.3)
+                glass.alphaValue = 0
+                glass.isHidden = true
+                glass.contentView = content
+                content.wantsLayer = true
+                content.layer?.backgroundColor = CGColor(gray: 1, alpha: 0.08)
+                content.layer?.masksToBounds = true
+                host.isGeometryFlipped = true
+                content.layer?.addSublayer(host)
+                host.addSublayer(drawing.layer)
+                container.addSubview(glass)
+            }
+
+            func show(volume: Double, frame: CGRect, scale: CGFloat) {
+                if glass.frame != frame {
+                    glass.frame = frame
+                    glass.cornerRadius = frame.height / 2
+                    content.frame = CGRect(origin: .zero, size: frame.size)
+                    content.layer?.cornerRadius = frame.height / 2
+                    withoutLayerActions { host.frame = CGRect(origin: .zero, size: frame.size) }
+                }
+                drawing.update(volume: volume, scale: scale)
+                hideTimer?.invalidate()
+                if !isShown {
+                    isShown = true
+                    generation += 1
+                    glass.isHidden = false
+                    animateViews(.smooth(duration: 0.2), { self.glass.animator().alphaValue = 1 })
+                }
+                let timer = Timer(after: 1.6, repeats: false) { [weak self] _ in
+                    MainActor.assumeIsolatedIfPossible { self?.hide(animated: true) }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                hideTimer = timer
+            }
+
+            func hide(animated: Bool) {
+                hideTimer?.invalidate()
+                hideTimer = nil
+                guard isShown else { return }
+                isShown = false
+                generation += 1
+                let current = generation
+                animateViews(animated ? .smoothInOut(duration: 0.35) : nil, { self.glass.animator().alphaValue = 0 }, completion: { [weak self] in
+                    guard let self, self.generation == current else { return }
+                    self.glass.isHidden = true
+                })
+            }
+        }
+    #endif
+
     /// The native buttons and glass over the scene.
     @available(macOS 26.0, iOS 26.0, *)
     @MainActor
@@ -484,6 +554,10 @@
         private let transportView = NativePassthroughView()
         private let optionsView = NativePassthroughView()
         private(set) lazy var options = NativeOptionsGlass(in: optionsView)
+        #if os(macOS)
+            /// Over everything else.
+            private(set) lazy var volumeHUD = NativeVolumeHUD(in: view)
+        #endif
         var onPress: ((TouchControl) -> Void)?
 
         struct Key: Hashable {

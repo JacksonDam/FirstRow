@@ -746,12 +746,81 @@ final class ScreenSaverToastLayer {
     }
 }
 
-/// The volume overlay: a speaker over a level bar, centred near the bottom of the screen. It
-/// shows when the remote changes the volume and fades out three seconds after the last change.
+/// The modern look's volume display, drawn as macOS 26 draws its own: a speaker that gains
+/// waves as the level rises, then sixteen short dashes, white up to the level. In points, for a
+/// capsule `size` big (the glass or drawn capsule around it is the caller's).
+@MainActor
+final class VolumeHUDContent {
+    static let size = CGSize(width: 308, height: 66)
+    let layer = SceneLayer()
+    private let speaker = SceneLayer()
+    private let dashes: [(track: SceneLayer, fill: SceneLayer)] = (0 ..< 16).map { _ in (SceneLayer(), SceneLayer()) }
+    /// The glass's light edge, brightest along the top.
+    private let rim = CAGradientLayer()
+    private let rimShape = CAShapeLayer()
+
+    init() {
+        rim.colors = [CGColor(gray: 1, alpha: 0.42), CGColor(gray: 1, alpha: 0.14), CGColor(gray: 1, alpha: 0.2)]
+        rim.locations = [0, 0.55, 1]
+        rimShape.fillColor = nil
+        rimShape.strokeColor = CGColor(gray: 0, alpha: 1)
+        rimShape.lineWidth = 1
+        rim.mask = rimShape
+        layer.addSublayer(rim)
+        layer.addSublayer(speaker)
+        for dash in dashes {
+            dash.track.addSublayer(dash.fill)
+            layer.addSublayer(dash.track)
+        }
+    }
+
+    func update(volume: Double, scale: CGFloat) {
+        let symbol = switch volume {
+        case ...0: "speaker.slash.fill"
+        case ..<(1.0 / 3): "speaker.wave.1.fill"
+        case ..<(2.0 / 3): "speaker.wave.2.fill"
+        default: "speaker.wave.3.fill"
+        }
+        let graphic = SymbolRenderer.render(symbol, pointSize: 26, weight: .semibold, color: .white, scale: scale)
+        let level = min(1, max(0, volume)) * 16
+        withoutLayerActions {
+            layer.frame = CGRect(origin: .zero, size: Self.size)
+            let bounds = CGRect(origin: .zero, size: Self.size)
+            rim.frame = bounds
+            rimShape.frame = bounds
+            let edge = bounds.insetBy(dx: 0.5, dy: 0.5)
+            rimShape.path = CGPath(roundedRect: edge, cornerWidth: edge.height / 2, cornerHeight: edge.height / 2, transform: nil)
+            // The speaker stays put as its waves come and go (its picture has a little room
+            // round it, so it starts a touch left of the speaker's own edge).
+            speaker.show(graphic, at: CGPoint(x: 14, y: ((Self.size.height - graphic.size.height) / 2).rounded()))
+            for (index, dash) in dashes.enumerated() {
+                dash.track.frame = CGRect(x: 61 + CGFloat(index) * 13.5, y: (Self.size.height - 4) / 2, width: 12, height: 4)
+                dash.track.cornerRadius = 1.5
+                dash.track.backgroundColor = CGColor(gray: 1, alpha: 0.18)
+                dash.track.masksToBounds = true
+                let part = min(1, max(0, level - Double(index)))
+                dash.fill.frame = CGRect(x: 0, y: 0, width: 12 * CGFloat(part), height: 4)
+                dash.fill.backgroundColor = CGColor(gray: 1, alpha: 1)
+            }
+        }
+    }
+
+    /// Where the display goes on a screen `size` big (window points): top right, where macOS
+    /// puts its own.
+    static func frame(in size: CGSize) -> CGRect {
+        CGRect(x: max(16, size.width - 132 - Self.size.width), y: 40, width: Self.size.width, height: Self.size.height)
+    }
+}
+
+/// The volume overlay. The classic look: a speaker over a level bar, centred near the bottom of
+/// the screen, fading three seconds after the last change. The modern look: a capsule at the top
+/// right like the system's own, in Liquid Glass where the system has it.
 @MainActor
 final class VolumeOverlayLayer {
-    /// Covers the screen in full-screen canvas points; the overlay itself is `box`.
+    /// Covers the screen in window points.
     let layer = SceneLayer()
+    /// The classic overlay, in full-screen canvas points; the overlay itself is `box`.
+    private let classic = SceneLayer()
     private let box = SceneLayer()
     private let speaker = SceneLayer()
     private let leftEnd = SceneLayer()
@@ -759,19 +828,34 @@ final class VolumeOverlayLayer {
     private let rightEnd = SceneLayer()
     private let fill = SceneLayer()
     private let level = SceneLayer()
+    /// The modern capsule, where there's no Liquid Glass.
+    private let capsule = SceneLayer()
+    private let capsuleContent = VolumeHUDContent()
     private var percent: CGFloat = 0
+    private var volume: Double = 0
     private var screenSize: CGSize = .zero
+    private var backingScale: CGFloat = 2
     private var fadeTimer: Timer?
     private var hideTimer: Timer?
     private var observer: NSObjectProtocol?
 
     init() {
         layer.isHidden = true
-        layer.addSublayer(box)
+        layer.addSublayer(classic)
+        classic.addSublayer(box)
         for piece in [speaker, leftEnd, track, rightEnd, fill, level] {
             piece.contentsGravity = .resize
             box.addSublayer(piece)
         }
+        capsule.backgroundColor = CGColor(gray: 0.2, alpha: 0.86)
+        capsule.borderWidth = 0.5
+        capsule.borderColor = CGColor(gray: 1, alpha: 0.2)
+        capsule.shadowColor = CGColor(gray: 0, alpha: 1)
+        capsule.shadowOpacity = 0.3
+        capsule.shadowRadius = 12
+        capsule.shadowOffset = .zero
+        capsule.addSublayer(capsuleContent.layer)
+        layer.addSublayer(capsule)
         observer = NotificationCenter.default.addObserver(forName: .firstRowVolumeChanged, object: nil, queue: .main) { [weak self] note in
             let volume = note.userInfo?["volume"] as? Double ?? 0
             MainActor.assumeIsolatedIfPossible { self?.show(volume: volume) }
@@ -783,45 +867,74 @@ final class VolumeOverlayLayer {
         observer = nil
         fadeTimer?.invalidate()
         hideTimer?.invalidate()
+        #if os(macOS)
+            if #available(macOS 26.0, *) { NativeControls.shared?.volumeHUD.hide(animated: false) }
+        #endif
     }
 
-    func layout(screenSize: CGSize) {
+    func layout(screenSize: CGSize, backingScale: CGFloat) {
+        self.backingScale = backingScale
         guard screenSize != self.screenSize else { return }
         self.screenSize = screenSize
         if !layer.isHidden { place() }
     }
 
     private func show(volume: Double) {
+        self.volume = volume
         percent = CGFloat(min(1, max(0, volume))) * 100
         fadeTimer?.invalidate()
         hideTimer?.invalidate()
+        let isModern = ModernTheme.isActive
+        #if os(macOS)
+            // The system's own glass, which hides itself a moment after the last change.
+            if isModern, #available(macOS 26.0, *), let native = NativeControls.shared {
+                withoutLayerActions { layer.isHidden = true }
+                native.volumeHUD.show(volume: volume, frame: VolumeHUDContent.frame(in: screenSize), scale: backingScale)
+                return
+            }
+        #endif
         withoutLayerActions {
             layer.removeAnimation(forKey: "opacity")
             layer.opacity = 1
             layer.isHidden = false
             place()
         }
-        let fade = Timer(after: 3, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolatedIfPossible { self?.fadeOut() }
+        let fade = Timer(after: isModern ? 1.6 : 3, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolatedIfPossible { self?.fadeOut(modern: isModern) }
         }
         RunLoop.main.add(fade, forMode: .common)
         fadeTimer = fade
     }
 
-    private func fadeOut() {
-        layer.setOpacity(0, .linear(duration: 1))
-        let hide = Timer(after: 1.05, repeats: false) { [weak self] _ in
+    private func fadeOut(modern: Bool) {
+        layer.setOpacity(0, modern ? .smoothInOut(duration: 0.35) : .linear(duration: 1))
+        let hide = Timer(after: modern ? 0.4 : 1.05, repeats: false) { [weak self] _ in
             MainActor.assumeIsolatedIfPossible { self?.layer.isHidden = true }
         }
         RunLoop.main.add(hide, forMode: .common)
         hideTimer = hide
     }
 
-    /// Lays the overlay out as a fraction of the screen's height, and the bar as a fraction of
-    /// the overlay, from pieces drawn for a 720-point-tall screen.
     private func place() {
+        let isModern = ModernTheme.isActive
+        withoutLayerActions {
+            layer.frame = CGRect(origin: .zero, size: screenSize)
+            classic.isHidden = isModern
+            capsule.isHidden = !isModern
+            if isModern {
+                capsule.frame = VolumeHUDContent.frame(in: screenSize)
+                capsule.cornerRadius = capsule.bounds.height / 2
+                capsuleContent.update(volume: volume, scale: backingScale)
+            }
+        }
+        if !isModern { placeClassic() }
+    }
+
+    /// Lays the classic overlay out as a fraction of the screen's height, and the bar as a
+    /// fraction of the overlay, from pieces drawn for a 720-point-tall screen.
+    private func placeClassic() {
         let canvas = FullscreenCanvas(screenSize: screenSize)
-        canvas.apply(to: layer)
+        canvas.apply(to: classic)
         let height = canvas.size.height
         let boxHeight = ceil(height * 0.252)
         let boxWidth = ceil(height * 0.23)
