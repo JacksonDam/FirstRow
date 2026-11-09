@@ -170,6 +170,9 @@ public enum PortableApplication {
 
         var event = SDL_Event()
         var lastFrame = CACurrentMediaTime()
+        // Here (unlike on Apple's systems) settings only reach the disk when told to: every few
+        // seconds, so a crash or a forced quit loses little, and again on the way out.
+        var lastSettingsSave = lastFrame
         while running {
             // Sleep until something happens when nothing on screen is moving.
             let idle = !needsFrame && !(compositor?.isAnimating ?? false) && !Harness.isBusy
@@ -187,6 +190,10 @@ public enum PortableApplication {
             AVPlayer.pumpEvents()
             AVAudioPlayer.pumpEvents()
             Harness.tick()
+            if CACurrentMediaTime() - lastSettingsSave > 5 {
+                lastSettingsSave = CACurrentMediaTime()
+                UserDefaults.standard.synchronize()
+            }
             let now = CACurrentMediaTime()
             if debugFrames { timings.events += now - loopStart }
             let shouldDraw = needsFrame || (compositor?.isAnimating ?? false) || now - lastFrame > 0.5 || hasVideo
@@ -199,6 +206,7 @@ public enum PortableApplication {
         for handler in quitHandlers {
             handler()
         }
+        UserDefaults.standard.synchronize()
         SDL_GL_DestroyContext(context)
         SDL_DestroyWindow(created)
         SDL_Quit()
