@@ -1307,21 +1307,42 @@ extension MenuView {
         }
 
         /// The episode online, by the show's name (and maker), and the episode's title, or (shows
-        /// rename old episodes) its day of release or its file's name.
-        static func find(seriesTitle: String, artist: String, episodeTitle: String, airedDate: Date? = nil, fileName: String? = nil) async -> Found? {
-            guard let show = await lookUpShow(title: seriesTitle, artist: artist),
-                  let item = await feedItem(in: show.feed, titled: episodeTitle, airedDate: airedDate, fileName: fileName)
-            else { return nil }
+        /// rename old episodes) its day of release or its file's name. A video episode comes from
+        /// the show's video version where there's one (some shows have an audio and a video feed).
+        static func find(seriesTitle: String, artist: String, episodeTitle: String, airedDate: Date? = nil, fileName: String? = nil, wantsVideo: Bool = false) async -> Found? {
+            var fallback: (show: Show, item: FeedReader.Item)?
+            var chosen: (show: Show, item: FeedReader.Item)?
+            for show in await lookUpShows(title: seriesTitle, artist: artist, wantsVideo: wantsVideo).prefix(4) {
+                guard let item = await feedItem(in: show.feed, titled: episodeTitle, airedDate: airedDate, fileName: fileName) else { continue }
+                if wantsVideo, !isVideo(item) {
+                    if fallback == nil { fallback = (show, item) }
+                    continue
+                }
+                chosen = (show, item)
+                break
+            }
+            guard let (show, item) = chosen ?? fallback else { return nil }
             var artwork: NSImage?
             if let artworkURL = show.artwork, let (data, _) = try? await session.data(from: artworkURL) {
                 artwork = NSImage(data: data)
             }
-            let isVideo = item.type.hasPrefix("video/") || ["m4v", "mp4", "mov"].contains(item.enclosure.pathExtension.lowercased())
-            return Found(stream: item.enclosure, artwork: artwork, isVideo: isVideo)
+            return Found(stream: item.enclosure, artwork: artwork, isVideo: isVideo(item))
         }
 
-        /// The show in Apple's podcast directory: its feed and artwork.
-        private static func lookUpShow(title: String, artist: String) async -> (feed: URL, artwork: URL?)? {
+        private struct Show {
+            let name: String
+            let feed: URL
+            let artwork: URL?
+        }
+
+        private static func isVideo(_ item: FeedReader.Item) -> Bool {
+            item.type.hasPrefix("video/") || ["m4v", "mp4", "mov"].contains(item.enclosure.pathExtension.lowercased())
+        }
+
+        /// The show in Apple's podcast directory (its feed and artwork), best match first: the
+        /// same name and maker, the same name, then the maker's shows with the name in theirs
+        /// (a show's video version, say), video versions first when that's what's wanted.
+        private static func lookUpShows(title: String, artist: String, wantsVideo: Bool) async -> [Show] {
             var components = URLComponents(string: "https://itunes.apple.com/search")
             components?.queryItems = [
                 URLQueryItem(name: "media", value: "podcast"),
@@ -1333,18 +1354,31 @@ extension MenuView {
                   let (data, _) = try? await session.data(from: url),
                   let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let results = object["results"] as? [[String: Any]]
-            else { return nil }
-            let shows: [(name: String, artist: String, feed: URL, artwork: URL?)] = results.compactMap { result in
+            else { return [] }
+            let shows: [(name: String, artist: String, show: Show)] = results.compactMap { result in
                 guard let feed = (result["feedUrl"] as? String).flatMap(URL.init(string:)) else { return nil }
                 let artwork = ((result["artworkUrl600"] ?? result["artworkUrl100"]) as? String).flatMap(URL.init(string:))
-                return (result["collectionName"] as? String ?? "", result["artistName"] as? String ?? "", feed, artwork)
+                let name = result["collectionName"] as? String ?? ""
+                return (name, result["artistName"] as? String ?? "", Show(name: name, feed: feed, artwork: artwork))
             }
             let wantedTitle = comparable(title)
             let wantedArtist = comparable(artist)
-            let best = shows.first { comparable($0.name) == wantedTitle && comparable($0.artist) == wantedArtist }
-                ?? shows.first { comparable($0.name) == wantedTitle }
-                ?? shows.first { comparable($0.artist) == wantedArtist && comparable($0.name).contains(wantedTitle) }
-            return best.map { ($0.feed, $0.artwork) }
+            var ordered: [Show] = []
+            let tiers = [
+                shows.filter { comparable($0.name) == wantedTitle && comparable($0.artist) == wantedArtist },
+                shows.filter { comparable($0.name) == wantedTitle },
+                shows.filter { comparable($0.artist) == wantedArtist && comparable($0.name).contains(wantedTitle) },
+            ]
+            for matches in tiers {
+                for match in matches where !ordered.contains(where: { $0.feed == match.show.feed }) {
+                    ordered.append(match.show)
+                }
+            }
+            if wantsVideo {
+                // Stable: video versions first, the rest in the same order.
+                ordered = ordered.filter { $0.name.lowercased().contains("video") } + ordered.filter { !$0.name.lowercased().contains("video") }
+            }
+            return ordered
         }
 
         /// The feed's episode with that title, else the one released that day, else the one
@@ -1477,8 +1511,9 @@ extension MenuView {
             let title = episode.title
             let airedDate = episode.airedDate
             let fileName = episode.mediaURL?.lastPathComponent
+            let wantsVideo = episode.isVideo || ["m4v", "mp4", "mov"].contains(episode.mediaURL?.pathExtension.lowercased() ?? "")
             Task.detached(priority: .userInitiated) {
-                let found = await PodcastFeedStreams.find(seriesTitle: series, artist: artist, episodeTitle: title, airedDate: airedDate, fileName: fileName)
+                let found = await PodcastFeedStreams.find(seriesTitle: series, artist: artist, episodeTitle: title, airedDate: airedDate, fileName: fileName, wantsVideo: wantsVideo)
                 await MainActor.run {
                     // Something else chosen meanwhile, or Podcasts left.
                     guard self.podcastStreamRequestID == request,
