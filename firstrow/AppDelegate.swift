@@ -15,6 +15,8 @@
         private var appController: FirstRowAppController?
         private var keyMonitor: Any?
         private var screenObservers: [NSObjectProtocol] = []
+        /// A nearly clear strip over the top of the window on a ProMotion screen (see `lockWindowToScreen`).
+        private var compositingStrip: NSWindow?
         private var isCommandKeyDown = false
         private var commandEscapeHotKeyRef: EventHotKeyRef?
         private var commandEscapeHotKeyHandlerRef: EventHandlerRef?
@@ -54,6 +56,7 @@
             applyImmersivePresentationOptions()
             NSApplication.shared.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
+            lockWindowToScreen()
             // Only until the mouse moves, so the pointer comes back for permission prompts.
             NSCursor.setHiddenUntilMouseMoves(true)
             registerCommandEscapeHotKey()
@@ -183,13 +186,48 @@
             if !window.frame.equalTo(screenFrame) {
                 window.setFrame(screenFrame, display: true, animate: false)
             }
-            // An opaque window covering the whole screen can go to the screen without being
-            // composited. On a ProMotion screen that left First Row's frames unevenly timed
-            // (stutters below 60 fps and stale frames), smooth only while the menu bar was over
-            // it. Not marking the window opaque has it composited like any other window.
-            let opaque = !Self.refreshesAtVariableRate(screen)
-            if window.isOpaque != opaque {
-                window.isOpaque = opaque
+            // A window covering the whole screen with nothing over it can go to the screen without
+            // being composited. On a ProMotion screen that left First Row's frames unevenly timed
+            // (stutters below 60 fps and stale frames), and it ran smoothly at 120 Hz only while the
+            // menu bar was pulled down over it. A nearly clear strip of window over the top edge
+            // does the same as the menu bar, and the window isn't marked opaque either. Tested on a
+            // ProMotion MacBook Pro.
+            let variable = Self.refreshesAtVariableRate(screen)
+            if window.isOpaque == variable {
+                window.isOpaque = !variable
+            }
+            updateCompositingStrip(over: window, on: screen, shown: variable)
+        }
+
+        private func updateCompositingStrip(over window: NSWindow, on screen: NSScreen, shown: Bool) {
+            guard shown else {
+                if let compositingStrip {
+                    window.removeChildWindow(compositingStrip)
+                    compositingStrip.orderOut(nil)
+                }
+                compositingStrip = nil
+                return
+            }
+            let frame = NSRect(x: screen.frame.minX, y: screen.frame.maxY - 24, width: screen.frame.width, height: 24)
+            let strip = compositingStrip ?? {
+                let strip = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                strip.isReleasedWhenClosed = false
+                strip.isOpaque = false
+                strip.backgroundColor = NSColor(white: 0, alpha: 0.03)
+                strip.hasShadow = false
+                strip.ignoresMouseEvents = true
+                strip.collectionBehavior = [.ignoresCycle, .fullScreenNone]
+                return strip
+            }()
+            compositingStrip = strip
+            if !strip.frame.equalTo(frame) {
+                strip.setFrame(frame, display: false)
+            }
+            // As a child window it stays just above First Row's window, so other apps come in front
+            // of it, and it goes with the window. It only comes on screen if the window already is.
+            if window.isVisible, strip.parent !== window || !strip.isVisible {
+                window.removeChildWindow(strip)
+                window.addChildWindow(strip, ordered: .above)
             }
         }
 
