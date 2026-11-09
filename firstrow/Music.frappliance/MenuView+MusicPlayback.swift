@@ -2357,8 +2357,9 @@ extension MenuView {
     func handleMusicPlaybackInput(_ key: KeyCode, isRepeat: Bool) {
         // Play and pause from an on-screen button show on the button, not as a glyph.
         hidesMusicLeadingGlyph = isPressingOnScreenPlaybackButton
-        // The list, while it's out, takes up, down and Select.
-        if isNowPlayingQueueVisible {
+        // The list, while it's out, takes up, down and Select (but not the on-screen Previous
+        // and Next, which still change the song).
+        if isNowPlayingQueueVisible, !isPressingOnScreenPlaybackButton {
             switch key {
             case .upArrow:
                 moveNowPlayingQueueFocus(by: -1)
