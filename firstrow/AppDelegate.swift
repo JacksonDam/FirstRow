@@ -174,7 +174,8 @@
 
         /// Keeps First Row's window (only) covering its screen.
         private func lockWindowToScreen() {
-            guard let window, let screenFrame = (window.screen ?? NSScreen.main)?.frame else { return }
+            guard let window, let screen = window.screen ?? NSScreen.main else { return }
+            let screenFrame = screen.frame
             if window.level != .normal { window.level = .normal }
             window.isMovable = false
             window.minSize = screenFrame.size
@@ -182,6 +183,26 @@
             if !window.frame.equalTo(screenFrame) {
                 window.setFrame(screenFrame, display: true, animate: false)
             }
+            // An opaque window covering the whole screen can go to the screen without being
+            // composited. On a ProMotion screen that left First Row's frames unevenly timed
+            // (stutters below 60 fps and stale frames), smooth only while the menu bar was over
+            // it. Not marking the window opaque has it composited like any other window.
+            let opaque = !Self.refreshesAtVariableRate(screen)
+            if window.isOpaque != opaque {
+                window.isOpaque = opaque
+            }
+        }
+
+        /// Whether `screen` varies its refresh rate as it goes: a ProMotion screen (unless it is set
+        /// to a fixed rate) or an Adaptive-Sync display.
+        private static func refreshesAtVariableRate(_ screen: NSScreen) -> Bool {
+            guard #available(macOS 12.0, *) else { return false }
+            if screen.maximumRefreshInterval > screen.minimumRefreshInterval + 0.0005 {
+                return true
+            }
+            // The only built-in Mac screens faster than 60 Hz are ProMotion ones.
+            let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+            return number.map { CGDisplayIsBuiltin($0.uint32Value) != 0 } == true && screen.maximumFramesPerSecond > 60
         }
 
         private func registerCommandEscapeHotKey() {
