@@ -181,6 +181,8 @@ final class NowPlayingQueueLayer {
     private var rows: [Int: Row] = [:]
     private var spare: [Row] = []
     private var lastScroll: CGFloat?
+    /// How strongly each edge fades (top, bottom), as last set.
+    private var lastFade: (CGFloat, CGFloat)?
     private var lastHeaderKey = ""
     /// The classic look's selection bar, behind the row picked out.
     private let selection = SelectionBoxLayer()
@@ -274,6 +276,20 @@ final class NowPlayingQueueLayer {
         let shownScroll = padding - (rowsContainer.presentation()?.position.y ?? rowsContainer.position.y)
         rowsContainer.setPosition(CGPoint(x: 0, y: padding - scroll), scrollAnimation)
         lastScroll = scroll
+        // Each edge fades only with something scrolled past it: at the top of the list the first
+        // song shows whole, and at the bottom the last one does.
+        let fadeReach: CGFloat = 26
+        let topFade = min(1, max(0, scroll / fadeReach))
+        let bottomFade = min(1, max(0, (scrollLimit - scroll) / fadeReach))
+        let fadeColors = [
+            CGColor(gray: 0, alpha: 1 - topFade), CGColor(gray: 0, alpha: 1),
+            CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1 - bottomFade),
+        ]
+        let fadeKey = (topFade, bottomFade)
+        if lastFade.map({ $0 != fadeKey }) ?? true {
+            fade.set("colors", to: fadeColors, unchanged: false, animation: lastFade == nil ? nil : scrollAnimation)
+            lastFade = fadeKey
+        }
 
         // Rows near the view, all the way along a scroll under way.
         let first = max(0, Int(floor(min(scroll, shownScroll) / pitch)) - 2)
