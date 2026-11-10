@@ -50,12 +50,13 @@ final class MoviePlaybackLayers {
         backdrop.isHidden = !showsPlayer
         backdrop.place(bounds)
         // On the full-screen canvas, so the controls keep their proportions at any resolution.
-        // Standing upright, the picture has the screen above the fold and the controls the
-        // screen below it, where they stay up.
+        // Standing upright and bent at the fold, the picture has the screen above the fold and
+        // the controls the screen below it, where they stay up. Flat, it's one tall screen.
         let canvas = FullscreenCanvas(screenSize: bounds.size, upright: menu.upright)
-        placePicture(canvas.upright.map { canvas.window($0.upperPane) } ?? bounds)
+        let isBent = canvas.upright?.isBent == true
+        placePicture(canvas.upright.map { $0.isBent ? canvas.window($0.moviePicture) : bounds } ?? bounds)
         var controlsSize = canvas.size
-        if let upright = canvas.upright { controlsSize.height = upright.movieControlsFloor }
+        if let upright = canvas.upright, isBent { controlsSize.height = upright.movieControlsFloor }
 
         let showsControls = menu.isMoviePlaybackVisible && menu.showsMovieControls
         let controlsOpacity = menu.shownMovieControlsOpacity
@@ -87,6 +88,7 @@ final class MoviePlaybackLayers {
                 loadingProgress: menu.moviePreviewDownloadProgress,
                 size: controlsSize,
                 scale: canvas.pixelScale(backingScale: scale),
+                overPicture: !isBent,
             )
             modernControls.layer.setOpacity(controlsOpacity, pass.animation)
             return

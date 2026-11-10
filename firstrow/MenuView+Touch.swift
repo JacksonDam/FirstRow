@@ -1020,8 +1020,8 @@ extension MenuView {
                 return
             }
             // A tap away from the buttons shows or hides the controls; playing and pausing is
-            // the play button's job. (Standing upright they're always up.)
-            if upright != nil { return }
+            // the play button's job. (Under the fold of a bent screen they're always up.)
+            if keepsMovieControlsUp { return }
             if areMovieControlsVisible {
                 cancelMovieControlsAutoHide()
                 hideMovieControlsWithFade()

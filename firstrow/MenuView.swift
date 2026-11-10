@@ -37,8 +37,10 @@ final class MenuView: ObservableObject {
 
     private var stance: UprightStance? {
         didSet {
-            if (oldValue == nil) != (stance == nil) {
+            if (oldValue == nil) != (stance == nil) || oldValue?.isBent != stance?.isBent {
                 movieStanceDidChange()
+            }
+            if (oldValue == nil) != (stance == nil) {
                 nowPlayingStanceDidChange()
             }
         }

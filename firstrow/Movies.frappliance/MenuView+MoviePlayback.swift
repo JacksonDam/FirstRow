@@ -627,15 +627,16 @@ extension MenuView {
         }
     }
 
-    /// A movie's controls are up: always, standing upright, where they have the screen under
-    /// the fold to themselves.
-    var showsMovieControls: Bool { areMovieControlsVisible || upright != nil }
-    var shownMovieControlsOpacity: Double { upright != nil ? 1 : movieControlsOpacity }
+    /// On a screen bent at its fold, a movie's controls have the part under it to themselves,
+    /// and stay up.
+    var keepsMovieControlsUp: Bool { upright?.isBent == true }
+    var showsMovieControls: Bool { areMovieControlsVisible || keepsMovieControlsUp }
+    var shownMovieControlsOpacity: Double { keepsMovieControlsUp ? 1 : movieControlsOpacity }
 
-    /// Turned on its side again, the controls go to their place over the picture, and away
-    /// after a while as ever.
+    /// Turned on its side or laid out flat, the controls go to their place over the picture,
+    /// and away after a while as ever.
     func movieStanceDidChange() {
-        guard isMoviePlaybackVisible, moviePlayer != nil, upright == nil else { return }
+        guard isMoviePlaybackVisible, moviePlayer != nil, !keepsMovieControlsUp else { return }
         showMovieControlsInstantly()
         scheduleMovieControlsAutoHide()
     }

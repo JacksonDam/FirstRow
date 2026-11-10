@@ -59,10 +59,15 @@ struct UprightStance: Equatable {
     /// Room the system keeps at the top and bottom edges, in scene points.
     let topInset: CGFloat
     let bottomInset: CGFloat
+    /// Bent part way at the fold, like a laptop: the part above it stands and the part below
+    /// lies, each a screen of its own. Opened out flat it is one tall screen, and what has the
+    /// screen to itself (a movie, a message) takes the middle of the whole of it.
+    let isBent: Bool
 
     /// `fold` is the strip the fold takes up, in the screen's points from its top (the middle
     /// tenth of an inch or so when the system doesn't say).
-    init(screenSize: CGSize, fold: ClosedRange<CGFloat>?, safeTop: CGFloat, safeBottom: CGFloat) {
+    init(screenSize: CGSize, fold: ClosedRange<CGFloat>?, safeTop: CGFloat, safeBottom: CGFloat, isBent: Bool = false) {
+        self.isBent = isBent
         let scale = Self.sceneWidth / max(1, screenSize.width)
         let fold = fold ?? (screenSize.height * 0.5 - 20) ... (screenSize.height * 0.5 + 20)
         sceneSize = CGSize(width: Self.sceneWidth, height: (screenSize.height * scale).rounded())
@@ -87,13 +92,21 @@ struct UprightStance: Equatable {
         min(9, max(4, Int((lowerPane.height - 118) / 80)))
     }
 
-    /// A movie's controls sit together in the middle of the lower pane: its buttons, and under
-    /// them its transport bar, laid out as if the screen ended here.
-    var movieControlsFloor: CGFloat { lowerPane.midY + 222 }
+    /// Where a movie's picture goes: above the fold while the screen is bent there, the middle
+    /// of the whole screen opened out flat.
+    var moviePicture: CGRect {
+        isBent ? upperPane : CGRect(origin: .zero, size: sceneSize)
+    }
 
-    /// The middle of a movie's row of buttons.
+    /// Bent, a movie's controls sit together in the middle of the lower pane: its buttons, and
+    /// under them its transport bar, laid out as if the screen ended here. Flat, the bar is
+    /// along the bottom as on any screen.
+    var movieControlsFloor: CGFloat { isBent ? lowerPane.midY + 222 : sceneSize.height }
+
+    /// The middle of a movie's row of buttons: with the rest of its controls under the fold, or
+    /// over the middle of the picture.
     var movieButtonsCenter: CGPoint {
-        CGPoint(x: sceneSize.width / 2, y: lowerPane.midY - 86)
+        CGPoint(x: sceneSize.width / 2, y: isBent ? lowerPane.midY - 86 : sceneSize.height / 2)
     }
 }
 

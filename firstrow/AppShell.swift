@@ -168,7 +168,7 @@ final class FirstRowAppController {
             // A test window stands in for a foldable's inner screen: upright when taller than wide.
             if FirstRowHarness.isActive, ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_SCENE"] == "duo" {
                 upright = size.height > size.width
-                    ? UprightStance(screenSize: size, fold: nil, safeTop: 0, safeBottom: 21)
+                    ? UprightStance(screenSize: size, fold: nil, safeTop: 0, safeBottom: 21, isBent: FirstRowHarness.standsBent)
                     : nil
                 menu?.upright = upright
             }
@@ -310,6 +310,10 @@ final class FirstRowAppController {
                     window.setFrame(NSRect(x: old.minX, y: old.maxY - size.height, width: size.width, height: size.height), display: true)
                     self.hostView.layoutNow()
                 }
+            }
+            FirstRowHarness.foldSink = { [weak self] in
+                guard let self else { return }
+                LayoutGlide.run(.easeInOut(duration: 0.45)) { self.hostView.layoutNow() }
             }
         #endif
         menu.start()

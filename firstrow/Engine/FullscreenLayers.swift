@@ -143,8 +143,10 @@ final class FullscreenSceneLayer {
         }
         let canvas = FullscreenCanvas(screenSize: bounds.size, upright: menu.upright)
         if let content {
-            if let pane = canvas.upright?.upperPane, content.keepsAboveTheFold {
-                // A message has the part above the fold for its screen.
+            if let upright = canvas.upright, upright.isBent, content.keepsAboveTheFold {
+                // A message has the part above the fold for its screen, while the screen is
+                // bent there (flat, it has the middle of the whole of it).
+                let pane = upright.upperPane
                 content.layer.bounds = CGRect(origin: .zero, size: pane.size)
                 content.layer.position = canvas.window(pane).origin
                 content.layer.transform = CATransform3DMakeScale(canvas.scale, canvas.scale, 1)

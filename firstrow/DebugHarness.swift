@@ -33,6 +33,10 @@ enum FirstRowHarness {
     /// Turns the test window upright (true) or on its side, as a foldable is turned (the
     /// `stance` command, with `FIRSTROW_HARNESS_SCENE=duo`).
     @MainActor static var stanceSink: ((Bool) -> Void)?
+    /// Whether the test window, standing upright, is bent at its fold or out flat (the `fold`
+    /// command, or `FIRSTROW_HARNESS_FOLD=half` from the start), and what lays it out again.
+    @MainActor static var standsBent = ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_FOLD"] == "half"
+    @MainActor static var foldSink: (() -> Void)?
     @MainActor private static var lastPointerLocation = CGPoint.zero
 
     /// `mouse:move|down|up|click|right|back:x:y` and `mouse:scroll:dx:dy[:precise]` (points from
@@ -257,6 +261,10 @@ enum FirstRowHarness {
             case "stance" where parts.count == 2:
                 // stance:portrait|landscape turns the test window, the layout gliding over.
                 stanceSink?(parts[1] == "portrait")
+            case "fold" where parts.count == 2:
+                // fold:half|flat bends the upright test window at its fold, or lays it flat.
+                standsBent = parts[1] == "half"
+                foldSink?()
             case "volume" where parts.count == 2:
                 // volume:0.5 shows the volume overlay at that level.
                 NotificationCenter.default.post(name: .firstRowVolumeChanged, object: nil, userInfo: ["volume": Double(parts[1]) ?? 0])

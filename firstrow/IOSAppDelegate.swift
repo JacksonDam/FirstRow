@@ -55,6 +55,8 @@
             /// outside screen, which is like any iPhone's).
             private var isFoldable = false
             private var isClosed = false
+            /// Open part way, bent at the fold like a laptop, rather than out flat.
+            private var isBent = false
             /// The stance the scene was last laid out for.
             private var stance: UprightStance?
         #endif
@@ -85,7 +87,7 @@
                         // large across unless it has unfolded.
                         isFoldable = UIDevice.current.userInterfaceIdiom == .phone && min(window.bounds.width, window.bounds.height) >= 600
                         window.addInteraction(UIHingeInteraction { [weak self] _, update in
-                            self?.hingeChanged(hasHinge: update.hinge != nil, closed: update.hinge?.status == .closed)
+                            self?.hingeChanged(hasHinge: update.hinge != nil, closed: update.hinge?.status == .closed, bent: update.hinge?.status == .partiallyOpen)
                         })
                     }
                 #endif
@@ -104,6 +106,10 @@
                 if didStart, UIView.inheritedAnimationDuration > 0 {
                     glide = GlideTiming(matching: host.layer.animation(forKey: "bounds.size") ?? host.layer.animation(forKey: "position"))
                         ?? .easeInOut(duration: UIView.inheritedAnimationDuration)
+                } else if didStart, let old = self.stance, let new = stance, old.isBent != new.isBent {
+                    // Bent or laid flat where it stands, the system moves nothing: the scene
+                    // takes a moment of its own over it.
+                    glide = .easeInOut(duration: 0.45)
                 }
                 self.stance = stance
                 appController.relayout(upright: stance, glide: glide)
@@ -129,10 +135,11 @@
                     }
                 #endif
                 let insets = view.safeAreaInsets
-                return UprightStance(screenSize: bounds.size, fold: fold, safeTop: insets.top, safeBottom: insets.bottom)
+                return UprightStance(screenSize: bounds.size, fold: fold, safeTop: insets.top, safeBottom: insets.bottom, isBent: isBent)
             }
 
-            private func hingeChanged(hasHinge: Bool, closed: Bool) {
+            private func hingeChanged(hasHinge: Bool, closed: Bool, bent: Bool) {
+                isBent = bent
                 if hasHinge != isFoldable || closed != isClosed {
                     isFoldable = hasHinge
                     isClosed = closed

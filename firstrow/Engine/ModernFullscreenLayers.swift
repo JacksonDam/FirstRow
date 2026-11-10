@@ -385,11 +385,14 @@ final class ModernMovieControlsLayer {
         layer.isHidden = true
     }
 
-    func update(glyphState: MoviePlaybackGlyphState, currentTime seconds: Double, duration totalSeconds: Double, isLoading: Bool, loadingProgress: Double, size: CGSize, scale: CGFloat) {
+    /// `overPicture`: the controls lie over the movie, so it's darkened under them (not when
+    /// they have a part of the screen to themselves).
+    func update(glyphState: MoviePlaybackGlyphState, currentTime seconds: Double, duration totalSeconds: Double, isLoading: Bool, loadingProgress: Double, size: CGSize, scale: CGFloat, overPicture: Bool = true) {
         let margin = max(90, size.width * 0.065)
         let barHeight: CGFloat = 10
         let barY = size.height - 132
         scrim.frame = CGRect(x: 0, y: size.height - 360, width: size.width, height: 360)
+        scrim.isHidden = !overPicture
         barFrame = CGRect(x: margin, y: barY, width: size.width - margin * 2, height: barHeight)
         track.frame = barFrame
         track.cornerRadius = barHeight / 2
