@@ -25,6 +25,14 @@ struct CoverCarouselConfiguration {
     var horizontalOffset: CGFloat
     var verticalOffset: CGFloat
     var preserveArtworkAspectRatio: Bool
+    /// Stretches the covers' path sideways, where there is more room beside it than it was drawn for.
+    var spread: Spread?
+
+    struct Spread: Equatable {
+        /// The place across the carousel's layer that stays where it is.
+        var about: CGFloat
+        var factor: CGFloat
+    }
 }
 
 @MainActor
@@ -62,6 +70,14 @@ final class CoverCarouselLayerController: LayerController {
     private var animatedGeometryKey: String?
     private var wrapTimer: Timer?
     private var lastPrefetchSerial: Int?
+    /// Set when the path changes in a layout that glides: how far each cover is from its new
+    /// place, to run out on top of the new motion.
+    private var carry: (timing: GlideTiming, start: CFTimeInterval, offsets: [CGPoint])?
+
+    /// How far right of the carousel's middle (and its offset) a cover turns back.
+    static func turningPoint(baseIconSize: CGFloat) -> CGFloat {
+        baseIconSize * 1.12 * 1.24
+    }
 
     init() {
         rootLayer.masksToBounds = false
@@ -90,7 +106,7 @@ final class CoverCarouselLayerController: LayerController {
         }
         self.configuration = configuration
         let newPhaseKey = phaseIdentityKey(for: configuration.source)
-        let geometryKey = "\(configuration.baseIconSize)|\(configuration.horizontalOffset)|\(configuration.verticalOffset)|\(bounds.width)x\(bounds.height)"
+        let geometryKey = "\(configuration.baseIconSize)|\(configuration.horizontalOffset)|\(configuration.verticalOffset)|\(bounds.width)x\(bounds.height)|\(configuration.spread?.about ?? 0)|\(configuration.spread?.factor ?? 1)"
         if newPhaseKey != phaseKey {
             phaseKey = newPhaseKey
             phaseOrigin = CACurrentMediaTime()
@@ -100,6 +116,9 @@ final class CoverCarouselLayerController: LayerController {
         }
         refreshLaneImages()
         if animatedGeometryKey != geometryKey {
+            if animatedGeometryKey != nil, let timing = LayoutGlide.current {
+                carry = (timing, CACurrentMediaTime(), offsetsFromShown(bounds: bounds))
+            }
             animatedGeometryKey = geometryKey
             // The covers go where they are in their trip straight away: the frame or two before
             // the motion starts would otherwise show them piled up, full size, in the corner.
@@ -229,7 +248,7 @@ final class CoverCarouselLayerController: LayerController {
         let u = min(max(progress, 0), 1)
         let side = baseIconSize * 1.12
         let xHidden = side * 0.40
-        let xPeak = side * 1.24
+        let xPeak = Self.turningPoint(baseIconSize: baseIconSize)
         let xExit = -side * 1.18
         let x: CGFloat
         if u < 0.30 {
@@ -246,8 +265,12 @@ final class CoverCarouselLayerController: LayerController {
     /// Where a cover is (in the carousel's own layer space) and how it's turned and sized.
     private func pose(_ state: CoverState, size: CGSize, bounds: CGSize, configuration: CoverCarouselConfiguration) -> (position: CGPoint, transform: CATransform3D) {
         // Scaling about a frame 100 pt taller than the artwork lifts it by 50 pt times the scale.
+        var x = bounds.width * 0.5 + configuration.horizontalOffset + state.x
+        if let spread = configuration.spread {
+            x = spread.about + (x - spread.about) * spread.factor
+        }
         let position = LayerSpace(height: bounds.height).point(CGPoint(
-            x: bounds.width * 0.5 + configuration.horizontalOffset + state.x,
+            x: x,
             y: bounds.height * 0.5 + configuration.verticalOffset + state.y - 50 * state.scale,
         ))
         let transform = CATransform3DConcat(
@@ -260,6 +283,19 @@ final class CoverCarouselLayerController: LayerController {
     private func laneProgress(slot: Int, elapsed: Double) -> Double {
         let lanePosition = elapsed * Self.coversPerSecond - Double(slot) / Double(Self.laneCount)
         return lanePosition - floor(lanePosition)
+    }
+
+    /// How far each cover on screen is from where the path now puts it.
+    private func offsetsFromShown(bounds: CGSize) -> [CGPoint] {
+        guard let configuration else { return [] }
+        let elapsed = max(0, CACurrentMediaTime() - phaseOrigin)
+        return lanes.enumerated().map { slot, lane in
+            guard lane.preview.animation(forKey: "carousel") != nil, let shown = lane.preview.presentation() else { return .zero }
+            let size = lane.size == .zero ? CGSize(width: configuration.baseIconSize * 1.2, height: configuration.baseIconSize * 1.2) : lane.size
+            let state = coverState(progress: laneProgress(slot: slot, elapsed: elapsed), baseIconSize: configuration.baseIconSize)
+            let place = pose(state, size: size, bounds: bounds, configuration: configuration).position
+            return CGPoint(x: shown.position.x - place.x, y: shown.position.y - place.y)
+        }
     }
 
     /// Each cover's still pose for now, held until the motion is installed.
@@ -322,6 +358,17 @@ final class CoverCarouselLayerController: LayerController {
                 group.timeOffset = progress * Self.cycleDuration
                 group.isRemovedOnCompletion = false
                 layer.addAtFullRate(group, forKey: "carousel")
+                #if !FIRSTROW_PORTABLE
+                    if let carry, slot < carry.offsets.count, carry.offsets[slot] != .zero {
+                        let glide = carry.timing.animation(keyPath: "position")
+                        glide.fromValue = NSValue.layerPoint(carry.offsets[slot])
+                        glide.toValue = NSValue.layerPoint(.zero)
+                        glide.isAdditive = true
+                        glide.beginTime = layer.convertTime(carry.start, from: nil)
+                        glide.fillMode = .backwards
+                        layer.addAtFullRate(glide, forKey: "carry")
+                    }
+                #endif
                 // The model values match the animation's starting frame, in case it is ever removed.
                 let index = min(count, max(0, Int((progress * Double(count)).rounded())))
                 withoutLayerActions {
@@ -330,6 +377,7 @@ final class CoverCarouselLayerController: LayerController {
                 }
             }
         }
+        carry = nil
     }
 
     /// Puts covers further through their cycle nearer the viewer. Runs when a lane wraps.

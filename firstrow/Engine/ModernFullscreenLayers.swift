@@ -44,6 +44,7 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
     private var isSwitchingSong = false
     private var lastFlipAway: CGFloat = 0
     private var lastBarHeld = false
+    private var lastMirrored: Bool?
 
     private static func scale(_ factor: CGFloat, about center: CGPoint) -> CATransform3D {
         var transform = CATransform3DMakeTranslation(center.x, center.y, 0)
@@ -58,8 +59,10 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
 
     /// Where the progress bar sits in canvas points, songs changing over or not (the new song's).
     var barPlace: CGRect? {
-        incoming.barFrame.width <= 0 ? nil : NowPlayingSideLayout.map(incoming.barFrame, shift, size: size)
+        incoming.barPlace.width <= 0 ? nil : NowPlayingSideLayout.map(incoming.barPlace, shift, size: size)
     }
+
+    var detailsScale: CGFloat { shift.scale * incoming.detailsScale }
 
     override func update(menu: MenuView, scene _: FullscreenScenePresentation, pass: RenderPass, size: CGSize, scale: CGFloat) {
         let bounds = CGRect(origin: .zero, size: size)
@@ -106,11 +109,20 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         let turning = away != lastFlipAway
         lastFlipAway = away
         let flipAnimation = turning ? pass.animation.map { Animation.smoothInOut(duration: $0.duration) } : nil
+        // Standing upright, the cover and the details tuck up together above the fold as the
+        // list or the words come out under it; changing sides (turned round) is out of sight.
+        let tuck = NowPlayingSideLayout.tuck(menu: menu)
+        let tuckAnimation = lastMirrored == mirrored ? pass.animation : nil
+        lastMirrored = mirrored
+        // The old song's panel, just brought back, is laid out where things are now, not moved there.
+        let outgoingReturns = outgoing.layer.isHidden
         defer {
             // After the layout, so the artwork shrinks about where it is now.
             for panel in [incoming, outgoing] {
-                let shrink = 1 - 0.16 * away
-                panel.cover.setTransform(Self.scale(shrink, about: panel.coverCenter), flipAnimation)
+                var place = panel.coverPlace
+                place.scale *= 1 - 0.16 * away
+                let instantly = panel === outgoing && outgoingReturns
+                panel.cover.setTransform(place.transform, instantly ? nil : (turning ? flipAnimation : tuckAnimation))
                 panel.cover.setOpacity(Double(1 - away), flipAnimation)
                 panel.details.setOpacity(Double(1 - away), flipAnimation)
             }
@@ -120,7 +132,7 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         let barHeld = menu.isMusicProgressBarHeld
         let barAnimation: Animation? = barHeld != lastBarHeld ? (barHeld ? .smooth(duration: 0.28) : .smoothInOut(duration: 0.32)) : nil
         lastBarHeld = barHeld
-        incoming.update(snapshot, mirrored: mirrored, barHeld: barHeld, barAnimation: barAnimation, size: size, scale: scale)
+        incoming.update(snapshot, mirrored: mirrored, barHeld: barHeld, barAnimation: barAnimation, size: size, scale: scale, upright: menu.upright, tuck: tuck, tuckAnimation: tuckAnimation)
         let inShift = hasTransition ? 90 * direction * (1 - incomingProgress) : 0
         incoming.layer.setTransform(CATransform3DMakeTranslation(inShift, 0, 0), arrive)
         incoming.layer.setOpacity(hasTransition ? Double(incomingProgress) : 1, arrive)
@@ -128,7 +140,7 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         if let previous = menu.musicSongTransitionSnapshot {
             outgoing.layer.isHidden = false
             outgoing.layer.place(bounds)
-            outgoing.update(previous, mirrored: mirrored, size: size, scale: scale)
+            outgoing.update(previous, mirrored: mirrored, size: size, scale: scale, upright: menu.upright, tuck: tuck, tuckAnimation: outgoingReturns ? nil : tuckAnimation)
             outgoing.layer.setTransform(CATransform3DMakeTranslation(-90 * direction * outgoingProgress, 0, 0), leave)
             outgoing.layer.setOpacity(Double(1 - outgoingProgress), leave)
         } else {
@@ -146,7 +158,12 @@ final class ModernNowPlayingPanelLayer {
     /// The artwork, which shrinks and fades as the panel turns round, and the details, which fade.
     let cover = SceneLayer()
     let details = SceneLayer()
-    private(set) var coverCenter: CGPoint = .zero
+    /// Where the artwork shows (about its middle), before any shrinking as the panel turns.
+    private(set) var coverPlace = NowPlayingSideLayout.Place(anchor: .zero, scale: 1, center: .zero)
+    /// The progress bar where it shows, in the panel's points, and how large the details show
+    /// against their full size.
+    private(set) var barPlace: CGRect = .zero
+    private(set) var detailsScale: CGFloat = 1
     private let artworkShadow = SceneLayer()
     private let artwork = SceneLayer()
     private let title = SceneLayer()
@@ -191,20 +208,34 @@ final class ModernNowPlayingPanelLayer {
         return CATransform3DTranslate(transform, -anchor.x, -anchor.y, 0)
     }
 
-    func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, mirrored: Bool = false, barHeld: Bool = false, barAnimation: Animation? = nil, size: CGSize, scale: CGFloat) {
+    /// `upright`: standing upright, the artwork goes above the fold and the details, centred,
+    /// under it; `tuck` (0 to 1) brings the details up beside the artwork, both smaller, moving
+    /// with `tuckAnimation`.
+    func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, mirrored: Bool = false, barHeld: Bool = false, barAnimation: Animation? = nil, size: CGSize, scale: CGFloat, upright: UprightStance? = nil, tuck: CGFloat = 0, tuckAnimation: Animation? = nil) {
         cover.place(CGRect(origin: .zero, size: size))
         details.place(CGRect(origin: .zero, size: size))
         let width = size.width
         let height = size.height
         // The artwork and the details beside it are centred together on the screen.
-        let side = min(height * 0.56, width * 0.34)
+        // (Standing upright the artwork is drawn the size it is lying down.)
+        let side = upright == nil ? min(height * 0.56, width * 0.34) : min(min(width, height) * 0.56, max(width, height) * 0.34)
         let gap = (side * 0.17).rounded()
-        let columnWidth = min(side * 1.5, width - side - gap - width * 0.12)
+        var columnWidth = min(side * 1.5, width - side - gap - width * 0.12)
         let left = ((width - side - gap - columnWidth) * 0.5).rounded()
-        let artLeft = mirrored ? left + columnWidth + gap : left
-        let artCenter = CGPoint(x: artLeft + side / 2, y: height * 0.49)
+        var artLeft = mirrored ? left + columnWidth + gap : left
+        var artCenter = CGPoint(x: artLeft + side / 2, y: height * 0.49)
+        var columnLeft = mirrored ? left : artLeft + side + gap
+        if let upright {
+            columnWidth = min(width - 200, 880)
+            columnLeft = ((width - columnWidth) * 0.5).rounded()
+            artCenter = CGPoint(x: width / 2, y: upright.upperPane.midY)
+            artLeft = artCenter.x - side / 2
+        }
+        // Centred under the artwork upright; beside it, lined up on their left.
+        func lineLeft(_ lineWidth: CGFloat) -> CGFloat {
+            upright == nil ? columnLeft : columnLeft + ((columnWidth - lineWidth) * 0.5).rounded()
+        }
         let art = CGRect(x: artLeft, y: artCenter.y - side / 2, width: side, height: side)
-        coverCenter = artCenter
         let radius = side * 0.035
         artworkShadow.frame = art
         artworkShadow.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: art.size), cornerWidth: radius, cornerHeight: radius, transform: nil)
@@ -212,7 +243,6 @@ final class ModernNowPlayingPanelLayer {
         artwork.cornerRadius = radius
         artwork.contents = LayerImageCache.cgImage(for: snapshot.artworkImage)
 
-        let columnLeft = mirrored ? left : art.maxX + gap
         let titleGraphic = TextRenderer.render(TextSpec(text: snapshot.trackTitle, fontName: ModernTheme.boldFontName, size: 54, color: ModernTheme.text, maxWidth: columnWidth, minimumScaleFactor: 0.7), scale: scale)
         let artistGraphic = TextRenderer.render(TextSpec(text: snapshot.artistName, fontName: ModernTheme.mediumFontName, size: 40, color: RGBA(white: 1, alpha: 0.72), maxWidth: columnWidth, minimumScaleFactor: 0.75), scale: scale)
         let albumGraphic = TextRenderer.render(TextSpec(text: snapshot.albumTitle, fontName: ModernTheme.regularFontName, size: 34, color: RGBA(white: 1, alpha: 0.5), maxWidth: columnWidth, minimumScaleFactor: 0.75), scale: scale)
@@ -220,20 +250,26 @@ final class ModernNowPlayingPanelLayer {
         let barHeight: CGFloat = 10
         let timesHeight: CGFloat = 40
         let blockHeight = titleGraphic.size.height + 6 + artistGraphic.size.height + 2 + albumGraphic.size.height + 18 + positionGraphic.size.height + 56 + barHeight + 12 + timesHeight
-        var y = artCenter.y - blockHeight / 2
-        title.show(titleGraphic, at: CGPoint(x: columnLeft, y: y))
+        // Upright, with the on-screen buttons that go under the bar, it has the middle of the
+        // part under the fold.
+        var y = upright.map { $0.lowerPane.midY - (blockHeight + 122) / 2 } ?? artCenter.y - blockHeight / 2
+        title.show(titleGraphic, at: CGPoint(x: lineLeft(titleGraphic.size.width), y: y))
         y += titleGraphic.size.height + 6
-        artist.show(artistGraphic, at: CGPoint(x: columnLeft, y: y))
+        artist.show(artistGraphic, at: CGPoint(x: lineLeft(artistGraphic.size.width), y: y))
         y += artistGraphic.size.height + 2
-        album.show(albumGraphic, at: CGPoint(x: columnLeft, y: y))
+        album.show(albumGraphic, at: CGPoint(x: lineLeft(albumGraphic.size.width), y: y))
         y += albumGraphic.size.height + 18
         position.isHidden = snapshot.trackPositionText.isEmpty
-        position.show(positionGraphic, at: CGPoint(x: columnLeft, y: y))
         shuffle.isHidden = !snapshot.showsShuffleGlyph
+        let positionWidth = snapshot.trackPositionText.isEmpty ? 0 : positionGraphic.size.width
         if snapshot.showsShuffleGlyph {
             let graphic = SymbolRenderer.render("shuffle", pointSize: 24, weight: .semibold, color: RGBA(white: 1, alpha: 0.5), scale: scale)
-            let x = snapshot.trackPositionText.isEmpty ? columnLeft : columnLeft + positionGraphic.size.width + 16
-            shuffle.show(graphic, at: CGPoint(x: x, y: y + (positionGraphic.size.height - graphic.size.height) / 2))
+            let between: CGFloat = snapshot.trackPositionText.isEmpty ? 0 : 16
+            let x = lineLeft(positionWidth + between + graphic.size.width)
+            position.show(positionGraphic, at: CGPoint(x: x, y: y))
+            shuffle.show(graphic, at: CGPoint(x: x + positionWidth + between, y: y + (positionGraphic.size.height - graphic.size.height) / 2))
+        } else {
+            position.show(positionGraphic, at: CGPoint(x: lineLeft(positionWidth), y: y))
         }
         y += positionGraphic.size.height + 56
 
@@ -277,6 +313,37 @@ final class ModernNowPlayingPanelLayer {
         } else {
             glyph.layer.isHidden = true
         }
+
+        typealias Place = NowPlayingSideLayout.Place
+        guard let upright else {
+            coverPlace = Place(anchor: artCenter, scale: 1, center: artCenter)
+            details.setTransform(CATransform3DIdentity, nil)
+            barPlace = barFrame
+            detailsScale = 1
+            return
+        }
+        // Standing upright. Tucked, the artwork is small at one side of the part above the fold
+        // (the side it has lying down) and the details are beside it, the on-screen buttons
+        // under their bar.
+        let upper = upright.upperPane
+        let large = min(side, upper.height * 0.8, width * 0.6)
+        let small = min(330, upper.height * 0.5)
+        let margin: CGFloat = 64
+        coverPlace = Place.between(
+            Place(anchor: artCenter, scale: large / side, center: artCenter),
+            Place(anchor: artCenter, scale: small / side, center: CGPoint(x: mirrored ? width - margin - small / 2 : margin + small / 2, y: upper.midY)),
+            tuck,
+        )
+        let room = width - margin - small - 40 - 40
+        let barMiddle = CGPoint(x: rest.midX, y: rest.midY)
+        let detailsPlace = Place.between(
+            Place(anchor: barMiddle, scale: 1, center: barMiddle),
+            Place(anchor: barMiddle, scale: min(0.7, room / columnWidth), center: CGPoint(x: mirrored ? 40 + room / 2 : width - 40 - room / 2, y: upper.midY + 17)),
+            tuck,
+        )
+        details.setTransform(detailsPlace.transform, tuckAnimation)
+        barPlace = detailsPlace.map(barFrame)
+        detailsScale = detailsPlace.scale
     }
 }
 

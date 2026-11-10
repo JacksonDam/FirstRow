@@ -537,7 +537,7 @@ extension MenuView {
         }
     }
 
-    /// The slideshow's Back button (touch and mouse modes): shown for a few seconds, then
+    /// The slideshow's Back button (for the pointer and fingers): shown for a few seconds, then
     /// faded away until a tap, a click or the pointer moving brings it back.
     func showSlideshowControls() {
         slideshowControlsHideTask?.cancel()

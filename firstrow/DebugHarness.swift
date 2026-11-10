@@ -28,6 +28,11 @@ enum FirstRowHarness {
     @MainActor static var rubberBandSink: ((CGFloat) -> Void)?
     /// The menus, for the commands that drive them directly (playfolder, playmovie).
     @MainActor static weak var harnessMenu: MenuView?
+    /// Plays the look's intro movie, as after Get Started (the `intro` command).
+    @MainActor static var introSink: (() -> Void)?
+    /// Turns the test window upright (true) or on its side, as a foldable is turned (the
+    /// `stance` command, with `FIRSTROW_HARNESS_SCENE=duo`).
+    @MainActor static var stanceSink: ((Bool) -> Void)?
     @MainActor private static var lastPointerLocation = CGPoint.zero
 
     /// `mouse:move|down|up|click|right|back:x:y` and `mouse:scroll:dx:dy[:precise]` (points from
@@ -66,18 +71,17 @@ enum FirstRowHarness {
         return true
     }
 
-    /// `setting:mouse|touch:on|off` and `setting:theme:classic|modern`.
+    /// `setting:theme:classic|modern`, `setting:screensaver:<seconds>` (0 for never).
     @MainActor
     static func performSettingCommand(_ parts: [String]) -> Bool {
         guard parts.first == "setting", parts.count == 3 else { return false }
         switch parts[1] {
-        case "mouse":
-            AppSettings.isMouseEnabled = parts[2] == "on"
-        case "touch":
-            AppSettings.isTouchEnabled = parts[2] == "on"
         case "theme":
             guard let theme = InterfaceTheme(rawValue: parts[2]) else { return false }
             AppSettings.theme = theme
+        case "screensaver":
+            guard let seconds = TimeInterval(parts[2]) else { return false }
+            AppSettings.screenSaverDelay = seconds
         default:
             return false
         }
@@ -234,6 +238,12 @@ enum FirstRowHarness {
             case "type" where parts.count >= 2:
                 // type:<text> types it as if from a keyboard (into a text field).
                 NotificationCenter.default.post(name: .firstRowHarnessTypeText, object: nil, userInfo: ["text": String(command.dropFirst("type:".count))])
+            case "intro":
+                // intro plays the look's intro movie, the menus coming in after it fades to black.
+                introSink?()
+            case "stance" where parts.count == 2:
+                // stance:portrait|landscape turns the test window, the layout gliding over.
+                stanceSink?(parts[1] == "portrait")
             case "volume" where parts.count == 2:
                 // volume:0.5 shows the volume overlay at that level.
                 NotificationCenter.default.post(name: .firstRowVolumeChanged, object: nil, userInfo: ["volume": Double(parts[1]) ?? 0])

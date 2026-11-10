@@ -42,7 +42,7 @@ let package = Package(
             dependencies: ["FirstRowPortable", "Photos", "iTunesLibrary", "QuartzCore", "CoreGraphics", "CoreText", "CoreImage", "ImageIO", "Combine", "AVFoundation"],
             path: "firstrow",
             exclude: [
-                "Assets.xcassets", "Preview Content", "Sounds", "Videos", "ScreenSaverDefaultPhotos", "Fonts",
+                "Assets.xcassets", "Preview Content", "Sounds", "Videos", "Videos4K", "ScreenSaverDefaultPhotos", "Fonts",
             ],
             swiftSettings: portableSettings,
         ),

@@ -30,12 +30,9 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
             .init(id: "settings_screensaver", title: "Screen Saver", leadsToMenu: true, trailingText: "1 Minute"),
             .init(id: "settings_soundeffects", title: "Sound Effects", trailingText: "On"),
             .init(id: "settings_theme", title: "Theme", trailingText: "Classic"),
+            .init(id: "settings_intromovie", title: "Intro Movie", trailingText: "Off"),
         ]
-        #if os(iOS)
-            submenuItems.append(.init(id: "settings_touch", title: "Touch Controls", trailingText: "Off"))
-        #endif
         #if os(macOS) || FIRSTROW_PORTABLE
-            submenuItems.append(.init(id: "settings_mouse", title: "Mouse", trailingText: "Off"))
             submenuItems.append(.init(id: "settings_media_folders", title: "Media Folders", trailingText: "..."))
         #endif
     }

@@ -23,9 +23,37 @@ final class MenuView: ObservableObject {
     let menuWidth: CGFloat = 900
     let selectionBoxHeight: CGFloat = 75
     let menuRowSpacing: CGFloat = 5
-    let defaultVisibleMenuRowCount: Int = 9
-    let thirdLevelVisibleMenuRowCount: Int = 10
+    /// Rows a menu shows at once: fewer on a foldable standing upright, where the menus have the
+    /// half of the screen below the fold.
+    var defaultVisibleMenuRowCount: Int { upright?.visibleRowCount ?? 9 }
+    var thirdLevelVisibleMenuRowCount: Int { upright?.visibleRowCount ?? 10 }
     let baselineVisibleMenuRowCount: Int = 7
+    /// Set while a foldable stands upright and open: the scene is then laid out for a tall
+    /// screen with the fold across its middle (see `UprightStance`).
+    var upright: UprightStance? {
+        get { isMeasuringSideways ? nil : stance }
+        set { stance = newValue }
+    }
+
+    private var stance: UprightStance? {
+        didSet {
+            if (oldValue == nil) != (stance == nil) {
+                movieStanceDidChange()
+                nowPlayingStanceDidChange()
+            }
+        }
+    }
+
+    private var isMeasuringSideways = false
+
+    /// What `body` makes of the scene as it is laid out on a sideways screen, however the
+    /// screen stands (for a picture of the menus that is the same either way up).
+    func sideways<T>(_ body: () -> T) -> T {
+        let was = isMeasuringSideways
+        isMeasuringSideways = true
+        defer { isMeasuringSideways = was }
+        return body()
+    }
     let stickySelectionRowIndex: Int = 3
     let dividerSectionGapAfterLine: CGFloat = 14
     let dividerLineInsetHorizontal: CGFloat = 33
@@ -120,9 +148,9 @@ final class MenuView: ObservableObject {
     let photoSlideshowFullscreenKey = "photo_slideshow"
 
     private var mediaSourcesObserver: NSObjectProtocol?
-    /// Mouse and trackpad state (Settings > Mouse).
+    /// Mouse and trackpad state.
     let pointer = PointerInputState()
-    /// A finger is choosing a row in touch mode, so the selection shows.
+    /// A finger is choosing a row, so the selection shows.
     @Published var isTouchSelecting = false
     #if os(iOS)
         let touch = TouchInputState()
@@ -315,7 +343,7 @@ final class MenuView: ObservableObject {
     /// Where the last input came from (see `MenuInputSource`).
     @Published var lastInputSource: MenuInputSource = {
         #if os(iOS)
-            AppSettings.isTouchEnabled ? .touch : .keyboard
+            .touch
         #else
             .keyboard
         #endif
@@ -327,6 +355,8 @@ final class MenuView: ObservableObject {
     /// The first-launch screens: which one is up, the option picked out (0 left, 1 right), and
     /// the fades in and out of them.
     @Published var onboardingStep: OnboardingStep?
+    /// Called on Get Started; returns true if it fades everything out itself (to play the intro).
+    var onOnboardingFinished: (() -> Bool)?
     @Published var onboardingFocus = 0
     @Published var onboardingOpacity: Double = 1
     @Published var onboardingContentOpacity: Double = 1
@@ -342,13 +372,13 @@ final class MenuView: ObservableObject {
         let remoteSwipe = RemoteSwipeState()
     #endif
 
-    /// Touch mode's Now Playing buttons, slid away while a song plays untouched.
+    /// Now Playing's on-screen buttons, slid away while a song plays untouched.
     @Published var areNowPlayingTouchControlsHidden = false
     var nowPlayingTouchControlsHideTask: Task<Void, Never>?
     /// Until when a song just started counts as playing while it gets going, so nothing shows
     /// paused for a moment as it starts or between songs.
     var musicPlaybackStartingUntil: Date?
-    /// The songs Now Playing was started from, over its right side (mouse and touch modes):
+    /// The songs Now Playing was started from, over its right side (for the pointer and fingers):
     /// whether it's out, and how far (0 away to 1 out), which a finger can hold part way.
     @Published var isNowPlayingQueueVisible = false
     @Published var nowPlayingQueueReveal: CGFloat = 0

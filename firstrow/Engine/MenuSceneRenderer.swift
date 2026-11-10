@@ -163,7 +163,7 @@ final class MenuSceneRenderer: TransactionRendering {
         self.containerSize = containerSize
         self.backingScale = backingScale
         modernBackground.layout(size: containerSize)
-        withoutLayerActions {
+        layingOut {
             rootLayer.frame = CGRect(origin: .zero, size: containerSize)
             let virtualSize = menu.activeMenuVirtualSceneSize
             canvas.bounds = CGRect(origin: .zero, size: virtualSize)
@@ -175,7 +175,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 // the top half of a half-folded one.
                 let screenBounds = menu.activeWindowScreen?.bounds ?? .zero
                 let deviceLandscapeWidth = max(screenBounds.width, screenBounds.height)
-                let isTurning = containerSize.width < containerSize.height
+                let isTurning = menu.upright == nil && containerSize.width < containerSize.height
                 let horizontalCompensation = isTurning ? max(0, (deviceLandscapeWidth - containerSize.width) * 0.5) : 0
                 let fittedWidth = virtualSize.width * scale
                 canvas.position = CGPoint(x: (containerSize.width - fittedWidth) * 0.5 - horizontalCompensation, y: (containerSize.height - virtualSize.height * scale) * 0.5)
@@ -190,6 +190,12 @@ final class MenuSceneRenderer: TransactionRendering {
         }
         isDirty = true
         render(Transaction.instant)
+        // The carousel usually waits for the end of the run-loop pass, which is after a glide's.
+        if LayoutGlide.isActive, !ModernTheme.isActive {
+            CATransaction.begin()
+            updateCarousel()
+            CATransaction.commit()
+        }
     }
 
     // MARK: - Drawing
@@ -329,7 +335,8 @@ final class MenuSceneRenderer: TransactionRendering {
                 modernCard.layer.frame = CGRect(origin: .zero, size: sceneSize)
                 // Always a crossfade, even when the menus change in an instant pass (going back
                 // swaps the list in one), so the picture never just switches.
-                modernCard.update(content, frame: layout.cardFrame, scale: scale, animated: !themeChanged)
+                let pane = menu.upright?.upperPane
+                modernCard.update(content, frame: pane.map(ModernTheme.uprightCardFrame) ?? layout.cardFrame, pane: pane, scale: scale, animated: !themeChanged)
                 let ambient = content.ambientImage
                 modernBackground.setAmbient(ambient, key: ambient == nil ? nil : content.key)
                 lastCardUpdate = now
@@ -346,7 +353,10 @@ final class MenuSceneRenderer: TransactionRendering {
         } else if themeChanged {
             lastCarouselConfiguration = nil
         }
-        carouselBox.frame = frames.carouselFrame
+        // The box is drawn smaller on a screen standing upright, about its top left corner.
+        let boxScale = max(frames.carouselScale, 0.0001)
+        carouselBox.place(frames.carouselFrame)
+        carouselBox.setTransform(CATransform3DMakeScale(boxScale, boxScale, 1), nil)
         let boxBounds = CGRect(origin: .zero, size: frames.carouselFrame.size)
         carouselSpace.frame = boxBounds
         rootCarousel.rootLayer.frame = boxBounds
@@ -361,9 +371,16 @@ final class MenuSceneRenderer: TransactionRendering {
             visible: menu.isInSubmenu && !isModern,
             opacity: menu.detailContentVisibilityOpacity,
             opacityAnimation: pass.animation(.easeInOut(duration: 0.22), when: memo.hidesPodcastsChrome != nil && memo.hidesPodcastsChrome != hidesChrome),
-            sceneSize: sceneSize,
-            boxFrame: frames.carouselFrame,
-            scale: scale,
+            // The scene as the box's own points see it.
+            sceneSize: CGSize(width: sceneSize.width / boxScale, height: sceneSize.height / boxScale),
+            boxFrame: CGRect(
+                x: frames.carouselFrame.minX / boxScale,
+                y: frames.carouselFrame.minY / boxScale,
+                width: frames.carouselFrame.width,
+                height: frames.carouselFrame.height,
+            ),
+            show: frames.show,
+            scale: scale * boxScale,
         )
 
         lap("card")
@@ -385,9 +402,9 @@ final class MenuSceneRenderer: TransactionRendering {
         playback.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         fullscreenScene.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
         toast.update(menu: menu, pass: pass, bounds: fullBounds, backingScale: backingScale)
-        volumeOverlay.layout(screenSize: fullBounds.size, backingScale: backingScale)
+        volumeOverlay.layout(screenSize: fullBounds.size, upright: menu.upright, backingScale: backingScale)
         onboarding.update(menu: menu, pass: pass, bounds: fullBounds, scale: backingScale)
-        let canvasScale = FullscreenCanvas(screenSize: fullBounds.size).scale
+        let canvasScale = fullscreenCanvas.scale
         touchControls.update(
             menu: menu,
             pass: pass,
@@ -396,6 +413,7 @@ final class MenuSceneRenderer: TransactionRendering {
             nowPlayingBar: fullscreenScene.nowPlayingBarPlace.map {
                 CGRect(x: $0.minX * canvasScale, y: $0.minY * canvasScale, width: $0.width * canvasScale, height: $0.height * canvasScale)
             },
+            nowPlayingScale: fullscreenScene.nowPlayingDetailsScale,
         )
         for (overlay, opacity) in [
             (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),
@@ -410,11 +428,16 @@ final class MenuSceneRenderer: TransactionRendering {
         memo.hidesPodcastsChrome = hidesChrome
     }
 
+    /// The canvas the full-screen layers are laid out on.
+    var fullscreenCanvas: FullscreenCanvas {
+        FullscreenCanvas(screenSize: fullscreenContainerSize, upright: menu.upright)
+    }
+
     private var fullscreenContainerSize: CGSize {
         #if os(iOS)
             // The screen's landscape size only while still upright, turning as it opens.
             let resolved = menu.activeFullscreenContainerSize
-            if containerSize.width < containerSize.height, resolved.width > 0, resolved.height > 0 { return resolved }
+            if menu.upright == nil, containerSize.width < containerSize.height, resolved.width > 0, resolved.height > 0 { return resolved }
         #endif
         return containerSize
     }
@@ -423,8 +446,9 @@ final class MenuSceneRenderer: TransactionRendering {
         let sceneSize = menu.activeMenuVirtualSceneSize
         var configuration = menu.rootCarouselConfiguration(sceneSize: sceneSize)
         // On screens wider than the scene there is room left of it; icons leave past the screen's edge.
-        configuration.boxOriginInScene.x += canvas.position.x / max(canvasScale, 0.0001)
-        let bounds = menu.sceneFrames(sceneSize: sceneSize).carouselFrame.size
+        let frames = menu.sceneFrames(sceneSize: sceneSize, classicLayout: true)
+        configuration.boxOriginInScene.x += canvas.position.x / max(canvasScale * frames.carouselScale, 0.0001)
+        let bounds = frames.carouselFrame.size
         if let last = lastCarouselConfiguration, last.isSameState(as: configuration) {
             return
         }
@@ -440,7 +464,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 x: bounds.width * 0.5 + configuration.landedOffset.x,
                 y: side * 0.5 + configuration.landedOffset.y,
             )
-            settledIcon.transform = CATransform3DMakeScale(menu.landedIconScale, menu.landedIconScale, 1)
+            settledIcon.transform = CATransform3DMakeScale(configuration.landedIconScale, configuration.landedIconScale, 1)
         } else {
             settledIcon.isHidden = true
             settledIcon.contents = nil
@@ -835,8 +859,7 @@ extension MenuSceneRenderer {
     /// the point is on the "‹" end of its value.
     func movieOptionsRow(at windowPoint: CGPoint) -> (index: Int, backward: Bool)? {
         guard let panel = playback.options.panelFrame else { return nil }
-        let canvas = FullscreenCanvas(screenSize: fullscreenContainerSize)
-        let point = CGPoint(x: windowPoint.x / max(canvas.scale, 0.0001), y: windowPoint.y / max(canvas.scale, 0.0001))
+        let point = fullscreenCanvas.point(windowPoint)
         guard panel.contains(point) else { return nil }
         guard let index = playback.options.rowFrames.firstIndex(where: { $0.contains(point) }) else { return (-1, false) }
         let values = playback.options.valueFrames
@@ -849,9 +872,7 @@ extension MenuSceneRenderer {
     }
 
     func movieOptionsButton(at windowPoint: CGPoint) -> MenuView.MovieOptionRow.Kind? {
-        let canvas = FullscreenCanvas(screenSize: fullscreenContainerSize)
-        let point = CGPoint(x: windowPoint.x / max(canvas.scale, 0.0001), y: windowPoint.y / max(canvas.scale, 0.0001))
-        return playback.options.button(at: point)
+        playback.options.button(at: fullscreenCanvas.point(windowPoint))
     }
 
     var pointerScene: PointerScene {
@@ -864,6 +885,7 @@ extension MenuSceneRenderer {
             resumePrompt: resumePrompt,
             movieSeekTrack: ModernTheme.isActive ? playback.modernControls.seekTrack : playback.controls.seekTrack,
             fullscreenScene: fullscreenScene,
+            fullscreenCanvas: fullscreenCanvas,
             fullscreenSize: fullscreenContainerSize,
         )
     }

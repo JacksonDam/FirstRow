@@ -313,7 +313,11 @@ extension CALayer {
             return
         }
         guard let animation, animation.duration > 0 else {
-            removeAnimation(forKey: keyPath)
+            // In a layout glide the change animates from what is on screen (see `LayoutGlide`),
+            // which a move still under way is part of.
+            if !LayoutGlide.takes(self, keyPath) {
+                removeAnimation(forKey: keyPath)
+            }
             setValue(newValue, forKeyPath: keyPath)
             return
         }
@@ -390,7 +394,157 @@ extension CALayer {
     }
 }
 
-/// A layer laid out from its top-left corner that never animates implicitly.
+// MARK: - Layout glides
+
+/// How a layout glide moves: an eased move of some length, or a spring when the system is moving
+/// the screen with one.
+struct GlideTiming {
+    var duration: Double
+    var function: CAMediaTimingFunction
+    var spring: (mass: CGFloat, stiffness: CGFloat, damping: CGFloat)?
+
+    static func easeInOut(duration: Double) -> GlideTiming {
+        GlideTiming(duration: duration, function: CAMediaTimingFunction(name: .easeInEaseOut), spring: nil)
+    }
+
+    #if !FIRSTROW_PORTABLE
+        /// The timing of an animation the system is running, to move in step with it.
+        init?(matching animation: CAAnimation?) {
+            guard let animation, animation.duration > 0 else { return nil }
+            duration = animation.duration
+            function = animation.timingFunction ?? CAMediaTimingFunction(name: .easeInEaseOut)
+            if let spring = animation as? CASpringAnimation {
+                self.spring = (spring.mass, spring.stiffness, spring.damping)
+            }
+        }
+    #endif
+
+    init(duration: Double, function: CAMediaTimingFunction, spring: (mass: CGFloat, stiffness: CGFloat, damping: CGFloat)?) {
+        self.duration = duration
+        self.function = function
+        self.spring = spring
+    }
+
+    func animation(keyPath: String) -> CABasicAnimation {
+        #if !FIRSTROW_PORTABLE
+            if let spring {
+                let animation = CASpringAnimation(keyPath: keyPath)
+                animation.mass = spring.mass
+                animation.stiffness = spring.stiffness
+                animation.damping = spring.damping
+                animation.duration = duration
+                return animation
+            }
+        #endif
+        let animation = CABasicAnimation(keyPath: keyPath)
+        animation.duration = duration
+        animation.timingFunction = function
+        return animation
+    }
+}
+
+/// A change of the whole layout that everything on screen moves through together: a foldable
+/// turning between its side and upright, say. While one runs, a scene layer's change of place,
+/// size, transform, opacity or outline animates from what is on screen rather than jumping,
+/// however the change was made, so every part reaches its new place in step with the screen
+/// itself.
+enum LayoutGlide {
+    #if FIRSTROW_PORTABLE
+        static var isActive: Bool { false }
+        static var current: GlideTiming? { nil }
+        static func run(_: GlideTiming?, _ body: () -> Void) { body() }
+        static func action(for _: CALayer, key _: String) -> CAAction? { nil }
+        static func takes(_: CALayer, _: String) -> Bool { false }
+        static func bring(_: CALayer, _: String, from _: Any) {}
+        static func carry(_: CALayer, _: String, offset _: Any, none _: Any) {}
+    #else
+        /// Set only on the main thread, for the length of the layout pass that glides.
+        nonisolated(unsafe) private static var timing: GlideTiming?
+        private static let keys: Set<String> = ["position", "bounds", "transform", "opacity", "path"]
+
+        static var isActive: Bool { timing != nil }
+        /// The running glide's timing, for a part that has to move itself in step later.
+        static var current: GlideTiming? { timing }
+
+        /// Runs a layout pass whose changes glide (or jump as ever, without a timing).
+        static func run(_ timing: GlideTiming?, _ body: () -> Void) {
+            let outer = self.timing
+            self.timing = timing
+            defer { self.timing = outer }
+            body()
+        }
+
+        /// Whether a change of `key` on `layer` now would glide. A layer not on screen yet has
+        /// nowhere to glide from, and takes its place at once.
+        static func takes(_ layer: CALayer, _ key: String) -> Bool {
+            timing != nil && keys.contains(key) && glides(layer) && layer.superlayer != nil && layer.presentation() != nil
+        }
+
+        /// Whether `layer` is one of the scene's own kinds, which glide. Asked of every layer a
+        /// glide places, so by class: finding out whether each kind of layer keeps to a
+        /// protocol costs the first glide its start.
+        private static func glides(_ layer: CALayer) -> Bool {
+            layer is SceneLayer || layer is StillLayer || layer is SceneGradientLayer || layer is StillGradientLayer || layer is SceneShapeLayer
+        }
+
+        /// The action for a scene layer's property change: nothing, except during a glide.
+        static func action(for layer: CALayer, key: String) -> CAAction? {
+            guard let timing, takes(layer, key), let shown = layer.presentation()?.value(forKey: key) else { return nil }
+            return GlideAction(from: shown, timing: timing)
+        }
+
+        /// Brings in a layer made for the new layout from `value`, where what it replaces was.
+        static func bring(_ layer: CALayer, _ key: String, from value: Any) {
+            guard let timing else { return }
+            let animation = timing.animation(keyPath: key)
+            animation.fromValue = value
+            layer.addAtFullRate(animation, forKey: key)
+        }
+
+        /// Carries over a layer that other animations are placing: `offset`, what it showed less
+        /// what it shows now, runs out to `none` on top of them.
+        static func carry(_ layer: CALayer, _ key: String, offset: Any, none: Any) {
+            guard let timing else { return }
+            let animation = timing.animation(keyPath: key)
+            animation.fromValue = offset
+            animation.toValue = none
+            animation.isAdditive = true
+            layer.addAtFullRate(animation, forKey: "carry.\(key)")
+        }
+    #endif
+}
+
+#if !FIRSTROW_PORTABLE
+    /// Moves a property from where it was on screen when it changed to its new value.
+    private final class GlideAction: NSObject, CAAction {
+        private let from: Any
+        private let timing: GlideTiming
+
+        init(from: Any, timing: GlideTiming) {
+            self.from = from
+            self.timing = timing
+        }
+
+        func run(forKey event: String, object: Any, arguments _: [AnyHashable: Any]?) {
+            guard let layer = object as? CALayer else { return }
+            let animation = timing.animation(keyPath: event)
+            animation.fromValue = from
+            layer.addAtFullRate(animation, forKey: event)
+        }
+    }
+#endif
+
+/// Lays things out at once, or gliding to their places when the whole layout is (`LayoutGlide`).
+func layingOut(_ body: () -> Void) {
+    if LayoutGlide.isActive {
+        body()
+    } else {
+        withoutLayerActions(body)
+    }
+}
+
+/// A layer laid out from its top-left corner that never animates implicitly (but takes part in
+/// a `LayoutGlide`).
 class SceneLayer: CALayer {
     override init() {
         super.init()
@@ -406,7 +560,7 @@ class SceneLayer: CALayer {
         fatalError("init(coder:) is not used")
     }
 
-    override func action(forKey _: String) -> CAAction? { nil }
+    override func action(forKey key: String) -> CAAction? { LayoutGlide.action(for: self, key: key) }
 }
 
 final class SceneGradientLayer: CAGradientLayer {
@@ -424,7 +578,7 @@ final class SceneGradientLayer: CAGradientLayer {
         fatalError("init(coder:) is not used")
     }
 
-    override func action(forKey _: String) -> CAAction? { nil }
+    override func action(forKey key: String) -> CAAction? { LayoutGlide.action(for: self, key: key) }
 }
 
 final class SceneShapeLayer: CAShapeLayer {
@@ -442,5 +596,5 @@ final class SceneShapeLayer: CAShapeLayer {
         fatalError("init(coder:) is not used")
     }
 
-    override func action(forKey _: String) -> CAAction? { nil }
+    override func action(forKey key: String) -> CAAction? { LayoutGlide.action(for: self, key: key) }
 }

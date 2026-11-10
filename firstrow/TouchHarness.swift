@@ -17,7 +17,7 @@
     /// - `wait:<seconds>` pauses the script (for a script copied into the app's own folder on a
     ///   device, where relative `FIRSTROW_HARNESS_FIFO`/`_LOG` paths resolve to its tmp folder)
     /// - `FIRSTROW_DEBUG_RENDER=1` logs render pass times and frame pacing
-    /// - `theme:classic|modern`, `setting:touch|theme:...`
+    /// - `theme:classic|modern`, `setting:theme:...`, `setting:screensaver:<seconds>` (0 for never)
     /// - `nopicker` stops Movies Folder offering the folder picker this session
     /// - `playfolder:<folder>` plays a folder's audio files as a list, into Now Playing
     /// - `down`, `up`, `left`, `right`, `enter`, `escape`, `delete`, `space`
@@ -241,7 +241,7 @@
                     touchView?.injectTouch(.ended, at: point)
                 }
             case "control" where parts.count == 2:
-                // control:<name>: a tap on one of touch mode's buttons, found by looking for it.
+                // control:<name>: a tap on one of the on-screen buttons, found by looking for it.
                 let controls: [String: TouchControl] = [
                     "back": .back, "play": .playPause, "previous": .previous, "next": .next,
                     "skipback": .skipBack, "skipforward": .skipForward, "lyrics": .lyrics,
@@ -310,6 +310,15 @@
                 _ = performSettingCommand(parts)
             case "nopicker":
                 touchMenu?.hasPromptedMoviesFolderPickerThisSession = true
+            case "intro":
+                introSink?()
+            case "code":
+                touchMenu?.presentCodeDisplay(CodeDisplayState(
+                    title: "Quick Connect",
+                    message: "On a device signed in to Home Server, open Quick Connect in your profile and enter this code.",
+                    code: "482913",
+                    status: "Waiting for approval...",
+                )) {}
             default:
                 guard let key = harnessKeys[command], let menu = touchMenu else { return }
                 if [.upArrow, .downArrow, .leftArrow, .rightArrow].contains(key) {

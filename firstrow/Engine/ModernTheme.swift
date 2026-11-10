@@ -95,6 +95,12 @@ enum ModernTheme {
         )
     }
 
+    /// Upright on a foldable, the card has the pane above the fold to itself.
+    static func uprightCardFrame(in pane: CGRect) -> CGRect {
+        let side = min(480, (pane.height * 0.66).rounded())
+        return CGRect(x: (pane.midX - side / 2).rounded(), y: (pane.midY - side / 2).rounded(), width: side, height: side)
+    }
+
     // MARK: - Glyphs
 
     /// The symbol a section's card shows when there's nothing more particular to show.
@@ -133,7 +139,7 @@ final class ModernBackgroundLayer {
     }
 
     func layout(size: CGSize) {
-        withoutLayerActions {
+        layingOut {
             layer.frame = CGRect(origin: .zero, size: size)
             base.frame = layer.bounds
             ambient?.frame = layer.bounds
@@ -386,16 +392,24 @@ final class ModernCardLayer {
     private var current: SceneLayer?
     private var currentKey: String?
     private var currentFrame: CGRect = .zero
+    private var currentPane: CGRect?
     private var currentScale: CGFloat = 0
+    /// Where the card's picture (or tile) is, to move the next one from when the layout changes.
+    private var pictureRect: CGRect = .zero
 
-    func update(_ content: ModernCardContent, frame: CGRect, scale: CGFloat, animated: Bool) {
+    /// `pane` is the part of an upright scene the card has to itself: a picture and its caption
+    /// share it, rather than hanging the caption below `frame`.
+    func update(_ content: ModernCardContent, frame: CGRect, pane: CGRect? = nil, scale: CGFloat, animated: Bool) {
         let key = content.key
-        guard key != currentKey || frame != currentFrame || scale != currentScale else { return }
+        guard key != currentKey || frame != currentFrame || pane != currentPane || scale != currentScale else { return }
         let contentChanged = key != currentKey
+        let oldRect = pictureRect
         currentKey = key
         currentFrame = frame
+        currentPane = pane
         currentScale = scale
-        let slot = makeSlot(content, frame: frame, scale: scale)
+        let (slot, rect) = makeSlot(content, frame: frame, pane: pane, scale: scale)
+        pictureRect = rect
         let fade = Animation.smoothInOut(duration: 0.3)
         if let old = current {
             if animated, contentChanged {
@@ -413,6 +427,13 @@ final class ModernCardLayer {
             let center = CGPoint(x: frame.midX, y: frame.midY)
             slot.transform = Self.scale(0.965, about: center)
             slot.setTransform(CATransform3DIdentity, .smooth(duration: 0.42))
+        } else if LayoutGlide.isActive, oldRect.width > 0, rect.width > 0, oldRect != rect {
+            // The same card in a new place (the screen turned): it moves there from the old one.
+            let factor = oldRect.width / rect.width
+            var from = CATransform3DMakeTranslation(oldRect.midX, oldRect.midY, 0)
+            from = CATransform3DScale(from, factor, factor, 1)
+            from = CATransform3DTranslate(from, -rect.midX, -rect.midY, 0)
+            LayoutGlide.bring(slot, "transform", from: NSValue(caTransform3D: from))
         }
     }
 
@@ -422,10 +443,12 @@ final class ModernCardLayer {
         return CATransform3DTranslate(transform, -center.x, -center.y, 0)
     }
 
-    private func makeSlot(_ content: ModernCardContent, frame: CGRect, scale: CGFloat) -> SceneLayer {
+    /// The card's layers, and where its picture (or tile) is among them.
+    private func makeSlot(_ content: ModernCardContent, frame: CGRect, pane: CGRect?, scale: CGFloat) -> (SceneLayer, CGRect) {
         let slot = SceneLayer()
         slot.frame = layer.bounds
         let unit = frame.width / 540
+        var pictureRect = frame
         switch content {
         case let .glyph(rootID):
             let tile = SceneLayer()
@@ -444,13 +467,31 @@ final class ModernCardLayer {
             let fitted: CGSize = aspect >= 1
                 ? CGSize(width: frame.width, height: frame.width / aspect)
                 : CGSize(width: frame.height * aspect, height: frame.height)
+            if let pane {
+                // Upright, the caption takes what it needs of the pane and the picture the rest
+                // (a wide one may be wider than the card), the two together in the middle.
+                let width = min(760, pane.width - 240)
+                let lines = caption.map { captionLines($0, width: width, scale: scale, descriptionLimit: 150) } ?? []
+                let captionHeight = lines.isEmpty ? 0 : lines.reduce(30) { $0 + $1.gap + $1.graphic.size.height }
+                let room = CGSize(width: width, height: max(120, min(frame.height, pane.height - 80 - captionHeight)))
+                let size = aspect >= room.width / room.height
+                    ? CGSize(width: room.width, height: room.width / aspect)
+                    : CGSize(width: room.height * aspect, height: room.height)
+                let top = pane.minY + ((pane.height - size.height - captionHeight) / 2).rounded()
+                let rect = CGRect(x: (pane.midX - size.width / 2).rounded(), y: top, width: size.width.rounded(), height: size.height.rounded())
+                addPicture(LayerImageCache.cgImage(for: image), in: rect, radius: 22 * unit, to: slot)
+                addCaption(lines, below: rect, to: slot)
+                pictureRect = rect
+                break
+            }
             // Lift the picture when a caption needs room below it.
             let lift: CGFloat = caption == nil ? 0 : min(60 * unit, (frame.height - fitted.height) / 2 + 60 * unit)
             let rect = CGRect(x: frame.midX - fitted.width / 2, y: frame.midY - fitted.height / 2 - lift, width: fitted.width, height: fitted.height)
             addPicture(LayerImageCache.cgImage(for: image), in: rect, radius: 22 * unit, to: slot)
             if let caption {
-                addCaption(caption, below: rect, width: max(frame.width, rect.width), scale: scale, to: slot)
+                addCaption(captionLines(caption, width: max(frame.width, rect.width), scale: scale, descriptionLimit: 210), below: rect, to: slot)
             }
+            pictureRect = rect
         case let .mosaic(images):
             let gap = 16 * unit
             let side = (frame.width - gap) / 2
@@ -459,7 +500,7 @@ final class ModernCardLayer {
                 addPicture(LayerImageCache.cgImage(for: image), in: rect, radius: 16 * unit, to: slot)
             }
         }
-        return slot
+        return (slot, pictureRect)
     }
 
     private func addPicture(_ image: CGImage?, in rect: CGRect, radius: CGFloat, to slot: CALayer) {
@@ -481,23 +522,30 @@ final class ModernCardLayer {
         slot.addSublayer(picture)
     }
 
-    private func addCaption(_ caption: ModernCardCaption, below rect: CGRect, width: CGFloat, scale: CGFloat, to slot: CALayer) {
-        var top = rect.maxY + 30
-        let centerX = rect.midX
-        func place(_ graphic: RenderedGraphic) {
-            let line = SceneLayer()
-            line.show(graphic, at: CGPoint(x: centerX - graphic.size.width / 2, y: top))
-            slot.addSublayer(line)
-            top += graphic.size.height + 6
-        }
-        place(TextRenderer.render(TextSpec(text: caption.title, fontName: ModernTheme.semiboldFontName, size: 31, color: ModernTheme.text, maxWidth: width), scale: scale))
+    /// A caption's lettering, each piece with the gap above it.
+    private typealias CaptionLine = (graphic: RenderedGraphic, gap: CGFloat)
+
+    private func captionLines(_ caption: ModernCardCaption, width: CGFloat, scale: CGFloat, descriptionLimit: Int) -> [CaptionLine] {
+        var lines: [CaptionLine] = []
+        lines.append((TextRenderer.render(TextSpec(text: caption.title, fontName: ModernTheme.semiboldFontName, size: 31, color: ModernTheme.text, maxWidth: width), scale: scale), 0))
         for text in caption.lines.prefix(3) {
-            place(TextRenderer.render(TextSpec(text: text, fontName: ModernTheme.regularFontName, size: 23, color: ModernTheme.secondaryText, maxWidth: width), scale: scale))
+            lines.append((TextRenderer.render(TextSpec(text: text, fontName: ModernTheme.regularFontName, size: 23, color: ModernTheme.secondaryText, maxWidth: width), scale: scale), 6))
         }
         if let description = caption.description, !description.isEmpty {
-            let short = description.count > 210 ? String(description.prefix(207)) + "…" : description
-            top += 4
-            place(TextRenderer.render(TextSpec(text: short, fontName: ModernTheme.regularFontName, size: 22, color: ModernTheme.secondaryText, wrapWidth: width, alignment: .center, lineSpacing: 2), scale: scale))
+            let short = description.count > descriptionLimit ? String(description.prefix(descriptionLimit - 3)) + "…" : description
+            lines.append((TextRenderer.render(TextSpec(text: short, fontName: ModernTheme.regularFontName, size: 22, color: ModernTheme.secondaryText, wrapWidth: width, alignment: .center, lineSpacing: 2), scale: scale), 10))
+        }
+        return lines
+    }
+
+    private func addCaption(_ lines: [CaptionLine], below rect: CGRect, to slot: CALayer) {
+        var top = rect.maxY + 30
+        for line in lines {
+            top += line.gap
+            let layer = SceneLayer()
+            layer.show(line.graphic, at: CGPoint(x: rect.midX - line.graphic.size.width / 2, y: top))
+            slot.addSublayer(layer)
+            top += line.graphic.size.height
         }
     }
 }

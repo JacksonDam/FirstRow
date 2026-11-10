@@ -320,8 +320,8 @@ extension MenuView {
         } else {
             player.play()
         }
+        movieControlsGlyphState = .play
         if showsPlayGlyphOnStart {
-            movieControlsGlyphState = .play
             showMovieControlsInstantly()
             scheduleMovieControlsAutoHide()
         }
@@ -625,6 +625,19 @@ extension MenuView {
         if scheduleAutoHide {
             scheduleMovieControlsAutoHide()
         }
+    }
+
+    /// A movie's controls are up: always, standing upright, where they have the screen under
+    /// the fold to themselves.
+    var showsMovieControls: Bool { areMovieControlsVisible || upright != nil }
+    var shownMovieControlsOpacity: Double { upright != nil ? 1 : movieControlsOpacity }
+
+    /// Turned on its side again, the controls go to their place over the picture, and away
+    /// after a while as ever.
+    func movieStanceDidChange() {
+        guard isMoviePlaybackVisible, moviePlayer != nil, upright == nil else { return }
+        showMovieControlsInstantly()
+        scheduleMovieControlsAutoHide()
     }
 
     func showMovieControlsInstantly() {

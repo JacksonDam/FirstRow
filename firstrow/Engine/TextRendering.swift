@@ -467,12 +467,19 @@ enum SymbolRenderer {
 extension CALayer {
     /// Shows a rendered string or symbol with its layout box at `origin`.
     func show(_ graphic: RenderedGraphic, at origin: CGPoint) {
-        if contents as AnyObject? !== graphic.image {
+        let redrawn = contents as AnyObject? !== graphic.image
+        if redrawn {
             contents = graphic.image
         }
         contentsScale = graphic.scale
         let frame = graphic.imageFrame(at: origin)
-        bounds = CGRect(origin: .zero, size: frame.size)
+        let box = CGRect(origin: .zero, size: frame.size)
+        if redrawn, LayoutGlide.isActive {
+            // New lettering takes its size at once even in a layout glide; only its place glides.
+            withoutLayerActions { bounds = box }
+        } else {
+            bounds = box
+        }
         position = CGPoint(x: frame.minX + frame.width * anchorPoint.x, y: frame.minY + frame.height * anchorPoint.y)
     }
 }

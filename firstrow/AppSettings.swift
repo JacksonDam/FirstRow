@@ -19,10 +19,9 @@ enum AppSettings {
     static let didChangeNotification = Notification.Name("FirstRowSettingsDidChange")
 
     private static let themeKey = "interfaceTheme"
-    private static let mouseKey = "isMouseEnabled"
-    private static let touchKey = "isTouchEnabled"
     private static let screenSaverDelayKey = "screenSaverStartAfterSeconds"
     private static let onboardingKey = "hasCompletedOnboarding"
+    private static let introMovieKey = "introMovieEnabled"
     private static let legacyScreenSaverKey = "isScreenSaverEnabled"
 
     static var theme: InterfaceTheme {
@@ -33,27 +32,18 @@ enum AppSettings {
         }
     }
 
-    /// The first-launch screens (the look, then mouse or touch) have been answered.
+    /// The first-launch screens (the look, then how to get about) have been gone through.
     static var hasCompletedOnboarding: Bool {
         get { UserDefaults.standard.bool(forKey: onboardingKey) }
         set { UserDefaults.standard.set(newValue, forKey: onboardingKey) }
     }
 
-    /// Pointing and clicking in the menus and playback screens.
-    static var isMouseEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: mouseKey) as? Bool ?? false }
+    /// The look's intro movie plays every time First Row opens (it always plays once, after the
+    /// first-launch screens).
+    static var playsIntroMovieAtLaunch: Bool {
+        get { UserDefaults.standard.bool(forKey: introMovieKey) }
         set {
-            UserDefaults.standard.set(newValue, forKey: mouseKey)
-            NotificationCenter.default.post(name: didChangeNotification, object: nil)
-        }
-    }
-
-    /// Direct touch on iPhone and iPad: touching a row selects it, sliding moves the selection,
-    /// lifting chooses, and lists scroll with a drag.
-    static var isTouchEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: touchKey) as? Bool ?? false }
-        set {
-            UserDefaults.standard.set(newValue, forKey: touchKey)
+            UserDefaults.standard.set(newValue, forKey: introMovieKey)
             NotificationCenter.default.post(name: didChangeNotification, object: nil)
         }
     }

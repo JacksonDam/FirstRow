@@ -11,26 +11,15 @@ import Foundation
 enum OnboardingStep: Equatable {
     /// Classic or Modern.
     case theme
-    /// Touch controls (iPhone and iPad) or the mouse (computers), where there's one to use.
-    case controls
-    /// How to get about with the input chosen, and Get Started.
+    /// How to get about, and Get Started.
     case guide
 }
 
 /// The screens First Row opens with the first time: pick a look (Classic on the left, picked out
 /// to start with, or Modern on the right; the screens take on the look picked out as it moves),
-/// then, where there's a mouse or a touch screen, whether to use it, then the controls for the
-/// way chosen. Arrows and Select, the pointer or a finger all work, whatever the settings.
+/// then how to get about. Arrows and Select, the pointer or a finger all work. On a foldable
+/// standing upright Classic is above the fold and Modern below it.
 extension MenuView {
-    /// Whether there's a pointing choice to offer after the look.
-    static var onboardingOffersControls: Bool {
-        #if os(tvOS)
-            false
-        #else
-            true
-        #endif
-    }
-
     func beginOnboardingIfNeeded() {
         // Test runs go straight to the menus, unless they're testing this (then it always shows).
         let testing = FirstRowHarness.isActive && ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_ONBOARDING"] == "1"
@@ -42,7 +31,6 @@ extension MenuView {
         onboardingStep = .theme
         // Classic, picked out to start with, is the look until another is picked out.
         if AppSettings.theme != .classic { AppSettings.theme = .classic }
-        setOnboardingTakesTouches(true)
     }
 
     /// The look the screens wear: the one picked out on the first, the one chosen after it.
@@ -52,18 +40,13 @@ extension MenuView {
 
     /// The step before this one, if there's one to go back to.
     private var previousOnboardingStep: OnboardingStep? {
-        switch onboardingStep {
-        case .controls: .theme
-        case .guide: Self.onboardingOffersControls ? .controls : .theme
-        default: nil
-        }
+        onboardingStep == .guide ? .theme : nil
     }
 
     /// The option picked out on returning to a step: what was chosen there.
     private func onboardingFocus(for step: OnboardingStep) -> Int {
         switch step {
         case .theme: AppSettings.theme == .modern ? 1 : 0
-        case .controls: onboardingControlsEnabled ? 1 : 0
         case .guide: 0
         }
     }
@@ -77,6 +60,10 @@ extension MenuView {
         case .leftArrow where step != .guide:
             moveOnboardingFocus(to: 0)
         case .rightArrow where step != .guide:
+            moveOnboardingFocus(to: 1)
+        case .upArrow where step != .guide && upright != nil:
+            moveOnboardingFocus(to: 0)
+        case .downArrow where step != .guide && upright != nil:
             moveOnboardingFocus(to: 1)
         case .enter, .space:
             if !isRepeat { chooseOnboardingOption(onboardingFocus) }
@@ -195,31 +182,10 @@ extension MenuView {
         case .theme:
             let theme: InterfaceTheme = option == 1 ? .modern : .classic
             if AppSettings.theme != theme { AppSettings.theme = theme }
-            let next: OnboardingStep = Self.onboardingOffersControls ? .controls : .guide
-            showOnboardingStep(next, focus: onboardingFocus(for: next))
-        case .controls:
-            #if os(iOS)
-                AppSettings.isTouchEnabled = option == 1
-                noteInputSource(option == 1 ? .touch : .keyboard)
-            #elseif !os(tvOS)
-                AppSettings.isMouseEnabled = option == 1
-                noteInputSource(option == 1 ? .pointer : .keyboard)
-            #endif
             showOnboardingStep(.guide, focus: 0)
         case .guide:
             finishOnboarding()
         }
-    }
-
-    /// Whether touch (iPhone and iPad) or the mouse (computers) is on now.
-    private var onboardingControlsEnabled: Bool {
-        #if os(iOS)
-            AppSettings.isTouchEnabled
-        #elseif os(tvOS)
-            false
-        #else
-            AppSettings.isMouseEnabled
-        #endif
     }
 
     /// Fades one screen's contents out and the next one's in.
@@ -243,35 +209,28 @@ extension MenuView {
         }
     }
 
-    /// Done: the menus come up from behind.
+    /// Done: the screens fade to black and the look's intro movie plays, the menus coming in on its
+    /// hit (or, with no movie, the menus come up from behind).
     private func finishOnboarding() {
         AppSettings.hasCompletedOnboarding = true
         isOnboardingTransitioning = true
-        withAnimation(.smoothInOut(duration: 0.6)) {
-            onboardingOpacity = 0
+        if onOnboardingFinished?() != true {
+            withAnimation(.smoothInOut(duration: 0.6)) {
+                onboardingOpacity = 0
+            }
         }
         Task { @MainActor in
             try? await firstRowSleep(0.65)
             onboardingStep = nil
             isOnboardingTransitioning = false
-            setOnboardingTakesTouches(false)
             resetScreenSaverIdleTimer()
         }
-    }
-
-    /// While the screens are up, a finger picks an option directly, whatever the touch setting.
-    private func setOnboardingTakesTouches(_ takes: Bool) {
-        #if os(iOS)
-            TouchNavigationInputView.takesDirectTouch = takes
-        #endif
     }
 
     // MARK: - What the screens say
 
     struct OnboardingOption {
         let title: String
-        /// A symbol to draw large on the card (the look screen draws pictures of the looks).
-        let symbol: String?
     }
 
     /// A line of the controls screen: a symbol and what to do.
@@ -282,12 +241,6 @@ extension MenuView {
 
     var onboardingTitle: String {
         switch onboardingStep {
-        case .controls:
-            #if os(iOS)
-                "Touch Controls"
-            #else
-                "Mouse Controls"
-            #endif
         case .guide:
             "Getting Around"
         default:
@@ -297,12 +250,6 @@ extension MenuView {
 
     var onboardingSubtitle: String {
         switch onboardingStep {
-        case .controls:
-            #if os(iOS)
-                "Touch rows and buttons directly, or use gestures like a remote. You can change this in Settings."
-            #else
-                "Point, click and scroll, with on-screen buttons. You can change this later in Settings."
-            #endif
         case .guide:
             onboardingGuideSubtitle
         default:
@@ -312,26 +259,20 @@ extension MenuView {
 
     var onboardingOptions: [OnboardingOption] {
         switch onboardingStep {
-        case .controls:
-            #if os(iOS)
-                [OnboardingOption(title: "Gestures", symbol: "hand.draw.fill"), OnboardingOption(title: "Touch", symbol: "hand.tap.fill")]
-            #else
-                [OnboardingOption(title: "Keyboard and Remote", symbol: "keyboard"), OnboardingOption(title: "Mouse", symbol: "computermouse.fill")]
-            #endif
         case .guide:
             []
         default:
-            [OnboardingOption(title: InterfaceTheme.classic.title, symbol: nil), OnboardingOption(title: InterfaceTheme.modern.title, symbol: nil)]
+            [OnboardingOption(title: InterfaceTheme.classic.title), OnboardingOption(title: InterfaceTheme.modern.title)]
         }
     }
 
     private var onboardingGuideSubtitle: String {
         #if os(iOS)
-            AppSettings.isTouchEnabled ? "With touch controls" : "With gestures"
+            "With touch"
         #elseif os(tvOS)
             "With the Siri Remote"
         #else
-            AppSettings.isMouseEnabled ? "With the mouse (the keyboard and remotes work too)" : "With the keyboard or a remote"
+            "With the mouse, the keyboard or a remote"
         #endif
     }
 
@@ -344,23 +285,15 @@ extension MenuView {
         #endif
     }
 
-    /// The controls for the way of getting about that was chosen.
+    /// The controls, for this device's ways of getting about.
     var onboardingTips: [OnboardingTip] {
         #if os(iOS)
-            if AppSettings.isTouchEnabled {
-                return [
-                    OnboardingTip(symbol: "hand.tap.fill", text: "Tap a row to open it"),
-                    OnboardingTip(symbol: "arrow.up.and.down", text: "Drag a list to scroll it; hold and slide to move through it"),
-                    OnboardingTip(symbol: "chevron.left", text: "Tap Back at the top left, or swipe in from the left edge, to go back"),
-                    OnboardingTip(symbol: "music.note.list", text: "In Now Playing, swipe in from the right edge for the song list"),
-                    OnboardingTip(symbol: "play.fill", text: "In a movie, tap to show its controls"),
-                ]
-            }
             return [
-                OnboardingTip(symbol: "hand.point.up.left.fill", text: "Tap or hold the top, bottom, left or right of the screen to move"),
-                OnboardingTip(symbol: "hand.tap.fill", text: "Tap with two fingers to choose"),
-                OnboardingTip(symbol: "chevron.left", text: "Tap with three fingers to go back"),
-                OnboardingTip(symbol: "playpause.fill", text: "Tap with four fingers to play or pause"),
+                OnboardingTip(symbol: "hand.tap.fill", text: "Tap a row to open it"),
+                OnboardingTip(symbol: "arrow.up.and.down", text: "Drag a list to scroll it; hold and slide to move through it"),
+                OnboardingTip(symbol: "chevron.left", text: "Tap Back at the top left, or swipe in from the left edge, to go back"),
+                OnboardingTip(symbol: "music.note.list", text: "In Now Playing, swipe in from the right edge for the song list"),
+                OnboardingTip(symbol: "play.fill", text: "In a movie, tap to show its controls"),
             ]
         #elseif os(tvOS)
             return [
@@ -371,18 +304,9 @@ extension MenuView {
                 OnboardingTip(symbol: "captions.bubble", text: "In a movie, swipe down for subtitles, audio and speed"),
             ]
         #else
-            if AppSettings.isMouseEnabled {
-                return [
-                    OnboardingTip(symbol: "cursorarrow", text: "Point at a row to pick it out, and click to open it"),
-                    OnboardingTip(symbol: "arrow.up.and.down", text: "Scroll to move through long lists"),
-                    OnboardingTip(symbol: "chevron.left", text: "Click Back at the top left, or press Esc, to go back"),
-                    OnboardingTip(symbol: "music.note.list", text: "In Now Playing, move to the right edge for the song list"),
-                    OnboardingTip(symbol: "xmark", text: Self.quitShortcutText),
-                ]
-            }
             return [
-                OnboardingTip(symbol: "arrow.up.and.down", text: "Up and down to move, Return or the remote's centre to choose"),
-                OnboardingTip(symbol: "chevron.left", text: "Esc, or the remote's Menu or Back, to go back"),
+                OnboardingTip(symbol: "cursorarrow", text: "Click a row, or move with the arrows and choose with Return"),
+                OnboardingTip(symbol: "chevron.left", text: "Click Back, or press Esc or the remote's Menu, to go back"),
                 OnboardingTip(symbol: "playpause.fill", text: "Space or Play/Pause to play or pause"),
                 OnboardingTip(symbol: "arrow.left.and.right", text: "Left and right to skip, or hold to scrub"),
                 OnboardingTip(symbol: "xmark", text: Self.quitShortcutText),

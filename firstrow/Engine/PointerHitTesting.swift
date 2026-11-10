@@ -85,9 +85,9 @@ protocol PointerHitTesting: AnyObject {
     func movieOptionsButton(at windowPoint: CGPoint) -> MenuView.MovieOptionRow.Kind?
     /// Where Now Playing's list is, when Now Playing could show one.
     var nowPlayingQueueGeometry: NowPlayingQueueGeometry? { get }
-    /// The touch mode button at `windowPoint`, if one is showing there.
+    /// The on-screen button at `windowPoint`, if one is showing there.
     func touchControl(at windowPoint: CGPoint) -> TouchControl?
-    /// Shows a touch mode button as held down (nil for none).
+    /// Shows an on-screen button as held down (nil for none).
     func highlightTouchControl(_ control: TouchControl?)
 }
 
@@ -165,6 +165,7 @@ struct PointerScene {
     /// The movie transport's seek track (in either look), in full-screen canvas points.
     let movieSeekTrack: (frame: CGRect, travel: ClosedRange<CGFloat>)?
     let fullscreenScene: FullscreenSceneLayer
+    let fullscreenCanvas: FullscreenCanvas
     let fullscreenSize: CGSize
 
     /// A window point in the menu scene's points.
@@ -175,8 +176,7 @@ struct PointerScene {
 
     /// A window point in the full-screen canvas's points.
     func fullscreenPoint(_ windowPoint: CGPoint) -> CGPoint {
-        let scale = max(FullscreenCanvas(screenSize: fullscreenSize).scale, 0.0001)
-        return CGPoint(x: windowPoint.x / scale, y: windowPoint.y / scale)
+        fullscreenCanvas.point(windowPoint)
     }
 }
 
@@ -185,13 +185,17 @@ extension MenuSceneRenderer: PointerHitTesting {
         let scene = pointerScene
         let queue = scene.fullscreenScene.queue
         guard menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey, queue.isAvailable else { return nil }
-        let scale = max(FullscreenCanvas(screenSize: scene.fullscreenSize).scale, 0.0001)
+        let scale = max(scene.fullscreenCanvas.scale, 0.0001)
         func window(_ rect: CGRect) -> CGRect {
             CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
         }
         let size = scene.fullscreenSize
         #if os(iOS)
-            let edgeWidth: CGFloat = AppSettings.isTouchEnabled ? 34 : max(24, size.width * 0.03)
+            #if os(iOS)
+                let edgeWidth: CGFloat = 34
+            #else
+                let edgeWidth: CGFloat = max(24, size.width * 0.03)
+            #endif
         #else
             let edgeWidth = max(24, size.width * 0.03)
         #endif
@@ -223,7 +227,7 @@ extension MenuSceneRenderer: PointerHitTesting {
                 return .movieOptionRow(hit.index, backward: hit.backward)
             }
             if let kind = movieOptionsButton(at: windowPoint) { return .movieOptionButton(kind) }
-            guard menu.areMovieControlsVisible, let track = scene.movieSeekTrack else { return .background }
+            guard menu.showsMovieControls, let track = scene.movieSeekTrack else { return .background }
             let point = scene.fullscreenPoint(windowPoint)
             guard track.frame.insetBy(dx: -6, dy: -18).contains(point) else { return .background }
             return .progressBar(fraction: Self.fraction(point.x, along: track.travel))
@@ -254,8 +258,10 @@ extension MenuSceneRenderer: PointerHitTesting {
             return .menuRow(level, index)
         }
         if level == .root, AppSettings.theme == .classic {
+            // In the box's own points (it's drawn smaller on a screen standing upright).
             let box = frames.carouselFrame
-            if let index = scene.carousel.iconIndex(at: CGPoint(x: point.x - box.minX, y: point.y - box.minY)) {
+            let boxScale = max(frames.carouselScale, 0.0001)
+            if let index = scene.carousel.iconIndex(at: CGPoint(x: (point.x - box.minX) / boxScale, y: (point.y - box.minY) / boxScale)) {
                 return .carouselItem(index)
             }
         }

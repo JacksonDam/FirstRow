@@ -14,6 +14,26 @@ extension Notification.Name {
     static let firstRowVolumeChanged = Notification.Name("firstRowVolumeChanged")
 }
 
+/// The look's intro movie: First Row's name, then stars rushing in as the camera pulls back with
+/// the look's own screens falling away past it, all fading to black before the menus come in.
+/// (Made in the separate firstrow-intro project: a Blender scene and a sampled score.)
+enum IntroMovie {
+    /// Seconds into the movie when its picture has gone to black and the menus come in.
+    static let revealTime = 5.5
+    /// How long a skipped movie takes to fade to black.
+    static let skipFadeDuration = 0.35
+
+    /// The look's movie. The Mac app also carries a 4K one of each, which a Mac with Apple silicon
+    /// plays; everything else plays the 1080p one.
+    static var url: URL? {
+        let name = AppSettings.theme == .modern ? "Intro-Modern" : "Intro-Classic"
+        #if os(macOS) && arch(arm64)
+            if let sharper = bundledResourceURL(name + "-4K", "mp4") { return sharper }
+        #endif
+        return bundledResourceURL(name, "mp4")
+    }
+}
+
 /// Runs First Row in its window: the intro movie, the menus, key handling and the quit fade.
 @MainActor
 final class FirstRowAppController {
@@ -34,6 +54,10 @@ final class FirstRowAppController {
     private let quitOverlay = SceneLayer()
     private var introPlayer: AVPlayer?
     private var introEndObserver: NSObjectProtocol?
+    private var introTimeObserver: Any?
+    /// The intro movie is up and the menus wait behind it, taking no input.
+    private var isPlayingIntro = false
+    private var introFadeTask: Task<Void, Never>?
     private var quitObserver: NSObjectProtocol?
     private var textEntryObservers: [NSObjectProtocol] = []
     private var isQuitting = false
@@ -44,6 +68,8 @@ final class FirstRowAppController {
     private var didToggleIntroMovie = false
     private var containerSize: CGSize = .zero
     private var backingScale: CGFloat = 2
+    /// A foldable held upright and open lays its scene out for that; nil is the usual scene.
+    private var upright: UprightStance?
     private var gameControllers: GameControllerInput?
     #if os(iOS)
         private var touchInput: TouchNavigationInputView?
@@ -63,19 +89,15 @@ final class FirstRowAppController {
     private static let launchBackHoldDuration: Double = 0.35
     private static let launchMenuRevealDuration: Double = 1.0
 
-    private var introMovieEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "introMovieEnabled") }
-        set { UserDefaults.standard.set(newValue, forKey: "introMovieEnabled") }
-    }
-
     init() {
         let root = hostView.sceneLayer
         root.backgroundColor = CGColor(gray: 0, alpha: 1)
-        root.addSublayer(menuContainer)
-        introLayer.videoGravity = .resizeAspect
+        // The intro movie sits under the menus, which come in once it has faded to black.
+        introLayer.videoGravity = .resizeAspectFill
         introLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
         introLayer.isHidden = true
         root.addSublayer(introLayer)
+        root.addSublayer(menuContainer)
         quitOverlay.backgroundColor = CGColor(gray: 0, alpha: 1)
         quitOverlay.opacity = 0
         root.addSublayer(quitOverlay)
@@ -124,14 +146,33 @@ final class FirstRowAppController {
 
     func start() {
         beginLaunchToggleWindow()
-        if introMovieEnabled, let url = bundledResourceURL("Intro", "mov") {
-            playIntro(url)
-        } else {
-            showMenu(fadingIn: true)
+        // After the first-launch screens the intro plays anyway (see MenuView.finishOnboarding).
+        let playsIntro = AppSettings.playsIntroMovieAtLaunch && AppSettings.hasCompletedOnboarding && IntroMovie.url != nil
+        showMenu(fadingIn: !playsIntro)
+        if playsIntro {
+            withoutLayerActions { menuContainer.opacity = 0 }
+            playIntro()
         }
     }
 
+    /// Lays out again for a new stance (and the host view's size, set by now). With a `glide`
+    /// everything moves to its new place in step; without one it is there at once.
+    func relayout(upright: UprightStance?, glide: GlideTiming?) {
+        self.upright = upright
+        menu?.upright = upright
+        LayoutGlide.run(glide) { hostView.layoutNow() }
+    }
+
     private func layout(size: CGSize, scale: CGFloat) {
+        #if os(macOS)
+            // A test window stands in for a foldable's inner screen: upright when taller than wide.
+            if FirstRowHarness.isActive, ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_SCENE"] == "duo" {
+                upright = size.height > size.width
+                    ? UprightStance(screenSize: size, fold: nil, safeTop: 0, safeBottom: 21)
+                    : nil
+                menu?.upright = upright
+            }
+        #endif
         containerSize = size
         backingScale = scale
         withoutLayerActions {
@@ -148,42 +189,129 @@ final class FirstRowAppController {
 
     // MARK: - Intro and menus
 
-    private func playIntro(_ url: URL) {
+    /// Plays the look's intro movie over the (hidden) menus, which come in once it has faded to
+    /// black. Any key, click, tap or remote press skips to them.
+    private func playIntro() {
+        guard let url = IntroMovie.url else {
+            revealMenusAfterIntro()
+            return
+        }
         #if os(iOS)
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
             try? AVAudioSession.sharedInstance().setActive(true)
         #endif
+        endIntro()
         let player = AVPlayer(url: url)
         player.isMuted = FirstRowHarness.isActive
         introPlayer = player
         introLayer.player = player
         introLayer.isHidden = false
+        isPlayingIntro = true
+        menu?.registerUserInteractionForScreenSaver()
+        introTimeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
+            guard time.seconds >= IntroMovie.revealTime else { return }
+            MainActor.assumeIsolatedIfPossible { self?.revealMenusAfterIntro() }
+        }
         introEndObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolatedIfPossible { self?.showMenu(fadingIn: false) }
+            MainActor.assumeIsolatedIfPossible {
+                self?.revealMenusAfterIntro()
+                self?.endIntro()
+            }
         }
         player.play()
     }
 
-    private func showMenu(fadingIn: Bool) {
-        guard menu == nil else { return }
+    /// The menus come in from black (the movie plays on underneath for the last of its sound):
+    /// Classic fades them in, Modern brings them in from a little nearer, as its scenes arrive.
+    private func revealMenusAfterIntro() {
+        guard isPlayingIntro || menuContainer.opacity < 1 else { return }
+        isPlayingIntro = false
+        if AppSettings.theme == .modern, let menu {
+            menuContainer.setOpacity(1, .smooth(duration: 0.5))
+            menu.bringInMenusAfterIntro()
+        } else {
+            menuContainer.setOpacity(1, .easeInOut(duration: Self.launchMenuRevealDuration))
+        }
+        menu?.resetScreenSaverIdleTimer()
+    }
+
+    /// A key, click, tap or press during the intro: the movie and its sound fade away to black,
+    /// then the menus come in.
+    private func skipIntro() {
+        guard isPlayingIntro, introFadeTask == nil, let player = introPlayer else { return }
+        introLayer.setOpacity(0, .easeInOut(duration: IntroMovie.skipFadeDuration))
+        introFadeTask = Task { @MainActor [weak self] in
+            let start = player.volume
+            for step in 1 ... 12 {
+                try? await firstRowSleep(IntroMovie.skipFadeDuration / 12)
+                guard !Task.isCancelled else { return }
+                player.volume = start * Float(12 - step) / 12
+            }
+            self?.revealMenusAfterIntro()
+            self?.endIntro()
+        }
+    }
+
+    private func endIntro() {
+        introFadeTask?.cancel()
+        introFadeTask = nil
         if let introEndObserver {
             NotificationCenter.default.removeObserver(introEndObserver)
             self.introEndObserver = nil
         }
+        if let introTimeObserver {
+            introPlayer?.removeTimeObserver(introTimeObserver)
+            self.introTimeObserver = nil
+        }
         introPlayer?.pause()
         introPlayer = nil
         introLayer.player = nil
-        introLayer.isHidden = true
+        withoutLayerActions {
+            introLayer.isHidden = true
+            introLayer.setOpacity(1, nil)
+        }
+    }
 
+    private func showMenu(fadingIn: Bool) {
+        guard menu == nil else { return }
         let menu = MenuView()
         let renderer = MenuSceneRenderer(menu: menu)
         self.menu = menu
         self.renderer = renderer
+        menu.upright = upright
         menuContainer.addSublayer(renderer.rootLayer)
         if containerSize != .zero {
             renderer.layout(containerSize: containerSize, backingScale: backingScale)
         }
         installMenuInput(menu)
+        // After Get Started the first-launch screens fade to black and the intro plays.
+        menu.onOnboardingFinished = { [weak self] in
+            guard let self, IntroMovie.url != nil else { return false }
+            self.menuContainer.setOpacity(0, .smoothInOut(duration: 0.6))
+            Task { @MainActor [weak self] in
+                try? await firstRowSleep(0.75)
+                self?.playIntro()
+            }
+            return true
+        }
+        FirstRowHarness.introSink = { [weak self] in
+            guard let self else { return }
+            withoutLayerActions { self.menuContainer.opacity = 0 }
+            self.playIntro()
+        }
+        #if os(macOS)
+            FirstRowHarness.stanceSink = { [weak self] portrait in
+                guard let self, let window = self.hostView.window else { return }
+                let old = window.frame
+                let long = max(old.width, old.height), short = min(old.width, old.height)
+                let size = portrait ? CGSize(width: short, height: long) : CGSize(width: long, height: short)
+                // Resizing lays the scene out for the new shape; it glides there as a turned screen's does.
+                LayoutGlide.run(.easeInOut(duration: 0.4)) {
+                    window.setFrame(NSRect(x: old.minX, y: old.maxY - size.height, width: size.width, height: size.height), display: true)
+                    self.hostView.layoutNow()
+                }
+            }
+        #endif
         menu.start()
         if fadingIn {
             menuContainer.opacity = 0
@@ -206,7 +334,10 @@ final class FirstRowAppController {
             }
         #endif
         #if os(macOS)
-            hostView.onPointer = { [weak menu] event in menu?.handlePointerEvent(event) }
+            hostView.onPointer = { [weak self, weak menu] event in
+                if self?.takesIntroInput(event) == true { return }
+                menu?.handlePointerEvent(event)
+            }
         #endif
         FirstRowHarness.pointerEventSink = { [weak menu] event in menu?.handlePointerEvent(event) }
         FirstRowHarness.harnessMenu = menu
@@ -216,20 +347,27 @@ final class FirstRowAppController {
         // Game controllers (and the Siri Remote on Apple TV) count as keys: they put the
         // pointing and touching hints away.
         let controllers = GameControllerInput(
-            onArrowKeyDown: { [weak menu] key in
+            onArrowKeyDown: { [weak self, weak menu] key in
+                if self?.takesIntroPress() == true { return }
                 menu?.noteInputSource(.keyboard)
                 menu?.handleDirectionalPressBegan(key)
             },
-            onArrowKeyUp: { [weak menu] key in menu?.handleDirectionalPressEnded(key) },
-            onEnter: { [weak menu] in
+            onArrowKeyUp: { [weak self, weak menu] key in
+                if self?.isPlayingIntro == true { return }
+                menu?.handleDirectionalPressEnded(key)
+            },
+            onEnter: { [weak self, weak menu] in
+                if self?.takesIntroPress() == true { return }
                 menu?.noteInputSource(.keyboard)
                 menu?.handleKeyDown(.enter)
             },
-            onBackspace: { [weak menu] in
+            onBackspace: { [weak self, weak menu] in
+                if self?.takesIntroPress() == true { return }
                 menu?.noteInputSource(.keyboard)
                 menu?.handleKeyDown(.delete)
             },
-            onSpace: { [weak menu] in
+            onSpace: { [weak self, weak menu] in
+                if self?.takesIntroPress() == true { return }
                 menu?.noteInputSource(.keyboard)
                 menu?.handleKeyDown(.space)
             },
@@ -256,17 +394,13 @@ final class FirstRowAppController {
         #endif
         #if os(iOS)
             let touch = TouchNavigationInputView(frame: hostView.bounds)
-            touch.onArrowKeyDown = { [weak menu] key in menu?.handleDirectionalPressBegan(key) }
-            touch.onArrowKeyUp = { [weak menu] key in menu?.handleDirectionalPressEnded(key) }
-            touch.onEnter = { [weak menu] in menu?.handleKeyDown(.enter) }
-            touch.onBackspace = { [weak menu] in menu?.handleKeyDown(.delete) }
-            touch.onSpace = { [weak menu] in menu?.handleKeyDown(.space) }
-            touch.onSingleFingerTap = { [weak menu] in
-                guard let menu, menu.activeFullscreenScene?.key == menu.screenSaverFullscreenKey else { return false }
-                menu.dismissScreenSaverForUserInteraction()
-                return true
+            touch.onTouch = { [weak self, weak menu] phase, point, time in
+                if self?.isPlayingIntro == true {
+                    if phase == .ended { self?.skipIntro() }
+                    return
+                }
+                menu?.handleTouch(phase, at: point, time: time)
             }
-            touch.onTouch = { [weak menu] phase, point, time in menu?.handleTouch(phase, at: point, time: time) }
             #if DEBUG || FIRSTROW_HARNESS_BUILD
                 FirstRowHarness.startTouchHarness(menu: menu, touchView: touch)
             #endif
@@ -278,14 +412,18 @@ final class FirstRowAppController {
         #endif
         #if os(tvOS)
             let remote = RemotePressCapturingView(frame: hostView.bounds)
-            remote.onKeyDown = { [weak menu] key in
+            remote.onKeyDown = { [weak self, weak menu] key in
+                if self?.takesIntroPress() == true { return }
                 if [.upArrow, .downArrow, .leftArrow, .rightArrow].contains(key) {
                     menu?.handleDirectionalPressBegan(key)
                 } else {
                     menu?.handleKeyDown(key)
                 }
             }
-            remote.onKeyUp = { [weak menu] key in menu?.handleDirectionalPressEnded(key) }
+            remote.onKeyUp = { [weak self, weak menu] key in
+                if self?.isPlayingIntro == true { return }
+                menu?.handleDirectionalPressEnded(key)
+            }
             remote.claimsFirstResponder = !isLaunchToggleWindowActive
             hostView.addSubview(remote)
             remoteInput = remote
@@ -324,6 +462,10 @@ final class FirstRowAppController {
         func handleKeyDown(_ event: NSEvent) {
             NSCursor.setHiddenUntilMouseMoves(true)
             let key = KeyCode(rawValue: event.keyCode) ?? .none
+            if isPlayingIntro {
+                if !event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) { skipIntro() }
+                return
+            }
             menu?.noteInputSource(SyntheticKeyEvents.source(of: event))
             if isLaunchToggleWindowActive, key == .delete, !event.isARepeat {
                 handleLaunchBackPressBegan()
@@ -348,12 +490,14 @@ final class FirstRowAppController {
 
         func handleKeyUp(_ event: NSEvent) {
             let key = KeyCode(rawValue: event.keyCode) ?? .none
+            if isPlayingIntro { return }
             _ = SyntheticKeyEvents.source(of: event)
             if key == .delete { handleLaunchBackPressEnded() }
             menu?.handleKeyUp(key)
         }
     #elseif FIRSTROW_PORTABLE
         func handleKeyDown(_ key: KeyCode, isRepeat: Bool) {
+            if takesIntroPress() { return }
             if isLaunchToggleWindowActive, key == .delete, !isRepeat {
                 handleLaunchBackPressBegan()
             }
@@ -362,10 +506,25 @@ final class FirstRowAppController {
         }
 
         func handleKeyUp(_ key: KeyCode) {
+            if isPlayingIntro { return }
             if key == .delete { handleLaunchBackPressEnded() }
             menu?.handleKeyUp(key)
         }
     #endif
+
+    /// While the intro plays a press skips it, and nothing reaches the menus behind it.
+    private func takesIntroPress() -> Bool {
+        guard isPlayingIntro else { return false }
+        skipIntro()
+        return true
+    }
+
+    /// The pointer during the intro: a click skips it; moving does nothing.
+    private func takesIntroInput(_ event: PointerEvent) -> Bool {
+        guard isPlayingIntro else { return false }
+        if case .pressed = event { skipIntro() }
+        return true
+    }
 
     // MARK: - Intro switch at launch
 
@@ -418,8 +577,8 @@ final class FirstRowAppController {
         launchBackHoldTask = Task { @MainActor [weak self] in
             try? await firstRowSleep(Self.launchBackHoldDuration)
             guard let self, !Task.isCancelled else { return }
-            guard self.isLaunchToggleWindowActive, self.isLaunchBackPressActive, !self.didToggleIntroMovie else { return }
-            self.introMovieEnabled.toggle()
+            guard self.isLaunchToggleWindowActive, self.isLaunchBackPressActive, !self.didToggleIntroMovie, !self.isPlayingIntro else { return }
+            AppSettings.playsIntroMovieAtLaunch.toggle()
             self.didToggleIntroMovie = true
         }
     }
@@ -456,6 +615,7 @@ final class FirstRowAppController {
 extension FirstRowAppController {
     /// A mouse or trackpad event from the window.
     func handlePointer(_ event: PointerEvent) {
+        if takesIntroInput(event) { return }
         menu?.handlePointerEvent(event)
     }
 

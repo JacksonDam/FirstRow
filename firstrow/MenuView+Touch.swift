@@ -5,10 +5,11 @@ import QuartzCore
 #endif
 
 extension MenuView {
-    /// Touch mode with no finger choosing a row: the lists show nothing as selected.
+    /// Fingers in charge with none choosing a row: the lists show nothing as selected. After a
+    /// keyboard or a game controller the selection shows, for its arrows to move.
     var touchHidesSelection: Bool {
         #if os(iOS)
-            AppSettings.isTouchEnabled && !isTouchSelecting
+            lastInputSource == .touch && !isTouchSelecting
         #else
             false
         #endif
@@ -37,7 +38,7 @@ extension MenuView {
             case scrubbing
             /// Moving sideways or (in a movie) up or down, for a swipe.
             case swiping
-            /// On one of touch mode's buttons; lifting over it presses it.
+            /// On one of the on-screen buttons; lifting over it presses it.
             case button(TouchControl)
             /// On Now Playing's list: a tap chooses a song, a drag scrolls.
             case queue
@@ -241,7 +242,7 @@ extension MenuView {
                 handleOnboardingTouch(phase, at: point)
                 return
             }
-            guard AppSettings.isTouchEnabled, !isChoosingMediaSource else { return }
+            guard !isChoosingMediaSource else { return }
             let wasTouching = lastInputSource == .touch
             noteInputSource(.touch)
             if phase == .began, !wasTouching {
@@ -1019,7 +1020,8 @@ extension MenuView {
                 return
             }
             // A tap away from the buttons shows or hides the controls; playing and pausing is
-            // the play button's job.
+            // the play button's job. (Standing upright they're always up.)
+            if upright != nil { return }
             if areMovieControlsVisible {
                 cancelMovieControlsAutoHide()
                 hideMovieControlsWithFade()

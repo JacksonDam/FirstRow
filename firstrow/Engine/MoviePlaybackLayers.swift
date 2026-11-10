@@ -14,6 +14,8 @@ import QuartzCore
 final class MoviePlaybackLayers {
     /// Holds the rest, so the movie can shrink and fade as one.
     let group = SceneLayer()
+    /// Black behind the picture, wherever on the screen the picture is.
+    private let backdrop = SceneLayer()
     let playerLayer = AVPlayerLayer()
     let controls = MovieControlsLayer()
     let modernControls = ModernMovieControlsLayer()
@@ -25,7 +27,9 @@ final class MoviePlaybackLayers {
         playerLayer.isHidden = true
         playerLayer.actions = ["position": NSNull(), "bounds": NSNull(), "opacity": NSNull(), "hidden": NSNull()]
         controls.layer.isHidden = true
-        for sublayer in [playerLayer, controls.layer, modernControls.layer, options.layer] {
+        backdrop.backgroundColor = CGColor(gray: 0, alpha: 1)
+        backdrop.isHidden = true
+        for sublayer in [backdrop, playerLayer, controls.layer, modernControls.layer, options.layer] {
             group.addSublayer(sublayer)
         }
     }
@@ -43,30 +47,36 @@ final class MoviePlaybackLayers {
         if !showsPlayer, playerLayer.player != nil, !menu.isMoviePlaybackVisible {
             playerLayer.player = nil
         }
-        playerLayer.frame = bounds
+        backdrop.isHidden = !showsPlayer
+        backdrop.place(bounds)
+        // On the full-screen canvas, so the controls keep their proportions at any resolution.
+        // Standing upright, the picture has the screen above the fold and the controls the
+        // screen below it, where they stay up.
+        let canvas = FullscreenCanvas(screenSize: bounds.size, upright: menu.upright)
+        placePicture(canvas.upright.map { canvas.window($0.upperPane) } ?? bounds)
+        var controlsSize = canvas.size
+        if let upright = canvas.upright { controlsSize.height = upright.movieControlsFloor }
 
-        let showsControls = menu.isMoviePlaybackVisible && menu.areMovieControlsVisible
+        let showsControls = menu.isMoviePlaybackVisible && menu.showsMovieControls
+        let controlsOpacity = menu.shownMovieControlsOpacity
         let isModern = ModernTheme.isActive
         controls.layer.isHidden = !showsControls || isModern
         modernControls.layer.isHidden = !showsControls || !isModern
         // The options' buttons sit above the right end of the bar, and the panel grows out of them.
         defer {
-            let optionsCanvas = FullscreenCanvas(screenSize: bounds.size)
-            optionsCanvas.apply(to: options.layer)
+            canvas.apply(to: options.layer)
             let bar = isModern ? modernControls.barFrame : controls.barFrame
             options.update(
                 menu: menu,
                 anchor: showsControls && bar.width > 0 ? bar : nil,
-                controlsOpacity: menu.movieControlsOpacity,
-                size: optionsCanvas.size,
-                scale: optionsCanvas.pixelScale(backingScale: scale),
-                canvasScale: optionsCanvas.scale,
+                controlsOpacity: controlsOpacity,
+                size: controlsSize,
+                scale: canvas.pixelScale(backingScale: scale),
+                canvasScale: canvas.scale,
                 pass: pass,
             )
         }
         guard showsControls else { return }
-        // Laid out on the full-screen canvas so it keeps its proportions at any resolution.
-        let canvas = FullscreenCanvas(screenSize: bounds.size)
         if isModern {
             canvas.apply(to: modernControls.layer)
             modernControls.update(
@@ -75,10 +85,10 @@ final class MoviePlaybackLayers {
                 duration: menu.moviePlaybackDurationSeconds,
                 isLoading: menu.isMoviePreviewDownloadLoading,
                 loadingProgress: menu.moviePreviewDownloadProgress,
-                size: canvas.size,
+                size: controlsSize,
                 scale: canvas.pixelScale(backingScale: scale),
             )
-            modernControls.layer.setOpacity(menu.movieControlsOpacity, pass.animation)
+            modernControls.layer.setOpacity(controlsOpacity, pass.animation)
             return
         }
         canvas.apply(to: controls.layer)
@@ -88,10 +98,41 @@ final class MoviePlaybackLayers {
             duration: menu.moviePlaybackDurationSeconds,
             isLoading: menu.isMoviePreviewDownloadLoading,
             loadingProgress: menu.moviePreviewDownloadProgress,
-            size: canvas.size,
+            size: controlsSize,
             scale: canvas.pixelScale(backingScale: scale),
         )
-        controls.layer.setOpacity(menu.movieControlsOpacity, pass.animation)
+        controls.layer.setOpacity(controlsOpacity, pass.animation)
+    }
+
+    /// Gives the picture its box. As the layout glides, the picture travels from where it was
+    /// to where it fits now, keeping its shape: by a transform, since a video's layer takes a
+    /// new size at once.
+    private func placePicture(_ box: CGRect) {
+        let before = playerLayer.frame
+        guard before != box else { return }
+        #if FIRSTROW_PORTABLE
+            // Nothing glides there: its windows have one layout.
+            playerLayer.frame = box
+        #else
+            let video = playerLayer.videoRect
+            let shown = playerLayer.presentation()?.transform ?? CATransform3DIdentity
+            playerLayer.frame = box
+            guard LayoutGlide.isActive, !playerLayer.isHidden, before.width > 0, before.height > 0, box.width > 0, box.height > 0 else { return }
+            // The picture's shape: the video's once it's known, the old box's until then.
+            let shape = video.width > 1 && video.height > 1 ? video.size : before.size
+            func fitted(in box: CGRect) -> CGFloat {
+                min(box.width, box.height * shape.width / shape.height)
+            }
+            let widthNow = fitted(in: box)
+            guard widthNow > 0 else { return }
+            // Where it was showing (part way through an earlier glide, perhaps).
+            let ratio = fitted(in: before) * shown.m11 / widthNow
+            let from = CATransform3DScale(
+                CATransform3DMakeTranslation(before.midX + shown.m41 - box.midX, before.midY + shown.m42 - box.midY, 0),
+                ratio, ratio, 1,
+            )
+            LayoutGlide.bring(playerLayer, "transform", from: NSValue(caTransform3D: from))
+        #endif
     }
 }
 
@@ -364,7 +405,7 @@ final class MovieResumePromptLayer {
         let rowSpacing: CGFloat = 10
         let selectedOffset = CGFloat(menu.movieResumePromptSelectedIndex) * (optionHeight + rowSpacing)
         let stackHeight = optionHeight * 2 + rowSpacing
-        options.frame = CGRect(x: (sceneSize.width - optionWidth) * 0.5, y: (sceneSize.height - stackHeight) * 0.5, width: optionWidth, height: stackHeight)
+        options.frame = CGRect(x: (sceneSize.width - optionWidth) * 0.5, y: Self.middle(menu, sceneSize) - stackHeight * 0.5, width: optionWidth, height: stackHeight)
         optionFrames = (0 ..< 2).map { index in
             CGRect(x: options.frame.minX, y: options.frame.minY + CGFloat(index) * (optionHeight + rowSpacing), width: optionWidth, height: optionHeight)
         }
@@ -385,6 +426,12 @@ final class MovieResumePromptLayer {
         layer.setOpacity(menu.movieResumePromptOpacity, appearing ? nil : pass.animation)
     }
 
+    /// The height the two options are centred on: the screen's middle, or standing upright the
+    /// middle of the part under the fold, where the menus' rows are.
+    private static func middle(_ menu: MenuView, _ sceneSize: CGSize) -> CGFloat {
+        menu.upright?.lowerPane.midY ?? sceneSize.height * 0.5
+    }
+
     /// Two of the menus' rows in the middle: focus jumps to the chosen one, which turns white and
     /// grows as a menu row does, the other fading back. Choosing keeps them as they are (the
     /// classic look's blanked bar is its own).
@@ -392,7 +439,7 @@ final class MovieResumePromptLayer {
         let width: CGFloat = 760
         let rowHeight = menu.selectionBoxHeight
         let pitch = rowHeight + 5
-        options.frame = CGRect(x: (sceneSize.width - width) * 0.5, y: (sceneSize.height - pitch * 2) * 0.5, width: width, height: pitch * 2)
+        options.frame = CGRect(x: (sceneSize.width - width) * 0.5, y: Self.middle(menu, sceneSize) - pitch, width: width, height: pitch * 2)
         optionFrames = (0 ..< 2).map { index in
             CGRect(x: options.frame.minX, y: options.frame.minY + CGFloat(index) * pitch, width: width, height: rowHeight)
         }

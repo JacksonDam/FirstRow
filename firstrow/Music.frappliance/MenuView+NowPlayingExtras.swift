@@ -8,17 +8,19 @@ import Foundation
 #endif
 
 /// Now Playing's extras for pointing and touching: the list it was started from, over its
-/// right side; the lyrics, when the song has some; and touch mode's buttons, which slide away
+/// right side; the lyrics, when the song has some; and the on-screen buttons, which slide away
 /// while a song plays untouched.
 extension MenuView {
     // MARK: - The list over the right side
 
-    /// Mouse or touch mode is on: the arrows alone don't reach the list.
+    /// There's a pointer or fingers to reach the list with (everywhere but Apple TV, where the
+    /// arrows alone don't reach it).
     var canPointAtNowPlaying: Bool {
-        #if os(iOS)
-            if AppSettings.isTouchEnabled { return true }
+        #if os(tvOS)
+            false
+        #else
+            true
         #endif
-        return AppSettings.isMouseEnabled
     }
 
     var isMusicNowPlayingShowing: Bool {
@@ -212,7 +214,8 @@ extension MenuView {
             if geometry.edgeZone.contains(point) { showNowPlayingQueue() }
             return
         }
-        if point.x < geometry.panel.minX - 70 {
+        // (Standing upright the list is under the fold: away is above it.)
+        if point.x < geometry.panel.minX - 70 || (upright != nil && point.y < geometry.panel.minY - 70) {
             hideNowPlayingQueue()
             return
         }
@@ -279,7 +282,7 @@ extension MenuView {
         areNowPlayingTouchControlsHidden = false
     }
 
-    // MARK: - Touch mode's buttons
+    // MARK: - The on-screen buttons
 
     private static let nowPlayingTouchControlsHideDelay: TimeInterval = 4
 
@@ -296,21 +299,29 @@ extension MenuView {
     func hideNowPlayingTouchControls() {
         nowPlayingTouchControlsHideTask?.cancel()
         nowPlayingTouchControlsHideTask = nil
-        guard !areNowPlayingTouchControlsHidden else { return }
+        guard !areNowPlayingTouchControlsHidden, upright == nil else { return }
         withAnimation(.smoothInOut(duration: 0.5)) {
             areNowPlayingTouchControlsHidden = true
         }
     }
 
+    /// The screen stood up or lay back down with Now Playing on it. Upright the buttons have
+    /// their own part of the screen, under the fold, and stay; lying down they go away again
+    /// after a while.
+    func nowPlayingStanceDidChange() {
+        guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
+        scheduleNowPlayingTouchControlsHide()
+    }
+
     /// Starts the wait before the buttons slide away, if they should: only with on-screen
-    /// buttons (touch or mouse mode), in Now Playing, while it plays. Paused, or with the list
+    /// buttons, in Now Playing, while it plays. Paused, standing upright, or with the list
     /// out beside it, they stay.
     func scheduleNowPlayingTouchControlsHide() {
         nowPlayingTouchControlsHideTask?.cancel()
         nowPlayingTouchControlsHideTask = nil
         guard showsOnScreenControls, activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
         guard nowPlayingQueueReveal <= 0 else { return }
-        guard isMusicPlaybackRunningOrStarting() else {
+        guard isMusicPlaybackRunningOrStarting(), upright == nil else {
             if areNowPlayingTouchControlsHidden {
                 withAnimation(.smooth(duration: 0.4)) { areNowPlayingTouchControlsHidden = false }
             }

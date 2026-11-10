@@ -7,7 +7,7 @@ import QuartzCore
     import FirstRowPortable
 #endif
 
-/// The buttons touch mode puts on screen, so nothing needs a gesture to find.
+/// The buttons put on screen for the pointer and fingers, so nothing needs a gesture to find.
 enum TouchControl: Equatable {
     case back
     case playPause
@@ -20,9 +20,10 @@ enum TouchControl: Equatable {
 }
 
 /// Round buttons over everything else: Back at the top left wherever there's somewhere to go
-/// back to, and the transport for Now Playing and movies. Shown in touch mode and mouse mode. Buttons
-/// come and go by fading through a blurred copy of themselves, sharpening as they appear;
-/// Now Playing's own buttons instead belong to it, scaling and fading with the rest of it.
+/// back to, and the transport for Now Playing and movies. Shown while the pointer or a finger was
+/// the last input. Buttons come and go by fading through a blurred copy of themselves, sharpening
+/// as they appear; Now Playing's own buttons instead belong to it, scaling and fading with the
+/// rest of it.
 @MainActor
 final class TouchControlsLayer {
     let layer = SceneLayer()
@@ -116,11 +117,15 @@ final class TouchControlsLayer {
 
     /// Now Playing's progress bar in window points: the last one seen, while songs change over.
     private var nowPlayingBar: CGRect?
+    /// How large Now Playing's details show against their full size (small with the list or
+    /// the words out).
+    private var nowPlayingScale: CGFloat = 1
     /// Where Now Playing's buttons start down from, when they're under its progress bar.
     private var transportTop: CGFloat?
 
-    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil) {
+    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil, nowPlayingScale detailsScale: CGFloat? = nil) {
         if let bar { nowPlayingBar = bar }
+        if let detailsScale { nowPlayingScale = detailsScale }
         var wanted: [Wanted] = []
         // Shown for the pointer and fingers; a key or remote puts them straight away.
         let enabled = menu.showsOnScreenControls && menu.showsPointingHints && menu.onboardingStep == nil
@@ -142,8 +147,11 @@ final class TouchControlsLayer {
             if menu.isMoviePlaybackVisible {
                 // With the movie's controls, coming and going together.
                 // (Subtitles, audio and speed have buttons of their own, above the bar.)
-                if menu.areMovieControlsVisible, menu.movieControlsOpacity > 0.01 {
-                    let middle = CGPoint(x: size.width / 2, y: size.height / 2)
+                if menu.showsMovieControls, menu.shownMovieControlsOpacity > 0.01 {
+                    // Over the middle of the picture; standing upright, under the fold.
+                    let canvas = FullscreenCanvas(screenSize: size, upright: menu.upright)
+                    let spot = canvas.upright.map { canvas.window($0.movieButtonsCenter) }
+                    let middle = spot ?? CGPoint(x: size.width / 2, y: size.height / 2)
                     wanted = [
                         back,
                         Wanted(control: .skipBack, frame: CGRect(x: middle.x - 36 - 44 - 56, y: middle.y - 28, width: 56, height: 56), symbol: "gobackward.10", pointSize: 22),
@@ -156,20 +164,28 @@ final class TouchControlsLayer {
                 let side: CGFloat = 52
                 // With the list or the words beside it, Now Playing moves aside and shrinks; the
                 // buttons go with it (at their own size, for fingers).
-                let canvas = FullscreenCanvas(screenSize: size)
+                let canvas = FullscreenCanvas(screenSize: size, upright: menu.upright)
                 let aside = NowPlayingSideLayout.shift(menu: menu, size: canvas.size)
                 let (middle, centerY): (CGFloat, CGFloat) = {
                     let bottom = size.height - max(insets.bottom, 10) - 16 - play / 2
                     #if os(iOS)
+                        let underBar = true
+                    #else
+                        // (Only a phone stands upright; the test build stands a window up.)
+                        let underBar = canvas.upright != nil
+                    #endif
+                    if underBar {
                         // On a phone or an iPad, under the progress bar (and its times), clear of
                         // the cover, rather than along the bottom of the screen.
                         if let bar = nowPlayingBar {
                             let canvasScale = canvas.scale
                             // From the bar's middle: the modern bar swells while it's held.
-                            let gap = (isModern ? 76 : 44) * canvasScale * aside.scale
+                            let gap = (isModern ? 76 : 44) * canvasScale * nowPlayingScale
                             // With the words beside it, Now Playing is small: the buttons go
-                            // along the bottom under it, and stop short of the words.
-                            let besideWords = menu.isNowPlayingLyricsVisible
+                            // along the bottom under it, and stop short of the words. (Standing
+                            // upright the words are under the fold, and the buttons stay with
+                            // the bar above it.)
+                            let besideWords = menu.isNowPlayingLyricsVisible && canvas.upright == nil
                             let centerY = besideWords ? bottom : min(bar.midY + gap + play / 2, bottom)
                             // The whole row on the screen: Previous on the left, the words'
                             // button furthest right.
@@ -181,7 +197,7 @@ final class TouchControlsLayer {
                             transportTop = centerY - play / 2
                             return (max(min(bar.midX, rightLimit - rightReach), insets.left + 16 + leftReach), centerY)
                         }
-                    #endif
+                    }
                     return (size.width / 2 + aside.dx * canvas.scale, bottom)
                 }()
                 wanted = [
@@ -248,8 +264,10 @@ final class TouchControlsLayer {
             drift: CGSize(width: 0, height: -9),
             session: menu.nowPlayingSession,
         )
+        // Beside where the list comes out: under the fold, standing upright.
+        let queueHintY = menu.upright.map { FullscreenCanvas(screenSize: size, upright: $0).window($0.lowerPane).midY } ?? size.height / 2
         queueHint.update(
-            frame: CGRect(x: size.width - max(insets.right, 8) - 16, y: size.height / 2 - 40, width: 5, height: 80),
+            frame: CGRect(x: size.width - max(insets.right, 8) - 16, y: queueHintY - 40, width: 5, height: 80),
             shown: isNowPlaying && menu.canShowNowPlayingQueue && menu.nowPlayingQueueReveal <= 0.001 && !menu.isNowPlayingLyricsVisible &&
                 !menu.isFullscreenSceneTransitioning && menu.showsPointingHints && menu.onboardingStep == nil,
             drift: CGSize(width: -9, height: 0),

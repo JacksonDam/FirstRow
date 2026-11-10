@@ -226,6 +226,12 @@ final class RunLoopFlushObserver {
             relayout()
         }
 
+        /// Lays out again now, whether or not the size changed (the stance may have).
+        func layoutNow() {
+            lastLayout = nil
+            relayout()
+        }
+
         private func relayout() {
             let size = bounds.size
             let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
@@ -329,6 +335,13 @@ final class RunLoopFlushObserver {
             lastLayout = (size, scale)
             onLayout?(size, scale)
         }
+
+        /// Lays out again now, whether or not the size changed.
+        func layoutNow() {
+            guard let last = lastLayout else { return }
+            lastLayout = nil
+            layout(size: last.0, scale: last.1)
+        }
     }
 #else
     /// The view First Row draws into on iPhone, iPad and Apple TV.
@@ -356,6 +369,12 @@ final class RunLoopFlushObserver {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
+            relayout()
+        }
+
+        /// Lays out again now, whether or not the size changed (the stance may have).
+        func layoutNow() {
+            lastLayout = nil
             relayout()
         }
 

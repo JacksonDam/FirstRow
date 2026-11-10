@@ -152,11 +152,28 @@ final class TextEntryLayer {
             focusTile.isHidden = true
             field.isHidden = true
             selection.layer.isHidden = true
-            place(title, TextSpec(text: display.title, fontName: style.titleFont, size: style.titleSize, color: style.text, maxWidth: sceneSize.width - 200), centerX: centerX, top: 150)
-            place(prompt, TextSpec(text: display.message, fontName: style.bodyFont, size: style.promptSize, color: style.secondaryText, wrapWidth: 1100, alignment: .center), centerX: centerX, top: 270)
+            let wrap = min(1100, sceneSize.width - 160)
             let spaced = display.code.map(String.init).joined(separator: " ")
-            place(code, TextSpec(text: spaced, fontName: style.titleFont, size: style.codeSize, color: style.text), centerX: centerX, top: 430)
-            place(status, TextSpec(text: display.status, fontName: style.bodyFont, size: style.promptSize, color: style.secondaryText, wrapWidth: 1100, alignment: .center), centerX: centerX, top: 700)
+            let lines = [
+                (title, TextSpec(text: display.title, fontName: style.titleFont, size: style.titleSize, color: style.text, maxWidth: sceneSize.width - 200)),
+                (prompt, TextSpec(text: display.message, fontName: style.bodyFont, size: style.promptSize, color: style.secondaryText, wrapWidth: wrap, alignment: .center)),
+                (code, TextSpec(text: spaced, fontName: style.titleFont, size: style.codeSize, color: style.text, maxWidth: sceneSize.width - 120, minimumScaleFactor: 0.5)),
+                (status, TextSpec(text: display.status, fontName: style.bodyFont, size: style.promptSize, color: style.secondaryText, wrapWidth: wrap, alignment: .center)),
+            ].map { ($0.0, TextRenderer.render($0.1, scale: scale)) }
+            var tops: [CGFloat] = [150, 270, 430, 700]
+            if let upright = menu.upright {
+                // Standing upright: what to do above the fold, the code and how it's going below.
+                let heights = lines.map(\.1.size.height)
+                let upper = upright.upperPane
+                let lower = upright.lowerPane
+                let headTop = (upper.minY + (upper.height - heights[0] - 48 - heights[1]) / 2).rounded()
+                let codeTop = (lower.minY + (lower.height - heights[2] - 60 - heights[3]) / 2).rounded()
+                tops = [headTop, headTop + heights[0] + 48, codeTop, codeTop + heights[2] + 60]
+            }
+            for (index, line) in lines.enumerated() {
+                line.0.isHidden = false
+                line.0.show(line.1, at: CGPoint(x: centerX - line.1.size.width * 0.5, y: tops[index]))
+            }
         } else if let entry {
             code.isHidden = true
             status.isHidden = true

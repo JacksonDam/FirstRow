@@ -33,13 +33,13 @@ func withoutLayerActions(_ body: () -> Void) {
     CATransaction.commit()
 }
 
-/// A layer whose property changes never animate implicitly.
+/// A layer whose property changes never animate implicitly (but takes part in a `LayoutGlide`).
 class StillLayer: CALayer {
-    override func action(forKey _: String) -> CAAction? { nil }
+    override func action(forKey key: String) -> CAAction? { LayoutGlide.action(for: self, key: key) }
 }
 
 final class StillGradientLayer: CAGradientLayer {
-    override func action(forKey _: String) -> CAAction? { nil }
+    override func action(forKey key: String) -> CAAction? { LayoutGlide.action(for: self, key: key) }
 }
 
 /// BGRA premultiplied: Core Animation shows this layout without making a converted copy.
@@ -96,6 +96,27 @@ func depthPerspectiveTransform(perspective: CGFloat, viewSize: CGSize) -> CATran
 func yawTransform(degrees: Double, perspective: CGFloat, viewSize: CGSize) -> CATransform3D {
     let rotation = CATransform3DMakeRotation(CGFloat(degrees * .pi / 180), 0, 1, 0)
     return CATransform3DConcat(rotation, depthPerspectiveTransform(perspective: perspective, viewSize: viewSize))
+}
+
+/// Where a rectangle of `size` centred on `center` shows once `transform` has turned it about its middle.
+func turnedOutline(center: CGPoint, size: CGSize, transform: CATransform3D) -> CGRect {
+    var low = CGPoint(x: CGFloat.infinity, y: CGFloat.infinity)
+    var high = CGPoint(x: -CGFloat.infinity, y: -CGFloat.infinity)
+    let corners: [(CGFloat, CGFloat)] = [(-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5)]
+    for (acrossShare, downShare) in corners {
+        let x = size.width * acrossShare
+        let y = size.height * downShare
+        let depth = x * transform.m14 + y * transform.m24 + transform.m44
+        guard depth > 0.0001 else { continue }
+        let shownX = (x * transform.m11 + y * transform.m21 + transform.m41) / depth
+        let shownY = (x * transform.m12 + y * transform.m22 + transform.m42) / depth
+        low = CGPoint(x: min(low.x, shownX), y: min(low.y, shownY))
+        high = CGPoint(x: max(high.x, shownX), y: max(high.y, shownY))
+    }
+    guard low.x <= high.x, low.y <= high.y else {
+        return CGRect(x: center.x - size.width * 0.5, y: center.y - size.height * 0.5, width: size.width, height: size.height)
+    }
+    return CGRect(x: center.x + low.x, y: center.y + low.y, width: high.x - low.x, height: high.y - low.y)
 }
 
 extension NSValue {

@@ -22,7 +22,7 @@ final class MenuListLayer {
         var selectionBoxHeightScale: CGFloat = 1
         var usesUniformRowLayout = false
         var theme: InterfaceTheme = .classic
-        /// Touch mode with no finger down: nothing is shown as selected.
+        /// Fingers in charge with none down: nothing is shown as selected.
         var hidesSelection = false
         var visibility: Visibility = .visible
         /// How far the selected row is pulled past the end of the list (a Siri Remote swipe that
@@ -205,7 +205,7 @@ final class MenuListLayer {
         let visualHeight = selectedIsNormalHeight ? menu.selectionBoxHeight + menu.selectionTextureVisualHeightDelta : selectionVisualHeight
         let visualYOffset = selectedIsNormalHeight ? -(menu.selectionTextureVisualHeightDelta * 0.5) : selectionVisualYOffset
         // Modern rows show focus themselves: it jumps to the row, which grows a little.
-        // Shown again (a finger landing in touch mode), the selection starts where it is,
+        // Shown again (a finger landing), the selection starts where it is,
         // not sliding over from where it was last.
         let revealsSelection = selectionBox.layer.isHidden
         selectionBox.layer.isHidden = items.isEmpty || isModern || c.hidesSelection

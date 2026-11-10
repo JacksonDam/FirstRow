@@ -3,10 +3,9 @@ import Foundation
 /// The Settings menu's own rows, and the Screen Saver page.
 extension MenuView {
     static let settingsThemeItemID = "settings_theme"
-    static let settingsMouseItemID = "settings_mouse"
-    static let settingsTouchItemID = "settings_touch"
     static let settingsScreenSaverItemID = "settings_screensaver"
     static let settingsSoundEffectsItemID = "settings_soundeffects"
+    static let settingsIntroMovieItemID = "settings_intromovie"
     private static let screenSaverPreviewItemID = "screensaver_preview"
     private static let screenSaverChoicePrefix = "screensaver_after_"
 
@@ -16,8 +15,7 @@ extension MenuView {
         case Self.settingsSoundEffectsItemID: isUISoundEffectsEnabled ? "On" : "Off"
         case Self.settingsScreenSaverItemID: AppSettings.screenSaverDelayTitle(AppSettings.screenSaverDelay)
         case Self.settingsThemeItemID: AppSettings.theme.title
-        case Self.settingsMouseItemID: AppSettings.isMouseEnabled ? "On" : "Off"
-        case Self.settingsTouchItemID: AppSettings.isTouchEnabled ? "On" : "Off"
+        case Self.settingsIntroMovieItemID: AppSettings.playsIntroMovieAtLaunch ? "On" : "Off"
         default: nil
         }
     }
@@ -34,14 +32,9 @@ extension MenuView {
         case Self.settingsThemeItemID:
             playSound(named: "Selection")
             switchTheme(to: AppSettings.theme == .classic ? .modern : .classic)
-        case Self.settingsMouseItemID:
-            AppSettings.isMouseEnabled.toggle()
-            objectWillChange.send()
-            playSound(named: "Selection")
-        case Self.settingsTouchItemID:
-            AppSettings.isTouchEnabled.toggle()
-            pointer.clearPin()
-            isTouchSelecting = false
+        case Self.settingsIntroMovieItemID:
+            // The look's intro movie at every launch (it always plays after the first-launch screens).
+            AppSettings.playsIntroMovieAtLaunch.toggle()
             objectWillChange.send()
             playSound(named: "Selection")
         default:

@@ -23,11 +23,29 @@ enum NowPlayingSideLayout {
         return (0, 0)
     }
 
-    static func lyricsFrame(_ size: CGSize) -> CGRect {
+    /// The list's sheet in canvas points: down the right side or, standing upright, across the
+    /// part under the fold.
+    static func queuePanel(_ size: CGSize, upright: UprightStance?) -> CGRect {
+        if let pane = upright?.lowerPane {
+            return CGRect(x: 40, y: pane.minY + 14, width: size.width - 80, height: pane.height - 28)
+        }
+        let width = queueWidth(size)
+        return CGRect(x: size.width - width - 40, y: 70, width: width, height: size.height - 140)
+    }
+
+    static func lyricsFrame(_ size: CGSize, upright: UprightStance? = nil) -> CGRect {
+        if let pane = upright?.lowerPane {
+            // Standing upright the words have the part under the fold to themselves.
+            return CGRect(x: 70, y: pane.minY, width: size.width - 140, height: pane.height)
+        }
         let width = (size.width * 0.44).rounded()
-        // Touch mode's buttons along the bottom keep the words above them.
+        // On iPhone and iPad the buttons along the bottom keep the words above them.
         #if os(iOS)
-            let height = AppSettings.isTouchEnabled ? size.height * 0.8 : size.height
+            #if os(iOS)
+                let height = size.height * 0.8
+            #else
+                let height = size.height
+            #endif
         #else
             let height = size.height
         #endif
@@ -37,6 +55,8 @@ enum NowPlayingSideLayout {
     /// The move and scale, about the middle of the screen, for what stays.
     /// A list only part way out moves the rest only part of the way.
     static func shift(menu: MenuView, size: CGSize) -> (dx: CGFloat, scale: CGFloat) {
+        // Standing upright nothing moves aside: see `tuck`.
+        guard menu.upright == nil else { return (0, 1) }
         let reserve = reserve(menu: menu, size: size)
         guard reserve.width > 0, reserve.amount > 0 else { return (0, 1) }
         let scale = min(1, max(0.5, (size.width - reserve.width - 50) / (size.width * 0.86)))
@@ -59,6 +79,48 @@ enum NowPlayingSideLayout {
             width: rect.width * shift.scale,
             height: rect.height * shift.scale,
         )
+    }
+
+    /// Standing upright the list and the words come out under the fold, where the song's
+    /// details are, and the details tuck up beside the cover above it, both smaller. How far
+    /// that has gone: 0 with nothing out, 1 with the list or the words all the way out.
+    static func tuck(menu: MenuView) -> CGFloat {
+        guard menu.upright != nil else { return 0 }
+        return max(min(max(menu.nowPlayingQueueReveal, 0), 1), menu.isNowPlayingLyricsVisible ? 1 : 0)
+    }
+
+    /// Where one part of the panel (the cover, or the details) shows: at `scale`, with its own
+    /// point `anchor` at `center`.
+    struct Place {
+        var anchor: CGPoint
+        var scale: CGFloat
+        var center: CGPoint
+
+        /// Part of the way from one place to another, in a straight line.
+        static func between(_ from: Place, _ to: Place, _ amount: CGFloat) -> Place {
+            let amount = min(max(amount, 0), 1)
+            return Place(
+                anchor: from.anchor,
+                scale: from.scale + (to.scale - from.scale) * amount,
+                center: CGPoint(x: from.center.x + (to.center.x - from.center.x) * amount, y: from.center.y + (to.center.y - from.center.y) * amount),
+            )
+        }
+
+        /// For a layer anchored at its top left and placed at the origin.
+        var transform: CATransform3D {
+            var transform = CATransform3DMakeTranslation(center.x, center.y, 0)
+            transform = CATransform3DScale(transform, scale, scale, 1)
+            return CATransform3DTranslate(transform, -anchor.x, -anchor.y, 0)
+        }
+
+        func map(_ rect: CGRect) -> CGRect {
+            CGRect(
+                x: center.x + (rect.minX - anchor.x) * scale,
+                y: center.y + (rect.minY - anchor.y) * scale,
+                width: rect.width * scale,
+                height: rect.height * scale,
+            )
+        }
     }
 }
 
@@ -221,8 +283,8 @@ final class NowPlayingQueueLayer {
         // (The hint along the right edge is drawn with the on-screen buttons, in screen points,
         // so it matches the transport's.)
 
-        let width = NowPlayingSideLayout.queueWidth(size)
-        panelFrame = CGRect(x: size.width - width - 40, y: 70, width: width, height: size.height - 140)
+        panelFrame = NowPlayingSideLayout.queuePanel(size, upright: menu.upright)
+        let width = panelFrame.width
         panel.place(panelFrame)
         panel.backgroundColor = isModern ? CGColor(gray: 0.06, alpha: 0.72) : CGColor(gray: 0, alpha: 0.82)
         panel.cornerRadius = isModern ? 36 : 18
@@ -490,7 +552,7 @@ final class NowPlayingLyricsLayer {
             if !shown, pass.animation == nil { layer.isHidden = true }
             return
         }
-        let area = NowPlayingSideLayout.lyricsFrame(size)
+        let area = NowPlayingSideLayout.lyricsFrame(size, upright: menu.upright)
         clip.frame = area
         fade.frame = CGRect(origin: .zero, size: area.size)
         let isModern = ModernTheme.isActive

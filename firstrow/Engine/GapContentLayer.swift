@@ -11,10 +11,26 @@ import QuartzCore
 @MainActor
 final class GapContentLayer {
     let layer = SceneLayer()
+    /// Holds the pieces to the screen, and upright to the room above the fold.
+    private let clip = SceneLayer()
+    /// Upright, a piece or its reflection sinks into the dark above the fold instead of being cut off along it.
+    private let foot = SceneGradientLayer()
     private var items: [String: GapItemLayer] = [:]
     private var order: [String] = []
     private var memo = GapContentMemo()
     private var isShowing = false
+
+    init() {
+        clip.masksToBounds = true
+        layer.addSublayer(clip)
+        foot.colors = [CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0.75), CGColor(gray: 0, alpha: 1)]
+        foot.locations = [0, 0.6, 1]
+        foot.startPoint = CGPoint(x: 0.5, y: 0)
+        foot.endPoint = CGPoint(x: 0.5, y: 1)
+        foot.opacity = 0
+        foot.zPosition = 1000
+        clip.addSublayer(foot)
+    }
 
     func tearDown() {
         for item in items.values {
@@ -33,6 +49,7 @@ final class GapContentLayer {
         opacityAnimation: Animation?,
         sceneSize: CGSize,
         boxFrame: CGRect,
+        show: UprightShow? = nil,
         scale: CGFloat,
     ) {
         guard visible else {
@@ -51,9 +68,20 @@ final class GapContentLayer {
             boxSize: boxFrame.size,
             boxFrame: boxFrame,
             sceneSize: sceneSize,
+            show: show,
             scale: scale,
             pass: appearing ? RenderPass(transaction: .instant) : pass,
         )
+        // The clip's own space is the box's, so the pieces sit in it as they would in the box.
+        let screen = CGRect(x: -boxFrame.minX, y: -boxFrame.minY, width: sceneSize.width, height: sceneSize.height)
+        let window = show?.pane ?? screen
+        if clip.bounds != window {
+            clip.bounds = window
+            clip.position = window.origin
+        }
+        let footHeight: CGFloat = 120
+        foot.place(CGRect(x: window.minX, y: window.maxY - footHeight, width: window.width, height: footHeight))
+        foot.setOpacity(show == nil ? 0 : 1, nil)
         let specs = menu.gapContentItems(sceneSize: sceneSize, pass: context.pass, memo: &memo)
         let wantedKeys = Set(specs.map(\.key))
 
@@ -89,7 +117,7 @@ final class GapContentLayer {
                     stale.layer.removeFromSuperlayer()
                 }
                 item = GapItemLayer.make(for: spec.kind)
-                item.layer.frame = CGRect(origin: .zero, size: boxFrame.size)
+                item.layer.place(CGRect(origin: .zero, size: boxFrame.size))
                 item.update(spec.kind, context: context)
                 let fadeIn = appearing ? nil : spec.transition
                 item.layer.opacity = fadeIn == nil ? Float(spec.opacity) : 0
@@ -97,15 +125,15 @@ final class GapContentLayer {
                 items[spec.key] = item
             }
             item.removalAnimation = spec.fade
-            item.layer.frame = CGRect(origin: .zero, size: boxFrame.size)
+            item.layer.place(CGRect(origin: .zero, size: boxFrame.size))
             newOrder.append(spec.key)
         }
         order = newOrder
         // Later pieces stack on top, and leaving pieces stay behind them.
         let ordered = newOrder.compactMap { items[$0]?.layer }
         for (index, sublayer) in ordered.enumerated() {
-            if sublayer.superlayer !== layer {
-                layer.addSublayer(sublayer)
+            if sublayer.superlayer !== clip {
+                clip.addSublayer(sublayer)
             }
             sublayer.zPosition = CGFloat(index + 1)
         }
@@ -126,12 +154,20 @@ struct GapItemContext {
     let boxSize: CGSize
     let boxFrame: CGRect
     let sceneSize: CGSize
+    /// Standing upright: the room above the fold, which the pieces fit themselves to.
+    var show: UprightShow?
     let scale: CGFloat
     let pass: RenderPass
 
     /// Centre of a piece in the box, with 100 pt of padding below it, then offset.
     func center(offsetX: CGFloat, offsetY: CGFloat) -> CGPoint {
         CGPoint(x: boxSize.width * 0.5 + offsetX, y: (boxSize.height - 100) * 0.5 + offsetY)
+    }
+
+    /// The transform for a layer covering the box that draws `rect` on a sideways screen:
+    /// upright, the one that brings it to the middle of the room above the fold.
+    func settled(_ rect: CGRect) -> CATransform3D {
+        show?.fit(rect) ?? CATransform3DIdentity
     }
 }
 
@@ -253,6 +289,8 @@ final class MoviePreviewLayer: GapItemLayer {
     private let reflectionImage = SceneLayer()
     private let preview = CALayer()
     private var key: String?
+    /// Where the turned picture shows in the box.
+    private var extent: CGRect = .zero
 
     override init() {
         super.init()
@@ -276,18 +314,26 @@ final class MoviePreviewLayer: GapItemLayer {
         apply(spec, context: context)
     }
 
+    /// Upright, the preview is brought to the middle of the room above the fold.
+    func settle(in context: GapItemContext) {
+        layer.setTransform(context.settled(extent), nil)
+    }
+
     func apply(_ spec: MoviePreviewSpec, context: GapItemContext) {
         let width = spec.baseIconSize * 1.74 * max(0.05, spec.sizeScale)
         let height = width / max(0.4, min(3.0, spec.aspectRatio))
+        let size = CGSize(width: width, height: height)
+        let center = context.center(offsetX: spec.offsetX, offsetY: spec.offsetY)
+        let turn = yawTransform(degrees: spec.previewYaw, perspective: 0.75, viewSize: size)
+        extent = turnedOutline(center: center, size: size, transform: turn)
+        settle(in: context)
         let key = "\(ObjectIdentifier(spec.image))|\(width)|\(height)|\(spec.offsetX)|\(spec.offsetY)|\(spec.previewYaw)|\(context.boxSize)"
         guard key != self.key else { return }
         self.key = key
-        let size = CGSize(width: width, height: height)
-        let center = context.center(offsetX: spec.offsetX, offsetY: spec.offsetY)
         preview.bounds = CGRect(origin: .zero, size: size)
         preview.position = center
         preview.contents = LayerImageCache.cgImage(for: spec.image)
-        preview.transform = yawTransform(degrees: spec.previewYaw, perspective: 0.75, viewSize: size)
+        preview.transform = turn
         // The reflection turns about the preview's frame, with its picture hanging below it.
         reflection.bounds = CGRect(origin: .zero, size: size)
         reflection.position = center
@@ -323,6 +369,7 @@ final class MovieSlideshowLayer: GapItemLayer {
         guard case let .movieSlideshow(descriptors, template) = kind else { return }
         self.context = context
         self.template = template
+        for preview in previews { preview.settle(in: context) }
         let identity = descriptors.map(\.id).joined(separator: "|")
         guard identity != self.identity else { return }
         self.identity = identity
@@ -351,7 +398,7 @@ final class MovieSlideshowLayer: GapItemLayer {
 
     private func makePreview(_ descriptor: MenuView.MovieGapPreviewDescriptor) -> MoviePreviewLayer {
         let preview = MoviePreviewLayer()
-        preview.layer.frame = layer.bounds
+        preview.layer.place(layer.bounds)
         if var spec = template, let context {
             spec.image = descriptor.image
             spec.aspectRatio = descriptor.aspectRatio
@@ -416,16 +463,18 @@ final class MusicPreviewLayer: GapItemLayer {
     override func update(_ kind: GapItemKind, context: GapItemContext) {
         guard case let .musicPreview(image, offsetX, offsetY) = kind else { return }
         let side: CGFloat = 400 * 1.2
+        let size = CGSize(width: side, height: side)
+        let center = context.center(offsetX: offsetX, offsetY: offsetY)
+        let turn = yawTransform(degrees: 24, perspective: 0.75, viewSize: size)
+        layer.setTransform(context.settled(turnedOutline(center: center, size: size, transform: turn)), nil)
         let key = "\(image.map { "\(ObjectIdentifier($0))" } ?? "none")|\(offsetX)|\(offsetY)|\(context.boxSize)"
         guard key != self.key else { return }
         self.key = key
-        let size = CGSize(width: side, height: side)
-        let center = context.center(offsetX: offsetX, offsetY: offsetY)
         let artwork = LayerImageCache.cgImage(for: image) ?? CoverArtPlaceholder.image(side: side)
         preview.bounds = CGRect(origin: .zero, size: size)
         preview.position = center
         preview.contents = artwork
-        preview.transform = yawTransform(degrees: 24, perspective: 0.75, viewSize: size)
+        preview.transform = turn
         reflection.bounds = CGRect(origin: .zero, size: size)
         reflection.position = center
         reflection.transform = yawTransform(degrees: 23.8, perspective: 0.75, viewSize: size)
@@ -436,6 +485,7 @@ final class MusicPreviewLayer: GapItemLayer {
 
 /// The album covers drifting across the gap (Music, iTunes Top and photo albums).
 final class CoverCarouselItemLayer: GapItemLayer {
+    private let stage = SceneLayer()
     private let space = SceneLayer()
     private let controller = CoverCarouselLayerController()
     private let exitOverlay = SceneLayer()
@@ -445,11 +495,12 @@ final class CoverCarouselItemLayer: GapItemLayer {
         #if os(macOS) || FIRSTROW_PORTABLE
             space.isGeometryFlipped = true
         #endif
-        layer.addSublayer(space)
+        layer.addSublayer(stage)
+        stage.addSublayer(space)
         space.addSublayer(controller.rootLayer)
         exitOverlay.backgroundColor = CGColor(gray: 0, alpha: 1)
         exitOverlay.opacity = 0
-        layer.addSublayer(exitOverlay)
+        stage.addSublayer(exitOverlay)
     }
 
     override func accepts(_ kind: GapItemKind) -> Bool {
@@ -459,11 +510,26 @@ final class CoverCarouselItemLayer: GapItemLayer {
 
     override func update(_ kind: GapItemKind, context: GapItemContext) {
         guard case let .coverCarousel(configuration, exitOverlayOpacity) = kind else { return }
+        stage.place(CGRect(origin: .zero, size: context.boxSize))
+        // The covers keep the path they have on a sideways screen, leaving past the left edge.
+        stage.setTransform(context.show?.sidewaysFit() ?? CATransform3DIdentity, nil)
         let side = configuration.baseIconSize * 1.2
         let size = CGSize(width: side, height: side + 100)
-        space.frame = CGRect(x: (context.boxSize.width - size.width) * 0.5, y: (context.boxSize.height - size.height) * 0.5, width: size.width, height: size.height)
+        let spaceFrame = CGRect(x: (context.boxSize.width - size.width) * 0.5, y: (context.boxSize.height - size.height) * 0.5, width: size.width, height: size.height)
+        space.frame = spaceFrame
         controller.rootLayer.frame = CGRect(origin: .zero, size: size)
-        controller.update(configuration, bounds: size)
+        var arranged = configuration
+        if let show = context.show {
+            // The path was drawn to leave the menu its side of the screen. Upright the menu is
+            // below, so the path is stretched from the screen's left edge to turn back near the right.
+            let left = show.sidewaysScreen.minX - spaceFrame.minX
+            let turn = size.width * 0.5 + configuration.horizontalOffset + CoverCarouselLayerController.turningPoint(baseIconSize: configuration.baseIconSize) - left
+            let fit = show.pane.height / max(show.sidewaysScreen.height, 1)
+            if turn > 0 {
+                arranged.spread = CoverCarouselConfiguration.Spread(about: left, factor: max(1, show.pane.width * 0.78 / (turn * fit)))
+            }
+        }
+        controller.update(arranged, bounds: size)
         let overlaySize = CGSize(width: max(configuration.baseIconSize * 3.75, 1500), height: max(configuration.baseIconSize * 4, 1200))
         exitOverlay.frame = CGRect(
             x: (context.boxSize.width - overlaySize.width) * 0.5 + configuration.horizontalOffset,

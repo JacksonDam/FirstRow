@@ -46,15 +46,13 @@ extension MenuView {
         lastInputSource == .pointer || lastInputSource == .touch
     }
 
-    /// The round on-screen buttons (Back, the transports) are shown: touch mode on iPhone and
-    /// iPad, mouse mode on computers.
+    /// There are round on-screen buttons (Back, the transports) for fingers and the pointer:
+    /// everywhere but Apple TV. They show while `showsPointingHints` does.
     var showsOnScreenControls: Bool {
-        #if os(iOS)
-            AppSettings.isTouchEnabled
-        #elseif os(tvOS)
+        #if os(tvOS)
             false
         #else
-            AppSettings.isMouseEnabled
+            true
         #endif
     }
 

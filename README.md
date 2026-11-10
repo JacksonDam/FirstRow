@@ -46,6 +46,8 @@ There are two looks. **Classic** is the original, down to the pixel. **Modern** 
 - **Podcasts** you've downloaded in Apple Podcasts (macOS).
 - **iTunes Top Charts** for movies, TV episodes, songs and music videos, with playable previews.
 - **A screen saver** of floating photos, after anything from a minute to an hour of inactivity.
+- **A short intro movie** in each look's style, with its own score. It plays once after you first set up First Row, and every time it opens if you turn on Settings > Intro Movie. Any key, click or tap skips it. It plays in 4K on a Mac with Apple silicon, and in 1080p everywhere else.
+- **An upright layout on iPhone Duo.** Opened out and held upright, First Row arranges itself around the fold: the carousel or preview card, the movie or the album cover sits above it, and the menu or the playback controls below. Turn it sideways and it glides back to the usual layout.
 - **Media keys, Control Center and headphone buttons** on macOS, iOS and tvOS, with whatever's playing shown in the system's Now Playing.
 
 Movies and shows bought from the Apple TV app won't play because of their DRM.
@@ -55,11 +57,13 @@ Movies and shows bought from the Apple TV app won't play because of their DRM.
 | | |
 |---|---|
 | **Keyboard** | Arrow keys move, `Return` chooses, `Esc` or `Delete` goes back, `Space` plays and pauses. `Cmd+Esc` quits on a Mac, `Ctrl+Esc` or `Ctrl+Q` elsewhere. |
-| **Mouse or trackpad** (macOS, Linux, Windows; turn on in Settings) | Point at a row and click it. Scroll long lists, use the on-screen Back button, and click or drag the progress bar to seek. In Now Playing, move to the right edge for the song list. |
+| **Mouse or trackpad** (macOS, Linux, Windows) | Point at a row and click it. Scroll long lists, use the on-screen Back button, and click or drag the progress bar to seek. In Now Playing, move to the right edge for the song list. |
 | **Touch** (iPhone, iPad) | Tap a row to open it. Drag a list to scroll it, or hold and slide to move through it. Swipe in from the left or tap Back to go back. In Now Playing, swipe in from the right for the song list. |
 | **Siri Remote** (Apple TV, or paired with a Mac) | Swipe or click the clickpad to move, click the centre to choose, Back goes back, Play/Pause plays and pauses. On a Mac, the TV button opens Now Playing's song list and the volume buttons set the Mac's volume. |
 | **Apple Remote** (Macs with an infrared receiver) | `+` and `-` move in menus and set the volume during playback. `⏮` and `⏭` move left and right, or change song in Now Playing (hold them to scrub). The centre button chooses and plays, `Menu` goes back. |
 | **Game controller** | D-pad or left stick moves, `A` chooses, `B` or `Menu` goes back, `X` plays and pauses. |
+
+All of them work at once, with nothing to turn on. First Row follows whatever you used last: touch or the mouse brings up on-screen buttons like Back and the playback controls, and a key, a remote or a game controller puts them away again.
 
 In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, and `Return` shows the lyrics. In a movie, tap `Left` or `Right` to skip 10 seconds or hold them to scrub, and press `Down` for subtitles, audio and speed.
 
@@ -82,7 +86,8 @@ firstrow/
 ├── Photos.frappliance/                 Photos and slideshows
 ├── FRSettings.frappliance/             Settings, media folders and the screen saver
 ├── FRSources.frappliance/              Sources and Jellyfin support
-├── Assets.xcassets, Sounds/, Videos/   Images, interface sounds and the intro movie
+├── Assets.xcassets, Sounds/, Videos/   Images, interface sounds and the two intro movies
+├── Videos4K/                           The intro movies in 4K, which only the Mac app carries
 └── ScreenSaverDefaultPhotos/           Photos for the screen saver
 Portable/                               Stand-ins for Apple's frameworks on Linux and Windows
 ```

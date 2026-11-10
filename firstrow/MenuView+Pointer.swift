@@ -25,7 +25,7 @@ final class PointerInputState {
     /// A list scrolled by the pointer stays put until the arrows take over again.
     var pin: (identity: String, offset: CGFloat)? {
         didSet {
-            // In touch mode each list is left where the finger left it, to come back to, when
+            // On iPhone and iPad each list is left where the finger left it, to come back to, when
             // the finger moves on to another list (not when the arrows take one over).
             guard isTouchMode, let pin else { return }
             leftScrollOffsets[pin.identity] = nil
@@ -35,11 +35,12 @@ final class PointerInputState {
         }
     }
 
-    /// Touch mode's lists, by identity, as they were last left.
+    /// Touched lists, by identity, as they were last left.
     private var leftScrollOffsets: [String: CGFloat] = [:]
+    /// iPhone and iPad, where lists are moved by fingers.
     private var isTouchMode: Bool {
         #if os(iOS)
-            AppSettings.isTouchEnabled
+            true
         #else
             false
         #endif
@@ -70,17 +71,14 @@ final class PointerInputState {
     ) -> CGFloat? {
         let minOffset = min(0, viewportHeight - contentHeight)
         guard let pin, pin.identity == identity else {
-            // A list touch mode left scrolled, come back to.
+            // A list a finger left scrolled, come back to.
             guard isTouchMode, let left = leftScrollOffsets[identity] else { return nil }
             return max(minOffset, min(0, left))
         }
         var offset = max(minOffset, min(0, pin.offset))
         // A list moved by a finger stays where it was left, wherever the selection is, and may
         // be pulled past its ends for a moment (it springs back when let go).
-        if tracksFinger { return pin.offset }
-        #if os(iOS)
-            if AppSettings.isTouchEnabled { return pin.offset }
-        #endif
+        if tracksFinger || isTouchMode { return pin.offset }
         // Scrolled just enough to show the whole selected row, if it's cut off at an edge.
         let top = selectedRowTop + offset
         if top < 0 {
@@ -178,7 +176,7 @@ extension MenuView {
             handleOnboardingPointer(event)
             return
         }
-        guard AppSettings.isMouseEnabled, !isChoosingMediaSource else { return }
+        guard !isChoosingMediaSource else { return }
         let wasPointing = lastInputSource == .pointer
         noteInputSource(.pointer)
         // After keys or a remote, a click only brings the on-screen buttons back.
@@ -200,40 +198,37 @@ extension MenuView {
 
     /// Keys put the arrows back in charge of the lists.
     func notePointerAwareKey(_ key: KeyCode) {
-        if key == .enter || key == .escape || key == .delete {
-            #if os(iOS)
-                // Touch mode's lists stay where the finger left them, as other apps' do: the one
-                // a choice was made in, for coming back to. Going back up out of a list forgets
-                // it, so next time it opens afresh.
-                if AppSettings.isTouchEnabled {
-                    pointer.tracksFinger = false
-                    if key == .escape || key == .delete, activeFullscreenScene == nil, !isMoviePlaybackVisible,
-                       !isMovieResumePromptVisible, textEntry == nil, let level = pointerActiveListLevel,
-                       let identity = pointer.hitTester?.menuListScrollState(level)?.identity
-                    {
-                        // Not yet: it stays where it is as it fades, and starts afresh next time.
-                        pointer.forgetScrollWhenShownAgain(identity: identity)
-                    }
-                    return
-                }
-            #endif
+        guard key == .enter || key == .escape || key == .delete else { return }
+        #if os(iOS)
+            // On iPhone and iPad lists stay where the finger left them, as other apps' do: the
+            // one a choice was made in, for coming back to. Going back up out of a list forgets
+            // it, so next time it opens afresh.
+            pointer.tracksFinger = false
+            if key == .escape || key == .delete, activeFullscreenScene == nil, !isMoviePlaybackVisible,
+               !isMovieResumePromptVisible, textEntry == nil, let level = pointerActiveListLevel,
+               let identity = pointer.hitTester?.menuListScrollState(level)?.identity
+            {
+                // Not yet: it stays where it is as it fades, and starts afresh next time.
+                pointer.forgetScrollWhenShownAgain(identity: identity)
+            }
+        #else
             // Enter waits to see what it opens (see settlePointerScrollAfterEnter).
             if key != .enter { pointer.clearPin() }
-        }
+        #endif
     }
 
     /// After Enter: a player coming up over the list leaves it where the wheel left it until
     /// the player covers it; anything else hands the list back to the arrows straight away.
+    /// (On iPhone and iPad lists stay where the finger left them.)
     func settlePointerScrollAfterEnter() {
-        #if os(iOS)
-            if AppSettings.isTouchEnabled { return }
+        #if !os(iOS)
+            guard pointer.pin != nil else { return }
+            if isPlayerCoveringMenus(orComing: true) {
+                pointer.clearsPinOnceCovered = true
+            } else {
+                pointer.clearPin()
+            }
         #endif
-        guard pointer.pin != nil else { return }
-        if isPlayerCoveringMenus(orComing: true) {
-            pointer.clearsPinOnceCovered = true
-        } else {
-            pointer.clearPin()
-        }
     }
 
     // MARK: - Events
@@ -553,7 +548,7 @@ extension MenuView {
             rememberCurrentMoviesFolderSelectionIndex()
         }
         #if os(iOS)
-            if AppSettings.isTouchEnabled, isTouchSelecting || touchSliding {
+            if isTouchSelecting || touchSliding {
                 deferTouchPreviewRefresh { [weak self] in self?.refreshPreviewForPointerSelection(level) }
                 objectWillChange.send()
                 return

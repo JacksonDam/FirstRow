@@ -269,6 +269,18 @@ extension MenuView {
         .smooth(duration: 0.5)
     }
 
+    /// After the intro movie, Modern's menus arrive as its scenes do: from a little nearer.
+    func bringInMenusAfterIntro() {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            menuSceneScale = ModernTheme.sceneNearScale
+        }
+        withAnimation(modernSceneArrive) {
+            menuSceneScale = 1
+        }
+    }
+
     func crossfadeToFullscreenScene(key: String, revealsDeferredNowPlaying: Bool) {
         // A menu change waiting on this (shuffling the library, say) hands over to it.
         if isMenuFolderSwapTransitioning {

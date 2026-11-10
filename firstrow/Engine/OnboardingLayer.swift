@@ -8,10 +8,11 @@ import QuartzCore
 #endif
 
 /// The first-launch screens over everything: a title, a line under it, and either two cards side
-/// by side to pick from (pictures of the two looks, then the two ways of controlling; the one
-/// picked out a little larger with a ring round it) or the controls for the way chosen, with
-/// Get Started. Everything is drawn in both looks and crossfades to the one being worn, which on
-/// the first screen is the one picked out.
+/// by side to pick from (pictures of the two looks, the one picked out a little larger with a
+/// ring round it) or the controls, with Get Started. Everything is drawn in both looks and crossfades to the one being worn, which on
+/// the first screen is the one picked out. On a foldable standing upright each half of the screen
+/// has its own: a card above the fold and a card below it, or the controls above and Get Started
+/// below.
 @MainActor
 final class OnboardingLayer {
     let layer = SceneLayer()
@@ -28,6 +29,10 @@ final class OnboardingLayer {
         let subtitle = SceneLayer()
         let labels = [SceneLayer(), SceneLayer()]
         let tips = SceneLayer()
+        /// The controls' lines, a symbol and its words each, kept so that they move with the
+        /// rest when the screen turns.
+        var tipIcons: [SceneLayer] = []
+        var tipTexts: [SceneLayer] = []
         let button = SceneLayer()
         let buttonFill = SceneLayer()
         let buttonSelection = SelectionBoxLayer()
@@ -80,6 +85,7 @@ final class OnboardingLayer {
     private let cardsLayer = SceneLayer()
     private let cards = [Card(), Card()]
     private var builtKey = ""
+    private var picturesKey = ""
     private var lastFocus: Int?
     private var lastLook: InterfaceTheme?
     /// The cards (or Get Started) in canvas points, for the pointer and fingers.
@@ -119,7 +125,7 @@ final class OnboardingLayer {
         layer.isHidden = false
         layer.frame = bounds
         layer.setOpacity(menu.onboardingOpacity, pass.animation)
-        let canvas = FullscreenCanvas(screenSize: bounds.size)
+        let canvas = FullscreenCanvas(screenSize: bounds.size, upright: menu.upright)
         canvas.apply(to: content)
         canvasScale = canvas.scale
         let pixelScale = canvas.pixelScale(backingScale: backingScale)
@@ -152,20 +158,39 @@ final class OnboardingLayer {
         let tips = menu.onboardingTips
         let isGuide = step == .guide
         let card = Self.cardSize
-        let gap: CGFloat = 90
         let tipPitch: CGFloat = 70
         let buttonSize = CGSize(width: 440, height: 86)
-        let middleHeight = isGuide ? CGFloat(tips.count) * tipPitch + 50 + buttonSize.height : card.height + 40 + 48
-        let blockHeight: CGFloat = 80 + 24 + 40 + 76 + middleHeight
-        let top = ((size.height - blockHeight) / 2).rounded()
-        let middleTop = top + 80 + 24 + 40 + 76
-        let left = ((size.width - card.width * 2 - gap) / 2).rounded()
-        let buttonFrame = CGRect(x: ((size.width - buttonSize.width) / 2).rounded(), y: middleTop + CGFloat(tips.count) * tipPitch + 50, width: buttonSize.width, height: buttonSize.height)
-        cardFrames = isGuide
-            ? [buttonFrame]
-            : (0 ..< 2).map { CGRect(x: left + CGFloat($0) * (card.width + gap), y: middleTop, width: card.width, height: card.height) }
+        // The title, the line under it and the gap to what follows.
+        let headingHeight: CGFloat = 80 + 24 + 40 + 76
+        let tipsHeight = CGFloat(tips.count) * tipPitch
+        // A card with its name under it.
+        let optionHeight = card.height + 40 + 48
+        let top: CGFloat
+        let buttonTop: CGFloat
+        if let upright = canvas.upright {
+            // Standing upright: the heading above the fold with the first card or the controls,
+            // and the second card or Get Started below it, each in the middle of its half.
+            let upper = upright.upperPane
+            let lower = upright.lowerPane
+            top = (upper.minY + (upper.height - headingHeight - (isGuide ? tipsHeight : optionHeight)) / 2).rounded()
+            buttonTop = (lower.midY - buttonSize.height / 2).rounded()
+            let left = ((size.width - card.width) / 2).rounded()
+            cardFrames = [top + headingHeight, (lower.minY + (lower.height - optionHeight) / 2).rounded()]
+                .map { CGRect(x: left, y: $0, width: card.width, height: card.height) }
+        } else {
+            let gap: CGFloat = 90
+            let middleHeight = isGuide ? tipsHeight + 50 + buttonSize.height : optionHeight
+            top = ((size.height - headingHeight - middleHeight) / 2).rounded()
+            buttonTop = top + headingHeight + tipsHeight + 50
+            let left = ((size.width - card.width * 2 - gap) / 2).rounded()
+            cardFrames = (0 ..< 2).map { CGRect(x: left + CGFloat($0) * (card.width + gap), y: top + headingHeight, width: card.width, height: card.height) }
+        }
+        let middleTop = top + headingHeight
+        let buttonFrame = CGRect(x: ((size.width - buttonSize.width) / 2).rounded(), y: buttonTop, width: buttonSize.width, height: buttonSize.height)
+        if isGuide { cardFrames = [buttonFrame] }
 
-        let key = "\(step)|\(size.width)|\(size.height)|\(pixelScale)|\(menu.onboardingSubtitle)|\(tips.map(\.text))"
+        let panes = canvas.upright.map { "\($0.upperPane)|\($0.lowerPane)" } ?? ""
+        let key = "\(step)|\(size.width)|\(size.height)|\(panes)|\(pixelScale)|\(menu.onboardingSubtitle)|\(tips.map(\.text))"
         if key != builtKey {
             builtKey = key
             lastFocus = nil
@@ -236,22 +261,37 @@ final class OnboardingLayer {
         }
 
         // The controls: a symbol and a line for each, then Get Started.
-        chrome.tips.sublayers?.forEach { $0.removeFromSuperlayer() }
+        let tips = step == .guide ? menu.onboardingTips : []
+        while chrome.tipIcons.count < tips.count {
+            let icon = SceneLayer()
+            let text = SceneLayer()
+            chrome.tips.addSublayer(icon)
+            chrome.tips.addSublayer(text)
+            chrome.tipIcons.append(icon)
+            chrome.tipTexts.append(text)
+        }
+        for index in chrome.tipIcons.indices {
+            chrome.tipIcons[index].isHidden = index >= tips.count
+            chrome.tipTexts[index].isHidden = index >= tips.count
+        }
         chrome.button.isHidden = step != .guide
         guard step == .guide else { return }
-        let tips = menu.onboardingTips
-        let rendered = tips.map { TextRenderer.render(TextSpec(text: $0.text, fontName: fonts.regular, size: 32, color: RGBA(white: 1, alpha: 0.92), maxWidth: 1100), scale: pixelScale) }
+        func lines(_ fontSize: CGFloat) -> [RenderedGraphic] {
+            tips.map { TextRenderer.render(TextSpec(text: $0.text, fontName: fonts.regular, size: fontSize, color: RGBA(white: 1, alpha: 0.92), maxWidth: 1100), scale: pixelScale) }
+        }
+        // All a little smaller where the longest wouldn't fit across (a screen standing upright).
+        let room = size.width - 76 - 120
+        var rendered = lines(32)
+        if let widest = rendered.map(\.size.width).max(), widest > room {
+            rendered = lines((32 * room / widest).rounded(.down))
+        }
         let columnWidth = 76 + (rendered.map(\.size.width).max() ?? 0)
         let columnLeft = ((size.width - columnWidth) / 2).rounded()
         for (index, tip) in tips.enumerated() {
             let rowTop = middleTop + CGFloat(index) * tipPitch
             let symbol = SymbolRenderer.render(tip.symbol, pointSize: 30, weight: .semibold, color: isModern ? .white : RGBA(red: 0.55, green: 0.78, blue: 1), scale: pixelScale)
-            let icon = SceneLayer()
-            icon.show(symbol, at: CGPoint(x: (columnLeft + (44 - symbol.size.width) / 2).rounded(), y: (rowTop + (tipPitch - symbol.size.height) / 2).rounded()))
-            chrome.tips.addSublayer(icon)
-            let text = SceneLayer()
-            text.show(rendered[index], at: CGPoint(x: columnLeft + 76, y: (rowTop + (tipPitch - rendered[index].size.height) / 2).rounded()))
-            chrome.tips.addSublayer(text)
+            chrome.tipIcons[index].show(symbol, at: CGPoint(x: (columnLeft + (44 - symbol.size.width) / 2).rounded(), y: (rowTop + (tipPitch - symbol.size.height) / 2).rounded()))
+            chrome.tipTexts[index].show(rendered[index], at: CGPoint(x: columnLeft + 76, y: (rowTop + (tipPitch - rendered[index].size.height) / 2).rounded()))
         }
         // Get Started, picked out in the look's way: a white capsule, or the glossy bar.
         chrome.button.frame = buttonFrame
@@ -270,9 +310,15 @@ final class OnboardingLayer {
         chrome.buttonLabel.show(labelGraphic, at: CGPoint(x: ((local.width - labelGraphic.size.width) / 2).rounded(), y: ((local.height - labelGraphic.size.height) / 2).rounded()))
     }
 
-    /// The cards' pictures: the two looks, or a symbol for each way of controlling.
+    /// The cards and their pictures: the two looks.
     private func buildCards(menu: MenuView, pixelScale: CGFloat) {
-        for (index, option) in menu.onboardingOptions.enumerated() where index < cards.count {
+        // The classic picture is of the menus on a sideways screen however this one stands, so
+        // the cards are the same either way up and only move when it turns.
+        let classicScene = menu.sideways { menu.activeMenuVirtualSceneSize }
+        let key = "\(pixelScale)|\(classicScene.width)|\(classicScene.height)"
+        let redraws = key != picturesKey
+        picturesKey = key
+        for index in menu.onboardingOptions.indices where index < cards.count {
             let entry = cards[index]
             let frame = cardFrames[index]
             entry.layer.place(frame)
@@ -283,34 +329,27 @@ final class OnboardingLayer {
                 ring.frame = local.insetBy(dx: -11, dy: -11)
                 ring.cornerRadius = 26 + 11
             }
+            guard redraws else { continue }
             entry.picture.sublayers?.forEach { $0.removeFromSuperlayer() }
             entry.picture.contents = nil
             entry.picture.frame = local
-            if let symbol = option.symbol {
-                entry.face.backgroundColor = CGColor(gray: 0.16, alpha: 1)
-                let glyph = SymbolRenderer.render(symbol, pointSize: 120, weight: .regular, color: RGBA(white: 1, alpha: 0.92), scale: pixelScale)
-                let holder = SceneLayer()
-                holder.show(glyph, at: CGPoint(x: ((local.width - glyph.size.width) / 2).rounded(), y: ((local.height - glyph.size.height) / 2).rounded()))
-                entry.picture.addSublayer(holder)
-            } else {
-                entry.face.backgroundColor = CGColor(gray: 0, alpha: 1)
-                // A picture of the look, drawn at full scene size and shrunk onto the card. The
-                // classic one is laid out for this screen, as the menus are (4:3 on an iPad or
-                // an opened-out phone), and sits in the middle of the card.
-                let sceneSize = index == 0 ? menu.activeMenuVirtualSceneSize : MenuVirtualScenePreset.widescreen
-                let shrink = index == 0 ? min(local.width / sceneSize.width, local.height / sceneSize.height) : local.width / sceneSize.width
-                let preview = index == 0
-                    ? classicPreview(menu: menu, sceneSize: sceneSize, pixelScale: max(1, pixelScale * shrink * 1.1))
-                    : Self.modernPreview(pixelScale: max(1, pixelScale * shrink * 1.1))
-                var placement = CATransform3DMakeTranslation(
-                    index == 0 ? ((local.width - sceneSize.width * shrink) / 2).rounded() : 0,
-                    index == 0 ? ((local.height - sceneSize.height * shrink) / 2).rounded() : 0,
-                    0,
-                )
-                placement = CATransform3DScale(placement, shrink, shrink, 1)
-                preview.transform = placement
-                entry.picture.addSublayer(preview)
-            }
+            entry.face.backgroundColor = CGColor(gray: 0, alpha: 1)
+            // A picture of the look, drawn at full scene size and shrunk onto the card. The
+            // classic one is laid out for this screen on its side, as the menus are there (4:3
+            // on an iPad or an opened-out phone), and sits in the middle of the card.
+            let sceneSize = index == 0 ? classicScene : MenuVirtualScenePreset.widescreen
+            let shrink = index == 0 ? min(local.width / sceneSize.width, local.height / sceneSize.height) : local.width / sceneSize.width
+            let preview = index == 0
+                ? menu.sideways { classicPreview(menu: menu, sceneSize: sceneSize, pixelScale: max(1, pixelScale * shrink * 1.1)) }
+                : Self.modernPreview(pixelScale: max(1, pixelScale * shrink * 1.1))
+            var placement = CATransform3DMakeTranslation(
+                index == 0 ? ((local.width - sceneSize.width * shrink) / 2).rounded() : 0,
+                index == 0 ? ((local.height - sceneSize.height * shrink) / 2).rounded() : 0,
+                0,
+            )
+            placement = CATransform3DScale(placement, shrink, shrink, 1)
+            preview.transform = placement
+            entry.picture.addSublayer(preview)
         }
     }
 

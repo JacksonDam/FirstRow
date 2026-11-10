@@ -9,18 +9,43 @@ import QuartzCore
 #endif
 
 /// A screen-shaped canvas 1080 pt tall and at least 1440 wide, scaled to fill the screen.
+/// On a folding screen standing upright it is 1080 wide instead, as the menus' scene is, so the
+/// parts above and below the fold are the stance's own.
 struct FullscreenCanvas {
     let size: CGSize
     let scale: CGFloat
+    let upright: UprightStance?
 
-    init(screenSize: CGSize) {
+    init(screenSize: CGSize, upright: UprightStance? = nil) {
         guard screenSize.width > 0, screenSize.height > 0 else {
             size = screenSize
             scale = 1
+            self.upright = nil
             return
         }
-        scale = min(screenSize.height / 1080, screenSize.width / 1440)
+        self.upright = upright
+        if upright != nil {
+            scale = screenSize.width / UprightStance.sceneWidth
+        } else {
+            scale = min(screenSize.height / 1080, screenSize.width / 1440)
+        }
         size = CGSize(width: screenSize.width / scale, height: screenSize.height / scale)
+    }
+
+    /// A canvas rectangle in the screen's own points.
+    func window(_ rect: CGRect) -> CGRect {
+        CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
+    }
+
+    /// A canvas point in the screen's own points.
+    func window(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x * scale, y: point.y * scale)
+    }
+
+    /// A point of the screen in canvas points.
+    func point(_ windowPoint: CGPoint) -> CGPoint {
+        let scale = max(scale, 0.0001)
+        return CGPoint(x: windowPoint.x / scale, y: windowPoint.y / scale)
     }
 
     /// Spreads `layer` (anchored at its top left) over the screen in canvas points.
@@ -73,9 +98,15 @@ final class FullscreenSceneLayer {
     }
 
     /// Where that bar sits, in canvas points, songs changing over or not (the new song's): for
-    /// touch mode's buttons under it.
+    /// the on-screen buttons under it.
     var nowPlayingBarPlace: CGRect? {
         (content as? NowPlayingSceneLayer)?.barPlace ?? (content as? ModernNowPlayingSceneLayer)?.barPlace
+    }
+
+    /// How large the song's details show against their full size (smaller with the list or the
+    /// words out): the buttons under the bar keep that much closer to it.
+    var nowPlayingDetailsScale: CGFloat {
+        (content as? NowPlayingSceneLayer)?.detailsScale ?? (content as? ModernNowPlayingSceneLayer)?.detailsScale ?? 1
     }
 
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
@@ -110,10 +141,18 @@ final class FullscreenSceneLayer {
                 }
             }
         }
-        let canvas = FullscreenCanvas(screenSize: bounds.size)
+        let canvas = FullscreenCanvas(screenSize: bounds.size, upright: menu.upright)
         if let content {
-            canvas.apply(to: content.layer)
-            content.update(menu: menu, scene: scene, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale))
+            if let pane = canvas.upright?.upperPane, content.keepsAboveTheFold {
+                // A message has the part above the fold for its screen.
+                content.layer.bounds = CGRect(origin: .zero, size: pane.size)
+                content.layer.position = canvas.window(pane).origin
+                content.layer.transform = CATransform3DMakeScale(canvas.scale, canvas.scale, 1)
+                content.update(menu: menu, scene: scene, pass: pass, size: pane.size, scale: canvas.pixelScale(backingScale: scale))
+            } else {
+                canvas.apply(to: content.layer)
+                content.update(menu: menu, scene: scene, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale))
+            }
         }
         let isNowPlaying = scene.key == menu.musicNowPlayingFullscreenKey
         queue.layer.isHidden = !isNowPlaying
@@ -145,6 +184,9 @@ class FullscreenContent {
     /// Keeps its own full-screen backdrop still while the rest of it scales in the modern look's
     /// moves (reading `fullscreenSceneScale` itself), rather than being scaled whole.
     var scalesItsOwnForeground: Bool { false }
+    /// Laid out for a screen of its own that a fold mustn't cross: standing upright it gets the
+    /// part above the fold.
+    var keepsAboveTheFold: Bool { false }
     func update(menu _: MenuView, scene _: FullscreenScenePresentation, pass _: RenderPass, size _: CGSize, scale _: CGFloat) {}
     func tearDown() {}
 }
@@ -172,6 +214,8 @@ final class NowPlayingSceneLayer: FullscreenContent {
     var barPlace: CGRect? {
         incoming.progressBar.map { NowPlayingSideLayout.map($0, shift, size: size) }
     }
+
+    var detailsScale: CGFloat { shift.scale * incoming.detailsScale }
 
     override init() {
         super.init()
@@ -205,17 +249,20 @@ final class NowPlayingSceneLayer: FullscreenContent {
         let outgoingScale = hasTransition ? 1 + (outgoingEnd - 1) * outgoingProgress : 1
         let mirrored = menu.musicNowPlayingUsesAlternateLayout
 
+        let tuck = NowPlayingSideLayout.tuck(menu: menu)
         incoming.layer.bounds = bounds
         incoming.layer.position = flip.position
-        incoming.update(menu.currentMusicNowPlayingSnapshot, mirrored: mirrored, size: size, scale: scale)
+        incoming.update(menu.currentMusicNowPlayingSnapshot, mirrored: mirrored, size: size, scale: scale, upright: menu.upright, tuck: tuck, animation: pass.animation)
         incoming.layer.setTransform(CATransform3DMakeScale(incomingScale, incomingScale, 1), pass.animation)
         incoming.layer.setOpacity(hasTransition ? Double(incomingProgress) : 1, pass.animation)
 
         if let snapshot = menu.musicSongTransitionSnapshot {
+            // Just brought back, it is laid out where the song is now, not moved there.
+            let returning = outgoing.layer.isHidden
             outgoing.layer.isHidden = false
             outgoing.layer.bounds = bounds
             outgoing.layer.position = flip.position
-            outgoing.update(snapshot, mirrored: mirrored, size: size, scale: scale)
+            outgoing.update(snapshot, mirrored: mirrored, size: size, scale: scale, upright: menu.upright, tuck: tuck, animation: returning ? nil : pass.animation)
             outgoing.layer.setTransform(CATransform3DMakeScale(outgoingScale, outgoingScale, 1), pass.animation)
             outgoing.layer.setOpacity(Double(1 - outgoingOpacityProgress), pass.animation)
         } else {
@@ -244,12 +291,21 @@ final class NowPlayingPanelLayer {
     private let barFill = SceneLayer()
     private let diamond = SceneLayer()
     private let artwork = NowPlayingArtworkLayer()
+    /// Everything but the artwork: standing upright it tucks up beside the cover, smaller, when
+    /// the list or the words come out under the fold.
+    private let details = SceneLayer()
+    /// The progress bar where it shows, in the panel's points.
     private(set) var progressBar: CGRect?
+    /// How large the details show against their full size.
+    private(set) var detailsScale: CGFloat = 1
+    private var lastMirrored: Bool?
 
     init() {
-        for sublayer in [title, artist, album, position, leading, leadingGlyph.layer, trailing, shuffle, barFrame, barFill, diamond, artwork.layer] {
-            layer.addSublayer(sublayer)
+        for sublayer in [title, artist, album, position, leading, leadingGlyph.layer, trailing, shuffle, barFrame, barFill, diamond] {
+            details.addSublayer(sublayer)
         }
+        layer.addSublayer(details)
+        layer.addSublayer(artwork.layer)
         barFrame.fillColor = nil
         barFrame.strokeColor = CGColor(gray: 1, alpha: 0.82)
         barFrame.lineWidth = 2.4
@@ -260,10 +316,16 @@ final class NowPlayingPanelLayer {
         diamond.transform = CATransform3DMakeRotation(.pi / 4, 0, 0, 1)
     }
 
-    func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, mirrored: Bool, size: CGSize, scale: CGFloat) {
+    /// `upright`: standing upright, the cover goes above the fold and the details under it;
+    /// `tuck` (0 to 1) brings the details up beside the cover, both smaller, moving with `animation`.
+    func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, mirrored: Bool, size: CGSize, scale: CGFloat, upright: UprightStance? = nil, tuck: CGFloat = 0, animation: Animation? = nil) {
         let width = size.width
         let height = size.height
-        let baseArtworkSide = min(width * 0.255, height * 0.46)
+        details.place(CGRect(origin: .zero, size: size))
+        // Standing upright, the artwork and the lettering are the size they are lying down.
+        let across = upright == nil ? width : max(width, height)
+        let down = upright == nil ? height : min(width, height)
+        let baseArtworkSide = min(across * 0.255, down * 0.46)
         let artworkSide = baseArtworkSide * 1.14
         let baseArtworkCenterX = width * 0.68 + width * 0.07
         let artworkGrowth = artworkSide - baseArtworkSide
@@ -273,31 +335,45 @@ final class NowPlayingPanelLayer {
         let renderedArtworkCenterX = artworkCenterX + (mirrored ? artworkSide * 0.12 : 0)
         let artworkLeftX = artworkCenterX - artworkSide * 0.5
         let artworkRightX = artworkCenterX + artworkSide * 0.5
-        let metadataWidth = min(width * 0.23, 420)
+        var metadataWidth = min(width * 0.23, 420)
         let metadataGap = width * 0.036
         let metadataRightX = artworkLeftX - metadataGap
         let metadataLeftX = artworkRightX + metadataGap
-        let metadataCenterX = mirrored ? metadataLeftX + metadataWidth * 0.5 : metadataRightX - metadataWidth * 0.5
+        var metadataCenterX = mirrored ? metadataLeftX + metadataWidth * 0.5 : metadataRightX - metadataWidth * 0.5
         let metadataCenterY = artworkCenterY - height * 0.045 - height * 0.036
-        let titleSize = min(max(height * 0.050, 38), 56)
-        let infoSize = min(max(height * 0.043, 28), 46)
-        let positionSize = min(max(height * 0.026, 18), 28)
-        let positionPadding = min(max(height * 0.006, 4), 10)
-        let transportWidth = min(max(width * 0.5, 720), 960)
+        let titleSize = min(max(down * 0.050, 38), 56)
+        let infoSize = min(max(down * 0.043, 28), 46)
+        let positionSize = min(max(down * 0.026, 18), 28)
+        let positionPadding = min(max(down * 0.006, 4), 10)
+        var transportWidth = min(max(width * 0.5, 720), 960)
+        var transportCenterX = mirrored ? metadataLeftX + transportWidth * 0.5 : metadataRightX - transportWidth * 0.5
+        var transportCenterY = metadataCenterY + height * 0.125
+        // The song name gets twice the room before it is cut short.
+        var titleWidth = metadataWidth * 2
+        // Lined up on the artwork side.
+        var alignment: TextAlignment = mirrored ? .leading : .trailing
+        if let upright {
+            // Standing upright: centred under the fold, over a bar most of the way across.
+            metadataWidth = min(width - 180, 900)
+            titleWidth = metadataWidth
+            metadataCenterX = width / 2
+            transportWidth = min(width - 120, 960)
+            transportCenterX = width / 2
+            transportCenterY = upright.lowerPane.midY + 56
+            alignment = .center
+        }
         let leadingTimeWidth = min(max(transportWidth * 0.08, 50), 82)
         let trailingTimeWidth = min(max(transportWidth * 0.10, 66), 98)
         let barWidth = max(420, transportWidth - leadingTimeWidth - trailingTimeWidth - 2)
         let barHeight: CGFloat = 20
-        let timeSize = min(max(height * 0.028, 22), 34)
-        let transportCenterX = mirrored ? metadataLeftX + transportWidth * 0.5 : metadataRightX - transportWidth * 0.5
-        let transportCenterY = metadataCenterY + height * 0.125
+        let timeSize = min(max(down * 0.028, 22), 34)
+        // (Upright it is the bar itself that is centred under the words, not the bar and its times.)
+        if upright != nil { transportCenterX += (trailingTimeWidth - leadingTimeWidth) * 0.5 }
 
-        // Title, artist, album and position, stacked 2 points apart and lined up on the artwork side.
-        let alignment: TextAlignment = mirrored ? .leading : .trailing
+        // Title, artist, album and position, stacked 2 points apart.
         let texts: [(SceneLayer, RenderedGraphic, CGFloat)] = {
             var result: [(SceneLayer, RenderedGraphic, CGFloat)] = [
-                // The song name gets twice the room before it is cut short.
-                (title, TextRenderer.render(TextSpec(text: snapshot.trackTitle, fontName: firstRowBoldFontName, size: titleSize, maxWidth: metadataWidth * 2, minimumScaleFactor: 0.62), scale: scale), 0),
+                (title, TextRenderer.render(TextSpec(text: snapshot.trackTitle, fontName: firstRowBoldFontName, size: titleSize, maxWidth: titleWidth, minimumScaleFactor: 0.62), scale: scale), 0),
                 (artist, TextRenderer.render(TextSpec(text: snapshot.artistName, fontName: firstRowRegularFontName, size: infoSize, color: RGBA(white: 1, alpha: 0.88), maxWidth: metadataWidth, minimumScaleFactor: 0.62), scale: scale), 0),
                 (album, TextRenderer.render(TextSpec(text: snapshot.albumTitle, fontName: firstRowRegularFontName, size: infoSize, color: RGBA(white: 1, alpha: 0.76), maxWidth: metadataWidth, minimumScaleFactor: 0.62), scale: scale), 0),
             ]
@@ -317,11 +393,16 @@ final class NowPlayingPanelLayer {
             lineHeight(texts[2].1, firstRowRegularFontName, infoSize),
         ] + (texts.count > 3 ? [texts[3].1.size.height] : [])
         let blockHeight = heights.reduce(0, +) + CGFloat(heights.count - 1) * 2 + (texts.count > 3 ? positionPadding : 0)
-        var y = metadataCenterY - blockHeight * 0.5
+        // Standing upright they end a little above the bar.
+        var y = upright == nil ? metadataCenterY - blockHeight * 0.5 : transportCenterY - barHeight * 0.5 - 40 - blockHeight
         let blockLeft = metadataCenterX - metadataWidth * 0.5
         for (index, entry) in texts.enumerated() {
             y += entry.2
-            let x = alignment == .leading ? blockLeft : blockLeft + metadataWidth - entry.1.size.width
+            let x: CGFloat = switch alignment {
+            case .leading: blockLeft
+            case .trailing: blockLeft + metadataWidth - entry.1.size.width
+            case .center: blockLeft + (metadataWidth - entry.1.size.width) * 0.5
+            }
             entry.0.show(entry.1, at: CGPoint(x: x, y: y + (heights[index] - entry.1.size.height) * 0.5))
             y += heights[index] + 2
         }
@@ -350,8 +431,8 @@ final class NowPlayingPanelLayer {
             leading.show(graphic, at: CGPoint(x: rowLeft, y: rowTop + (barHeight - graphic.size.height) * 0.5))
         }
         let barLeft = rowLeft + leadingTimeWidth + 1
-        barFrame.frame = CGRect(x: barLeft, y: rowTop, width: barWidth, height: barHeight)
-        progressBar = barFrame.frame
+        let bar = CGRect(x: barLeft, y: rowTop, width: barWidth, height: barHeight)
+        barFrame.frame = bar
         barFrame.path = CGPath(rect: CGRect(x: 0, y: 0, width: barWidth, height: barHeight), transform: nil)
         barFill.frame = CGRect(x: barLeft, y: rowTop, width: max(0, barWidth * progress), height: barHeight)
         let diamondSize: CGFloat = 8
@@ -369,7 +450,45 @@ final class NowPlayingPanelLayer {
         shuffle.show(shuffleGraphic, at: CGPoint(x: mirrored ? trailingRight - shuffleGraphic.size.width : rowLeft, y: shuffleTop))
 
         artwork.update(image: snapshot.artworkImage, side: artworkSide, mirrored: mirrored)
-        artwork.layer.position = CGPoint(x: renderedArtworkCenterX - artworkSide * 1.12 * 0.5, y: artworkCenterY - artworkSide * 1.72 * 0.5)
+        guard let upright else {
+            artwork.layer.position = CGPoint(x: renderedArtworkCenterX - artworkSide * 1.12 * 0.5, y: artworkCenterY - artworkSide * 1.72 * 0.5)
+            artwork.layer.setTransform(CATransform3DIdentity, nil)
+            details.setTransform(CATransform3DIdentity, nil)
+            progressBar = bar
+            detailsScale = 1
+            lastMirrored = mirrored
+            return
+        }
+        // Standing upright. The cover has the middle of the part above the fold, a little
+        // larger, with room for its reflection; tucked, it is small at one side there (the side
+        // it has lying down) and the details are beside it.
+        typealias Place = NowPlayingSideLayout.Place
+        let upper = upright.upperPane
+        let large = min(upper.height * 0.70, width * 0.46)
+        let small = min(330, upper.height * 0.5)
+        let margin: CGFloat = 64
+        let artMiddle = CGPoint(x: artworkSide * 0.5, y: artworkSide * 0.5)
+        let coverPlace = Place.between(
+            Place(anchor: artMiddle, scale: large / artworkSide, center: CGPoint(x: width / 2, y: upper.midY - large * 0.08)),
+            Place(anchor: artMiddle, scale: small / artworkSide, center: CGPoint(x: mirrored ? margin + small / 2 : width - margin - small / 2, y: upper.midY - small * 0.08)),
+            tuck,
+        )
+        // The room beside the small cover; the on-screen buttons go under the bar there.
+        let room = width - margin - small - 40 - 40
+        let barMiddle = CGPoint(x: bar.midX, y: bar.midY)
+        let detailsPlace = Place.between(
+            Place(anchor: barMiddle, scale: 1, center: barMiddle),
+            Place(anchor: barMiddle, scale: min(0.66, room / rowWidth), center: CGPoint(x: mirrored ? width - 40 - room / 2 : 40 + room / 2, y: upper.midY + 19)),
+            tuck,
+        )
+        // Turning round, the two change sides out of sight, not across the screen.
+        let move = lastMirrored == mirrored ? animation : nil
+        lastMirrored = mirrored
+        artwork.layer.position = .zero
+        artwork.layer.setTransform(coverPlace.transform, move)
+        details.setTransform(detailsPlace.transform, move)
+        progressBar = detailsPlace.map(bar)
+        detailsScale = detailsPlace.scale
     }
 }
 
@@ -542,6 +661,8 @@ final class FeatureErrorSceneLayer: FullscreenContent {
     fileprivate let subcaption = SceneLayer()
     private var key: String?
 
+    override var keepsAboveTheFold: Bool { true }
+
     override init() {
         super.init()
         icon.contentsGravity = .resizeAspect
@@ -562,7 +683,8 @@ final class FeatureErrorSceneLayer: FullscreenContent {
         let iconImage = NSImage(named: "ErrorTriangle_v1") ?? NSImage(named: "Alert!")
         let iconSide: CGFloat = iconImage == nil ? 0 : 84
         let iconSpacing: CGFloat = iconImage == nil ? 0 : 24
-        let maxWidth = min(1500, size.width)
+        // (A narrow screen keeps a margin.)
+        let maxWidth = min(1500, size.width - (size.width < 1440 ? 120 : 0))
         // One line if it fits beside the sign, otherwise wrapped (centred) at most 1092 wide.
         let singleLine = TextRenderer.measure(TextSpec(text: copy.headerText, fontName: firstRowBoldFontName, size: 60))
         let headerGraphic: RenderedGraphic = if singleLine.width <= maxWidth - iconSide - iconSpacing {
@@ -575,7 +697,8 @@ final class FeatureErrorSceneLayer: FullscreenContent {
         let rowWidth = iconSide + iconSpacing + headerGraphic.size.width
         let rowHeight = max(iconSide, headerGraphic.size.height)
         let stackHeight = rowHeight + (subcaptionGraphic.map { 15 + $0.size.height } ?? 0)
-        let top = (size.height - stackHeight) * 0.5 - 160
+        // Above the middle, less so on a short screen.
+        let top = max(40, (size.height - stackHeight) * 0.5 - (size.height < 1080 ? 60 : 160))
         let rowLeft = (size.width - rowWidth) * 0.5
         icon.isHidden = iconImage == nil
         icon.contents = LayerImageCache.cgImage(for: iconImage)
@@ -705,7 +828,7 @@ final class ScreenSaverToastLayer {
             box.opacity = 0
             return
         }
-        let canvas = FullscreenCanvas(screenSize: bounds.size)
+        let canvas = FullscreenCanvas(screenSize: bounds.size, upright: menu.upright)
         canvas.apply(to: layer)
         let scale = canvas.pixelScale(backingScale: backingScale)
         let size = menu.screenSaverNowPlayingToastSize
@@ -922,6 +1045,7 @@ final class VolumeOverlayLayer {
     private var percent: CGFloat = 0
     private var volume: Double = 0
     private var screenSize: CGSize = .zero
+    private var upright: UprightStance?
     private var backingScale: CGFloat = 2
     private var fadeTimer: Timer?
     private var hideTimer: Timer?
@@ -960,10 +1084,11 @@ final class VolumeOverlayLayer {
         #endif
     }
 
-    func layout(screenSize: CGSize, backingScale: CGFloat) {
+    func layout(screenSize: CGSize, upright: UprightStance?, backingScale: CGFloat) {
         self.backingScale = backingScale
-        guard screenSize != self.screenSize else { return }
+        guard screenSize != self.screenSize || upright != self.upright else { return }
         self.screenSize = screenSize
+        self.upright = upright
         if !layer.isHidden { place() }
     }
 
@@ -1037,13 +1162,15 @@ final class VolumeOverlayLayer {
     /// Lays the classic overlay out as a fraction of the screen's height, and the bar as a
     /// fraction of the overlay, from pieces drawn for a 720-point-tall screen.
     private func placeClassic() {
-        let canvas = FullscreenCanvas(screenSize: screenSize)
+        let canvas = FullscreenCanvas(screenSize: screenSize, upright: upright)
         canvas.apply(to: classic)
-        let height = canvas.size.height
+        // Standing upright it keeps its size and sits above the fold.
+        let height = upright == nil ? canvas.size.height : UprightStance.sceneWidth
+        let ground = upright?.upperPane.maxY ?? height
         let boxHeight = ceil(height * 0.252)
         let boxWidth = ceil(height * 0.23)
         withoutLayerActions {
-            box.frame = CGRect(x: ceil((canvas.size.width - boxWidth) * 0.5), y: height - ceil(height * 0.075) - boxHeight, width: boxWidth, height: boxHeight)
+            box.frame = CGRect(x: ceil((canvas.size.width - boxWidth) * 0.5), y: ground - ceil(height * 0.075) - boxHeight, width: boxWidth, height: boxHeight)
             speaker.frame = box.bounds
             speaker.contents = Self.image(percent > 0 ? "Vol_BKG_v1_ON" : "Vol_BKG_v1_OFF")
 
