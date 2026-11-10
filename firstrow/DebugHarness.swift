@@ -11,6 +11,12 @@ enum FirstRowHarness {
         static let isActive = false
     #endif
 
+    /// A test run starts at the menus, so its first key isn't spent skipping the intro movie;
+    /// `FIRSTROW_HARNESS_INTRO=1` has it open as it does for anyone else.
+    static var startsAtMenus: Bool {
+        isActive && ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_INTRO"] != "1"
+    }
+
     /// `FIRSTROW_HARNESS_MUSIC=<folder>`: audio files there stand in for the Music library.
     static var musicFolderOverride: URL? {
         guard isActive, let path = ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_MUSIC"] else { return nil }

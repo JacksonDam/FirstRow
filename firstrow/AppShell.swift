@@ -147,7 +147,7 @@ final class FirstRowAppController {
     func start() {
         beginLaunchToggleWindow()
         // After the first-launch screens the intro plays anyway (see MenuView.finishOnboarding).
-        let playsIntro = AppSettings.playsIntroMovieAtLaunch && AppSettings.hasCompletedOnboarding && IntroMovie.url != nil
+        let playsIntro = AppSettings.playsIntroMovieAtLaunch && AppSettings.hasCompletedOnboarding && IntroMovie.url != nil && !FirstRowHarness.startsAtMenus
         showMenu(fadingIn: !playsIntro)
         if playsIntro {
             withoutLayerActions { menuContainer.opacity = 0 }

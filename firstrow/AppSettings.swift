@@ -39,9 +39,10 @@ enum AppSettings {
     }
 
     /// The look's intro movie plays every time First Row opens (it always plays once, after the
-    /// first-launch screens).
+    /// first-launch screens). On until it's turned off, which covers anyone coming from a
+    /// version that had no such setting.
     static var playsIntroMovieAtLaunch: Bool {
-        get { UserDefaults.standard.bool(forKey: introMovieKey) }
+        get { UserDefaults.standard.object(forKey: introMovieKey) as? Bool ?? true }
         set {
             UserDefaults.standard.set(newValue, forKey: introMovieKey)
             NotificationCenter.default.post(name: didChangeNotification, object: nil)
