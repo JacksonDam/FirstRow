@@ -57,6 +57,15 @@ final class MoviePlaybackLayers {
         placePicture(canvas.upright.map { $0.isBent ? canvas.window($0.moviePicture) : bounds } ?? bounds)
         var controlsSize = canvas.size
         if let upright = canvas.upright, isBent { controlsSize.height = upright.movieControlsFloor }
+        // The bar's dark fade is for a picture that lies under it: not for a bar below the fold
+        // of a bent screen, nor on a flat one under a picture that stops short of it.
+        var barIsOverPicture = !isBent
+        #if !FIRSTROW_PORTABLE
+            if barIsOverPicture, canvas.upright != nil {
+                let video = playerLayer.videoRect
+                barIsOverPicture = video.height > 1 && video.maxY > bounds.height - ModernMovieControlsLayer.fadeHeight * canvas.scale
+            }
+        #endif
 
         let showsControls = menu.isMoviePlaybackVisible && menu.showsMovieControls
         let controlsOpacity = menu.shownMovieControlsOpacity
@@ -88,7 +97,7 @@ final class MoviePlaybackLayers {
                 loadingProgress: menu.moviePreviewDownloadProgress,
                 size: controlsSize,
                 scale: canvas.pixelScale(backingScale: scale),
-                overPicture: !isBent,
+                overPicture: barIsOverPicture,
             )
             modernControls.layer.setOpacity(controlsOpacity, pass.animation)
             return

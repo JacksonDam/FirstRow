@@ -377,6 +377,9 @@ final class ModernMovieControlsLayer {
         barFrame.width > 0 ? (barFrame, barFrame.minX ... barFrame.maxX) : nil
     }
 
+    /// How far up from the bottom the dark fade under the bar reaches, in canvas points.
+    static let fadeHeight: CGFloat = 360
+
     init() {
         scrim.colors = [CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0.7)]
         scrim.startPoint = CGPoint(x: 0.5, y: 0)
@@ -395,13 +398,13 @@ final class ModernMovieControlsLayer {
         layer.isHidden = true
     }
 
-    /// `overPicture`: the controls lie over the movie, so it's darkened under them (not when
-    /// they have a part of the screen to themselves).
+    /// `overPicture`: the bar lies over the movie, which is darkened under it (not when the bar
+    /// has black, or a part of the screen to itself, under it).
     func update(glyphState: MoviePlaybackGlyphState, currentTime seconds: Double, duration totalSeconds: Double, isLoading: Bool, loadingProgress: Double, size: CGSize, scale: CGFloat, overPicture: Bool = true) {
         let margin = max(90, size.width * 0.065)
         let barHeight: CGFloat = 10
         let barY = size.height - 132
-        scrim.frame = CGRect(x: 0, y: size.height - 360, width: size.width, height: 360)
+        scrim.frame = CGRect(x: 0, y: size.height - Self.fadeHeight, width: size.width, height: Self.fadeHeight)
         scrim.isHidden = !overPicture
         barFrame = CGRect(x: margin, y: barY, width: size.width - margin * 2, height: barHeight)
         track.frame = barFrame
