@@ -82,49 +82,16 @@ extension MenuView {
         var queueMotion: TouchListMotion?
         /// The row of Now Playing's list under a sliding finger, walked to a row a frame.
         var queueSelectionTarget: Int?
+        /// On a list too short to scroll the selection slides from the first touch. Until the
+        /// finger has shown which way it's going, sideways still moves the list.
+        var queueSlideIsUndecided = false
         /// How far out the list was, and where the finger was, when a pull began; and the
         /// finger's recent sideways positions, for how fast it let go.
         var pullStartReveal: CGFloat = 0
         var pullOriginX: CGFloat = 0
         var xSamples: [(time: TimeInterval, x: CGFloat)] = []
         /// Frames at the screen's full rate while a finger is down or a list moves on its own.
-        let clock = TouchFrameClock()
-    }
-
-    /// Calls back once a frame, at the fastest rate the screen offers, while asked to.
-    @MainActor
-    final class TouchFrameClock: NSObject {
-        /// Gets the seconds since the last frame; returns whether to keep going.
-        var onFrame: ((Double) -> Bool)?
-        private var link: CADisplayLink?
-        private var lastTarget: CFTimeInterval = 0
-
-        func run() {
-            if let link {
-                guard link.isPaused else { return }
-                link.isPaused = false
-            } else {
-                let link = CADisplayLink(target: self, selector: #selector(frame(_:)))
-                if #available(iOS 15.0, *) {
-                    let fastest = Float(max(60, UIScreen.main.maximumFramesPerSecond))
-                    link.preferredFrameRateRange = CAFrameRateRange(minimum: min(80, fastest), maximum: fastest, preferred: fastest)
-                }
-                link.add(to: .main, forMode: .common)
-                self.link = link
-            }
-            lastTarget = 0
-        }
-
-        func stop() {
-            link?.isPaused = true
-        }
-
-        @objc private func frame(_ link: CADisplayLink) {
-            let target = link.targetTimestamp
-            let elapsed = lastTarget == 0 ? max(0.001, target - link.timestamp) : min(1.0 / 30, max(0, target - lastTarget))
-            lastTarget = target
-            if onFrame?(elapsed) != true { stop() }
-        }
+        let clock = FrameClock()
     }
 
     /// A list's own motion after a finger lets go, worked out a frame at a time as a scroll
@@ -326,10 +293,12 @@ extension MenuView {
                 state.queueOriginY = nil
                 state.queueWasMoving = queueWasMoving
                 state.queueSelectionTarget = nil
+                state.queueSlideIsUndecided = false
                 guard !queueWasMoving, geometry.row(at: point, scroll: nowPlayingQueueScroll, count: nowPlayingQueueCount) != nil else { return }
                 if geometry.scrollLimit <= 0 {
                     // Nothing to scroll: the finger slides the selection straight away.
                     state.mode = .queueSelecting
+                    state.queueSlideIsUndecided = true
                     showQueueTouchSelection(at: point)
                     return
                 }
@@ -431,12 +400,24 @@ extension MenuView {
             case .selecting:
                 slideTouchSelection(to: point)
             case .queueSelecting:
+                if state.queueSlideIsUndecided, (dx * dx + dy * dy).squareRoot() > Self.touchSlop {
+                    state.queueSlideIsUndecided = false
+                    if abs(dx) > abs(dy) {
+                        // Sideways: the list goes with the finger, as a longer one does.
+                        endQueueTouchSelection()
+                        beginNowPlayingQueuePull(at: point, time: time)
+                        return
+                    }
+                }
                 slideQueueTouchSelection(to: point)
             case .undecided:
                 guard (dx * dx + dy * dy).squareRoot() > Self.touchSlop else { return }
                 state.holdTask?.cancel()
-                if isNowPlayingQueueVisible, abs(dx) > abs(dy), activeFullscreenScene?.key == musicNowPlayingFullscreenKey {
-                    // Beside the list, a sideways drag moves it too.
+                if isNowPlayingQueueVisible, abs(dx) > abs(dy), activeFullscreenScene?.key == musicNowPlayingFullscreenKey,
+                   pointer.hitTester?.nowPlayingQueueGeometry?.dragZone.contains(state.start) ?? true
+                {
+                    // Beside the list, a sideways drag moves it too. (Standing upright that's
+                    // under the fold; above it, sideways changes the song as ever.)
                     beginNowPlayingQueuePull(at: point, time: time)
                     return
                 }
@@ -870,6 +851,8 @@ extension MenuView {
             let upright = abs(dy) > abs(dx) * 1.5 && abs(dy) > Self.touchSwipeDistance * 0.7
             if sideways {
                 if isNowPlayingQueueVisible {
+                    // (Above the fold, standing upright, it's for the song: not taken here.)
+                    guard pointer.hitTester?.nowPlayingQueueGeometry?.dragZone.contains(start) ?? true else { return false }
                     if dx > 0 { hideNowPlayingQueue() }
                     return true
                 }
@@ -892,6 +875,8 @@ extension MenuView {
 
         private func beginNowPlayingQueuePull(at point: CGPoint, time: TimeInterval) {
             let state = touch
+            // Caught on its way out or back, it goes with the finger from where it has got to.
+            holdNowPlayingGlide()
             state.mode = .queuePull
             state.queueMotion = nil
             state.pullStartReveal = nowPlayingQueueReveal
@@ -1047,7 +1032,14 @@ extension MenuView {
                     #if DEBUG || FIRSTROW_HARNESS_BUILD
                         FirstRowHarness.touchLog("[touch] \(rightward ? "previous" : "next") song")
                     #endif
-                    pressTouchKey(rightward ? .upArrow : .downArrow)
+                    if isNowPlayingQueueVisible {
+                        // (With the list out the arrows move through it: straight to the song.)
+                        registerUserInteractionForScreenSaver()
+                        hidesMusicLeadingGlyph = false
+                        switchMusicNowPlayingTrack(direction: rightward ? -1 : 1)
+                    } else {
+                        pressTouchKey(rightward ? .upArrow : .downArrow)
+                    }
                     return
                 }
                 // Back is a swipe in from the left edge, as elsewhere on iPhone, or the Back button.

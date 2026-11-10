@@ -64,6 +64,10 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
 
     var detailsScale: CGFloat { shift.scale * incoming.detailsScale }
 
+    /// How far along the details are from where they rest, in canvas points (standing upright,
+    /// while the list or the words come out: see `NowPlayingSideLayout.detailsPlace`).
+    var detailsSlide: CGFloat { incoming.detailsSlide }
+
     override func update(menu: MenuView, scene _: FullscreenScenePresentation, pass: RenderPass, size: CGSize, scale: CGFloat) {
         let bounds = CGRect(origin: .zero, size: size)
         backdrop.frame = bounds
@@ -164,6 +168,7 @@ final class ModernNowPlayingPanelLayer {
     /// against their full size.
     private(set) var barPlace: CGRect = .zero
     private(set) var detailsScale: CGFloat = 1
+    private(set) var detailsSlide: CGFloat = 0
     private let artworkShadow = SceneLayer()
     private let artwork = SceneLayer()
     private let title = SceneLayer()
@@ -320,6 +325,7 @@ final class ModernNowPlayingPanelLayer {
             details.setTransform(CATransform3DIdentity, nil)
             barPlace = barFrame
             detailsScale = 1
+            detailsSlide = 0
             return
         }
         // Standing upright. Tucked, the artwork is small at one side of the part above the fold
@@ -336,14 +342,18 @@ final class ModernNowPlayingPanelLayer {
         )
         let room = width - margin - small - 40 - 40
         let barMiddle = CGPoint(x: rest.midX, y: rest.midY)
-        let detailsPlace = Place.between(
-            Place(anchor: barMiddle, scale: 1, center: barMiddle),
-            Place(anchor: barMiddle, scale: min(0.7, room / columnWidth), center: CGPoint(x: mirrored ? 40 + room / 2 : width - 40 - room / 2, y: upper.midY + 17)),
-            tuck,
+        // On their way there they go round, not across: off one edge and in from another.
+        let (detailsPlace, slide) = NowPlayingSideLayout.detailsPlace(
+            home: Place(anchor: barMiddle, scale: 1, center: barMiddle),
+            tucked: Place(anchor: barMiddle, scale: min(0.7, room / columnWidth), center: CGPoint(x: mirrored ? 40 + room / 2 : width - 40 - room / 2, y: upper.midY + 17)),
+            span: (columnLeft - grownBy.width) ... (columnLeft + columnWidth + grownBy.width),
+            width: width,
+            tuck: tuck,
         )
         details.setTransform(detailsPlace.transform, tuckAnimation)
         barPlace = detailsPlace.map(barFrame)
         detailsScale = detailsPlace.scale
+        detailsSlide = slide
     }
 }
 

@@ -120,12 +120,16 @@ final class TouchControlsLayer {
     /// How large Now Playing's details show against their full size (small with the list or
     /// the words out).
     private var nowPlayingScale: CGFloat = 1
+    /// How far along that bar is from where it rests (sliding off the screen, or in), which its
+    /// buttons follow whole.
+    private var nowPlayingSlide: CGFloat = 0
     /// Where Now Playing's buttons start down from, when they're under its progress bar.
     private var transportTop: CGFloat?
 
-    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil, nowPlayingScale detailsScale: CGFloat? = nil) {
+    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil, nowPlayingScale detailsScale: CGFloat? = nil, nowPlayingSlide slide: CGFloat? = nil) {
         if let bar { nowPlayingBar = bar }
         if let detailsScale { nowPlayingScale = detailsScale }
+        if let slide { nowPlayingSlide = slide }
         var wanted: [Wanted] = []
         // Shown for the pointer and fingers; a key or remote puts them straight away.
         let enabled = menu.showsOnScreenControls && menu.showsPointingHints && menu.onboardingStep == nil
@@ -198,7 +202,10 @@ final class TouchControlsLayer {
                             var rightLimit = size.width - insets.right - 16
                             if besideWords { rightLimit = min(rightLimit, bar.maxX + 24) }
                             transportTop = centerY - play / 2
-                            return (max(min(bar.midX, rightLimit - rightReach), insets.left + 16 + leftReach), centerY)
+                            // Kept on the screen where the bar rests; with it all the way
+                            // while it slides off or in.
+                            let resting = max(min(bar.midX - nowPlayingSlide, rightLimit - rightReach), insets.left + 16 + leftReach)
+                            return (resting + nowPlayingSlide, centerY)
                         }
                     }
                     return (size.width / 2 + aside.dx * canvas.scale, bottom)
@@ -271,7 +278,7 @@ final class TouchControlsLayer {
         let queueHintY = menu.upright.map { FullscreenCanvas(screenSize: size, upright: $0).window($0.lowerPane).midY } ?? size.height / 2
         queueHint.update(
             frame: CGRect(x: size.width - max(insets.right, 8) - 16, y: queueHintY - 40, width: 5, height: 80),
-            shown: isNowPlaying && menu.canShowNowPlayingQueue && menu.nowPlayingQueueReveal <= 0.001 && !menu.isNowPlayingLyricsVisible &&
+            shown: isNowPlaying && menu.canShowNowPlayingQueue && menu.nowPlayingQueueReveal <= 0.001 && !menu.isNowPlayingLyricsVisible && menu.nowPlayingWordsGlide == nil &&
                 !menu.isFullscreenSceneTransitioning && menu.showsPointingHints && menu.onboardingStep == nil,
             drift: CGSize(width: -9, height: 0),
             session: menu.nowPlayingSession,

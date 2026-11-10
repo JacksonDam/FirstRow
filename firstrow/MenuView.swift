@@ -393,6 +393,13 @@ final class MenuView: ObservableObject {
     /// The current song's lyrics, over the right side, when it has some and they're asked for.
     @Published var isNowPlayingLyricsVisible = false
     @Published var nowPlayingLyrics: MusicLyrics?
+    /// Standing upright, the list and the words come and go a frame at a time (see
+    /// `NowPlayingGlide`): the move under way, and the clock that steps it.
+    var nowPlayingGlide: NowPlayingGlide?
+    let nowPlayingGlideClock = FrameClock()
+    /// How far out the words are while they're on their way like that (0 away to 1 out); nil
+    /// at rest, when they're out or they aren't.
+    @Published var nowPlayingWordsGlide: CGFloat?
     var nowPlayingLyricsSongID: String?
     /// The modern look's menu changes: the title and list's opacity and sideways offset.
     @Published var modernSwapOpacity: Double = 1

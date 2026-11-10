@@ -103,6 +103,12 @@ final class FullscreenSceneLayer {
         (content as? NowPlayingSceneLayer)?.barPlace ?? (content as? ModernNowPlayingSceneLayer)?.barPlace
     }
 
+    /// How far along the song's details are from where they rest, in canvas points: the buttons
+    /// under the bar go with them.
+    var nowPlayingDetailsSlide: CGFloat {
+        (content as? NowPlayingSceneLayer)?.detailsSlide ?? (content as? ModernNowPlayingSceneLayer)?.detailsSlide ?? 0
+    }
+
     /// How large the song's details show against their full size (smaller with the list or the
     /// words out): the buttons under the bar keep that much closer to it.
     var nowPlayingDetailsScale: CGFloat {
@@ -219,6 +225,10 @@ final class NowPlayingSceneLayer: FullscreenContent {
 
     var detailsScale: CGFloat { shift.scale * incoming.detailsScale }
 
+    /// How far along the details are from where they rest, in canvas points (standing upright,
+    /// while the list or the words come out: see `NowPlayingSideLayout.detailsPlace`).
+    var detailsSlide: CGFloat { incoming.detailsSlide }
+
     override init() {
         super.init()
         flip.actions = ["position": NSNull(), "bounds": NSNull(), "transform": NSNull()]
@@ -300,6 +310,7 @@ final class NowPlayingPanelLayer {
     private(set) var progressBar: CGRect?
     /// How large the details show against their full size.
     private(set) var detailsScale: CGFloat = 1
+    private(set) var detailsSlide: CGFloat = 0
     private var lastMirrored: Bool?
 
     init() {
@@ -458,6 +469,7 @@ final class NowPlayingPanelLayer {
             details.setTransform(CATransform3DIdentity, nil)
             progressBar = bar
             detailsScale = 1
+            detailsSlide = 0
             lastMirrored = mirrored
             return
         }
@@ -478,10 +490,13 @@ final class NowPlayingPanelLayer {
         // The room beside the small cover; the on-screen buttons go under the bar there.
         let room = width - margin - small - 40 - 40
         let barMiddle = CGPoint(x: bar.midX, y: bar.midY)
-        let detailsPlace = Place.between(
-            Place(anchor: barMiddle, scale: 1, center: barMiddle),
-            Place(anchor: barMiddle, scale: min(0.66, room / rowWidth), center: CGPoint(x: mirrored ? width - 40 - room / 2 : 40 + room / 2, y: upper.midY + 19)),
-            tuck,
+        // On their way there they go round, not across: off one edge and in from another.
+        let (detailsPlace, slide) = NowPlayingSideLayout.detailsPlace(
+            home: Place(anchor: barMiddle, scale: 1, center: barMiddle),
+            tucked: Place(anchor: barMiddle, scale: min(0.66, room / rowWidth), center: CGPoint(x: mirrored ? width - 40 - room / 2 : 40 + room / 2, y: upper.midY + 19)),
+            span: min(blockLeft, rowLeft) ... max(blockLeft + metadataWidth, rowLeft + rowWidth),
+            width: width,
+            tuck: tuck,
         )
         // Turning round, the two change sides out of sight, not across the screen.
         let move = lastMirrored == mirrored ? animation : nil
@@ -491,6 +506,7 @@ final class NowPlayingPanelLayer {
         details.setTransform(detailsPlace.transform, move)
         progressBar = detailsPlace.map(bar)
         detailsScale = detailsPlace.scale
+        detailsSlide = slide
     }
 }
 

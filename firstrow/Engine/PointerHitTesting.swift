@@ -199,9 +199,13 @@ extension MenuSceneRenderer: PointerHitTesting {
         #else
             let edgeWidth = max(24, size.width * 0.03)
         #endif
+        // Standing upright the list is under the fold: so is the strip that brings it out, and
+        // the part of the screen where a sideways drag moves it.
+        let top = scene.fullscreenCanvas.upright.map { $0.foldTop * scale } ?? 0
         return NowPlayingQueueGeometry(
             panel: window(queue.panelFrame),
-            edgeZone: CGRect(x: size.width - edgeWidth, y: 0, width: edgeWidth, height: size.height),
+            edgeZone: CGRect(x: size.width - edgeWidth, y: top, width: edgeWidth, height: size.height - top),
+            dragZone: CGRect(x: 0, y: top, width: size.width, height: size.height - top),
             viewport: window(queue.viewport),
             listTop: queue.listTop * scale,
             rowPitch: MenuView.nowPlayingQueueRowPitch * scale,

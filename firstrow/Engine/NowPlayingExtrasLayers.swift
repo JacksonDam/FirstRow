@@ -86,7 +86,31 @@ enum NowPlayingSideLayout {
     /// that has gone: 0 with nothing out, 1 with the list or the words all the way out.
     static func tuck(menu: MenuView) -> CGFloat {
         guard menu.upright != nil else { return 0 }
-        return max(min(max(menu.nowPlayingQueueReveal, 0), 1), menu.isNowPlayingLyricsVisible ? 1 : 0)
+        let words = menu.nowPlayingWordsGlide ?? (menu.isNowPlayingLyricsVisible ? 1 : 0)
+        return max(min(max(menu.nowPlayingQueueReveal, 0), 1), min(max(words, 0), 1))
+    }
+
+    /// Standing upright, where the details show part way through a tuck (0 to 1), so that they
+    /// never cross the cover, the list or the words on the way. Over its first half they slide
+    /// off the left of the part under the fold, ahead of the list coming in from the right;
+    /// over its second they slide in above the fold from the side they end up on, into the
+    /// room the cover has made by then. `home` and `tucked` are where they rest at either end,
+    /// and `span` how far they reach across, in their own points. `slide` is how far along
+    /// they are from their resting place, for the on-screen buttons that go with them.
+    static func detailsPlace(home: Place, tucked: Place, span: ClosedRange<CGFloat>, width: CGFloat, tuck: CGFloat) -> (place: Place, slide: CGFloat) {
+        let tuck = min(max(tuck, 0), 1)
+        let rest = tuck < 0.5 ? home : tucked
+        let left = rest.center.x + (span.lowerBound - rest.anchor.x) * rest.scale
+        let right = rest.center.x + (span.upperBound - rest.anchor.x) * rest.scale
+        let slide: CGFloat
+        if tuck < 0.5 {
+            // Gently at first, then away faster than the list comes in.
+            slide = -(right + 60) * pow(tuck / 0.5, 1.5)
+        } else {
+            let away = (left + right) / 2 > width / 2 ? width - left + 60 : -(right + 60)
+            slide = away * pow(1 - (tuck - 0.5) / 0.5, 1.5)
+        }
+        return (Place(anchor: rest.anchor, scale: rest.scale, center: CGPoint(x: rest.center.x + slide, y: rest.center.y)), slide)
     }
 
     /// Where one part of the panel (the cover, or the details) shows: at `scale`, with its own
@@ -545,9 +569,13 @@ final class NowPlayingLyricsLayer {
 
     func update(menu: MenuView, pass: RenderPass, size: CGSize, scale: CGFloat) {
         layer.frame = CGRect(origin: .zero, size: size)
-        let shown = menu.isNowPlayingLyricsVisible && menu.hasNowPlayingLyrics
+        // Standing upright they come in once the song's details have left the part under the
+        // fold, and are gone before those come back.
+        let glide = menu.upright == nil ? nil : menu.nowPlayingWordsGlide
+        let shown = (menu.isNowPlayingLyricsVisible || glide != nil) && menu.hasNowPlayingLyrics
         if shown { layer.isHidden = false }
-        layer.setOpacity(shown ? 1 : 0, pass.animation)
+        let opacity = glide.map { min(max(($0 - 0.5) / 0.5, 0), 1) } ?? 1
+        layer.setOpacity(shown ? Double(opacity) : 0, pass.animation)
         guard shown || !layer.isHidden, let lyrics = menu.nowPlayingLyrics else {
             if !shown, pass.animation == nil { layer.isHidden = true }
             return

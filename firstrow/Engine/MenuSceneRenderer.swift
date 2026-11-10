@@ -414,6 +414,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 CGRect(x: $0.minX * canvasScale, y: $0.minY * canvasScale, width: $0.width * canvasScale, height: $0.height * canvasScale)
             },
             nowPlayingScale: fullscreenScene.nowPlayingDetailsScale,
+            nowPlayingSlide: fullscreenScene.nowPlayingDetailsSlide * canvasScale,
         )
         for (overlay, opacity) in [
             (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),

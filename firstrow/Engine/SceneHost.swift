@@ -7,6 +7,72 @@ import QuartzCore
     import FirstRowPortable
 #endif
 
+/// Calls back once a frame while asked to, for what moves a frame at a time rather than by an
+/// animation: at the fastest rate the screen offers where there's a display link to follow, on
+/// a timer elsewhere.
+@MainActor
+final class FrameClock: NSObject {
+    /// Gets the seconds since the last frame; returns whether to keep going.
+    var onFrame: ((Double) -> Bool)?
+    #if !FIRSTROW_PORTABLE && (os(iOS) || os(tvOS))
+        private var link: CADisplayLink?
+        private var lastTarget: CFTimeInterval = 0
+
+        func run() {
+            if let link {
+                guard link.isPaused else { return }
+                link.isPaused = false
+            } else {
+                let link = CADisplayLink(target: self, selector: #selector(frame(_:)))
+                if #available(iOS 15.0, tvOS 15.0, *) {
+                    let fastest = Float(max(60, UIScreen.main.maximumFramesPerSecond))
+                    link.preferredFrameRateRange = CAFrameRateRange(minimum: min(80, fastest), maximum: fastest, preferred: fastest)
+                }
+                link.add(to: .main, forMode: .common)
+                self.link = link
+            }
+            lastTarget = 0
+        }
+
+        func stop() {
+            link?.isPaused = true
+        }
+
+        @objc private func frame(_ link: CADisplayLink) {
+            let target = link.targetTimestamp
+            let elapsed = lastTarget == 0 ? max(0.001, target - link.timestamp) : min(1.0 / 30, max(0, target - lastTarget))
+            lastTarget = target
+            if onFrame?(elapsed) != true { stop() }
+        }
+    #else
+        private var timer: Timer?
+        private var last: CFTimeInterval = 0
+
+        func run() {
+            guard timer == nil else { return }
+            last = CACurrentMediaTime()
+            let timer = Timer(after: 1.0 / 120, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolatedIfPossible { self?.tick() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            self.timer = timer
+        }
+
+        func stop() {
+            timer?.invalidate()
+            timer = nil
+        }
+
+        private func tick() {
+            guard timer != nil else { return }
+            let now = CACurrentMediaTime()
+            let elapsed = min(1.0 / 30, max(0.001, now - last))
+            last = now
+            if onFrame?(elapsed) != true { stop() }
+        }
+    #endif
+}
+
 extension MainActor {
     /// Runs main-actor work immediately from a callback the system makes on the main thread.
     static func runOnMainThread(_ body: @MainActor () -> Void) {
