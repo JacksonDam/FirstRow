@@ -115,12 +115,18 @@ struct UprightShow: Equatable {
         return moving(CGPoint(x: rect.midX, y: rect.midY), to: CGPoint(x: room.midX, y: room.midY), scale: scale)
     }
 
-    /// The transform that keeps a piece where it is on a sideways screen: that screen's left edge
-    /// on the pane's and its height the pane's.
-    func sidewaysFit() -> CATransform3D {
+    /// How much of a sideways screen's width shows in the pane, when its height is the pane's.
+    var sidewaysRoom: CGFloat {
+        guard sidewaysScreen.height > 0, pane.height > 0 else { return 0 }
+        return pane.width * sidewaysScreen.height / pane.height
+    }
+
+    /// The transform that keeps a piece as it is on a sideways screen: that screen's height the
+    /// pane's, and its left edge `shift` of its own points right of the pane's.
+    func sidewaysFit(shift: CGFloat = 0) -> CATransform3D {
         guard sidewaysScreen.height > 0 else { return CATransform3DIdentity }
         return moving(
-            CGPoint(x: sidewaysScreen.minX, y: sidewaysScreen.midY),
+            CGPoint(x: sidewaysScreen.minX - shift, y: sidewaysScreen.midY),
             to: CGPoint(x: pane.minX, y: pane.midY),
             scale: pane.height / sidewaysScreen.height,
         )

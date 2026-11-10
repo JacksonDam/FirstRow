@@ -25,14 +25,6 @@ struct CoverCarouselConfiguration {
     var horizontalOffset: CGFloat
     var verticalOffset: CGFloat
     var preserveArtworkAspectRatio: Bool
-    /// Stretches the covers' path sideways, where there is more room beside it than it was drawn for.
-    var spread: Spread?
-
-    struct Spread: Equatable {
-        /// The place across the carousel's layer that stays where it is.
-        var about: CGFloat
-        var factor: CGFloat
-    }
 }
 
 @MainActor
@@ -79,6 +71,23 @@ final class CoverCarouselLayerController: LayerController {
         baseIconSize * 1.12 * 1.24
     }
 
+    /// How far right of the carousel's middle (and its offset) the covers are seen: the far edge
+    /// of one turning back, and the last of one as its trip ends, out to the left.
+    static func reach(baseIconSize: CGFloat) -> (turning: CGFloat, leaving: CGFloat) {
+        let side = baseIconSize * 1.2
+        let size = CGSize(width: side, height: side)
+        func farEdge(_ progress: Double) -> CGFloat {
+            let state = coverState(progress: progress, baseIconSize: baseIconSize)
+            let transform = CATransform3DConcat(
+                yawTransform(degrees: state.yawDegrees, perspective: 0.75, viewSize: size),
+                CATransform3DMakeScale(state.scale, state.scale, 1),
+            )
+            return turnedOutline(center: CGPoint(x: state.x, y: 0), size: size, transform: transform).maxX
+        }
+        let turning = stride(from: 0.0, through: 0.6, by: 0.02).map(farEdge).max() ?? 0
+        return (turning, farEdge(1))
+    }
+
     init() {
         rootLayer.masksToBounds = false
         rootLayer.addSublayer(reflectionContainer)
@@ -106,7 +115,7 @@ final class CoverCarouselLayerController: LayerController {
         }
         self.configuration = configuration
         let newPhaseKey = phaseIdentityKey(for: configuration.source)
-        let geometryKey = "\(configuration.baseIconSize)|\(configuration.horizontalOffset)|\(configuration.verticalOffset)|\(bounds.width)x\(bounds.height)|\(configuration.spread?.about ?? 0)|\(configuration.spread?.factor ?? 1)"
+        let geometryKey = "\(configuration.baseIconSize)|\(configuration.horizontalOffset)|\(configuration.verticalOffset)|\(bounds.width)x\(bounds.height)"
         if newPhaseKey != phaseKey {
             phaseKey = newPhaseKey
             phaseOrigin = CACurrentMediaTime()
@@ -244,7 +253,7 @@ final class CoverCarouselLayerController: LayerController {
         let depth: Double
     }
 
-    private func coverState(progress: Double, baseIconSize: CGFloat) -> CoverState {
+    private static func coverState(progress: Double, baseIconSize: CGFloat) -> CoverState {
         let u = min(max(progress, 0), 1)
         let side = baseIconSize * 1.12
         let xHidden = side * 0.40
@@ -265,12 +274,8 @@ final class CoverCarouselLayerController: LayerController {
     /// Where a cover is (in the carousel's own layer space) and how it's turned and sized.
     private func pose(_ state: CoverState, size: CGSize, bounds: CGSize, configuration: CoverCarouselConfiguration) -> (position: CGPoint, transform: CATransform3D) {
         // Scaling about a frame 100 pt taller than the artwork lifts it by 50 pt times the scale.
-        var x = bounds.width * 0.5 + configuration.horizontalOffset + state.x
-        if let spread = configuration.spread {
-            x = spread.about + (x - spread.about) * spread.factor
-        }
         let position = LayerSpace(height: bounds.height).point(CGPoint(
-            x: x,
+            x: bounds.width * 0.5 + configuration.horizontalOffset + state.x,
             y: bounds.height * 0.5 + configuration.verticalOffset + state.y - 50 * state.scale,
         ))
         let transform = CATransform3DConcat(
@@ -292,7 +297,7 @@ final class CoverCarouselLayerController: LayerController {
         return lanes.enumerated().map { slot, lane in
             guard lane.preview.animation(forKey: "carousel") != nil, let shown = lane.preview.presentation() else { return .zero }
             let size = lane.size == .zero ? CGSize(width: configuration.baseIconSize * 1.2, height: configuration.baseIconSize * 1.2) : lane.size
-            let state = coverState(progress: laneProgress(slot: slot, elapsed: elapsed), baseIconSize: configuration.baseIconSize)
+            let state = Self.coverState(progress: laneProgress(slot: slot, elapsed: elapsed), baseIconSize: configuration.baseIconSize)
             let place = pose(state, size: size, bounds: bounds, configuration: configuration).position
             return CGPoint(x: shown.position.x - place.x, y: shown.position.y - place.y)
         }
@@ -306,7 +311,7 @@ final class CoverCarouselLayerController: LayerController {
             for (slot, lane) in lanes.enumerated() {
                 let progress = laneProgress(slot: slot, elapsed: elapsed)
                 let size = lane.size == .zero ? CGSize(width: configuration.baseIconSize * 1.2, height: configuration.baseIconSize * 1.2) : lane.size
-                let pose = pose(coverState(progress: progress, baseIconSize: configuration.baseIconSize), size: size, bounds: bounds, configuration: configuration)
+                let pose = pose(Self.coverState(progress: progress, baseIconSize: configuration.baseIconSize), size: size, bounds: bounds, configuration: configuration)
                 for layer in [lane.reflection, lane.preview] {
                     // Only the first look: running motion overrides these.
                     guard layer.animation(forKey: "carousel") == nil else { continue }
@@ -321,7 +326,7 @@ final class CoverCarouselLayerController: LayerController {
         guard let configuration else { return }
         let count = Self.keyframeCount
         let keyTimes = (0 ... count).map { NSNumber(value: Double($0) / Double(count)) }
-        let states = (0 ... count).map { coverState(progress: Double($0) / Double(count), baseIconSize: configuration.baseIconSize) }
+        let states = (0 ... count).map { Self.coverState(progress: Double($0) / Double(count), baseIconSize: configuration.baseIconSize) }
         let elapsed = max(0, CACurrentMediaTime() - phaseOrigin)
         for (slot, lane) in lanes.enumerated() {
             let size = lane.size == .zero ? CGSize(width: configuration.baseIconSize * 1.2, height: configuration.baseIconSize * 1.2) : lane.size

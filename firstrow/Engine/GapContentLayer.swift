@@ -511,32 +511,40 @@ final class CoverCarouselItemLayer: GapItemLayer {
     override func update(_ kind: GapItemKind, context: GapItemContext) {
         guard case let .coverCarousel(configuration, exitOverlayOpacity) = kind else { return }
         stage.place(CGRect(origin: .zero, size: context.boxSize))
-        // The covers keep the path they have on a sideways screen, leaving past the left edge.
-        stage.setTransform(context.show?.sidewaysFit() ?? CATransform3DIdentity, nil)
         let side = configuration.baseIconSize * 1.2
         let size = CGSize(width: side, height: side + 100)
         let spaceFrame = CGRect(x: (context.boxSize.width - size.width) * 0.5, y: (context.boxSize.height - size.height) * 0.5, width: size.width, height: size.height)
         space.frame = spaceFrame
         controller.rootLayer.frame = CGRect(origin: .zero, size: size)
-        var arranged = configuration
-        if let show = context.show {
-            // The path was drawn to leave the menu its side of the screen. Upright the menu is
-            // below, so the path is stretched from the screen's left edge to turn back near the right.
-            let left = show.sidewaysScreen.minX - spaceFrame.minX
-            let turn = size.width * 0.5 + configuration.horizontalOffset + CoverCarouselLayerController.turningPoint(baseIconSize: configuration.baseIconSize) - left
-            let fit = show.pane.height / max(show.sidewaysScreen.height, 1)
-            if turn > 0 {
-                arranged.spread = CoverCarouselConfiguration.Spread(about: left, factor: max(1, show.pane.width * 0.78 / (turn * fit)))
-            }
-        }
-        controller.update(arranged, bounds: size)
+        controller.update(configuration, bounds: size)
         let overlaySize = CGSize(width: max(configuration.baseIconSize * 3.75, 1500), height: max(configuration.baseIconSize * 4, 1200))
-        exitOverlay.frame = CGRect(
+        var overlayFrame = CGRect(
             x: (context.boxSize.width - overlaySize.width) * 0.5 + configuration.horizontalOffset,
             y: (context.boxSize.height - overlaySize.height) * 0.5 + configuration.verticalOffset,
             width: overlaySize.width,
             height: overlaySize.height,
         )
+        var fit = CATransform3DIdentity
+        if let show = context.show, show.sidewaysRoom > 0 {
+            // Upright the covers keep the path, size and spacing they have on a sideways screen,
+            // in the pane above the fold. With no menu beside them they sit toward the middle
+            // of it, as far over as still has each one off the left edge when its trip ends.
+            let room = show.sidewaysRoom
+            let middle = spaceFrame.midX + configuration.horizontalOffset - show.sidewaysScreen.minX
+            let reach = CoverCarouselLayerController.reach(baseIconSize: configuration.baseIconSize)
+            let centred = (room - (middle + reach.turning)) * 0.5
+            let shift = max(0, min(centred, -(middle + reach.leaving) - 24))
+            fit = show.sidewaysFit(shift: shift)
+            // What hides them on the way out covers the whole pane.
+            overlayFrame = CGRect(
+                x: show.sidewaysScreen.minX - shift - 40,
+                y: show.sidewaysScreen.minY - 40,
+                width: room + 80,
+                height: show.sidewaysScreen.height + 44,
+            )
+        }
+        stage.setTransform(fit, nil)
+        exitOverlay.frame = overlayFrame
         exitOverlay.setOpacity(exitOverlayOpacity, context.pass.animation)
     }
 
