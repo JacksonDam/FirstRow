@@ -409,9 +409,11 @@
             }
             let opening = open && !panelShown
             #if os(macOS)
+                let collapsed = panel.layer.map { Self.aboutAnchor(collapsed, of: $0, size: frame.size) } ?? collapsed
                 if opening, panel.alphaValue < 0.02 { panel.layer?.setTransform(collapsed, nil) }
                 panel.layer?.setTransform(open ? CATransform3DIdentity : collapsed, animation)
             #else
+                let collapsed = Self.aboutAnchor(collapsed, of: panel.layer, size: frame.size)
                 if opening, panel.isHidden { panel.layer.setTransform(collapsed, nil) }
                 panel.layer.setTransform(open ? CATransform3DIdentity : collapsed, animation)
             #endif
@@ -421,6 +423,17 @@
         func hideAll() {
             updateCluster(frame: nil, symbols: [], slotWidth: 0, focused: nil, iconSize: 0, animation: nil)
             setShown(false, glass: panel, shown: &panelShown, generation: &panelGeneration, content: panelHost, animation: nil)
+        }
+
+        /// `transform`, worked out about a view's top left, as its layer needs it: a layer turns
+        /// about its anchor point, which for a view here is its middle.
+        private static func aboutAnchor(_ transform: CATransform3D, of layer: CALayer, size: CGSize) -> CATransform3D {
+            let anchor = CGPoint(x: layer.anchorPoint.x * size.width, y: layer.anchorPoint.y * size.height)
+            guard anchor != .zero else { return transform }
+            return CATransform3DConcat(
+                CATransform3DConcat(CATransform3DMakeTranslation(anchor.x, anchor.y, 0), transform),
+                CATransform3DMakeTranslation(-anchor.x, -anchor.y, 0),
+            )
         }
 
         private func setViewFrame(_ view: NativeView, _ frame: CGRect) {
