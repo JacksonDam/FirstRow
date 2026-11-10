@@ -394,11 +394,6 @@ extension MenuView {
             enterITunesTopMenu(.movies, title: item.title)
             return
         }
-        if activeRootItemID == "movies", item.id == "movies_theatrical_trailers" {
-            playSound(named: "Selection")
-            presentTheatricalTrailersLoadingThenError()
-            return
-        }
         if activeRootItemID == "tv_shows", item.id == "tv_itunestopepisodes" {
             playSound(named: "Selection")
             enterITunesTopMenu(.tvEpisodes, title: item.title)

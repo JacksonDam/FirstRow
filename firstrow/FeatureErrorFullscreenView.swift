@@ -34,7 +34,6 @@ struct FeatureErrorCopy {
 }
 
 enum FeatureErrorKind: String {
-    case genericOperationFailed
     case noSharedPhotos
     case noContentFound
     case protectedVideoUnsupported
@@ -49,11 +48,6 @@ enum FeatureErrorKind: String {
 
     var copy: FeatureErrorCopy {
         switch self {
-        case .genericOperationFailed:
-            FeatureErrorCopy(
-                headerText: "An error occurred.",
-                subcaptionText: "",
-            )
         case .noSharedPhotos:
             FeatureErrorCopy(
                 headerText: "First Row cannot find any shared photos.",

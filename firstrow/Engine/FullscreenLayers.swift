@@ -133,7 +133,6 @@ final class FullscreenSceneLayer {
         case menu.musicNowPlayingFullscreenKey: ModernTheme.isActive ? ModernNowPlayingSceneLayer() : NowPlayingSceneLayer()
         case menu.screenSaverFullscreenKey: ScreenSaverSceneLayer()
         case menu.featureErrorFullscreenKey: FeatureErrorSceneLayer()
-        case menu.theatricalTrailersLoadingFullscreenKey: LoadingSceneLayer()
         case menu.photoSlideshowFullscreenKey: PhotoSlideshowSceneLayer()
         default: FullscreenContent()
         }
@@ -609,31 +608,6 @@ extension FeatureErrorSceneLayer {
         if let subGraphic {
             subcaption.show(subGraphic, at: CGPoint(x: (size.width - subGraphic.size.width) * 0.5, y: top))
         }
-    }
-}
-
-/// "Loading Theatrical Trailers..." with a spinner below it.
-final class LoadingSceneLayer: FullscreenContent {
-    private let header = SceneLayer()
-    private let spinner = SpinnerLayer()
-
-    override init() {
-        super.init()
-        layer.addSublayer(header)
-        layer.addSublayer(spinner.layer)
-    }
-
-    override func update(menu: MenuView, scene: FullscreenScenePresentation, pass _: RenderPass, size: CGSize, scale: CGFloat) {
-        let text = scene.payload["header"] ?? "Loading Theatrical Trailers..."
-        let graphic = ModernTheme.isActive
-            ? TextRenderer.render(TextSpec(text: text, fontName: ModernTheme.semiboldFontName, size: 50, color: ModernTheme.text, wrapWidth: min(1500, size.width), alignment: .center), scale: scale)
-            : TextRenderer.render(TextSpec(text: text, fontName: firstRowBoldFontName, size: 60, wrapWidth: min(1500, size.width), alignment: .center), scale: scale)
-        let stackHeight = graphic.size.height + 42 + 72
-        let top = (size.height - stackHeight) * 0.5
-        header.show(graphic, at: CGPoint(x: (size.width - graphic.size.width) * 0.5, y: top))
-        spinner.layer.isHidden = !menu.theatricalTrailersLoadingShowsSpinner
-        spinner.layer.frame = CGRect(x: (size.width - 64) * 0.5, y: top + graphic.size.height + 42 + 4, width: 64, height: 64)
-        if menu.theatricalTrailersLoadingShowsSpinner { spinner.start() } else { spinner.stop() }
     }
 }
 

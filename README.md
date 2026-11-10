@@ -48,7 +48,7 @@ There are two looks. **Classic** is the original, down to the pixel. **Modern** 
 - **A screen saver** of floating photos, after anything from a minute to an hour of inactivity.
 - **Media keys, Control Center and headphone buttons** on macOS, iOS and tvOS, with whatever's playing shown in the system's Now Playing.
 
-Movies and shows bought from the Apple TV app won't play because of their DRM, and Theatrical Trailers is empty because Apple's trailer servers are gone (a replacement would be welcome).
+Movies and shows bought from the Apple TV app won't play because of their DRM.
 
 ## Controls
 

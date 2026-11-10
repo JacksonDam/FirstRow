@@ -8,43 +8,6 @@ import Foundation
 #endif
 
 extension MenuView {
-    func presentTheatricalTrailersLoadingThenError() {
-        guard activeFullscreenScene == nil else { return }
-        guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
-        guard !isFullscreenSceneTransitioning else { return }
-        let requestID = incrementRequestID(&theatricalTrailersLoadingRequestID)
-        theatricalTrailersLoadingShowsSpinner = false
-        let fadeOutDuration = 0.28
-        let fadeInDuration = 0.24
-        let spinnerRevealDelay = fadeOutDuration + fadeInDuration
-        let errorTransitionDelay = spinnerRevealDelay + 0.5
-        presentFullscreenScene(
-            key: theatricalTrailersLoadingFullscreenKey,
-            payload: ["header": "Loading Theatrical Trailers..."],
-        )
-        Task {
-            try? await firstRowSleep(spinnerRevealDelay)
-            guard !Task.isCancelled else { return }
-            guard self.theatricalTrailersLoadingRequestID == requestID else { return }
-            guard self.activeFullscreenScene?.key == self.theatricalTrailersLoadingFullscreenKey else { return }
-            var instant = Transaction()
-            instant.disablesAnimations = true
-            withTransaction(instant) {
-                self.theatricalTrailersLoadingShowsSpinner = true
-            }
-        }
-        Task {
-            try? await firstRowSleep(errorTransitionDelay)
-            guard !Task.isCancelled else { return }
-            guard self.theatricalTrailersLoadingRequestID == requestID else { return }
-            guard self.activeFullscreenScene?.key == self.theatricalTrailersLoadingFullscreenKey else { return }
-            self.transitionActiveFullscreenSceneWithOverlay(
-                to: self.featureErrorFullscreenKey,
-                payload: FeatureErrorKind.genericOperationFailed.payload,
-            )
-        }
-    }
-
     func transitionActiveFullscreenSceneWithOverlay(
         to key: String,
         payload: [String: String] = [:],
@@ -218,10 +181,6 @@ extension MenuView {
         if dismissedKey == musicNowPlayingFullscreenKey {
             clearMusicSongSwitchTransitionState()
         }
-        if dismissedKey == theatricalTrailersLoadingFullscreenKey {
-            theatricalTrailersLoadingShowsSpinner = false
-            _ = incrementRequestID(&theatricalTrailersLoadingRequestID)
-        }
         if dismissedKey == musicNowPlayingFullscreenKey, !shouldPreserveMusicPlayback {
             stopMusicPlaybackSession(clearDisplayState: false)
         }
@@ -232,10 +191,7 @@ extension MenuView {
         }
         let isScreenSaverTransition = dismissedKey == screenSaverFullscreenKey
         let fadeOutDuration = isScreenSaverTransition ? 1.0 : 0.28
-        let holdDuration: Double =
-            (isScreenSaverTransition ||
-                dismissedKey == featureErrorFullscreenKey ||
-                dismissedKey == theatricalTrailersLoadingFullscreenKey) ? 0 : 1.0
+        let holdDuration: Double = (isScreenSaverTransition || dismissedKey == featureErrorFullscreenKey) ? 0 : 1.0
         let fadeInDuration = isScreenSaverTransition ? 1.0 : 0.24
         let useOverlayForMenuFade =
             dismissedKey == screenSaverFullscreenKey ||

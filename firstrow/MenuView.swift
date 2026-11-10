@@ -117,7 +117,6 @@ final class MenuView: ObservableObject {
     let musicNowPlayingFullscreenKey = "music_now_playing"
     let screenSaverFullscreenKey = "settings_screen_saver"
     let featureErrorFullscreenKey = "feature_error"
-    let theatricalTrailersLoadingFullscreenKey = "movies_theatrical_trailers_loading"
     let photoSlideshowFullscreenKey = "photo_slideshow"
 
     private var mediaSourcesObserver: NSObjectProtocol?
@@ -582,8 +581,6 @@ final class MenuView: ObservableObject {
     @Published var fullscreenTransitionOverlayOpacity: Double = 0
     @Published var isFullscreenSceneTransitioning = false
     @Published var isMenuFolderSwapTransitioning = false
-    @Published var theatricalTrailersLoadingShowsSpinner = false
-    @Published var theatricalTrailersLoadingRequestID = 0
 
     // MARK: - Screen saver state
 
