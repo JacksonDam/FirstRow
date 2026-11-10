@@ -8,6 +8,10 @@
             #if os(tvOS)
                 // Mix with other audio, or each interface sound stops the Apple Music player.
                 try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            #else
+                // A player of movies and music is heard whichever way the Ring/Silent switch is
+                // set. (Left as it comes, an app's sound goes quiet with the switch.)
+                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
             #endif
             return true
         }
