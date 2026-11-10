@@ -29,6 +29,11 @@ final class TouchControlsLayer {
     let layer = SceneLayer()
     /// Follows the full-screen scene's scale and opacity.
     private let sceneGroup = SceneLayer()
+    /// Goes with Now Playing as it turns round every so often: in the classic look it turns
+    /// with the panel, about the middle of the screen as the panel does; in the modern look
+    /// it fades away and back with it.
+    private let turnGroup = CALayer()
+    private var lastTurnAway: CGFloat = 0
     /// Now Playing's buttons, which slide down off the screen while a song plays untouched,
     /// leaving a faint bar to pull them back up with.
     private let transportGroup = SceneLayer()
@@ -96,7 +101,9 @@ final class TouchControlsLayer {
 
     init() {
         layer.addSublayer(sceneGroup)
-        sceneGroup.addSublayer(transportGroup)
+        turnGroup.actions = ["position": NSNull(), "bounds": NSNull(), "transform": NSNull(), "opacity": NSNull()]
+        sceneGroup.addSublayer(turnGroup)
+        turnGroup.addSublayer(transportGroup)
         sceneGroup.addSublayer(transportHint.layer)
         sceneGroup.addSublayer(queueHint.layer)
     }
@@ -249,6 +256,19 @@ final class TouchControlsLayer {
             sceneGroup.setTransform(sceneTransform, pass.animation)
             sceneGroup.setOpacity(sceneOpacity, pass.animation)
         }
+        // Turning round, Now Playing takes its buttons with it. The classic look's panel turns
+        // edge on and back: so do they, about the same line and seen from as far away. The
+        // modern look's fades out and back in the other way round: so do they, on its curve.
+        let turn = isNowPlaying ? menu.musicNowPlayingFlipRotationDegrees : 0
+        let turnAway = min(1, abs(CGFloat(turn)) / 90)
+        let isTurning = turnAway != lastTurnAway
+        lastTurnAway = turnAway
+        let turnFade: Animation? = isTurning ? pass.animation.map { .smoothInOut(duration: $0.duration) } : nil
+        let turnOpacity = isModern ? Double(1 - turnAway) : 1
+        turnGroup.bounds = CGRect(origin: .zero, size: size)
+        turnGroup.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        turnGroup.setTransform(isModern ? CATransform3DIdentity : yawTransform(degrees: turn, perspective: 0.9, viewSize: size), pass.animation)
+        turnGroup.setOpacity(turnOpacity, turnFade)
         let sceneMoving = menu.isFullscreenSceneTransitioning || !isNowPlaying
         // Slid away, the buttons go below the bottom of the screen, and a bar stays behind.
         let isIdle = isNowPlaying && menu.areNowPlayingTouchControlsHidden
@@ -320,8 +340,8 @@ final class TouchControlsLayer {
                         items: items,
                         size: size,
                         sceneTransform: sceneTransform,
-                        sceneOpacity: sceneOpacity,
-                        sceneAnimation: pass.animation,
+                        sceneOpacity: sceneOpacity * turnOpacity,
+                        sceneAnimation: isTurning ? turnFade : pass.animation,
                         transportHidden: transportHidden,
                         transportDrop: drop,
                         transportAnimation: slide,

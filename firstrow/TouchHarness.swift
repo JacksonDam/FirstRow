@@ -312,6 +312,8 @@
                 touchMenu?.hasPromptedMoviesFolderPickerThisSession = true
             case "intro":
                 introSink?()
+            case "turn":
+                touchMenu?.performMusicNowPlayingFlip()
             case "code":
                 showSampleCode(on: touchMenu)
             default:

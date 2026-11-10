@@ -262,6 +262,9 @@ enum FirstRowHarness {
             case "intro":
                 // intro plays the look's intro movie, the menus coming in after it fades to black.
                 introSink?()
+            case "turn":
+                // turn has Now Playing turn round now, as it does every so often.
+                harnessMenu?.performMusicNowPlayingFlip()
             case "code":
                 showSampleCode(on: harnessMenu)
             case "stance" where parts.count == 2:
