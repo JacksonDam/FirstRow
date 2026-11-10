@@ -637,7 +637,11 @@ extension MenuView {
     /// and away after a while as ever.
     func movieStanceDidChange() {
         guard isMoviePlaybackVisible, moviePlayer != nil, !keepsMovieControlsUp else { return }
-        showMovieControlsInstantly()
+        // Plain changes, not drawn here and now: they're drawn with the layout that follows a
+        // change of stance, so everything moves to its new place together.
+        cancelMovieControlsAutoHide()
+        areMovieControlsVisible = true
+        movieControlsOpacity = 1
         scheduleMovieControlsAutoHide()
     }
 

@@ -414,6 +414,9 @@ extension MenuView {
     func nowPlayingStanceDidChange() {
         landNowPlayingGlide()
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
+        // (A plain change, drawn with the layout that follows the change of stance, so that
+        // everything moves to its new place together.)
+        if upright != nil, areNowPlayingTouchControlsHidden { areNowPlayingTouchControlsHidden = false }
         scheduleNowPlayingTouchControlsHide()
         // Turning round every so often goes by how it stands, too.
         updateMusicNowPlayingFlipTimerState()
