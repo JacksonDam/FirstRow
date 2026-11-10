@@ -134,6 +134,10 @@ For a third level of lists, add a case to `ThirdMenuMode` in `MenuView+MenuNavig
 
 If you'd like to support the project, you can [buy me a coffee](https://buymeacoffee.com/gameroof1w).
 
+## Credits
+
+> <sub>"macbook pro M3 16 inch 2024" by jackbaeten, "iPhone 17 Pro" by Ranguel, "Apple Tv 4k 3rdgen Wifi Siri Remote 3rdgen" by polyman and "LG OLED55G56LS OLED Evo TV" by Ram-je (Sketchfab, CC BY 4.0). "Apple iPhone Duo Fold Star White 2026" by extraakash (Sketchfab). Wurlitzer EP200 samples by Greg Sullivan (CC BY 3.0).</sub>
+
 ## License
 
 [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/)
