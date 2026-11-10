@@ -1,12 +1,12 @@
 # First Row
 
 
-https://github.com/user-attachments/assets/2ff954c0-50fe-403b-b0b7-39557c937d62
+https://github.com/user-attachments/assets/b3da5b1c-5bcb-4631-8510-65d43df6738f
 
 
 First Row brings back **Front Row**, the media centre that came with Mac OS X Tiger through Snow Leopard and ran the first Apple TV. It's rebuilt from scratch in Swift on Core Animation, with the menus, carousels, sounds and transitions matched to the Leopard and Snow Leopard version.
 
-It runs on macOS 10.15 Catalina and later, on iPhone, iPad and Apple TV (iOS and tvOS 15.6 and later), and there are beta builds for Linux and Windows on the [Releases](https://github.com/JacksonDam/FirstRow/releases) page.
+It runs on macOS 10.15 Catalina and later, on iPhone, iPad and Apple TV (iOS and tvOS 15.6 and later), and there are builds for Linux and Windows on the [Releases](https://github.com/JacksonDam/FirstRow/releases) page.
 
 There are two looks. **Classic** is the original, down to the pixel. **Modern** is a flatter take in the style of today's Apple TV, with capsule rows, a large preview card, artwork-tinted backgrounds, Liquid Glass controls on macOS 26 and iOS 26+, and its own softer sounds. You pick one the first time you open First Row and can switch any time in Settings.
 
