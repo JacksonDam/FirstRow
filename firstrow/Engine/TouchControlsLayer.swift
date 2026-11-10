@@ -143,7 +143,10 @@ final class TouchControlsLayer {
         if let step = menu.onboardingStep {
             // The first-launch screens after the first have Back, whatever the input.
             if step != .theme, menu.onboardingOpacity > 0.5 { wanted = [back] }
-        } else if enabled, !menu.isMovieTransitioning, menu.textEntry == nil, menu.codeDisplay == nil {
+        } else if enabled, menu.codeDisplay != nil {
+            // A code on screen has nothing else to press.
+            wanted = [back]
+        } else if enabled, !menu.isMovieTransitioning, menu.textEntry == nil {
             if menu.isMoviePlaybackVisible {
                 // With the movie's controls, coming and going together.
                 // (Subtitles, audio and speed have buttons of their own, above the bar.)

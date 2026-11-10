@@ -30,6 +30,9 @@
                     // type:<text> types it as if from a keyboard.
                     NotificationCenter.default.post(name: .firstRowHarnessTypeText, object: nil, userInfo: ["text": String(command.dropFirst("type:".count))])
                     return true
+                case "code":
+                    FirstRowHarness.showSampleCode(on: FirstRowHarness.harnessMenu)
+                    return true
                 default:
                     return false
                 }

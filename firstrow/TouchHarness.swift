@@ -313,12 +313,7 @@
             case "intro":
                 introSink?()
             case "code":
-                touchMenu?.presentCodeDisplay(CodeDisplayState(
-                    title: "Quick Connect",
-                    message: "On a device signed in to Home Server, open Quick Connect in your profile and enter this code.",
-                    code: "482913",
-                    status: "Waiting for approval...",
-                )) {}
+                showSampleCode(on: touchMenu)
             default:
                 guard let key = harnessKeys[command], let menu = touchMenu else { return }
                 if [.upArrow, .downArrow, .leftArrow, .rightArrow].contains(key) {

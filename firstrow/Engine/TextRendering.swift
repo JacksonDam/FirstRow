@@ -137,6 +137,16 @@ enum FontMetrics {
         CTFontGetAscent(font).rounded()
     }
 
+    /// How far capitals and digits stand above the baseline.
+    static func capHeight(_ font: CTFont) -> CGFloat {
+        #if FIRSTROW_PORTABLE
+            // The stand-in faces don't say; the fonts in use are within a hundredth of this.
+            CTFontGetSize(font) * 0.72
+        #else
+            CTFontGetCapHeight(font)
+        #endif
+    }
+
     static func lineHeight(fontName: String, size: CGFloat) -> CGFloat {
         lineHeight(font(fontName, size: size))
     }

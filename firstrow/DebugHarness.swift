@@ -87,6 +87,17 @@ enum FirstRowHarness {
         }
         return true
     }
+
+    /// `code` shows a sample code screen, as signing in to a server does.
+    @MainActor
+    static func showSampleCode(on menu: MenuView?) {
+        menu?.presentCodeDisplay(CodeDisplayState(
+            title: "Quick Connect",
+            message: "On a device signed in to Home Server, open Quick Connect in your profile and enter this code.",
+            code: "482913",
+            status: "Waiting for approval...",
+        )) {}
+    }
 }
 
 #if os(macOS) && (DEBUG || FIRSTROW_HARNESS_BUILD)
@@ -241,6 +252,8 @@ enum FirstRowHarness {
             case "intro":
                 // intro plays the look's intro movie, the menus coming in after it fades to black.
                 introSink?()
+            case "code":
+                showSampleCode(on: harnessMenu)
             case "stance" where parts.count == 2:
                 // stance:portrait|landscape turns the test window, the layout gliding over.
                 stanceSink?(parts[1] == "portrait")
