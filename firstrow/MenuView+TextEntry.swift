@@ -208,6 +208,7 @@ extension MenuView {
 
     /// Characters typed on a keyboard.
     func handleTypedText(_ typed: String) {
+        if textEntry == nil, handleYouTubeSearchTypedText(typed) { return }
         guard var entry = textEntry, textEntryCompletion != nil else { return }
         let printable = typed.unicodeScalars.filter { scalar in
             scalar.value >= 0x20 && scalar.value != 0x7F && !(0xF700 ... 0xF8FF).contains(scalar.value)

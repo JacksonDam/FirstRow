@@ -156,6 +156,7 @@
 		9FA040FAA6D2D17B65D8B1B3 /* MenuView+YouTube.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC5C0A1AA510F70046FE7FB /* MenuView+YouTube.swift */; };
 		7B10B45FBA4D1B208B677F1E /* MenuView+YouTubePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6320E1FB3007B5B9EF912BC /* MenuView+YouTubePlayback.swift */; };
 		3F0DEFB1DE21AC18C9F17AE1 /* YouTubeVideoLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AC07F371B23AAFC1D079E72 /* YouTubeVideoLayers.swift */; };
+		132B0A19C006F55B1A82D322 /* MenuView+YouTubeSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111AAE0C9043BE54B0FD10F /* MenuView+YouTubeSearch.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -327,6 +328,7 @@
 		6DC5C0A1AA510F70046FE7FB /* MenuView+YouTube.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTube.swift"; sourceTree = "<group>"; };
 		B6320E1FB3007B5B9EF912BC /* MenuView+YouTubePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTubePlayback.swift"; sourceTree = "<group>"; };
 		2AC07F371B23AAFC1D079E72 /* YouTubeVideoLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeVideoLayers.swift; sourceTree = "<group>"; };
+		1111AAE0C9043BE54B0FD10F /* MenuView+YouTubeSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTubeSearch.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -506,6 +508,7 @@
 				6DC5C0A1AA510F70046FE7FB /* MenuView+YouTube.swift */,
 				B6320E1FB3007B5B9EF912BC /* MenuView+YouTubePlayback.swift */,
 				2AC07F371B23AAFC1D079E72 /* YouTubeVideoLayers.swift */,
+				1111AAE0C9043BE54B0FD10F /* MenuView+YouTubeSearch.swift */,
 			);
 			path = YouTube.frappliance;
 			sourceTree = "<group>";
@@ -866,6 +869,7 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				132B0A19C006F55B1A82D322 /* MenuView+YouTubeSearch.swift in Sources */,
 				3F0DEFB1DE21AC18C9F17AE1 /* YouTubeVideoLayers.swift in Sources */,
 				DE486B6DA9238399538B8E7B /* YouTubeClient.swift in Sources */,
 				847455D88D8ACC56C3111C9D /* YouTubeStore.swift in Sources */,

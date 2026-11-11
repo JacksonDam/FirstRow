@@ -72,6 +72,7 @@ extension MenuView {
         if isReturningToRoot {
             return
         }
+        if handleYouTubeSearchPadInput(key) { return }
         switch key {
         case .downArrow:
             guard !isEnteringSubmenu else { return }

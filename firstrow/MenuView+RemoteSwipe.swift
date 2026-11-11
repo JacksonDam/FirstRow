@@ -225,6 +225,8 @@ import Foundation
 
         /// Whether the selection can move one row (positive is down) in the list being swiped.
         private func canStepRemoteSwipe(direction: Int) -> Bool {
+            // (YouTube's search screen: the swipe moves through its keys while they have the arrows.)
+            if youtubeSearchPadHasFocus { return canMoveYouTubeSearchPadFocus(rows: direction) }
             if isNowPlayingQueueVisible, activeFullscreenScene?.key == musicNowPlayingFullscreenKey {
                 let current = nowPlayingQueueHoverIndex ?? nowPlayingQueueActiveIndex ?? 0
                 return nowPlayingQueueHoverIndex == nil || (current + direction >= 0 && current + direction < nowPlayingQueueCount)
@@ -239,6 +241,7 @@ import Foundation
         @discardableResult
         private func stepRemoteSwipe(direction: Int) -> Bool {
             guard canStepRemoteSwipe(direction: direction) else { return false }
+            if youtubeSearchPadHasFocus { return moveYouTubeSearchPadFocus(rows: direction) }
             if isNowPlayingQueueVisible, activeFullscreenScene?.key == musicNowPlayingFullscreenKey {
                 moveNowPlayingQueueFocus(by: direction)
                 return true

@@ -1215,6 +1215,15 @@ enum SymbolFallback {
                 }
                 context.fillPath()
             }
+        case "magnifyingglass":
+            return Shape(referenceSize: 20, box: CGSize(width: 22, height: 22)) { context in
+                context.setLineWidth(weight == .regular ? 2 : 2.6)
+                context.addEllipse(in: CGRect(x: 3, y: 3, width: 12, height: 12))
+                context.strokePath()
+                context.move(to: CGPoint(x: 13.6, y: 13.6))
+                context.addLine(to: CGPoint(x: 19, y: 19))
+                context.strokePath()
+            }
         case "xmark":
             return Shape(referenceSize: 20, box: CGSize(width: 22, height: 22)) { context in
                 context.setLineWidth(2.4)

@@ -349,6 +349,8 @@ extension MenuView {
             selectResumeOptionFromPointer(index)
         case let .menuRow(level, index):
             selectRowFromPointer(level: level, index: index)
+        case let .searchKey(row, column):
+            pointAtYouTubeSearchKey(row: row, column: column)
         default:
             break
         }
@@ -465,7 +467,10 @@ extension MenuView {
             if index != pointerSelectionIndex(for: level) {
                 selectRowFromPointer(level: level, index: index)
             }
+            if level == .third { youtubeSearchPadDidPointAtResults() }
             handleKeyDown(.enter)
+        case let .searchKey(row, column):
+            clickYouTubeSearchKey(row: row, column: column)
         case let .carouselItem(index):
             guard pointerActiveListLevel == .root else { return }
             if index == selectedIndex {
@@ -598,6 +603,7 @@ extension MenuView {
         selectionAnimationDuration = Self.pointerSelectionDuration
         markSelectionAsMoving()
         playSound(named: "SelectionChange")
+        if level == .third { youtubeSearchPadDidPointAtResults() }
         switch level {
         case .root:
             selectedIndex = index

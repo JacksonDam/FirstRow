@@ -41,6 +41,8 @@ struct YouTubePageState {
     var continuation: YouTubeContinuation?
     var isLoaded = false
     var isLoadingMore = false
+    /// Set for the search screen: its field and keys (see `YouTubeSearchPad`).
+    var searchPad: YouTubeSearchPad?
 }
 
 /// The YouTube pages' state, kept together so the menu holds one value for all of it.
@@ -60,6 +62,8 @@ struct YouTubeMenuState {
     var detailsOrder: [String] = []
     var detailsRequestID = 0
     var isStartingPlayback = false
+    /// Typed text has been asked for (Linux and Windows send it only then).
+    var asksForTypedText = false
     /// The menu's carousel: the pictures of each list's first videos (by the list's row),
     /// the lists being fetched, and the one last shown, which stays while a row that has
     /// no pictures (yet, or ever: Search) is selected.
@@ -182,7 +186,11 @@ extension MenuView {
             enterYouTube(.history)
         case "youtube_search":
             playSound(named: "Selection")
-            askForYouTubeSearch()
+            if Self.youtubeSearchUsesPad {
+                enterYouTubeSearchPad()
+            } else {
+                askForYouTubeSearch()
+            }
         default:
             return false
         }
@@ -200,6 +208,11 @@ extension MenuView {
             items.append(menuMessageItem(id: "youtube_error", title: error))
         }
         guard state.isLoaded else { return items }
+        if let pad = state.searchPad, state.videos.isEmpty, youtube.error == nil {
+            // The search screen: nothing to list until something has been looked for.
+            let waiting = pad.isSearching || pad.text.trimmingCharacters(in: .whitespaces).isEmpty
+            return waiting ? [] : [menuMessageItem(id: "youtube_empty", title: state.page.emptyTitle)]
+        }
         if state.videos.isEmpty, youtube.error == nil {
             return [menuMessageItem(id: "youtube_empty", title: state.page.emptyTitle)]
         }
@@ -360,6 +373,7 @@ extension MenuView {
             self.youtube.error = nil
             self.youtube.status = nil
             self.clearYouTubePreview()
+            self.updateYouTubeSearchTextInput()
             let items = self.currentSubmenuItems()
             self.selectedSubIndex = min(self.selectedSubIndex, max(0, items.count - 1))
             self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
@@ -469,15 +483,21 @@ extension MenuView {
 
     // MARK: - Preview
 
-    private func clearYouTubePreview() {
+    func clearYouTubePreview() {
         youtube.previewVideoID = nil
         youtube.previewImage = nil
     }
 
     func refreshYouTubePreviewForCurrentContext() {
+        updateYouTubeSearchTextInput()
         loadYouTubeCarouselIfNeeded()
         loadMoreYouTubeVideosIfNeeded()
         loadYouTubeRowPictures()
+        // (The search screen has its keys where the preview goes.)
+        guard youtubeSearchPad == nil else {
+            clearYouTubePreview()
+            return
+        }
         guard let video = selectedYouTubeVideo else {
             clearYouTubePreview()
             return
@@ -540,6 +560,8 @@ extension MenuView {
         let key = image == nil ? "none" : (video?.id ?? "none")
         let animation = pass.animation(.easeInOut(duration: 0.22), when: memo.youtubePreviewKey != nil && memo.youtubePreviewKey != key)
         memo.youtubePreviewKey = key
+        // (The search screen draws its field and keys here itself: `YouTubeSearchPadLayer`.)
+        if youtubeSearchPad != nil { return [icon(0, nil)] }
         // Beside the menu itself: the selected list's videos, in Music's carousel (each
         // picture a square, as its covers are).
         if let carousel = youtubeCarouselPictures,

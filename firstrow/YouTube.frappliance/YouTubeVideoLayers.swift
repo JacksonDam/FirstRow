@@ -212,3 +212,209 @@ final class YouTubeCommentsLayer {
         lastOffset = offset
     }
 }
+
+/// The left side of YouTube's search screen: the field with what has been typed, how many
+/// videos there are so far, and the grid of keys (see `YouTubeSearchPad`). It takes the place
+/// of the carousel and the preview while the search screen shows.
+@MainActor
+final class YouTubeSearchPadLayer {
+    /// Where the pieces go, in scene points. The pointer's clicks are placed with it too.
+    struct Geometry {
+        let field: CGRect
+        let box: CGRect
+        /// The keys' frames, by row and column.
+        let keys: [[CGRect]]
+        /// The middle of the arrow between the keys and the list.
+        let arrow: CGPoint
+
+        init(sceneSize: CGSize, menuLeft: CGFloat, rows: [[YouTubeSearchKey]]) {
+            let room = max(360, menuLeft - 96 - 64)
+            let width = min(648, room)
+            let left = (64 + (room - width) / 2).rounded()
+            let cellHeight: CGFloat = 78
+            let padding: CGFloat = 16
+            let boxHeight = CGFloat(rows.count) * cellHeight + padding * 2
+            let fieldHeight: CGFloat = 62
+            let gap: CGFloat = 26
+            let top = ((sceneSize.height - (fieldHeight + gap + boxHeight)) / 2 + 20).rounded()
+            let fieldRect = CGRect(x: left, y: top, width: width, height: fieldHeight)
+            let boxRect = CGRect(x: left, y: fieldRect.maxY + gap, width: width, height: boxHeight)
+            field = fieldRect
+            box = boxRect
+            let columns = CGFloat(rows.map(\.count).max() ?? 6)
+            let cellWidth = (width - padding * 2) / columns
+            keys = rows.enumerated().map { rowIndex, row in
+                let span = columns / CGFloat(max(1, row.count))
+                return row.indices.map { column in
+                    CGRect(
+                        x: boxRect.minX + padding + CGFloat(column) * span * cellWidth,
+                        y: boxRect.minY + padding + CGFloat(rowIndex) * cellHeight,
+                        width: span * cellWidth,
+                        height: cellHeight,
+                    ).insetBy(dx: 5, dy: 6)
+                }
+            }
+            arrow = CGPoint(x: (boxRect.maxX + menuLeft) / 2 - 6, y: boxRect.midY)
+        }
+    }
+
+    let layer = SceneLayer()
+    private let field = SceneLayer()
+    private let glass = SceneLayer()
+    private let fieldText = SceneLayer()
+    private let caret = SceneLayer()
+    private let results = SceneLayer()
+    private let box = SceneLayer()
+    private let selection = SelectionBoxLayer()
+    private let focusTile = SceneLayer()
+    private var tiles: [SceneLayer] = []
+    private var labels: [SceneLayer] = []
+    private let arrow = SceneLayer()
+    private var lastFocus: (row: Int, column: Int)?
+    private var wasShown = false
+
+    init() {
+        layer.isHidden = true
+        field.masksToBounds = true
+        for sublayer in [results, field, box, selection.layer, focusTile, arrow] {
+            layer.addSublayer(sublayer)
+        }
+        for sublayer in [glass, fieldText, caret] { field.addSublayer(sublayer) }
+        focusTile.shadowColor = CGColor(gray: 0, alpha: 1)
+        focusTile.shadowOpacity = 0.45
+        focusTile.shadowRadius = 10
+        focusTile.shadowOffset = CGSize(width: 0, height: 5)
+        let blink = CABasicAnimation(keyPath: "opacity")
+        blink.fromValue = 1
+        blink.toValue = 0
+        blink.duration = 0.55
+        blink.autoreverses = true
+        blink.repeatCount = .infinity
+        blink.isRemovedOnCompletion = false
+        caret.add(blink, forKey: "blink")
+    }
+
+    func update(menu: MenuView, pass: RenderPass, sceneSize: CGSize, menuLeft: CGFloat, scale: CGFloat) {
+        guard let pad = menu.youtubeSearchPad else {
+            layer.isHidden = true
+            wasShown = false
+            lastFocus = nil
+            return
+        }
+        let appearing = !wasShown
+        wasShown = true
+        layer.isHidden = false
+        layer.frame = CGRect(origin: .zero, size: sceneSize)
+        layer.setOpacity(menu.thirdMenuOpacity, appearing ? nil : pass.animation)
+        let style = TextEntryStyle.current
+        let rows = YouTubeSearchKey.rows(showsSymbols: pad.showsSymbols)
+        let geometry = Geometry(sceneSize: sceneSize, menuLeft: menuLeft, rows: rows)
+
+        // The field: a magnifying glass, then the end of the text if it's too long to fit.
+        field.frame = geometry.field
+        field.backgroundColor = style.fieldBackground
+        field.borderColor = style.fieldBorder
+        field.borderWidth = 2
+        field.cornerRadius = min(style.fieldCornerRadius, geometry.field.height / 2)
+        let glassGraphic = SymbolRenderer.render("magnifyingglass", pointSize: 27, weight: .semibold, color: style.secondaryText, scale: scale)
+        glass.show(glassGraphic, at: CGPoint(x: 18, y: ((geometry.field.height - glassGraphic.size.height) / 2).rounded()))
+        let textLeft = 18 + glassGraphic.size.width + 14
+        var shown = pad.text
+        let room = geometry.field.width - textLeft - 26
+        while !shown.isEmpty, FontMetrics.width(shown, fontName: style.fieldFont, size: 36) > room {
+            shown.removeFirst()
+        }
+        let textGraphic = TextRenderer.render(TextSpec(text: shown.isEmpty ? " " : shown, fontName: style.fieldFont, size: 36, color: style.text), scale: scale)
+        fieldText.show(textGraphic, at: CGPoint(x: textLeft, y: ((geometry.field.height - textGraphic.size.height) / 2).rounded()))
+        // (A space at the end of the text has width too.)
+        let textWidth = shown.isEmpty ? 0 : FontMetrics.width(shown, fontName: style.fieldFont, size: 36)
+        caret.backgroundColor = style.caret
+        caret.frame = CGRect(x: textLeft + textWidth + 2, y: (geometry.field.height - 40) / 2, width: 3, height: 40)
+
+        // How many there are so far, over the field's right end.
+        let found = menu.youtubeSearchResultsText
+        results.isHidden = found.isEmpty
+        if !found.isEmpty {
+            let graphic = TextRenderer.render(TextSpec(text: found, fontName: style.bodyFont, size: 25, color: style.secondaryText), scale: scale)
+            results.show(graphic, at: CGPoint(x: geometry.field.maxX - graphic.size.width - 4, y: geometry.field.minY - graphic.size.height - 8))
+        }
+
+        // The keys, in a box of their own in the classic look.
+        box.isHidden = style.keyBackground != nil
+        box.frame = geometry.box
+        box.backgroundColor = CGColor(gray: 1, alpha: 0.03)
+        box.borderColor = CGColor(gray: 1, alpha: 0.4)
+        box.borderWidth = 2
+        box.cornerRadius = 16
+        let count = rows.reduce(0) { $0 + $1.count }
+        while labels.count < count {
+            let tile = SceneLayer()
+            let label = SceneLayer()
+            layer.insertSublayer(tile, below: selection.layer)
+            layer.addSublayer(label)
+            tiles.append(tile)
+            labels.append(label)
+        }
+        for index in labels.indices where index >= count {
+            labels[index].isHidden = true
+            tiles[index].isHidden = true
+        }
+        var focusFrame = CGRect.zero
+        var index = 0
+        for (rowIndex, row) in rows.enumerated() {
+            for (column, key) in row.enumerated() {
+                let frame = geometry.keys[rowIndex][column]
+                let isFocused = pad.hasFocus && rowIndex == pad.row && column == pad.column && !pad.lastInputWasTyping
+                let isWord: Bool = if case .character = key { false } else { true }
+                let tile = tiles[index]
+                tile.isHidden = style.keyBackground == nil
+                tile.backgroundColor = style.keyBackground
+                tile.cornerRadius = style.keyCornerRadius
+                tile.frame = frame
+                let graphic = TextRenderer.render(TextSpec(
+                    text: key.label(showsSymbols: pad.showsSymbols),
+                    fontName: style.keyFont,
+                    size: isWord ? 31 : 40,
+                    color: isFocused && style.focusFill != nil ? style.focusedText : style.text,
+                    maxWidth: frame.width - 8,
+                    minimumScaleFactor: 0.6,
+                ), scale: scale)
+                let label = labels[index]
+                label.isHidden = false
+                label.show(graphic, at: CGPoint(x: (frame.midX - graphic.size.width / 2).rounded(), y: (frame.midY - graphic.size.height / 2).rounded()))
+                if rowIndex == pad.row, column == pad.column { focusFrame = frame }
+                index += 1
+            }
+        }
+
+        // The key the arrows are on: the glossy box, or the modern look's white tile. Neither
+        // while the list has the arrows, or after typing on a keyboard.
+        let showsFocus = pad.hasFocus && !pad.lastInputWasTyping
+        let moved = lastFocus.map { $0.row != pad.row || $0.column != pad.column } ?? false
+        let slide = appearing ? nil : pass.animation(.easeInOut(duration: 0.14), when: moved)
+        lastFocus = (pad.row, pad.column)
+        selection.layer.isHidden = !style.usesGlossySelection || !showsFocus
+        focusTile.isHidden = style.focusFill == nil || !showsFocus
+        if let fill = style.focusFill {
+            let grown = focusFrame.insetBy(dx: -4, dy: -4)
+            focusTile.backgroundColor = fill
+            focusTile.cornerRadius = style.keyCornerRadius + 3
+            focusTile.setFrame(grown, nil)
+            focusTile.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: grown.size), cornerWidth: style.keyCornerRadius + 3, cornerHeight: style.keyCornerRadius + 3, transform: nil)
+        }
+        let boxHeight = focusFrame.height
+        selection.update(
+            frame: CGRect(x: focusFrame.minX - 46.5, y: focusFrame.midY - boxHeight * 0.5 - 29, width: focusFrame.width + 93, height: boxHeight + 58),
+            selectionBoxHeight: boxHeight,
+            animation: slide,
+        )
+
+        // Between the keys and the list: the way the arrows can go, once something is found.
+        let hasResults = !(menu.currentYouTubePage?.videos.isEmpty ?? true)
+        arrow.isHidden = !hasResults
+        if hasResults {
+            let graphic = SymbolRenderer.render(pad.hasFocus ? "chevron.right" : "chevron.left", pointSize: 30, weight: .bold, color: style.text, scale: scale)
+            arrow.show(graphic, at: CGPoint(x: (geometry.arrow.x - graphic.size.width / 2).rounded(), y: (geometry.arrow.y - graphic.size.height / 2).rounded()))
+        }
+    }
+}

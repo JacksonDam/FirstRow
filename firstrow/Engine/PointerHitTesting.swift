@@ -50,6 +50,8 @@ enum PointerTarget: Equatable {
     case movieOptionButton(MenuView.MovieOptionRow.Kind)
     /// A row of the open movie options (-1 between rows), on its "‹" or not.
     case movieOptionRow(Int, backward: Bool)
+    /// A key of YouTube's search screen.
+    case searchKey(row: Int, column: Int)
     case background
 }
 
@@ -254,6 +256,13 @@ extension MenuSceneRenderer: PointerHitTesting {
         }
         guard let level = menu.pointerActiveListLevel else { return nil }
         let frames = menu.sceneFrames(sceneSize: menu.activeMenuVirtualSceneSize)
+        if let pad = menu.youtubeSearchPad {
+            let rows = YouTubeSearchKey.rows(showsSymbols: pad.showsSymbols)
+            let geometry = YouTubeSearchPadLayer.Geometry(sceneSize: menu.activeMenuVirtualSceneSize, menuLeft: frames.menuFrame.minX, rows: rows)
+            for (row, keys) in geometry.keys.enumerated() {
+                if let column = keys.firstIndex(where: { $0.contains(point) }) { return .searchKey(row: row, column: column) }
+            }
+        }
         let menuPoint = CGPoint(x: point.x - frames.menuFrame.minX, y: point.y - frames.menuFrame.minY)
         if level == .submenu, menu.shouldShowTVShowsSortPill, scene.sortPillFrame.contains(menuPoint) {
             return .sortSegment(menuPoint.x < scene.sortPillFrame.midX ? .date : .show)

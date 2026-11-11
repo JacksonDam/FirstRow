@@ -38,6 +38,8 @@ final class MenuSceneRenderer: TransactionRendering {
     // The modern look's backdrop and card.
     private let modernBackground = ModernBackgroundLayer()
     private let modernCard = ModernCardLayer()
+    /// YouTube's search screen: its field and keys, where the carousel or the card would be.
+    private let youtubeSearchPad = YouTubeSearchPadLayer()
     private let textEntry = TextEntryLayer()
 
     // Full-screen layers, sized to the window.
@@ -123,6 +125,7 @@ final class MenuSceneRenderer: TransactionRendering {
         sceneContent.addSublayer(carouselBox)
         sceneContent.addSublayer(modernCard.layer)
         modernCard.layer.isHidden = true
+        sceneContent.addSublayer(youtubeSearchPad.layer)
         carouselBox.addSublayer(detailContent.layer)
         carouselBox.addSublayer(carouselSpace)
         #if os(macOS) || FIRSTROW_PORTABLE
@@ -322,8 +325,12 @@ final class MenuSceneRenderer: TransactionRendering {
         lap("headers")
 
         // The carousel and the section's preview content, or in the modern look the card.
+        // (YouTube's search screen has its keys where the card is. In the classic look the
+        // preview makes way for them itself, and the section's icon stays by the title.)
+        let showsSearchPad = menu.youtubeSearchPad != nil
         carouselBox.isHidden = isModern
-        modernCard.layer.isHidden = !isModern
+        modernCard.layer.isHidden = !isModern || showsSearchPad
+        youtubeSearchPad.update(menu: menu, pass: pass, sceneSize: sceneSize, menuLeft: frames.menuFrame.minX, scale: scale)
         modernBackground.layer.isHidden = !isModern
         if isModern {
             ModernTheme.preparePlaceholders()
@@ -616,7 +623,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 selectionBoxHeightScale: isPhotosThird ? menu.photosSelectionBoxHeightScale : (hasVideoRows ? menu.videoRowHeightScale : 1),
                 usesUniformRowLayout: menu.thirdMenuMode == .musicSongs,
                 theme: theme,
-                hidesSelection: menu.touchHidesSelection,
+                hidesSelection: menu.touchHidesSelection || menu.youtubeSearchPadHasFocus,
                 visibility: visibility(of: thirdList, opacity: hidesThird ? 0 : menu.thirdMenuOpacity),
                 rubberBand: menu.pointerActiveListLevel == .third ? menu.remoteRubberBand : 0,
                 topRoom: tallRowsInset,

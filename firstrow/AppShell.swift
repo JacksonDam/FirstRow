@@ -491,7 +491,7 @@ final class FirstRowAppController {
                 return
             }
             // Letters, digits and spaces go to a text field when one is open.
-            if let menu, menu.textEntry != nil, key == .none || key == .space,
+            if let menu, menu.textEntry != nil || menu.youtubeSearchTakesTypedText, key == .none || key == .space,
                !modifiers.intersection(.deviceIndependentFlagsMask).contains(.command),
                let characters = event.characters, !characters.isEmpty
             {
