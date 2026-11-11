@@ -317,7 +317,9 @@ extension MenuView {
             #if FIRSTROW_PORTABLE
                 return portableUserFolder(named: "Movies", standardName: "Videos", xdgKey: "XDG_VIDEOS_DIR")
             #else
-                return realUserHomeDirectoryURL()!.appendingPathComponent("Movies", isDirectory: true)
+                // (The user's name can come back empty, as it does in the Apple TV simulator.)
+                let home = realUserHomeDirectoryURL() ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+                return home.appendingPathComponent("Movies", isDirectory: true)
             #endif
         #endif
     }
