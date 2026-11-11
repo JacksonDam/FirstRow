@@ -3,6 +3,7 @@ import AVFoundation
     import Photos
 #endif
 import Foundation
+import QuartzCore
 #if os(macOS)
     import AppKit
 #elseif canImport(UIKit)
@@ -18,19 +19,21 @@ import Foundation
 #endif
 
 extension MenuView {
+    /// How many of an album's pictures the carousel shows. Each is a whole bitmap in memory while
+    /// the album is selected.
     var photosCarouselArtworkLoadLimit: Int {
-        #if os(iOS)
-            20
+        #if os(iOS) || os(tvOS)
+            12
         #else
-            48
+            24
         #endif
     }
 
     var photosCarouselArtworkTargetSize: CGSize {
-        #if os(iOS)
-            CGSize(width: 1728, height: 1728)
+        #if os(iOS) || os(tvOS)
+            CGSize(width: 1280, height: 1280)
         #else
-            CGSize(width: 2048, height: 2048)
+            CGSize(width: 1600, height: 1600)
         #endif
     }
 
@@ -54,12 +57,23 @@ extension MenuView {
         #endif
     }
 
+    /// How many day covers are kept: the ones nearest the selected day.
+    var photosAlbumCoverCacheLimit: Int {
+        #if os(iOS) || os(tvOS)
+            240
+        #else
+            600
+        #endif
+    }
+
     var photoSlideshowImageTargetSize: CGSize {
         #if os(iOS)
             let nativeSize = activeWindowScreen?.nativeBounds.size ?? CGSize(width: 1920, height: 1080)
             let longestSide = max(nativeSize.width, nativeSize.height)
             let cappedLongestSide = min(max(longestSide, 1920), 2688)
             return CGSize(width: cappedLongestSide, height: cappedLongestSide)
+        #elseif os(tvOS)
+            CGSize(width: 1920, height: 1920)
         #else
             CGSize(width: 3200, height: 2000)
         #endif
@@ -74,7 +88,7 @@ extension MenuView {
     }
 
     var photoSlideshowPrefetchRadius: Int {
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
             1
         #else
             2
@@ -82,7 +96,7 @@ extension MenuView {
     }
 
     var photoSlideshowCacheLimit: Int {
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
             4
         #else
             8
@@ -90,7 +104,7 @@ extension MenuView {
     }
 
     var photoSlideshowFallbackTargetSize: CGSize {
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
             CGSize(width: 1536, height: 1536)
         #else
             CGSize(width: 2048, height: 2048)
@@ -149,7 +163,8 @@ extension MenuView {
             return
         }
         requestPhotoLibraryLoadIfNeeded()
-        if photosSourceAlbums.isEmpty {
+        // (Once: with no folders chosen there are none to find, however often it's asked.)
+        if !hasRequestedPhotoSourceAlbums {
             requestPhotoSourceAlbumsLoad()
         }
         if let photosLastTwelveMonthsAlbum {
@@ -159,6 +174,28 @@ extension MenuView {
             requestPhotoAlbumCoverImageIfNeeded(for: album)
         }
         refreshPhotosCarouselForCurrentContext()
+    }
+
+    /// A list of days moved by a finger or the wheel shows other rows than the selected one's
+    /// neighbours: their covers are asked for as it goes (a few times a second), and once more
+    /// when it has stopped.
+    func requestPhotoCoversForScrolledList() {
+        guard activeRootItemID == "photos", isInThirdMenu, thirdMenuMode == .photosDateAlbums else { return }
+        let now = CACurrentMediaTime()
+        guard now - lastPhotosScrollCoverRequestTime >= 0.1 else {
+            guard !isPhotosScrollCoverRequestPending else { return }
+            isPhotosScrollCoverRequestPending = true
+            Task {
+                try? await firstRowSleep(0.12)
+                isPhotosScrollCoverRequestPending = false
+                requestPhotoCoversForScrolledList()
+            }
+            return
+        }
+        lastPhotosScrollCoverRequestTime = now
+        for album in prioritizedPhotosAlbumsForCoverPrefetch() {
+            requestPhotoAlbumCoverImageIfNeeded(for: album)
+        }
     }
 
     func prioritizedPhotosAlbumsForCoverPrefetch() -> [PhotoLibraryAlbumEntry] {
@@ -191,8 +228,10 @@ extension MenuView {
                 appendAlbum(at: clampedSelectedIndex - delta)
             }
         }
-        if resolvedAlbums.count > photosAlbumCoverPrefetchBatchLimit {
-            return Array(resolvedAlbums.prefix(photosAlbumCoverPrefetchBatchLimit))
+        // (Every row in view, however many that is.)
+        let limit = max(photosAlbumCoverPrefetchBatchLimit, visibleIndices.count + 1)
+        if resolvedAlbums.count > limit {
+            return Array(resolvedAlbums.prefix(limit))
         }
         return resolvedAlbums
     }
@@ -223,7 +262,9 @@ extension MenuView {
             rowHeight: rowHeight,
         )
         let viewportHeight = menuViewportHeight(for: thirdLevelVisibleMenuRowCount)
-        let scrollOffset = menuScrollOffset(
+        // Where a finger or the wheel left the list, when one has moved it: the rows in view then
+        // aren't the ones around the selection.
+        let scrollOffset = pointer.pinnedScrollOffset(identity: MenuListLayer.identity(of: menuItems)) ?? menuScrollOffset(
             contentHeight: contentHeight,
             selectedIndex: clampedSelectedIndex,
             rowOffsets: rowOffsets,
@@ -246,24 +287,31 @@ extension MenuView {
     func refreshPhotosCarouselForCurrentContext() {
         guard let selectedAlbum = selectedPhotoAlbumForCarousel, selectedAlbum.isPlayable else {
             _ = incrementRequestID(&photosCarouselRequestID)
+            photosCarouselLoadTask?.cancel()
+            photosCarouselLoadTask = nil
             photosCarouselLoadOverlayOpacity = 0
             return
         }
         let identity = photosCarouselIdentityKey(for: selectedAlbum)
-        if photosCarouselIdentity == identity, !photosCarouselArtworks.isEmpty {
-            return
-        }
+        // Its pictures are up, or on their way.
+        if photosCarouselLoadedIdentity == identity { return }
+        if photosCarouselIdentity == identity, photosCarouselLoadTask != nil { return }
         requestPhotosCarouselArtworks(for: selectedAlbum)
     }
 
+    /// Tells one album's pictures from another's without going through them all (a year of
+    /// photos is thousands).
     func photosCarouselIdentityKey(for album: PhotoLibraryAlbumEntry) -> String {
-        "\(album.id)::\(album.assetLocalIdentifiers.joined(separator: "|"))"
+        "\(album.id)#\(album.count)#\(album.coverAssetLocalIdentifier ?? "")"
     }
 
     func requestPhotosCarouselArtworks(for album: PhotoLibraryAlbumEntry) {
         let identity = photosCarouselIdentityKey(for: album)
         photosCarouselIdentity = identity
+        photosCarouselLoadTask?.cancel()
+        photosCarouselLoadTask = nil
         if album.assetLocalIdentifiers.isEmpty {
+            photosCarouselLoadedIdentity = identity
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
@@ -287,48 +335,44 @@ extension MenuView {
         withTransaction(instant) {
             photosCarouselLoadOverlayOpacity = 1
         }
-        Task(priority: .userInitiated) {
-            let images = await self.loadPhotoImages(
-                localIdentifiers: localIdentifiers,
-                targetSize: self.photosCarouselArtworkTargetSize,
-                contentMode: .aspectFit,
-                deliveryMode: self.photosCarouselArtworkDeliveryMode,
-                shouldAbort: {
-                    await self.shouldAbortPhotosCarouselArtworkLoad(
-                        requestID: requestID,
-                        identity: identity,
-                    )
-                },
-            )
-            if await self.shouldAbortPhotosCarouselArtworkLoad(requestID: requestID, identity: identity) {
-                return
-            }
+        let targetSize = Self.normalizedPhotoTargetSize(photosCarouselArtworkTargetSize, deliveryMode: .highQualityFormat)
+        // Read off the main thread, and given up as soon as another album is selected: a list
+        // scrolled through selects one after another.
+        photosCarouselLoadTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let images = Self.loadPhotoImages(localIdentifiers: localIdentifiers, targetSize: targetSize)
+            let wasCancelled = Task.isCancelled
             await MainActor.run {
-                guard photosCarouselRequestID == requestID else { return }
-                guard photosCarouselIdentity == identity else { return }
-                guard shouldUsePhotosCarouselSlot else { return }
+                guard let self, self.photosCarouselRequestID == requestID else { return }
+                self.photosCarouselLoadTask = nil
+                guard !wasCancelled, self.photosCarouselIdentity == identity, self.shouldUsePhotosCarouselSlot else { return }
+                self.photosCarouselLoadedIdentity = identity
                 var instant = Transaction()
                 instant.disablesAnimations = true
                 withTransaction(instant) {
-                    photosCarouselArtworks = images
+                    self.photosCarouselArtworks = images
                 }
                 withAnimation(.easeInOut(duration: 0.22)) {
-                    photosCarouselLoadOverlayOpacity = 0
+                    self.photosCarouselLoadOverlayOpacity = 0
                 }
             }
         }
     }
 
-    @MainActor
-    func shouldAbortPhotosCarouselArtworkLoad(requestID: Int, identity: String) -> Bool {
-        self.photosCarouselRequestID != requestID ||
-            self.photosCarouselIdentity != identity ||
-            !self.shouldUsePhotosCarouselSlot
+    /// The carousel's pictures are large, and are let go when Photos is left.
+    func releasePhotosCarouselPictures() {
+        photosCarouselLoadTask?.cancel()
+        photosCarouselLoadTask = nil
+        guard !photosCarouselArtworks.isEmpty || !photosCarouselIdentity.isEmpty else { return }
+        _ = incrementRequestID(&photosCarouselRequestID)
+        photosCarouselIdentity = ""
+        photosCarouselLoadedIdentity = ""
+        photosCarouselArtworks = []
+        photosCarouselLoadOverlayOpacity = 0
     }
 
     func requestPhotoAlbumCoverImageIfNeeded(for album: PhotoLibraryAlbumEntry) {
         guard let coverAssetLocalIdentifier = album.coverAssetLocalIdentifier else { return }
-        guard photosAlbumCoverImageCache[album.id] == nil else { return }
+        guard photosAlbumCoverImageCache[album.id] == nil, pendingPhotosAlbumCovers[album.id] == nil else { return }
         guard !photosAlbumCoverRequestsInFlight.contains(album.id) else { return }
         photosAlbumCoverRequestsInFlight.insert(album.id)
         requestPhotoImage(
@@ -337,10 +381,46 @@ extension MenuView {
             contentMode: .aspectFill,
             deliveryMode: .fastFormat,
         ) { image in
+            // (No picture: the row went by before its turn came, and it's asked for again if it comes back.)
             self.photosAlbumCoverRequestsInFlight.remove(album.id)
             guard let image else { return }
-            self.photosAlbumCoverImageCache[album.id] = image
+            self.pendingPhotosAlbumCovers[album.id] = image
+            self.schedulePhotosAlbumCoverFlush()
         }
+    }
+
+    /// Covers go into the cache together, a few times a second: every change to it redraws the
+    /// menu, and a list scrolled through brings them in by the dozen.
+    func schedulePhotosAlbumCoverFlush() {
+        guard !isPhotosAlbumCoverFlushScheduled else { return }
+        isPhotosAlbumCoverFlushScheduled = true
+        Task {
+            try? await firstRowSleep(0.08)
+            isPhotosAlbumCoverFlushScheduled = false
+            guard !pendingPhotosAlbumCovers.isEmpty else { return }
+            var covers = photosAlbumCoverImageCache
+            covers.merge(pendingPhotosAlbumCovers) { _, new in new }
+            pendingPhotosAlbumCovers.removeAll()
+            photosAlbumCoverImageCache = trimmedPhotosAlbumCovers(covers)
+        }
+    }
+
+    /// The covers nearest the days in view, up to the limit. (Folders' covers and Last 12 Months'
+    /// aren't days, and stay.)
+    func trimmedPhotosAlbumCovers(_ covers: [String: NSImage]) -> [String: NSImage] {
+        guard covers.count > photosAlbumCoverCacheLimit else { return covers }
+        // (The middle of what's in view: a list moved by a finger is away from its selection.)
+        let visibleIndices = visiblePhotosAlbumIndicesForCoverPrefetch()
+        let middleIndex = visibleIndices.isEmpty
+            ? min(max(0, selectedThirdIndex), max(0, photosDateAlbums.count - 1))
+            : visibleIndices[visibleIndices.count / 2]
+        var distanceByID: [String: Int] = [:]
+        distanceByID.reserveCapacity(photosDateAlbums.count)
+        for (index, album) in photosDateAlbums.enumerated() {
+            distanceByID[album.id] = abs(index - middleIndex)
+        }
+        let kept = Set(covers.keys.sorted { (distanceByID[$0] ?? -1) < (distanceByID[$1] ?? -1) }.prefix(photosAlbumCoverCacheLimit))
+        return covers.filter { kept.contains($0.key) }
     }
 
     func requestPhotoLibraryLoadIfNeeded(force: Bool = false) {
@@ -362,8 +442,9 @@ extension MenuView {
                 self.refreshPhotosCarouselForCurrentContext()
                 return
             }
-            Task(priority: .userInitiated) {
-                let loadedAlbums = self.loadPhotoLibraryAlbums()
+            // Every photo in the library is gone through: not on the main thread.
+            Task.detached(priority: .userInitiated) {
+                let loadedAlbums = Self.loadPhotoLibraryAlbums()
                 await MainActor.run {
                     guard self.photoLibraryRequestID == requestID else { return }
                     guard self.activeRootItemID == "photos", self.isInSubmenu else { return }
@@ -520,9 +601,21 @@ extension MenuView {
         }
         loadPhotoSlideshowImages(for: album, requestID: requestID)
         Task {
-            try? await firstRowSleep(2.0)
+            // Up once its first picture is in: a second at least, for the menu to have faded away,
+            // and after three whatever has come.
+            let started = Date()
+            while Date().timeIntervalSince(started) < 3.0,
+                  Date().timeIntervalSince(started) < 1.0 || photoSlideshowImageCache[0] == nil
+            {
+                try? await firstRowSleep(0.05)
+                guard !Task.isCancelled else { return }
+                guard photoSlideshowRequestID == requestID else { return }
+            }
             guard !Task.isCancelled else { return }
             guard photoSlideshowRequestID == requestID else { return }
+            // The show's clock starts as it goes up, so the first picture has its whole turn.
+            photoSlideshowPlaybackStartDate = Date()
+            photoSlideshowPlaybackElapsedOffset = 0
             activeFullscreenScene = FullscreenScenePresentation(key: photoSlideshowFullscreenKey, payload: [:])
             var instant = Transaction()
             instant.disablesAnimations = true
@@ -987,68 +1080,66 @@ extension MenuView {
         guard photoSlideshowImageCache[index] == nil else { return }
         guard !photoSlideshowImageRequestsInFlight.contains(index) else { return }
         let localIdentifier = photoSlideshowAssetLocalIdentifiers[index]
+        let targetSize = photoSlideshowImageTargetSize
         photoSlideshowImageRequestsInFlight.insert(index)
+        /// Whether the show still wants this picture in this place.
+        func isStillWanted() -> Bool {
+            photoSlideshowRequestID == requestID &&
+                photoSlideshowAssetLocalIdentifiers.indices.contains(index) &&
+                photoSlideshowAssetLocalIdentifiers[index] == localIdentifier
+        }
+        func keep(_ image: NSImage) {
+            photoSlideshowImageCache[index] = image
+            trimPhotoSlideshowImageCache(
+                keeping: Set(
+                    photoSlideshowDesiredIndices(
+                        aroundPrimaryIndex: photoSlideshowVisiblePrimaryIndex,
+                        secondaryIndex: photoSlideshowVisibleSecondaryIndex,
+                    ),
+                ),
+            )
+        }
+        // The picture as the device has it, which is quick.
         requestPhotoImage(
             localIdentifier: localIdentifier,
-            targetSize: photoSlideshowImageTargetSize,
+            targetSize: targetSize,
             contentMode: .aspectFit,
             deliveryMode: photoSlideshowImageDeliveryMode,
         ) { image in
-            guard self.photoSlideshowRequestID == requestID else {
-                self.photoSlideshowImageRequestsInFlight.remove(index)
-                return
-            }
-            guard self.photoSlideshowAssetLocalIdentifiers.indices.contains(index),
-                  self.photoSlideshowAssetLocalIdentifiers[index] == localIdentifier
-            else {
+            guard isStillWanted() else {
                 self.photoSlideshowImageRequestsInFlight.remove(index)
                 return
             }
             if let image {
                 self.photoSlideshowImageRequestsInFlight.remove(index)
-                self.photoSlideshowImageCache[index] = image
-                self.trimPhotoSlideshowImageCache(
-                    keeping: Set(
-                        self.photoSlideshowDesiredIndices(
-                            aroundPrimaryIndex: self.photoSlideshowVisiblePrimaryIndex,
-                            secondaryIndex: self.photoSlideshowVisibleSecondaryIndex,
-                        ),
-                    ),
-                )
+                keep(image)
                 return
             }
-            guard !self.photoSlideshowImageFallbackAttempted.contains(index) else {
-                self.photoSlideshowImageRequestsInFlight.remove(index)
-                return
-            }
-            self.photoSlideshowImageFallbackAttempted.insert(index)
+            // The device hasn't all of it (iCloud has the rest): a smaller one goes up meanwhile,
+            // and the whole picture takes its place when it has come.
             self.requestPhotoImage(
                 localIdentifier: localIdentifier,
                 targetSize: self.photoSlideshowFallbackTargetSize,
                 contentMode: .aspectFit,
                 deliveryMode: .fastFormat,
-            ) { fallbackImage in
-                guard self.photoSlideshowRequestID == requestID else {
+            ) { standIn in
+                guard isStillWanted() else {
                     self.photoSlideshowImageRequestsInFlight.remove(index)
                     return
                 }
-                guard self.photoSlideshowAssetLocalIdentifiers.indices.contains(index),
-                      self.photoSlideshowAssetLocalIdentifiers[index] == localIdentifier
-                else {
-                    self.photoSlideshowImageRequestsInFlight.remove(index)
-                    return
+                if let standIn, self.photoSlideshowImageCache[index] == nil {
+                    keep(standIn)
                 }
-                self.photoSlideshowImageRequestsInFlight.remove(index)
-                if let fallbackImage {
-                    self.photoSlideshowImageCache[index] = fallbackImage
-                    self.trimPhotoSlideshowImageCache(
-                        keeping: Set(
-                            self.photoSlideshowDesiredIndices(
-                                aroundPrimaryIndex: self.photoSlideshowVisiblePrimaryIndex,
-                                secondaryIndex: self.photoSlideshowVisibleSecondaryIndex,
-                            ),
-                        ),
-                    )
+                self.requestPhotoImage(
+                    localIdentifier: localIdentifier,
+                    targetSize: targetSize,
+                    contentMode: .aspectFit,
+                    deliveryMode: self.photoSlideshowImageDeliveryMode,
+                    allowsNetwork: true,
+                ) { whole in
+                    self.photoSlideshowImageRequestsInFlight.remove(index)
+                    guard isStillWanted(), let whole else { return }
+                    keep(whole)
                 }
             }
         }
@@ -1080,7 +1171,7 @@ extension MenuView {
 }
 
 extension MenuView {
-    func loadPhotoLibraryAlbums() -> (dateAlbums: [PhotoLibraryAlbumEntry], lastTwelveMonths: PhotoLibraryAlbumEntry?) {
+    nonisolated static func loadPhotoLibraryAlbums() -> (dateAlbums: [PhotoLibraryAlbumEntry], lastTwelveMonths: PhotoLibraryAlbumEntry?) {
         #if FIRSTROW_PORTABLE
             // No system photo library on Linux or Windows.
             return ([], nil)
@@ -1160,152 +1251,67 @@ extension MenuView {
         #endif
     }
 
+    /// One picture, read off the main thread and handed back on it. Without `allowsNetwork` it's
+    /// what the device has, and comes back nil when that isn't enough for the size asked.
     func requestPhotoImage(
         localIdentifier: String,
         targetSize: CGSize,
         contentMode: PHImageContentMode,
         deliveryMode: PHImageRequestOptionsDeliveryMode,
-        isSynchronous: Bool = false,
+        allowsNetwork: Bool = false,
         completion: @escaping (NSImage?) -> Void,
     ) {
         if let fileURL = filePhotoURL(fromIdentifier: localIdentifier) {
-            if isSynchronous {
-                completion(loadFilePhotoImage(fileURL, targetSize: targetSize))
-            } else {
-                Task.detached(priority: .userInitiated) {
-                    let image = self.loadFilePhotoImage(fileURL, targetSize: targetSize)
-                    await MainActor.run { completion(image) }
-                }
+            Task.detached(priority: .userInitiated) {
+                let image = Self.filePhotoImage(at: fileURL, targetSize: targetSize)
+                await MainActor.run { completion(image) }
             }
             return
         }
-        let performRequest = {
-            let fetchedAssets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-            guard let asset = fetchedAssets.firstObject else {
-                if Thread.isMainThread {
-                    completion(nil)
-                } else {
-                    Task { @MainActor in completion(nil) }
-                }
-                return
-            }
-            let options = PHImageRequestOptions()
-            options.deliveryMode = deliveryMode
-            options.resizeMode = .fast
-            options.isNetworkAccessAllowed = true
-            options.isSynchronous = isSynchronous
-            PHImageManager.default().requestImage(
-                for: asset,
-                targetSize: self.normalizedPhotoTargetSize(targetSize, deliveryMode: deliveryMode),
-                contentMode: contentMode,
-                options: options,
-            ) { image, info in
-                let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
-                if cancelled {
-                    if Thread.isMainThread {
-                        completion(nil)
-                    } else {
-                        Task { @MainActor in completion(nil) }
-                    }
-                    return
-                }
-                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
-                if !isSynchronous, isDegraded {
-                    return
-                }
-                if Thread.isMainThread {
-                    completion(image)
-                } else {
-                    Task { @MainActor in completion(image) }
-                }
-            }
-        }
-        if isSynchronous || !Thread.isMainThread {
-            performRequest()
-        } else {
-            Task(priority: .userInitiated) {
-                performRequest()
-            }
-        }
+        let loader: PhotoImageLoader = allowsNetwork ? .downloads : (deliveryMode == .fastFormat ? .thumbnails : .pictures)
+        loader.load(PhotoImageLoader.Request(
+            localIdentifier: localIdentifier,
+            targetSize: Self.normalizedPhotoTargetSize(targetSize, deliveryMode: deliveryMode),
+            contentMode: contentMode,
+            deliveryMode: deliveryMode,
+            allowsNetwork: allowsNetwork,
+            completion: completion,
+        ))
     }
 
-    func loadPhotoImages(
-        localIdentifiers: [String],
-        targetSize: CGSize,
-        contentMode: PHImageContentMode,
-        deliveryMode: PHImageRequestOptionsDeliveryMode,
-        shouldAbort: (() async -> Bool)? = nil,
-    ) async -> [NSImage?] {
-        guard !localIdentifiers.isEmpty else { return [] }
-        if await shouldAbort?() == true {
-            return []
-        }
-        let resolvedTargetSize = normalizedPhotoTargetSize(targetSize, deliveryMode: deliveryMode)
-        if localIdentifiers.allSatisfy({ $0.hasPrefix(Self.filePhotoIdentifierPrefix) }) {
-            // Pictures from folders and iPhoto decode off the main thread, one at a time.
-            var images: [NSImage?] = []
-            images.reserveCapacity(localIdentifiers.count)
-            for identifier in localIdentifiers {
-                if await shouldAbort?() == true { break }
-                let url = filePhotoURL(fromIdentifier: identifier)
-                let image: NSImage? = await Task.detached(priority: .userInitiated) { () -> NSImage? in
-                    guard let url else { return nil }
-                    return self.loadFilePhotoImage(url, targetSize: resolvedTargetSize)
-                }.value
-                images.append(image)
-            }
-            return images
-        }
-        let fetchedAssets = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
-        var assetsByID: [String: PHAsset] = [:]
-        fetchedAssets.enumerateObjects { asset, _, _ in
-            assetsByID[asset.localIdentifier] = asset
-        }
-        let options = PHImageRequestOptions()
-        options.deliveryMode = deliveryMode
-        options.resizeMode = deliveryMode == .highQualityFormat ? .exact : .fast
-        options.isNetworkAccessAllowed = true
-        options.isSynchronous = true
-        let manager = PHImageManager.default()
+    /// An album's first pictures, for the carousel, read where this is called (off the main
+    /// thread) and given up when the task is cancelled. Only what the device has: nothing here
+    /// waits on iCloud.
+    nonisolated static func loadPhotoImages(localIdentifiers: [String], targetSize: CGSize) -> [NSImage?] {
         var images: [NSImage?] = []
         images.reserveCapacity(localIdentifiers.count)
         for localIdentifier in localIdentifiers {
-            if await shouldAbort?() == true {
-                break
+            if Task.isCancelled { break }
+            if localIdentifier.hasPrefix(filePhotoIdentifierPrefix) {
+                images.append(URL(string: localIdentifier).flatMap { filePhotoImage(at: $0, targetSize: targetSize) })
+                continue
             }
-            autoreleasepool {
-                guard let asset = assetsByID[localIdentifier] else {
-                    images.append(nil)
-                    return
-                }
-                var requestedImage: NSImage?
-                manager.requestImage(
-                    for: asset,
-                    targetSize: resolvedTargetSize,
-                    contentMode: contentMode,
-                    options: options,
-                ) { image, info in
-                    let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
-                    if cancelled {
-                        requestedImage = nil
-                        return
-                    }
-                    requestedImage = image
-                }
-                images.append(requestedImage)
-            }
+            // (As good as the device has it; failing that, the small one the library keeps ready.)
+            let image = PhotoImageLoader.image(
+                localIdentifier: localIdentifier, targetSize: targetSize, contentMode: .aspectFit,
+                deliveryMode: .highQualityFormat, allowsNetwork: false,
+            ) ?? PhotoImageLoader.image(
+                localIdentifier: localIdentifier, targetSize: targetSize, contentMode: .aspectFit,
+                deliveryMode: .fastFormat, allowsNetwork: false,
+            )
+            images.append(image)
         }
         return images
     }
 
-    func normalizedPhotoTargetSize(
+    nonisolated static func normalizedPhotoTargetSize(
         _ targetSize: CGSize,
         deliveryMode: PHImageRequestOptionsDeliveryMode,
     ) -> CGSize {
         let safeWidth = max(1, targetSize.width)
         let safeHeight = max(1, targetSize.height)
         let maxRequestedDimension: CGFloat
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
             if deliveryMode == .highQualityFormat {
                 maxRequestedDimension = 2688
             } else {
@@ -1327,6 +1333,116 @@ extension MenuView {
             width: max(1, floor(safeWidth * scale)),
             height: max(1, floor(safeHeight * scale)),
         )
+    }
+}
+
+/// Reads pictures from the photo library off the main thread, a couple at a time. The request
+/// made last is served first: a list scrolled through leaves a trail of rows that have gone by,
+/// and it's the ones in view now that want their pictures. Past a limit the oldest are let go
+/// (and told so with no picture), to be asked for again if their rows come back.
+final class PhotoImageLoader: @unchecked Sendable {
+    struct Request {
+        let localIdentifier: String
+        let targetSize: CGSize
+        let contentMode: PHImageContentMode
+        let deliveryMode: PHImageRequestOptionsDeliveryMode
+        let allowsNetwork: Bool
+        /// Called on the main thread, once, with the picture or nil.
+        let completion: (NSImage?) -> Void
+    }
+
+    /// Row covers: small, and many.
+    static let thumbnails = PhotoImageLoader(label: "thumbnails", workerLimit: 2, pendingLimit: 40)
+    /// A slideshow's pictures, as the device has them.
+    static let pictures = PhotoImageLoader(label: "pictures", workerLimit: 2, pendingLimit: 16)
+    /// Pictures iCloud may have to send, which can take seconds each: on their own, so that they
+    /// hold nothing else up.
+    static let downloads = PhotoImageLoader(label: "downloads", workerLimit: 1, pendingLimit: 6)
+
+    private let queue: DispatchQueue
+    private let workerLimit: Int
+    private let pendingLimit: Int
+    private let lock = NSLock()
+    private var pending: [Request] = []
+    private var workerCount = 0
+
+    private init(label: String, workerLimit: Int, pendingLimit: Int) {
+        queue = DispatchQueue(label: "firstrow.photos.\(label)", qos: .userInitiated, attributes: .concurrent)
+        self.workerLimit = workerLimit
+        self.pendingLimit = pendingLimit
+    }
+
+    func load(_ request: Request) {
+        var letGo: [Request] = []
+        var startsWorker = false
+        lock.lock()
+        pending.append(request)
+        if pending.count > pendingLimit {
+            let excess = pending.count - pendingLimit
+            letGo = Array(pending.prefix(excess))
+            pending.removeFirst(excess)
+        }
+        if workerCount < workerLimit {
+            workerCount += 1
+            startsWorker = true
+        }
+        lock.unlock()
+        if !letGo.isEmpty {
+            DispatchQueue.main.async {
+                for request in letGo { request.completion(nil) }
+            }
+        }
+        if startsWorker {
+            queue.async { self.work() }
+        }
+    }
+
+    private func work() {
+        while true {
+            lock.lock()
+            guard let request = pending.popLast() else {
+                workerCount -= 1
+                lock.unlock()
+                return
+            }
+            lock.unlock()
+            let image = autoreleasepool {
+                Self.image(
+                    localIdentifier: request.localIdentifier, targetSize: request.targetSize, contentMode: request.contentMode,
+                    deliveryMode: request.deliveryMode, allowsNetwork: request.allowsNetwork,
+                )
+            }
+            DispatchQueue.main.async { request.completion(image) }
+        }
+    }
+
+    /// One picture, read here and now: for anywhere but the main thread. (Asked for this way the
+    /// library answers once, with the picture or without, so nothing is left waiting.)
+    static func image(
+        localIdentifier: String,
+        targetSize: CGSize,
+        contentMode: PHImageContentMode,
+        deliveryMode: PHImageRequestOptionsDeliveryMode,
+        allowsNetwork: Bool,
+    ) -> NSImage? {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else { return nil }
+        func read(_ mode: PHImageRequestOptionsDeliveryMode) -> NSImage? {
+            let options = PHImageRequestOptions()
+            options.deliveryMode = mode
+            options.resizeMode = .fast
+            options.isNetworkAccessAllowed = allowsNetwork
+            options.isSynchronous = true
+            var result: NSImage?
+            PHImageManager.default().requestImage(for: asset, targetSize: targetSize, contentMode: contentMode, options: options) { image, info in
+                guard (info?[PHImageCancelledKey] as? Bool) != true else { return }
+                result = image
+            }
+            return result
+        }
+        if let image = read(deliveryMode) { return image }
+        // The quick way gives the small picture the library keeps ready, and a photo that's only
+        // just arrived hasn't one yet: it's made from the photo itself then.
+        return deliveryMode == .fastFormat ? read(.highQualityFormat) : nil
     }
 }
 

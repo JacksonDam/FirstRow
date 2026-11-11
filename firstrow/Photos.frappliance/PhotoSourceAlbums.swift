@@ -19,6 +19,10 @@ extension MenuView {
 
     /// A picture from disk, decoded at no more than the size asked for.
     nonisolated func loadFilePhotoImage(_ url: URL, targetSize: CGSize) -> NSImage? {
+        Self.filePhotoImage(at: url, targetSize: targetSize)
+    }
+
+    nonisolated static func filePhotoImage(at url: URL, targetSize: CGSize) -> NSImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let maxPixelSize = max(256, max(targetSize.width, targetSize.height))
         let options: [CFString: Any] = [
@@ -32,6 +36,7 @@ extension MenuView {
     }
 
     func requestPhotoSourceAlbumsLoad() {
+        hasRequestedPhotoSourceAlbums = true
         let requestID = incrementRequestID(&photoSourceAlbumsRequestID)
         Task.detached(priority: .userInitiated) {
             let albums = Self.loadPhotoSourceAlbums()

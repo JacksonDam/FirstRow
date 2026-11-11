@@ -720,6 +720,7 @@ extension MenuView {
             pointer.scrollAnimation = animation
             pointer.pin = (scroll.identity, offset)
             updateOverflowFadeVisibility(oldOffset: old, newOffset: offset)
+            requestPhotoCoversForScrolledList()
             objectWillChange.send()
         }
 
