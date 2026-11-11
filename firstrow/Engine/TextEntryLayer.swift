@@ -96,9 +96,17 @@ final class TextEntryLayer {
     private static let keyHeight: CGFloat = 76
     private static let rowPitch: CGFloat = 92
 
-    // A code's boxes, in scene points.
+    // A code's boxes, in scene points, as they're made; they're shown at `codeScale` of that
+    // (at full size a code of nine characters ran the whole width of the screen). A dash in
+    // a code is a dash between two groups of boxes, in a narrower place of its own.
     private static let codeBoxSize = CGSize(width: 176, height: 196)
     private static let codeBoxGap: CGFloat = 44
+    private static let codeScale: CGFloat = 0.55
+    private static let codeDashWidth: CGFloat = 70
+
+    private static func codePlaceWidth(_ character: String) -> CGFloat {
+        character == "-" ? codeDashWidth : codeBoxSize.width
+    }
 
     init() {
         layer.opacity = 0
@@ -176,23 +184,27 @@ final class TextEntryLayer {
             ].map { ($0.0, TextRenderer.render($0.1, scale: scale)) }
             // The code is a row of boxes with a character in each, or one line of text.
             let boxed = style.codeBoxFill != nil
-            let rowWidth = CGFloat(characters.count) * (Self.codeBoxSize.width + Self.codeBoxGap) - Self.codeBoxGap
-            let boxUnit = min(1, room / max(1, rowWidth))
+            let rowWidth = characters.map(Self.codePlaceWidth).reduce(0, +) + CGFloat(characters.count - 1) * Self.codeBoxGap
+            let boxUnit = min(Self.codeScale, room / max(1, rowWidth))
             let line = boxed ? nil : TextRenderer.render(TextSpec(
                 text: characters.joined(separator: " "),
                 fontName: style.titleFont,
-                size: style.codeSize,
+                size: (style.codeSize * Self.codeScale).rounded(),
                 color: style.text,
                 maxWidth: room,
                 minimumScaleFactor: 0.5,
             ), scale: scale)
             let codeHeight = line?.size.height ?? (Self.codeBoxSize.height * boxUnit).rounded()
-            let codeGap: CGFloat = boxed ? 82 : 60
-            var codeTop: CGFloat = boxed ? 422 : 430
-            var tops: [CGFloat] = [150, 270, 700]
+            let codeGap: CGFloat = boxed ? 70 : 60
+            // What to do, the code and how it's going, as one block a little above the
+            // screen's middle.
+            let heights = lines.map(\.1.size.height)
+            let blockHeight = heights[0] + 44 + heights[1] + 76 + codeHeight + codeGap + heights[2]
+            let blockTop = ((sceneSize.height - blockHeight) / 2 - 36).rounded()
+            var codeTop: CGFloat = blockTop + heights[0] + 44 + heights[1] + 76
+            var tops: [CGFloat] = [blockTop, blockTop + heights[0] + 44, codeTop + codeHeight + codeGap]
             if let upright = menu.upright {
                 // Standing upright: what to do above the fold, the code and how it's going below.
-                let heights = lines.map(\.1.size.height)
                 let upper = upright.upperPane
                 let lower = upright.lowerPane
                 let headTop = (upper.minY + (upper.height - heights[0] - 48 - heights[1]) / 2).rounded()
@@ -310,17 +322,19 @@ final class TextEntryLayer {
             codeDigits[index].isHidden = true
         }
         guard !characters.isEmpty else { return }
-        let size = CGSize(width: (Self.codeBoxSize.width * unit).rounded(), height: (Self.codeBoxSize.height * unit).rounded())
-        let pitch = size.width + (Self.codeBoxGap * unit).rounded()
-        let left = (centerX - (pitch * CGFloat(characters.count - 1) + size.width) * 0.5).rounded()
+        let height = (Self.codeBoxSize.height * unit).rounded()
+        let widths = characters.map { (Self.codePlaceWidth($0) * unit).rounded() }
+        let gap = (Self.codeBoxGap * unit).rounded()
+        var left = (centerX - (widths.reduce(0, +) + gap * CGFloat(characters.count - 1)) * 0.5).rounded()
         // A digit's middle, halfway up its height, sits on the middle of its box. Each is drawn
         // once at full size and scaled with its box, so the two change size together in a glide.
         let font = FontMetrics.font(style.titleFont, size: style.codeSize)
         let textTop = (Self.codeBoxSize.height + FontMetrics.capHeight(font)) * 0.5 - FontMetrics.baseline(font)
         for (index, character) in characters.enumerated() {
-            let frame = CGRect(x: left + CGFloat(index) * pitch, y: top, width: size.width, height: size.height)
+            let frame = CGRect(x: left, y: top, width: widths[index], height: height)
+            left += widths[index] + gap
             let box = codeBoxes[index]
-            box.isHidden = false
+            box.isHidden = character == "-"
             box.backgroundColor = style.codeBoxFill
             box.borderColor = style.codeBoxBorder
             box.borderWidth = max(1, (4 * unit).rounded())
