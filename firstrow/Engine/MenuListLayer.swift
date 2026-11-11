@@ -28,6 +28,9 @@ final class MenuListLayer {
         /// How far the selected row is pulled past the end of the list (a Siri Remote swipe that
         /// can't go further), in scene points: only that row moves, as on Apple TV.
         var rubberBand: CGFloat = 0
+        /// Room above the first row, inside what the list clips: for rows taller than the
+        /// room each is centred on, whose tops would otherwise be cut off (the classic look).
+        var topRoom: CGFloat = 0
     }
 
     /// How much of a list is on screen. One on its way out keeps its scroll, whatever happens
@@ -226,14 +229,15 @@ final class MenuListLayer {
         selectionBox.layer.setTransform(bandTransform, bandAnimation)
 
         // Rows scroll inside a box that clips them top and bottom only.
-        let margin: CGFloat = isModern ? 34 : 0
+        let bottomMargin: CGFloat = isModern ? 34 : 0
+        let margin: CGFloat = isModern ? 34 : c.topRoom
         if margin != clipMargin {
             // Keeps the rows where they are on screen as the room changes.
             rowsContainer.removeAnimation(forKey: "position")
             rowsContainer.position.y += margin - clipMargin
             clipMargin = margin
         }
-        clip.frame = CGRect(x: -Self.clipOverhang, y: -margin, width: menuWidth + Self.clipOverhang * 2, height: viewportHeight + margin * 2)
+        clip.frame = CGRect(x: -Self.clipOverhang, y: -margin, width: menuWidth + Self.clipOverhang * 2, height: viewportHeight + margin + bottomMargin)
         rowsContainer.bounds = CGRect(x: 0, y: 0, width: menuWidth, height: max(contentHeight, viewportHeight))
         // Read the on-screen scroll before the new animation replaces the one in flight.
         let presentedOffset: CGFloat = if isFreshList {
@@ -379,7 +383,7 @@ final class MenuListLayer {
         let fadeWidth = max(visualWidth, menuWidth)
         topFade.isHidden = !c.showsTopOverflowFade || isModern
         bottomFade.isHidden = !c.showsTopOverflowFade || isModern
-        topFade.frame = CGRect(x: 0, y: 0, width: fadeWidth, height: menu.submenuTopFadeHeight)
+        topFade.frame = CGRect(x: 0, y: isModern ? 0 : -c.topRoom, width: fadeWidth, height: menu.submenuTopFadeHeight)
         bottomFade.frame = CGRect(x: 0, y: viewportHeight - menu.submenuTopFadeHeight, width: fadeWidth, height: menu.submenuTopFadeHeight)
         let fadeAnimation = Animation.easeInOut(duration: 0.12)
         topFade.setOpacity(menu.isMenuOverflowScrollingUp ? 1 : 0, pass.animation(fadeAnimation, when: lastScrollingUp != nil && lastScrollingUp != menu.isMenuOverflowScrollingUp))

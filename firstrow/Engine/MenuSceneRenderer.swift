@@ -600,7 +600,11 @@ final class MenuSceneRenderer: TransactionRendering {
             // A list of videos has tall rows in the classic look (see `MenuRowMedia`).
             let hasVideoRows = theme == .classic && menu.thirdMenuMode == .youtube && items.contains { $0.media != nil }
             thirdList.layer.isHidden = false
-            thirdList.layer.place(CGRect(x: 0, y: 0, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.thirdLevelVisibleMenuRowCount)))
+            // A tall row is centred on the room of an ordinary one, so the first of a list of
+            // videos reached above the list's top edge and lost its top there: such a list
+            // hangs that much lower, with that much room above its first row.
+            let tallRowsInset = hasVideoRows ? ((menu.videoRowHeightScale - 1) * menu.selectionBoxHeight / 2).rounded() : 0
+            thirdList.layer.place(CGRect(x: 0, y: tallRowsInset, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.thirdLevelVisibleMenuRowCount)))
             thirdList.update(MenuListLayer.Configuration(
                 items: items,
                 selectedIndex: min(menu.selectedThirdIndex, max(0, items.count - 1)),
@@ -615,6 +619,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 hidesSelection: menu.touchHidesSelection,
                 visibility: visibility(of: thirdList, opacity: hidesThird ? 0 : menu.thirdMenuOpacity),
                 rubberBand: menu.pointerActiveListLevel == .third ? menu.remoteRubberBand : 0,
+                topRoom: tallRowsInset,
             ), menu: menu, pass: memo.showsThirdList ? pass : RenderPass(transaction: .instant), scale: scale)
             slide(thirdList.layer, away: menu.thirdMenuOpacity < 0.5, toLeft: false, theme: theme, memo.showsThirdList ? pass.animation : nil)
             let hideChanged = memo.hidesThirdList != nil && memo.hidesThirdList != hidesThird
