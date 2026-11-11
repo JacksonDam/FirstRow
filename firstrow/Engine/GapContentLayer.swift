@@ -563,14 +563,14 @@ final class CoverCarouselItemLayer: GapItemLayer {
 @MainActor
 enum ReflectionRenderer {
     private final class Key: NSObject {
-        let source: CGImage
+        let source: PictureIdentity
         let width: Int
         let height: Int
         let fill: Bool
         let stops: [CGFloat]
 
         init(source: CGImage, width: Int, height: Int, fill: Bool, stops: [CGFloat]) {
-            self.source = source
+            self.source = PictureIdentity(source)
             self.width = width
             self.height = height
             self.fill = fill
@@ -579,11 +579,11 @@ enum ReflectionRenderer {
 
         override func isEqual(_ object: Any?) -> Bool {
             guard let other = object as? Key else { return false }
-            return other.source === source && other.width == width && other.height == height && other.fill == fill && other.stops == stops
+            return other.source == source && other.width == width && other.height == height && other.fill == fill && other.stops == stops
         }
 
         override var hash: Int {
-            ObjectIdentifier(source).hashValue ^ (width &* 31) ^ (height &* 1009) ^ (fill ? 7 : 0)
+            source.hashValue ^ (width &* 31) ^ (height &* 1009) ^ (fill ? 7 : 0)
         }
     }
 

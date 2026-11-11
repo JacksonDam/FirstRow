@@ -2,11 +2,16 @@ import CoreGraphics
 import CPortable
 import Foundation
 
-/// A GPU copy of a CGImage, freed (on the render thread) when the image goes away.
+/// A GPU copy of a CGImage, freed (on the render thread) when the image goes away, or when
+/// it hasn't been drawn in a while and there are too many (`deleteIdleTextures`).
 final class TextureBox: CGImageRendererResource {
     let texture: GLuint
     let width: Int
     let height: Int
+    /// The picture it was made of, which holds it.
+    weak var picture: CGImage?
+    /// When it was last drawn.
+    var lastUsed: CFTimeInterval = 0
 
     init(texture: GLuint, width: Int, height: Int) {
         self.texture = texture
@@ -25,6 +30,8 @@ final class RenderTarget {
     let texture: GLuint
     let width: Int
     let height: Int
+    /// When it was last handed back (to tell the ones nothing uses any more).
+    var lastUsed: CFTimeInterval = 0
 
     init(width: Int, height: Int) {
         self.width = width
@@ -108,6 +115,15 @@ final class GLDevice {
     let vao: GLuint
     let vbo: GLuint
     private var targetPool: [RenderTarget] = []
+    /// Every texture made of a picture, to find the ones not drawn in a while.
+    private var pictureTextures: [PictureTexture] = []
+    private var lastTextureSweep: CFTimeInterval = 0
+    /// How many bytes of pictures' textures there may be before idle ones are deleted.
+    private let textureBudget = 96 * 1024 * 1024
+
+    private struct PictureTexture {
+        weak var box: TextureBox?
+    }
     private struct GradientKey: Hashable {
         let colors: [ColorKey?]
         let locations: [Double]?
@@ -197,6 +213,39 @@ final class GLDevice {
         return program
     }
 
+    /// Destroys the targets nothing has used for a few seconds. A change of screen (a fade, a
+    /// blur coming in) needs several screen-sized targets for a moment; kept, they were
+    /// tens of megabytes each on a large screen, 24 deep.
+    func destroyIdleTargets() {
+        guard !targetPool.isEmpty else { return }
+        let now = CACurrentMediaTime()
+        targetPool.removeAll { target in
+            guard now - target.lastUsed > 3 else { return false }
+            target.destroy()
+            return true
+        }
+    }
+
+    /// Deletes the textures of pictures not drawn for ten seconds, longest ago first, while
+    /// there are more than the budget's worth. A picture kept by a cache (a cover that was
+    /// scrolled past) kept its texture as long: after a long list, hundreds of megabytes. It
+    /// keeps its pixels, and gets a texture again if it's drawn again.
+    func deleteIdleTextures() {
+        let now = CACurrentMediaTime()
+        guard now - lastTextureSweep > 2 else { return }
+        lastTextureSweep = now
+        pictureTextures.removeAll { $0.box == nil }
+        var total = pictureTextures.reduce(0) { $0 + ($1.box.map { $0.width * $0.height * 4 } ?? 0) }
+        guard total > textureBudget else { return }
+        let idle = pictureTextures.compactMap(\.box).filter { now - $0.lastUsed > 10 }.sorted { $0.lastUsed < $1.lastUsed }
+        for box in idle {
+            guard total > textureBudget else { break }
+            total -= box.width * box.height * 4
+            // (The picture held it: let go of, it's deleted with the next frame's retired ones.)
+            box.picture?.rendererResource = nil
+        }
+    }
+
     func deleteRetiredTextures() {
         Self.retiredLock.lock()
         let list = Self.retired
@@ -208,7 +257,10 @@ final class GLDevice {
 
     /// The texture for an image, uploaded on first use.
     func texture(for image: CGImage) -> TextureBox? {
-        if let box = image.rendererResource as? TextureBox { return box }
+        if let box = image.rendererResource as? TextureBox {
+            box.lastUsed = CACurrentMediaTime()
+            return box
+        }
         guard image.width > 0, image.height > 0 else { return nil }
         var source = image
         if image.width > maxTextureSize || image.height > maxTextureSize {
@@ -227,6 +279,9 @@ final class GLDevice {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GLint(GL_CLAMP_TO_EDGE))
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GLint(GL_CLAMP_TO_EDGE))
         let box = TextureBox(texture: tex, width: source.width, height: source.height)
+        box.picture = image
+        box.lastUsed = CACurrentMediaTime()
+        pictureTextures.append(PictureTexture(box: box))
         RenderStats.textureUploads += 1
         RenderStats.textureBytes += source.width * source.height * 4
         image.rendererResource = box
@@ -288,6 +343,7 @@ final class GLDevice {
     }
 
     func releaseTarget(_ target: RenderTarget) {
+        target.lastUsed = CACurrentMediaTime()
         targetPool.append(target)
         if targetPool.count > 24 {
             targetPool.removeFirst().destroy()

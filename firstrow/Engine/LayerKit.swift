@@ -97,6 +97,35 @@ enum ScreenColorSpace {
     #endif
 }
 
+/// What tells one picture from another in a cache's key.
+struct PictureIdentity: Hashable {
+    #if FIRSTROW_PORTABLE
+        // Every picture there has a number that no other is ever given. A key that held the
+        // picture would keep its pixels, and the texture made of them, for as long as the
+        // cache remembered what was made from it.
+        private let number: Int
+
+        init(_ picture: CGImage) {
+            number = picture.identifier
+        }
+    #else
+        // The picture itself, kept: a new one at a freed one's address would match otherwise.
+        private let picture: CGImage
+
+        init(_ picture: CGImage) {
+            self.picture = picture
+        }
+
+        static func == (a: PictureIdentity, b: PictureIdentity) -> Bool {
+            a.picture === b.picture
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(ObjectIdentifier(picture))
+        }
+    #endif
+}
+
 /// CGImage per platform image, cached because converting can mean rasterising a PDF icon.
 @MainActor
 enum LayerImageCache {
@@ -114,12 +143,18 @@ enum LayerImageCache {
 
     static func cgImage(for image: NSImage?) -> CGImage? {
         guard let image else { return nil }
-        if let cached = cache.object(forKey: image) {
-            return cached.image
-        }
-        guard let cgImage = platformCGImage(image) else { return nil }
-        cache.setObject(CGImageBox(cgImage), forKey: image, cost: cgImage.bytesPerRow * cgImage.height)
-        return cgImage
+        #if FIRSTROW_PORTABLE
+            // There a picture keeps its own unpacked copy for as long as it's asked for, and
+            // one kept here as well would never be let go: its pixels and a texture as large.
+            return platformCGImage(image)
+        #else
+            if let cached = cache.object(forKey: image) {
+                return cached.image
+            }
+            guard let cgImage = platformCGImage(image) else { return nil }
+            cache.setObject(CGImageBox(cgImage), forKey: image, cost: cgImage.bytesPerRow * cgImage.height)
+            return cgImage
+        #endif
     }
 
     private static func platformCGImage(_ image: NSImage) -> CGImage? {

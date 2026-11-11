@@ -442,15 +442,15 @@ enum ReflectionImageCache {
         init(_ image: CGImage) { self.image = image }
     }
 
-    /// Retains the source so a new image at a freed one's address can't match a stale reflection.
+    /// (A new image at a freed one's address can't match a stale reflection: see `PictureIdentity`.)
     private final class ReflectionKey: NSObject {
-        let source: CGImage
+        let source: PictureIdentity
         let width: Int
         let height: Int
         let fadeEnd: CGFloat
 
         init(source: CGImage, width: Int, height: Int, fadeEnd: CGFloat) {
-            self.source = source
+            self.source = PictureIdentity(source)
             self.width = width
             self.height = height
             self.fadeEnd = fadeEnd
@@ -458,11 +458,11 @@ enum ReflectionImageCache {
 
         override func isEqual(_ object: Any?) -> Bool {
             guard let other = object as? ReflectionKey else { return false }
-            return other.source === source && other.width == width && other.height == height && other.fadeEnd == fadeEnd
+            return other.source == source && other.width == width && other.height == height && other.fadeEnd == fadeEnd
         }
 
         override var hash: Int {
-            ObjectIdentifier(source).hashValue ^ (width &* 31) ^ (height &* 1009)
+            source.hashValue ^ (width &* 31) ^ (height &* 1009)
         }
     }
 

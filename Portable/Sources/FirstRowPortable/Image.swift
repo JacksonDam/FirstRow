@@ -26,20 +26,29 @@ public final class NSImage: LayerContentsProviding, ExistingObjectInitializable,
     /// for, as AppKit's is, and may be decoded again later (see `DecodedPictures`).
     public var cgImage: CGImage? {
         if let pixels { return pixels }
-        guard let encoded else { return nil }
+        guard encoded != nil || readAgain != nil else { return nil }
         return DecodedPictures.shared.image(for: self) {
-            CGImageSourceCreateWithData(encoded, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
+            guard let bytes = encoded ?? readAgain?(), let source = CGImageSourceCreateWithData(bytes, nil) else { return nil }
+            guard let longestSide else { return CGImageSourceCreateImageAtIndex(source, 0, nil) }
+            let options: [CFString: Any] = [kCGImageSourceThumbnailMaxPixelSize: longestSide]
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         }
     }
 
     private let pixels: CGImage?
     private let encoded: Data?
+    /// Fetches the file's bytes, for a picture that doesn't keep them.
+    private let readAgain: (@Sendable () -> Data?)?
+    /// The most pixels across or down that it's decoded at; nil for as many as the file has.
+    private let longestSide: Int?
     /// The size in points.
     public var size: CGSize
 
     public init(cgImage: CGImage, size: CGSize) {
         pixels = cgImage
         encoded = nil
+        readAgain = nil
+        longestSide = nil
         self.size = size == .zero ? CGSize(width: cgImage.width, height: cgImage.height) : size
     }
 
@@ -56,11 +65,36 @@ public final class NSImage: LayerContentsProviding, ExistingObjectInitializable,
         let turned = ((properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1) >= 5
         pixels = nil
         encoded = data
+        readAgain = nil
+        longestSide = nil
         size = turned ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
     }
 
+    /// A picture from a file's bytes that doesn't keep them: `readAgain` fetches them whenever
+    /// its pixels are wanted, and they're decoded no larger than `longestSide` pixels. For the
+    /// covers of a music library: each is in its songs' files, often a megabyte and
+    /// thousands of pixels across, and kept in memory there's one for every album.
+    public init?(data: Data, longestSide: Int, readAgain: @escaping @Sendable () -> Data?) {
+        guard let source = CGImageSourceCreateWithData(data, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil),
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+              width > 0, height > 0, longestSide > 0
+        else { return nil }
+        let turned = ((properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1) >= 5
+        // (As it will be decoded: scaled down to that size if it's larger, upright.)
+        let scale = min(1, CGFloat(longestSide) / CGFloat(max(width, height)))
+        let across = max(1, Int((CGFloat(turned ? height : width) * scale).rounded()))
+        let down = max(1, Int((CGFloat(turned ? width : height) * scale).rounded()))
+        pixels = nil
+        encoded = nil
+        self.readAgain = readAgain
+        self.longestSide = longestSide
+        size = CGSize(width: across, height: down)
+    }
+
     deinit {
-        if encoded != nil { DecodedPictures.shared.forget(ObjectIdentifier(self)) }
+        if pixels == nil { DecodedPictures.shared.forget(ObjectIdentifier(self)) }
     }
 
     public convenience init?(contentsOf url: URL) {
@@ -112,9 +146,11 @@ public final class NSImage: LayerContentsProviding, ExistingObjectInitializable,
     }
 }
 
-/// The decoded pixels of pictures made from files' bytes. They're kept while they're in use
-/// (whatever draws a picture asks for its pixels every frame) up to a budget, past which the
-/// ones asked for longest ago are let go, to be decoded again if they're ever wanted.
+/// The decoded pixels of pictures made from files' bytes. They're kept while they're asked
+/// for, up to a budget, past which the ones asked for longest ago are let go; and one not
+/// asked for in a while is let go whatever the budget. A picture let go of is decoded again
+/// if it's wanted again, unless something (a layer showing it) has kept it meanwhile: then
+/// that same one is handed back.
 final class DecodedPictures: @unchecked Sendable {
     static let shared = DecodedPictures()
 
@@ -125,11 +161,22 @@ final class DecodedPictures: @unchecked Sendable {
         var lastUseTime: CFTimeInterval
     }
 
+    /// A picture let go of: there for as long as something else holds it.
+    private struct LetGo {
+        weak var image: CGImage?
+        let bytes: Int
+    }
+
     private let lock = NSLock()
     private var entries: [ObjectIdentifier: Entry] = [:]
+    private var letGo: [ObjectIdentifier: LetGo] = [:]
     private var clock: UInt64 = 0
     private var bytes = 0
     private let budget = 96 * 1024 * 1024
+    /// Past this much, the pictures nothing has asked for in a while are let go. (Under it
+    /// they stay: one shown again is there at once, where decoding it again would take the
+    /// main thread some milliseconds.)
+    private let restingBudget = 32 * 1024 * 1024
 
     func image(for picture: NSImage, decode: () -> CGImage?) -> CGImage? {
         let id = ObjectIdentifier(picture)
@@ -139,6 +186,13 @@ final class DecodedPictures: @unchecked Sendable {
             entries[id]!.lastUse = clock
             entries[id]!.lastUseTime = CACurrentMediaTime()
             let image = entries[id]!.image
+            lock.unlock()
+            return image
+        }
+        if let past = letGo.removeValue(forKey: id), let image = past.image {
+            // Still on a layer somewhere: the same pixels, and the texture made of them.
+            entries[id] = Entry(image: image, bytes: past.bytes, lastUse: clock, lastUseTime: CACurrentMediaTime())
+            bytes += past.bytes
             lock.unlock()
             return image
         }
@@ -159,6 +213,7 @@ final class DecodedPictures: @unchecked Sendable {
               oldest.key != id, now - oldest.value.lastUseTime > 3
         {
             bytes -= oldest.value.bytes
+            letGo[oldest.key] = LetGo(image: oldest.value.image, bytes: oldest.value.bytes)
             entries[oldest.key] = nil
         }
         return image
@@ -167,7 +222,40 @@ final class DecodedPictures: @unchecked Sendable {
     func forget(_ id: ObjectIdentifier) {
         lock.lock()
         if let entry = entries.removeValue(forKey: id) { bytes -= entry.bytes }
+        letGo[id] = nil
         lock.unlock()
+    }
+
+    /// Lets go of pictures nothing has asked for in a while, longest ago first, while there
+    /// are more than the resting budget. Without this the pictures of every list passed
+    /// through stayed decoded, with their textures, until 96 MB of others had pushed them
+    /// out. (One on a layer that is still on screen stays, held by the layer, and is found
+    /// again when next asked for.)
+    func releaseIdle(after seconds: CFTimeInterval = 20) {
+        let now = CACurrentMediaTime()
+        // (They are let go of once the lock is: freeing a large bitmap is a system call.)
+        var released: [CGImage] = []
+        lock.lock()
+        letGo = letGo.filter { $0.value.image != nil }
+        if bytes > restingBudget {
+            let idle = entries.filter { now - $0.value.lastUseTime > seconds }.sorted { $0.value.lastUse < $1.value.lastUse }
+            for (id, entry) in idle {
+                guard bytes > restingBudget else { break }
+                bytes -= entry.bytes
+                released.append(entry.image)
+                letGo[id] = LetGo(image: entry.image, bytes: entry.bytes)
+                entries[id] = nil
+            }
+        }
+        lock.unlock()
+        released.removeAll()
+    }
+}
+
+public extension NSImage {
+    /// Lets go of decoded pictures that haven't been shown for a while; called now and then.
+    static func releaseIdlePictures() {
+        DecodedPictures.shared.releaseIdle()
     }
 }
 

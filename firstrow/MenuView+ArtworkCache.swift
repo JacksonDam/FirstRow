@@ -22,7 +22,12 @@ final class DecodedDisplayArtworkCache {
     private var lruKeys: [String] = []
     private var totalCost: Int = 0
     private let maxEntries: Int = 240
-    private let maxCostBytes: Int = 128 * 1024 * 1024
+    #if FIRSTROW_PORTABLE
+        // (There each one is its pixels in memory and a texture as large, for as long as it's kept.)
+        private let maxCostBytes: Int = 48 * 1024 * 1024
+    #else
+        private let maxCostBytes: Int = 128 * 1024 * 1024
+    #endif
     func image(for key: String) -> NSImage? {
         lock.lock()
         defer { lock.unlock() }

@@ -271,6 +271,7 @@ public enum PortableApplication {
         // Here (unlike on Apple's systems) settings only reach the disk when told to: every few
         // seconds, so a crash or a forced quit loses little, and again on the way out.
         var lastSettingsSave = lastFrame
+        var lastPictureSweep = lastFrame
         // (Only when a setting has changed: a setting read on the main thread while they're
         // being saved waits for the save, tens of milliseconds on Windows.)
         let settingsChanged = SettingsChanged()
@@ -316,6 +317,10 @@ public enum PortableApplication {
                 // Off the main thread: writing the file takes many milliseconds when a setting
                 // has changed, which was a frame or two lost every time.
                 DispatchQueue.global(qos: .utility).async { UserDefaults.standard.synchronize() }
+            }
+            if CACurrentMediaTime() - lastPictureSweep > 5 {
+                lastPictureSweep = CACurrentMediaTime()
+                NSImage.releaseIdlePictures()
             }
             let handled = CACurrentMediaTime()
             // First Row brings its layers up to date with whatever the input, timers and tasks

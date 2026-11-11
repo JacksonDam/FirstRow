@@ -1951,7 +1951,7 @@ extension MenuView {
             let resolvedArtist = artist ?? "Unknown Artist"
             let resolvedAlbum = albumName ?? "Unknown Album"
             let durationSeconds = max(0, CMTimeGetSeconds(duration))
-            let artwork = artworkData.flatMap { data in covers.map { $0.image(for: data) } ?? NSImage(data: data) }
+            let artwork = artworkData.flatMap { data in covers.map { $0.image(for: data, inFile: url) } ?? NSImage(data: data) }
             return MusicLibrarySongEntry(
                 id: "ext::\(url.standardizedFileURL.path)",
                 title: resolvedTitle,
@@ -2985,34 +2985,61 @@ extension MenuView {
     /// One picture for every song that carries the same cover: an album's songs each have a
     /// copy of it in their file, and a library kept a copy for each song.
     final class SharedCovers: @unchecked Sendable {
-        private struct Key: Hashable {
-            let data: Data
+        #if FIRSTROW_PORTABLE
+            /// On Linux and Windows a picture made of a file's bytes keeps them, to decode when
+            /// it's shown, so a library's covers all stayed in memory: a megabyte an album is
+            /// common. There a cover is told from another by a digest of its bytes, and its
+            /// picture reads them from the song's file again when it's shown.
+            private struct Key: Hashable {
+                let count: Int
+                let digest: Int
 
-            /// The length and a few stretches of it: covers of one size start with the same bytes.
-            func hash(into hasher: inout Hasher) {
-                hasher.combine(data.count)
-                let stretch = 48
-                guard data.count > stretch * 4 else {
-                    hasher.combine(data)
-                    return
-                }
-                for start in [data.count / 4, data.count / 2, data.count * 3 / 4, data.count - stretch] {
-                    hasher.combine(data.subdata(in: data.startIndex + start ..< data.startIndex + start + stretch))
+                init(data: Data) {
+                    count = data.count
+                    var hasher = Hasher()
+                    data.withUnsafeBytes { hasher.combine(bytes: $0) }
+                    digest = hasher.finalize()
                 }
             }
+        #else
+            private struct Key: Hashable {
+                let data: Data
 
-            static func == (a: Key, b: Key) -> Bool { a.data == b.data }
-        }
+                /// The length and a few stretches of it: covers of one size start with the same bytes.
+                func hash(into hasher: inout Hasher) {
+                    hasher.combine(data.count)
+                    let stretch = 48
+                    guard data.count > stretch * 4 else {
+                        hasher.combine(data)
+                        return
+                    }
+                    for start in [data.count / 4, data.count / 2, data.count * 3 / 4, data.count - stretch] {
+                        hasher.combine(data.subdata(in: data.startIndex + start ..< data.startIndex + start + stretch))
+                    }
+                }
+
+                static func == (a: Key, b: Key) -> Bool { a.data == b.data }
+            }
+        #endif
 
         private let lock = NSLock()
         private var images: [Key: NSImage?] = [:]
 
-        func image(for data: Data) -> NSImage? {
+        /// The picture for a cover's bytes, which were read from `file`.
+        func image(for data: Data, inFile file: URL) -> NSImage? {
             let key = Key(data: data)
             lock.lock()
             defer { lock.unlock() }
             if let known = images[key] { return known }
-            let image = NSImage(data: data)
+            #if FIRSTROW_PORTABLE
+                // (No larger than a cover is ever shown: some files carry one 3000 pixels across.)
+                let image = NSImage(data: data, longestSide: 900) {
+                    let asset = AVURLAsset(url: file, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
+                    return AVMetadataItem.metadataItems(from: asset.commonMetadata, withKey: AVMetadataKey.commonKeyArtwork, keySpace: .common).first?.dataValue
+                }
+            #else
+                let image = NSImage(data: data)
+            #endif
             images[key] = image
             return image
         }

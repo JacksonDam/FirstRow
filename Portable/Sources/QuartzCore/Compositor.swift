@@ -84,6 +84,8 @@ public final class Compositor {
         self.time = time
         defaultFramebuffer = framebuffer
         device.deleteRetiredTextures()
+        device.destroyIdleTargets()
+        device.deleteIdleTextures()
         root.layoutIfNeeded()
         let size = root.bounds.size
         screenScale = size.width > 0 ? CGFloat(pixelWidth) / size.width : 1
