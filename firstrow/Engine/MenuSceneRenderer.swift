@@ -101,6 +101,7 @@ final class MenuSceneRenderer: TransactionRendering {
             self?.renderAtEndOfRunLoopPass()
         }
         RenderScheduler.register(self)
+        RenderWarmUp.start()
     }
 
     func invalidate() {
@@ -232,6 +233,11 @@ final class MenuSceneRenderer: TransactionRendering {
         isDirty = true
     }
 
+    /// The scale the cover decoder was last told of.
+    private var notedArtworkScale: CGFloat = 0
+    /// Whether the classic look's stand-in pictures have been unpacked ahead of use.
+    private var hasUnpackedStandIns = false
+
     /// Pixels per scene point, rounded up to 0.01 so cached text is reused but never undersized.
     private var textScale: CGFloat {
         max(1, (canvasScale * backingScale * 100).rounded(.up) / 100)
@@ -275,14 +281,35 @@ final class MenuSceneRenderer: TransactionRendering {
                 }
             }
         #endif
+        // Lettering first asked for in this pass is drawn on other threads meanwhile, and put
+        // on its layers as the pass ends (before the pass's time is taken, above).
+        LetteringInProgress.beginPass()
+        defer { LetteringInProgress.endPass() }
         let menu = menu
         menu.keepMusicSubmenuSelectionOnItsRow()
         let sceneSize = menu.activeMenuVirtualSceneSize
         let frames = menu.sceneFrames(sceneSize: sceneSize)
         let scale = textScale
+        if scale != notedArtworkScale {
+            notedArtworkScale = scale
+            DisplayArtworkSize.noteScale(scale)
+        }
         let theme = AppSettings.theme
         let isModern = theme == .modern
         let themeChanged = memo.theme != nil && memo.theme != theme
+        if !isModern, !hasUnpackedStandIns {
+            // The classic look's stand-in covers and icons, which first show part way into
+            // a menu: unpacked before then (on the Mac, once the screen's colours are known).
+            #if os(macOS)
+                let isReady = ScreenColorSpace.current != nil
+            #else
+                let isReady = true
+            #endif
+            if isReady {
+                hasUnpackedStandIns = true
+                LayerImageCache.unpackAhead(named: ["musicfallback", "moviesfallback", "Podcast", "TVShow", "AudioBook", "PhotoSettingsIcon"])
+            }
+        }
         memo.theme = theme
         sceneContent.setOpacity(menu.menuSceneOpacity, pass.animation)
         sceneContent.setTransform(Self.scale(isModern ? menu.menuSceneScale : 1, about: CGPoint(x: sceneSize.width * 0.5, y: sceneSize.height * 0.5)), pass.animation)
@@ -299,6 +326,7 @@ final class MenuSceneRenderer: TransactionRendering {
         modernCard.layer.isHidden = !isModern
         modernBackground.layer.isHidden = !isModern
         if isModern {
+            ModernTheme.preparePlaceholders()
             // While a held arrow or a sliding finger races through a list, the card and the
             // background follow once it pauses rather than for every row it passes.
             let now = CACurrentMediaTime()

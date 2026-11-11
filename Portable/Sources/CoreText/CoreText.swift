@@ -13,6 +13,8 @@ public let kCTKernAttributeName: CFString = "NSKern"
 /// A loaded font file face.
 final class FontFace: @unchecked Sendable {
     let handle: OpaquePointer
+    /// Held while the face is asked for a glyph's shape or measurements.
+    let glyphLock = NSLock()
     let path: String
     let index: Int
     let fullName: String
@@ -400,7 +402,11 @@ public final class CTFont: @unchecked Sendable, Hashable {
 
     func advance(_ scalar: UInt32) -> CGFloat {
         var advance: Float = 0
+        // (The face keeps the glyphs it has been asked about, and lettering is drawn on
+        // several threads: one at a time in there.)
+        face.glyphLock.lock()
         plutovg_font_face_get_glyph_metrics(face.handle, Float(size), scalar, &advance, nil, nil)
+        face.glyphLock.unlock()
         return CGFloat(advance)
     }
 
@@ -412,7 +418,9 @@ public final class CTFont: @unchecked Sendable, Hashable {
     func glyphPath(_ scalar: UInt32, at origin: CGPoint) -> [PathElement] {
         guard let path = plutovg_path_create() else { return [] }
         defer { plutovg_path_destroy(path) }
+        face.glyphLock.lock()
         plutovg_font_face_get_glyph_path(face.handle, Float(size), 0, 0, scalar, path)
+        face.glyphLock.unlock()
         var elements: [PathElement] = []
         var iterator = plutovg_path_iterator_t()
         plutovg_path_iterator_init(&iterator, path)

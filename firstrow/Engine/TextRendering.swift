@@ -1,5 +1,8 @@
 import CoreText
 import QuartzCore
+#if !FIRSTROW_PORTABLE
+    import AVFoundation
+#endif
 #if os(macOS)
     import AppKit
 #elseif canImport(UIKit)
@@ -91,12 +94,126 @@ struct TextSpec: Hashable {
     }
 }
 
+/// A bitmap that another thread is drawing, or that is still waiting its turn to be drawn.
+/// Whoever needs it before its turn has come draws it there and then: waking a thread can
+/// take longer than drawing a string does.
+final class PendingImage: @unchecked Sendable {
+    private let condition = NSCondition()
+    /// The drawing, until some thread takes it up.
+    private var work: (@Sendable () -> CGImage?)?
+    private var image: CGImage?
+    private var isDone = false
+    private var followers: [@Sendable (CGImage?) -> Void] = []
+
+    init(_ work: @escaping @Sendable () -> CGImage?) {
+        self.work = work
+    }
+
+    /// Draws the bitmap on this thread, unless a thread already has or is.
+    func draw() {
+        condition.lock()
+        let mine = work
+        work = nil
+        condition.unlock()
+        guard let mine else { return }
+        finish(mine())
+    }
+
+    private func finish(_ drawn: CGImage?) {
+        condition.lock()
+        image = drawn
+        isDone = true
+        let told = followers
+        followers = []
+        condition.broadcast()
+        condition.unlock()
+        for follower in told { follower(drawn) }
+    }
+
+    /// Calls `body` with the bitmap once it's drawn (on the drawing thread), or at once if it is.
+    func whenFinished(_ body: @escaping @Sendable (CGImage?) -> Void) {
+        condition.lock()
+        if isDone {
+            let drawn = image
+            condition.unlock()
+            body(drawn)
+        } else {
+            followers.append(body)
+            condition.unlock()
+        }
+    }
+
+    var isFinished: Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return isDone
+    }
+
+    /// The bitmap: drawn here if no thread has started on it, waited for if one has.
+    func wait() -> CGImage? {
+        draw()
+        condition.lock()
+        defer { condition.unlock() }
+        while !isDone { condition.wait() }
+        return image
+    }
+}
+
 /// A rendered string or symbol. The bitmap extends `padding` past the `size` box for glows.
 struct RenderedGraphic {
-    let image: CGImage?
+    private let drawn: CGImage?
+    private let pending: PendingImage?
     let size: CGSize
     let padding: CGFloat
     let scale: CGFloat
+    /// Whether a pass that asked for it goes on without its bitmap, which then follows a
+    /// frame or two later (a symbol), or waits for it (lettering).
+    let mayFollow: Bool
+
+    init(image: CGImage?, size: CGSize, padding: CGFloat, scale: CGFloat) {
+        drawn = image
+        pending = nil
+        self.size = size
+        self.padding = padding
+        self.scale = scale
+        mayFollow = false
+    }
+
+    /// One whose bitmap is being drawn on another thread: its measurements are known now.
+    init(pending: PendingImage, size: CGSize, padding: CGFloat, scale: CGFloat, mayFollow: Bool = false) {
+        drawn = nil
+        self.pending = pending
+        self.size = size
+        self.padding = padding
+        self.scale = scale
+        self.mayFollow = mayFollow
+    }
+
+    /// Tells this bitmap from any other, without waiting for it.
+    var identity: ObjectIdentifier? {
+        pending.map { ObjectIdentifier($0) } ?? drawn.map { ObjectIdentifier($0) }
+    }
+
+    /// Calls `body` with the bitmap once it's drawn (on whichever thread drew it), or at once.
+    func whenDrawn(_ body: @escaping @Sendable (CGImage?) -> Void) {
+        if let pending {
+            pending.whenFinished(body)
+        } else {
+            body(drawn)
+        }
+    }
+
+    /// The bitmap. One still being drawn on another thread is waited for.
+    var image: CGImage? {
+        if let pending { return pending.wait() }
+        return drawn
+    }
+
+    /// Whether the bitmap is there without waiting.
+    var isDrawn: Bool { pending?.isFinished ?? true }
+
+    /// Whether there's nothing to show (an empty string), known without waiting.
+    var isEmpty: Bool { pending == nil && drawn == nil }
 
     static let empty = RenderedGraphic(image: nil, size: .zero, padding: 0, scale: 1)
 
@@ -107,7 +224,34 @@ struct RenderedGraphic {
 }
 
 enum FontMetrics {
+    private struct FontKey: Hashable {
+        let name: String
+        let size: CGFloat
+    }
+
+    /// Fonts already made: finding one by name takes the system tens of microseconds, and one
+    /// is asked for with every piece of text measured or drawn.
+    private final class Fonts: @unchecked Sendable {
+        static let shared = Fonts()
+        private let lock = NSLock()
+        private var fonts: [FontKey: CTFont] = [:]
+
+        func font(_ key: FontKey, make: () -> CTFont) -> CTFont {
+            lock.lock()
+            defer { lock.unlock() }
+            if let font = fonts[key] { return font }
+            let font = make()
+            if fonts.count > 256 { fonts.removeAll(keepingCapacity: true) }
+            fonts[key] = font
+            return font
+        }
+    }
+
     static func font(_ name: String, size: CGFloat) -> CTFont {
+        Fonts.shared.font(FontKey(name: name, size: size)) { makeFont(name, size: size) }
+    }
+
+    private static func makeFont(_ name: String, size: CGFloat) -> CTFont {
         #if !FIRSTROW_PORTABLE
             if let weight = ModernTheme.systemFontWeight(for: name) {
                 #if os(macOS)
@@ -177,6 +321,68 @@ enum FontMetrics {
     }
 }
 
+/// Things the system loads the first time they're asked for, asked for off the main thread as
+/// First Row starts: the symbol catalogue and each symbol's own data (the first screen with a
+/// chevron or a play button used to wait for them), the looks' fonts, and what playing
+/// anything needs.
+enum RenderWarmUp {
+    private static let symbols = [
+        "chevron.right", "chevron.left", "play.fill", "pause.fill", "playpause.fill", "backward.fill", "forward.fill", "shuffle",
+        "speaker.wave.3.fill", "music.note", "music.note.list", "film.fill", "gobackward.10", "goforward.10", "captions.bubble", "xmark",
+        "tv.fill", "mic.fill", "photo.fill", "gearshape.fill", "externaldrive.fill", "circle.fill",
+    ]
+
+    static func start() {
+        DispatchQueue.global(qos: .utility).async {
+            // The first length of time written out loads what the system knows about how this
+            // part of the world writes one (8 ms on Windows, in the pass that first showed a
+            // song's details): one with hours and one without.
+            _ = formatfirstRowPlaybackTime(83)
+            _ = formatfirstRowPlaybackTime(3725)
+            #if FIRSTROW_PORTABLE
+                // Each font is found by name among the machine's fonts the first time it's
+                // asked for: here rather than in the first pass that draws with it.
+                for name in [firstRowRegularFontName, firstRowBoldFontName, ModernTheme.regularFontName, ModernTheme.mediumFontName, ModernTheme.semiboldFontName, ModernTheme.boldFontName] {
+                    _ = FontMetrics.font(name, size: 28)
+                }
+            #endif
+        }
+        #if !FIRSTROW_PORTABLE
+            DispatchQueue.global(qos: .utility).async {
+                // The first player made sets up the system's playback machinery as well (its
+                // classes, routing, and their settings, read from another process): the first
+                // song or movie waited several milliseconds for that on the main thread.
+                let player = AVPlayer()
+                player.isMuted = true
+                _ = AVPlayerItem.description()
+            }
+            DispatchQueue.global(qos: .utility).async {
+                for name in [firstRowRegularFontName, firstRowBoldFontName, ModernTheme.regularFontName, ModernTheme.mediumFontName] {
+                    let line = CTLineCreateWithAttributedString(FontMetrics.attributed("First Row 0123456789", font: FontMetrics.font(name, size: 28), color: .white))
+                    if let context = CGContext(data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 0,
+                                               space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)
+                    {
+                        CTLineDraw(line, context)
+                    }
+                }
+                #if os(macOS)
+                    guard #available(macOS 11.0, *) else { return }
+                    for name in symbols {
+                        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { continue }
+                        var rect = CGRect(x: 0, y: 0, width: 32, height: 32)
+                        _ = symbol.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+                    }
+                #else
+                    for name in symbols {
+                        guard let symbol = UIImage(systemName: name) else { continue }
+                        _ = UIGraphicsImageRenderer(size: symbol.size).image { _ in symbol.draw(at: .zero) }
+                    }
+                #endif
+            }
+        #endif
+    }
+}
+
 @MainActor
 enum TextRenderer {
     private final class Key: NSObject {
@@ -239,7 +445,7 @@ enum TextRenderer {
         }
         let layout = layout(spec)
         let padding = ceil(spec.shadows.map { $0.radius * 2.5 + max(abs($0.offset.width), abs($0.offset.height)) }.max() ?? 0) + 2
-        let graphic = draw(size: layout.size, padding: padding, scale: scale, shadows: spec.shadows) { context in
+        let body: (CGContext) -> Void = { context in
             for (index, line) in layout.lines.enumerated() {
                 let x: CGFloat = switch spec.alignment {
                 case .leading: 0
@@ -252,7 +458,24 @@ enum TextRenderer {
                 CTLineDraw(line.line, context)
             }
         }
-        cache.setObject(Box(graphic), forKey: key, cost: graphic.image.map { $0.bytesPerRow * $0.height } ?? 0)
+        let size = layout.size
+        let graphic: RenderedGraphic
+        if LetteringInProgress.isCollecting, size.width > 0, size.height > 0 {
+            // During a pass over the interface the bitmap is drawn on another thread while the
+            // pass goes on (the string's measurements, which the pass lays things out by, are
+            // known already), and put on its layer as the pass ends. A screen coming up for the
+            // first time draws a dozen strings or more, which was most of what its pass took.
+            let shadows = spec.shadows
+            let pending = PendingImage {
+                autoreleasepool { draw(size: size, padding: padding, scale: scale, shadows: shadows, body: body) }.image
+            }
+            LetteringInProgress.queue.async { pending.draw() }
+            graphic = RenderedGraphic(pending: pending, size: size, padding: padding, scale: scale)
+        } else {
+            graphic = draw(size: size, padding: padding, scale: scale, shadows: spec.shadows, body: body)
+        }
+        let pixels = Int(ceil((size.width + padding * 2) * scale)) * Int(ceil((size.height + padding * 2) * scale))
+        cache.setObject(Box(graphic), forKey: key, cost: pixels * 4)
         return graphic
     }
 
@@ -305,7 +528,7 @@ enum TextRenderer {
     }
 
     /// Draws `body` with `shadows` into a padded bitmap. `body` works in points with y up.
-    static func draw(size: CGSize, padding: CGFloat, scale: CGFloat, shadows: [TextShadow], body: (CGContext) -> Void) -> RenderedGraphic {
+    nonisolated static func draw(size: CGSize, padding: CGFloat, scale: CGFloat, shadows: [TextShadow], body: (CGContext) -> Void) -> RenderedGraphic {
         let pointWidth = size.width + padding * 2
         let pointHeight = size.height + padding * 2
         let pixelWidth = max(1, Int(ceil(pointWidth * scale)))
@@ -317,7 +540,7 @@ enum TextRenderer {
                   height: pixelHeight,
                   bitsPerComponent: 8,
                   bytesPerRow: 0,
-                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                  space: ScreenColorSpace.current ?? CGColorSpace(name: CGColorSpace.sRGB)!,
                   bitmapInfo: layerBitmapInfo,
               )
         else {
@@ -347,8 +570,7 @@ enum TextRenderer {
     }
 }
 
-/// SF Symbols, tinted, as bitmaps.
-@MainActor
+/// SF Symbols, tinted, as bitmaps. Any thread may ask for one.
 enum SymbolRenderer {
     enum Weight: Hashable {
         case regular
@@ -366,31 +588,135 @@ enum SymbolRenderer {
         let scale: CGFloat
     }
 
-    private static var cache: [Key: RenderedGraphic] = [:]
+    nonisolated(unsafe) private static var cache: [Key: RenderedGraphic] = [:]
+    /// Guards `cache` and `preparing`: symbols are also drawn ahead of use, off the main thread.
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var preparing = 0
+    private static let preparingQueue = DispatchQueue(label: "firstrow.symbols", qos: .utility)
+
+    /// A symbol to draw ahead of its first use.
+    struct Request {
+        let name: String
+        let pointSize: CGFloat
+        let weight: Weight
+        var color: RGBA = .white
+        let scale: CGFloat
+    }
+
+    /// Draws symbols off the main thread so that they're ready when first shown: a large one
+    /// takes several milliseconds. A later call takes the place of one still being worked on.
+    static func prepare(_ requests: [Request]) {
+        lock.lock()
+        preparing += 1
+        let turn = preparing
+        lock.unlock()
+        preparingQueue.async {
+            for request in requests {
+                lock.lock()
+                let current = preparing == turn
+                lock.unlock()
+                guard current else { return }
+                autoreleasepool {
+                    _ = render(request.name, pointSize: request.pointSize, weight: request.weight, color: request.color, scale: request.scale)
+                }
+            }
+        }
+    }
 
     static func render(_ name: String, pointSize: CGFloat, weight: Weight, color: RGBA = .white, shadows: [TextShadow] = [], scale: CGFloat) -> RenderedGraphic {
         let key = Key(name: name, pointSize: pointSize, weight: weight, color: color, shadows: shadows, scale: scale)
-        if let cached = cache[key] {
+        lock.lock()
+        let cached = cache[key]
+        lock.unlock()
+        if let cached {
             return cached
         }
+        let graphic: RenderedGraphic
+        if Thread.isMainThread, LetteringInProgress.isCollecting, let size = symbolSize(name, pointSize: pointSize, weight: weight), size.width > 0, size.height > 0 {
+            // During a pass over the interface the symbol is drawn on another thread (it
+            // takes milliseconds: the system draws it large, then it's tinted and scaled down
+            // with its shadows). Its box is known already, so everything is laid out as ever;
+            // the bitmap goes on its layer as the pass ends, or a frame or two later.
+            let pending = PendingImage { autoreleasepool { make(key).image } }
+            graphic = RenderedGraphic(pending: pending, size: size, padding: padding(for: shadows), scale: scale, mayFollow: true)
+            LetteringInProgress.queue.async { pending.draw() }
+        } else {
+            graphic = make(key)
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        // Drawn on another thread meanwhile: that one is the one in use.
+        if let other = cache[key] { return other }
+        if cache.count > 400 { cache.removeAll() }
+        cache[key] = graphic
+        return graphic
+    }
+
+    /// Draws a symbol. It touches nothing but its own bitmaps, so any thread will do.
+    private static func make(_ key: Key) -> RenderedGraphic {
+        let name = key.name, pointSize = key.pointSize, weight = key.weight, color = key.color, shadows = key.shadows, scale = key.scale
         guard let symbol = symbolImage(name, pointSize: pointSize, weight: weight) else { return .empty }
         let size = symbol.size
-        let padding = ceil(shadows.map { $0.radius * 2.5 + max(abs($0.offset.width), abs($0.offset.height)) }.max() ?? 0) + 2
+        let padding = padding(for: shadows)
         let tinted = tintedImage(symbol.image, pixelSize: symbol.pixelSize, color: color)
-        let graphic = TextRenderer.draw(size: size, padding: padding, scale: scale, shadows: shadows) { context in
+        return TextRenderer.draw(size: size, padding: padding, scale: scale, shadows: shadows) { context in
             if let tinted {
                 context.draw(tinted, in: CGRect(x: padding, y: padding, width: size.width, height: size.height))
             }
         }
-        if cache.count > 400 { cache.removeAll() }
-        cache[key] = graphic
-        return graphic
+    }
+
+    /// The room round a symbol's box that its shadows need.
+    private static func padding(for shadows: [TextShadow]) -> CGFloat {
+        ceil(shadows.map { $0.radius * 2.5 + max(abs($0.offset.width), abs($0.offset.height)) }.max() ?? 0) + 2
     }
 
     private struct Symbol {
         let image: CGImage
         let size: CGSize
         let pixelSize: CGSize
+    }
+
+    #if os(macOS)
+        /// The system's symbol at a size and weight, not yet drawn.
+        @available(macOS 11.0, *)
+        private static func systemSymbol(_ name: String, pointSize: CGFloat, weight: Weight) -> NSImage? {
+            let nsWeight: NSFont.Weight = switch weight {
+            case .regular: .regular
+            case .semibold: .semibold
+            case .bold: .bold
+            case .heavy: .heavy
+            }
+            guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil) ?? olderName(name).flatMap({ NSImage(systemSymbolName: $0, accessibilityDescription: nil) }) else { return nil }
+            return base.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: nsWeight))
+        }
+    #elseif !FIRSTROW_PORTABLE
+        /// The system's symbol at a size and weight, not yet drawn.
+        private static func systemSymbol(_ name: String, pointSize: CGFloat, weight: Weight) -> UIImage? {
+            let uiWeight: UIImage.SymbolWeight = switch weight {
+            case .regular: .regular
+            case .semibold: .semibold
+            case .bold: .bold
+            case .heavy: .heavy
+            }
+            let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: uiWeight)
+            return UIImage(systemName: name, withConfiguration: configuration) ?? olderName(name).flatMap { UIImage(systemName: $0, withConfiguration: configuration) }
+        }
+    #endif
+
+    /// The point size of a symbol's alignment box, found without drawing it (the same size
+    /// `symbolImage` gives): nil for a symbol there isn't.
+    private static func symbolSize(_ name: String, pointSize: CGFloat, weight: Weight) -> CGSize? {
+        #if os(macOS)
+            guard #available(macOS 11.0, *), let image = systemSymbol(name, pointSize: pointSize, weight: weight) else {
+                return SymbolFallback.size(name, pointSize: pointSize, weight: weight)
+            }
+            return image.size
+        #elseif FIRSTROW_PORTABLE
+            return SymbolFallback.size(name, pointSize: pointSize, weight: weight)
+        #else
+            return systemSymbol(name, pointSize: pointSize, weight: weight)?.size ?? SymbolFallback.size(name, pointSize: pointSize, weight: weight)
+        #endif
     }
 
     /// The symbol drawn at 4x, with the point size of its alignment box.
@@ -402,15 +728,7 @@ enum SymbolRenderer {
                     Symbol(image: $0.image, size: $0.size, pixelSize: CGSize(width: $0.image.width, height: $0.image.height))
                 }
             }
-            let nsWeight: NSFont.Weight = switch weight {
-            case .regular: .regular
-            case .semibold: .semibold
-            case .bold: .bold
-            case .heavy: .heavy
-            }
-            guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil) ?? olderName(name).flatMap({ NSImage(systemSymbolName: $0, accessibilityDescription: nil) }),
-                  let image = base.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: nsWeight))
-            else {
+            guard let image = systemSymbol(name, pointSize: pointSize, weight: weight) else {
                 // A symbol newer than this Mac's: the drawn stand-in.
                 return SymbolFallback.symbol(name, pointSize: pointSize, weight: weight, oversample: oversample).map {
                     Symbol(image: $0.image, size: $0.size, pixelSize: CGSize(width: $0.image.width, height: $0.image.height))
@@ -426,16 +744,7 @@ enum SymbolRenderer {
                 Symbol(image: $0.image, size: $0.size, pixelSize: CGSize(width: $0.image.width, height: $0.image.height))
             }
         #else
-            let uiWeight: UIImage.SymbolWeight = switch weight {
-            case .regular: .regular
-            case .semibold: .semibold
-            case .bold: .bold
-            case .heavy: .heavy
-            }
-            let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: uiWeight)
-            guard let image = UIImage(systemName: name, withConfiguration: configuration)
-                ?? olderName(name).flatMap({ UIImage(systemName: $0, withConfiguration: configuration) })
-            else {
+            guard let image = systemSymbol(name, pointSize: pointSize, weight: weight) else {
                 return SymbolFallback.symbol(name, pointSize: pointSize, weight: weight, oversample: oversample).map {
                     Symbol(image: $0.image, size: $0.size, pixelSize: CGSize(width: $0.image.width, height: $0.image.height))
                 }
@@ -474,12 +783,90 @@ enum SymbolRenderer {
     }
 }
 
+/// Layers whose lettering or symbol is still being drawn on another thread, during a pass over
+/// the interface (see `TextRenderer.render` and `SymbolRenderer.render`). Main thread only,
+/// but for the queue the drawing is done on.
+enum LetteringInProgress {
+    /// Where the drawing is done: on as many threads as there are strings and cores.
+    static let queue = DispatchQueue(label: "firstrow.lettering", qos: .userInteractive, attributes: .concurrent)
+
+    nonisolated(unsafe) private static var depth = 0
+    nonisolated(unsafe) private static var waiting: [ObjectIdentifier: (layer: CALayer, graphic: RenderedGraphic)] = [:]
+    /// Layers whose symbol wasn't drawn by the end of its pass, each with the number of the
+    /// bitmap it's to get (so that one asked for since isn't overtaken by it).
+    nonisolated(unsafe) private static var following: [ObjectIdentifier: (layer: CALayer, turn: Int)] = [:]
+    nonisolated(unsafe) private static var turns = 0
+
+    /// Whether a pass is under way, so lettering may be drawn on other threads.
+    static var isCollecting: Bool { depth > 0 }
+
+    static func beginPass() {
+        depth += 1
+    }
+
+    /// The pass is over: every bitmap is put on its layer. Lettering no thread has started on
+    /// is drawn here, alongside the threads drawing the rest, and what they're still drawing
+    /// is waited for (a fraction of a millisecond a string); a symbol not yet drawn follows
+    /// when it is.
+    static func endPass() {
+        depth -= 1
+        guard depth == 0, !waiting.isEmpty else { return }
+        let shown = waiting
+        waiting.removeAll(keepingCapacity: true)
+        for (id, entry) in shown {
+            if entry.graphic.mayFollow, !entry.graphic.isDrawn {
+                follow(entry.graphic, on: entry.layer, id)
+            } else {
+                entry.layer.contents = entry.graphic.image
+            }
+        }
+    }
+
+    static func show(_ graphic: RenderedGraphic, on layer: CALayer) {
+        let id = ObjectIdentifier(layer)
+        waiting[id] = (layer, graphic)
+        if !following.isEmpty { following[id] = nil }
+    }
+
+    /// The layer is to show something else now.
+    static func forget(_ layer: CALayer) {
+        if !waiting.isEmpty { waiting[ObjectIdentifier(layer)] = nil }
+        if !following.isEmpty { following[ObjectIdentifier(layer)] = nil }
+    }
+
+    /// Puts the bitmap on the layer when it's drawn, unless the layer has been given
+    /// something else by then.
+    private static func follow(_ graphic: RenderedGraphic, on layer: CALayer, _ id: ObjectIdentifier) {
+        turns += 1
+        let turn = turns
+        following[id] = (layer, turn)
+        graphic.whenDrawn { image in
+            DispatchQueue.main.async {
+                guard let entry = following[id], entry.turn == turn else { return }
+                following[id] = nil
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                entry.layer.contents = image
+                CATransaction.commit()
+            }
+        }
+    }
+}
+
 extension CALayer {
     /// Shows a rendered string or symbol with its layout box at `origin`.
     func show(_ graphic: RenderedGraphic, at origin: CGPoint) {
-        let redrawn = contents as AnyObject? !== graphic.image
-        if redrawn {
-            contents = graphic.image
+        let redrawn: Bool
+        if LetteringInProgress.isCollecting, !graphic.isDrawn {
+            // Still being drawn on another thread: its bitmap is put here as the pass ends.
+            LetteringInProgress.show(graphic, on: self)
+            redrawn = true
+        } else {
+            LetteringInProgress.forget(self)
+            redrawn = contents as AnyObject? !== graphic.image
+            if redrawn {
+                contents = graphic.image
+            }
         }
         contentsScale = graphic.scale
         let frame = graphic.imageFrame(at: origin)
@@ -503,6 +890,13 @@ enum SymbolFallback {
         let referenceSize: CGFloat
         let box: CGSize
         let draw: (CGContext) -> Void
+    }
+
+    /// The point size of a stand-in's box, as `symbol` gives it, without drawing it.
+    static func size(_ name: String, pointSize: CGFloat, weight: SymbolRenderer.Weight) -> CGSize? {
+        guard let shape = shape(name, weight: weight) else { return nil }
+        let scale = pointSize / shape.referenceSize
+        return CGSize(width: shape.box.width * scale, height: shape.box.height * scale)
     }
 
     static func symbol(_ name: String, pointSize: CGFloat, weight: SymbolRenderer.Weight, oversample: CGFloat) -> (image: CGImage, size: CGSize)? {

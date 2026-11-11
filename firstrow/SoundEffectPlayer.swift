@@ -16,9 +16,13 @@ final class SoundEffectPlayer: NSObject, AVAudioPlayerDelegate {
 
     func warmUp(soundNames: [String], fileExtension: String = "aif") {
         Task { @MainActor in
-            for name in soundNames {
-                guard self.preparedPlayers[name] == nil else { continue }
-                guard let url = bundledResourceURL(name, fileExtension) else { continue }
+            // Found on disk off the main thread: looking for twenty files took it 20 ms on
+            // Windows, as First Row's first frames were being drawn.
+            let found = await Task.detached(priority: .userInitiated) {
+                soundNames.map { ($0, bundledResourceURL($0, fileExtension)) }
+            }.value
+            for (name, url) in found {
+                guard self.preparedPlayers[name] == nil, let url else { continue }
                 self.cachedURLs[name] = url
                 guard let player = try? AVAudioPlayer(contentsOf: url) else { continue }
                 player.prepareToPlay()
