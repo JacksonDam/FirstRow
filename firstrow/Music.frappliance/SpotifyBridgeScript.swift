@@ -322,8 +322,17 @@ let spotifyBridgeScript = #"""
 
   const announce = async () => {
     if (!platform) return;
-    let account = { signedIn: false, name: '', username: '' };
-    try { account = await commands.account(); } catch (e) {}
+    // Asking can fail while the page is still settling (or a request is lost), which isn't the
+    // same as being signed out: it's asked again a few times before that's what First Row hears.
+    let account = null;
+    for (let attempt = 0; attempt < 6 && !account; attempt++) {
+      try {
+        account = await commands.account();
+      } catch (e) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    if (!account) account = { signedIn: false, name: '', username: '' };
     send({ type: 'ready', signedIn: account.signedIn, name: account.name, username: account.username });
     lastState = '';
     pushState();

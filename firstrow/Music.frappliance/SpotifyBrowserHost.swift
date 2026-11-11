@@ -48,6 +48,11 @@
         private var nextCommandID = 1
         private var commandReplies: [Int: ([String: Any]) -> Void] = [:]
         private var heartbeat: Timer?
+        /// The sign-in window's cookies, on their way to the player's browser (see `dismissSignIn`).
+        private var carriedCookies: [[String: Any]] = []
+        private var handOverID = 0
+        /// The launch whose browser has been sent to Spotify's page.
+        private var openedLaunchID = 0
 
         init(browser: URL) {
             self.browser = browser
@@ -144,17 +149,66 @@
 
         func presentSignIn(_ url: URL, closed: @escaping () -> Void) {
             signInClosed = closed
+            carriedCookies = []
             launch(url, visible: true)
         }
 
         func dismissSignIn() {
             signInClosed = nil
             guard isShowingSignIn else { return }
-            // Signed in: back to the player, out of sight.
+            // Signed in: back to the player, out of sight, in a browser started afresh. The
+            // sign-in is the window's cookies, and they go across by hand: read here, and given
+            // to the new browser before it opens Spotify. Left to the browser, they reach the
+            // new one only if the old one wrote them all to disk as it closed (it had held them
+            // for a second or two), in a form the new one reads; when they didn't, the player
+            // came up signed out and the menu went back to Sign In.
+            handOverID += 1
+            let id = handOverID
+            guard socket != nil else {
+                finishHandOver(id, cookies: [])
+                return
+            }
+            command("Storage.getCookies") { [weak self] reply in
+                let cookies = (reply["result"] as? [String: Any])?["cookies"] as? [[String: Any]]
+                self?.finishHandOver(id, cookies: cookies ?? [])
+            }
+            // (A browser that doesn't answer isn't waited for.)
+            Task { @MainActor [weak self] in
+                try? await firstRowSleep(1.5)
+                self?.finishHandOver(id, cookies: [])
+            }
+        }
+
+        private func finishHandOver(_ id: Int, cookies: [[String: Any]]) {
+            guard id == handOverID else { return }
+            handOverID += 1
+            spotifyDebugLog("taking \(cookies.count) cookies from the sign-in window to the player")
+            carriedCookies = cookies
             launch(Self.playerURL, visible: false)
         }
 
+        /// A cookie as a browser lists it, in the form a browser takes one.
+        private static func cookieToSet(_ cookie: [String: Any]) -> [String: Any] {
+            var out: [String: Any] = [:]
+            for key in ["name", "value", "domain", "path", "secure", "httpOnly", "sameSite", "priority", "sourceScheme", "sourcePort", "partitionKey"] {
+                if let value = cookie[key] { out[key] = value }
+            }
+            // (One without a date lasts as long as the browser runs, as it did in the window.)
+            if cookie["session"] as? Bool != true, let expires = (cookie["expires"] as? NSNumber)?.doubleValue, expires > 0 {
+                out["expires"] = expires
+            }
+            return out
+        }
+
+        /// Sends the hidden browser to Spotify's page, once.
+        private func openPlayer(_ url: URL, launchID id: Int) {
+            guard id == launchID, openedLaunchID != id else { return }
+            openedLaunchID = id
+            command("Page.navigate", ["url": url.absoluteString])
+        }
+
         func forgetAccount(_ completion: @escaping () -> Void) {
+            carriedCookies = []
             guard socket != nil else {
                 try? FileManager.default.removeItem(at: profile)
                 completion()
@@ -175,6 +229,8 @@
 
         private func launch(_ url: URL, visible: Bool) {
             let previous = stopBrowser()
+            // (A sign-in on its way to the player goes with this launch, or not at all.)
+            handOverID += 1
             launchID += 1
             let id = launchID
             isShowingSignIn = visible
@@ -292,6 +348,9 @@
         private func stopBrowser() -> Process? {
             heartbeat?.invalidate()
             heartbeat = nil
+            // (Messages it had already sent are waiting their turn on the main thread: they're
+            // from a browser that's gone, and say nothing about the next one.)
+            socket?.onMessage = nil
             socket?.onClose = nil
             socket?.close()
             socket = nil
@@ -388,7 +447,26 @@
                 if isHeadless, let agent = opened.agent {
                     command("Emulation.setUserAgentOverride", ["userAgent": agent.replacingOccurrences(of: "Headless", with: "")])
                 }
-                command("Page.navigate", ["url": url.absoluteString])
+                // A sign-in that has just been made comes first (see `dismissSignIn`): one cookie
+                // at a time, so that one the browser won't take doesn't cost the rest, and the
+                // page is opened when the last has been answered (or two seconds have gone by).
+                let cookies = carriedCookies
+                carriedCookies = []
+                if cookies.isEmpty {
+                    openPlayer(url, launchID: id)
+                } else {
+                    for (index, cookie) in cookies.enumerated() {
+                        var whenAnswered: (([String: Any]) -> Void)?
+                        if index == cookies.count - 1 {
+                            whenAnswered = { [weak self] _ in self?.openPlayer(url, launchID: id) }
+                        }
+                        command("Storage.setCookies", ["cookies": [Self.cookieToSet(cookie)]], reply: whenAnswered)
+                    }
+                    Task { @MainActor [weak self] in
+                        try? await firstRowSleep(2)
+                        self?.openPlayer(url, launchID: id)
+                    }
+                }
                 startHeartbeat()
             } else {
                 command("Runtime.evaluate", ["expression": spotifyBridgeScript])

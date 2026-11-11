@@ -199,6 +199,13 @@ final class SpotifySession {
     private var statusWaiters: [CheckedContinuation<Void, Never>] = []
     private var isSigningIn = false
     private var loadTimeoutTask: Task<Void, Never>?
+    /// When the sign-in page last said it had signed in, and how many more times a player
+    /// that says otherwise straight afterwards is asked again before it's believed. (On Linux
+    /// and Windows the player starts again in another browser after a sign-in, and its first
+    /// word can come before it has its account back.)
+    private var signedInAt: Date?
+    private var signedOutRechecksLeft = 0
+    private var recheckTask: Task<Void, Never>?
 
     private init() {}
 
@@ -252,6 +259,8 @@ final class SpotifySession {
         playerState = nil
         playerStateHandler?(nil)
         failPendingCalls("Signed out of Spotify")
+        signedOutRechecksLeft = 0
+        recheckTask?.cancel()
         status = .loading
         host.forgetAccount { [weak self] in
             guard let self else { return }
@@ -344,10 +353,30 @@ final class SpotifySession {
             if signedIn {
                 if isSigningIn {
                     isSigningIn = false
+                    signedInAt = Date()
+                    signedOutRechecksLeft = 2
                     host?.dismissSignIn()
+                } else {
+                    // (The player itself says so: from here on its word is taken at once.)
+                    signedOutRechecksLeft = 0
+                    recheckTask?.cancel()
                 }
                 status = .signedIn
             } else if !isSigningIn {
+                if status == .signedIn, signedOutRechecksLeft > 0, let signedInAt, Date().timeIntervalSince(signedInAt) < 120 {
+                    // Signed in a moment ago, and now the player says it isn't: its page is
+                    // loaded again before that's believed, rather than the menu going back to
+                    // Sign In on the player's first word.
+                    signedOutRechecksLeft -= 1
+                    spotifyDebugLog("signed out straight after a sign-in: asking the player again")
+                    recheckTask?.cancel()
+                    recheckTask = Task { @MainActor [weak self] in
+                        try? await firstRowSleep(2)
+                        guard !Task.isCancelled, let self, self.status == .signedIn, !self.isSigningIn else { return }
+                        self.host?.load(Self.playerURL)
+                    }
+                    return
+                }
                 status = .signedOut
             }
             resumeStatusWaiters()
