@@ -154,7 +154,11 @@ final class RootCarouselLayerController: LayerController {
             icon.imageObject = image
             withoutLayerActions {
                 icon.image.contents = LayerImageCache.cgImage(for: image)
-                icon.reflection.contents = CarouselReflectionCache.reflection(for: image)
+                #if os(macOS) || FIRSTROW_PORTABLE
+                    CarouselReflectionCache.show(on: icon.reflection, for: image)
+                #else
+                    icon.reflection.contents = CarouselReflectionCache.reflection(for: image)
+                #endif
                 #if !os(macOS) && !FIRSTROW_PORTABLE
                     let blurred = (icon.image.contents as! CGImage?).flatMap(BlurredPictureCache.blurred)
                     icon.blurredImage.contents = blurred?.image
@@ -525,17 +529,61 @@ enum CarouselReflectionCache {
         return cache
     }()
 
+    /// Reflections being drawn, by the layer they're for: the newest request for a layer wins.
+    private static var requests: [ObjectIdentifier: Int] = [:]
+    private static var requestCount = 0
+
+    /// Puts the icon's reflection on `layer`: at once if it's been drawn before, otherwise
+    /// when another thread has drawn it (a millisecond or two each, and the main menu shows
+    /// seven as it comes up).
+    static func show(on layer: CALayer, for image: NSImage?) {
+        let id = ObjectIdentifier(layer)
+        guard let image, let source = LayerImageCache.cgImage(for: image) else {
+            requests[id] = nil
+            layer.contents = nil
+            return
+        }
+        if let cached = cache.object(forKey: image) {
+            requests[id] = nil
+            layer.contents = cached.image
+            return
+        }
+        requestCount += 1
+        let request = requestCount
+        requests[id] = request
+        DispatchQueue.global(qos: .userInitiated).async { [weak layer] in
+            let reflection = autoreleasepool { draw(source) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolatedIfPossible {
+                    if let reflection {
+                        cache.setObject(Box(reflection), forKey: image, cost: reflection.bytesPerRow * reflection.height)
+                    }
+                    guard requests[id] == request else { return }
+                    requests[id] = nil
+                    guard let layer else { return }
+                    withoutLayerActions { layer.contents = reflection }
+                }
+            }
+        }
+    }
+
     static func reflection(for image: NSImage?) -> CGImage? {
         guard let image else { return nil }
         if let cached = cache.object(forKey: image) {
             return cached.image
         }
-        guard let source = LayerImageCache.cgImage(for: image) else { return nil }
+        guard let source = LayerImageCache.cgImage(for: image), let reflection = draw(source) else { return nil }
+        cache.setObject(Box(reflection), forKey: image, cost: reflection.bytesPerRow * reflection.height)
+        return reflection
+    }
+
+    /// Draws a reflection. Any thread will do: it touches nothing but its own bitmaps.
+    private nonisolated static func draw(_ source: CGImage) -> CGImage? {
         let width = source.width
         let height = source.height
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
+            space: ScreenColorSpace.current ?? CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
         ), let mask = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue,
@@ -546,13 +594,14 @@ enum CarouselReflectionCache {
         mask.drawLinearGradient(gradient, start: CGPoint(x: 0, y: CGFloat(height)), end: CGPoint(x: 0, y: CGFloat(height) * 0.4), options: [.drawsAfterEndLocation])
         guard let maskImage = mask.makeImage() else { return nil }
         let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        // (Only the band above where it has faded out, 60% of the way down, is drawn.)
+        let hidden = floor(CGFloat(height) * 0.4) - 1
+        context.clip(to: CGRect(x: 0, y: hidden, width: CGFloat(width), height: CGFloat(height) - hidden))
         context.clip(to: rect, mask: maskImage)
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: 1, y: -1)
         context.draw(source, in: rect)
-        guard let reflection = context.makeImage() else { return nil }
-        cache.setObject(Box(reflection), forKey: image, cost: reflection.bytesPerRow * reflection.height)
-        return reflection
+        return context.makeImage()
     }
 }
 

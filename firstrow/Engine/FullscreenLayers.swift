@@ -398,7 +398,7 @@ final class NowPlayingPanelLayer {
         position.isHidden = snapshot.trackPositionText.isEmpty
         // An empty line still takes its height.
         func lineHeight(_ graphic: RenderedGraphic, _ fontName: String, _ size: CGFloat) -> CGFloat {
-            graphic.image == nil ? FontMetrics.lineHeight(fontName: fontName, size: size) : graphic.size.height
+            graphic.isEmpty ? FontMetrics.lineHeight(fontName: fontName, size: size) : graphic.size.height
         }
         let heights = [
             lineHeight(texts[0].1, firstRowBoldFontName, titleSize),
@@ -552,9 +552,7 @@ final class NowPlayingArtworkLayer {
         reflection.position = CGPoint(x: side * 0.5, y: side * 0.5 + gap)
         reflection.transform = yawTransform(degrees: yaw, perspective: 0.9, viewSize: size)
         reflectionImage.frame = CGRect(x: 0, y: side, width: side, height: side)
-        reflectionImage.contents = artwork.flatMap {
-            ReflectionRenderer.reflection(of: $0, size: size, fill: true, stops: [(1, 0), (0.68, 0.05), (0.26, 0.12), (0.08, 0.17), (0, 0.22)])
-        }
+        ReflectionRenderer.show(on: reflectionImage, of: artwork, size: size, fill: true, stops: [(1, 0), (0.68, 0.05), (0.26, 0.12), (0.08, 0.17), (0, 0.22)])
     }
 }
 
@@ -615,7 +613,7 @@ final class PlaybackGlyphLayer {
         }
         guard let context = CGContext(
             data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
+            space: image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
         ) else { return graphic }
         context.translateBy(x: CGFloat(image.width), y: CGFloat(image.height))
         context.rotate(by: .pi)

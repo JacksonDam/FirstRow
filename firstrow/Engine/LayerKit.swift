@@ -45,6 +45,58 @@ final class StillGradientLayer: CAGradientLayer {
 /// BGRA premultiplied: Core Animation shows this layout without making a converted copy.
 let layerBitmapInfo: UInt32 = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
 
+/// The colour space of the screen First Row's window is on, for the pictures it makes itself.
+///
+/// On the Mac, Core Animation converts every picture it's handed to the colour space of the
+/// window's screen as it commits, which is on the main thread, unless the picture is in that
+/// space already: about 2.7 ms for each million pixels on a screen with a colour profile of
+/// its own (a new cover and its reflection came to 4 ms, a list's lettering to several more).
+/// A picture drawn in the screen's space to begin with is taken as it is, and where it's
+/// drawn off the main thread, that's where its colours are converted too. A picture made for
+/// one screen and shown on another is converted as before, so it looks the same either way.
+enum ScreenColorSpace {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var screenSpace: CGColorSpace?
+
+    /// The screen's colour space, or nil where there's none to draw in (not a Mac, or no
+    /// window yet): pictures are then drawn in the space they always were.
+    static var current: CGColorSpace? {
+        lock.lock()
+        defer { lock.unlock() }
+        return screenSpace
+    }
+
+    #if os(macOS)
+        private static var observers: [NSObjectProtocol] = []
+        private static weak var followed: NSWindow?
+
+        /// Keeps to the screen `window` is on, as it moves between screens or the screen's
+        /// profile changes.
+        @MainActor
+        static func follow(_ window: NSWindow?) {
+            if let window, window !== followed {
+                followed = window
+                observers.forEach(NotificationCenter.default.removeObserver)
+                observers = [NSWindow.didChangeScreenNotification, NSWindow.didChangeScreenProfileNotification].map { name in
+                    NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { _ in
+                        MainActor.assumeIsolatedIfPossible { follow(followed) }
+                    }
+                }
+            }
+            var space = (window?.screen ?? NSScreen.main)?.colorSpace?.cgColorSpace
+            // Only a space a bitmap of ours can be made in.
+            if let candidate = space,
+               candidate.model != .rgb || CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0, space: candidate, bitmapInfo: layerBitmapInfo) == nil
+            {
+                space = nil
+            }
+            lock.lock()
+            screenSpace = space
+            lock.unlock()
+        }
+    #endif
+}
+
 /// CGImage per platform image, cached because converting can mean rasterising a PDF icon.
 @MainActor
 enum LayerImageCache {
@@ -65,13 +117,44 @@ enum LayerImageCache {
         if let cached = cache.object(forKey: image) {
             return cached.image
         }
-        #if os(macOS) || FIRSTROW_PORTABLE
-            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        #else
-            guard let cgImage = image.cgImage ?? renderedCGImage(image) else { return nil }
-        #endif
+        guard let cgImage = platformCGImage(image) else { return nil }
         cache.setObject(CGImageBox(cgImage), forKey: image, cost: cgImage.bytesPerRow * cgImage.height)
         return cgImage
+    }
+
+    private static func platformCGImage(_ image: NSImage) -> CGImage? {
+        #if os(macOS) || FIRSTROW_PORTABLE
+            image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        #else
+            image.cgImage ?? renderedCGImage(image)
+        #endif
+    }
+
+    /// Unpacks pictures from the asset catalogue on another thread, ahead of their first
+    /// showing. They're kept compressed there, and Core Animation unpacks one on the main
+    /// thread as it commits the first layer to show it: 3 to 5 ms for a 600-pixel stand-in
+    /// cover, in the first frame of the screen it's on. The unpacked copy (in the screen's
+    /// colours) takes the picture's place here, so layers are given that. One already asked
+    /// for is left alone: it's on a layer, unpacked.
+    static func unpackAhead(named names: [String]) {
+        #if !FIRSTROW_PORTABLE
+            let pictures: [(picture: NSImage, packed: CGImage)] = names.compactMap { name in
+                guard let picture = NSImage(named: name), cache.object(forKey: picture) == nil, let packed = platformCGImage(picture) else { return nil }
+                return (picture, packed)
+            }
+            guard !pictures.isEmpty else { return }
+            DispatchQueue.global(qos: .utility).async {
+                for entry in pictures {
+                    let unpacked = decompressedArtworkCGImage(from: entry.packed)
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolatedIfPossible {
+                            guard cache.object(forKey: entry.picture) == nil else { return }
+                            cache.setObject(CGImageBox(unpacked), forKey: entry.picture, cost: unpacked.bytesPerRow * unpacked.height)
+                        }
+                    }
+                }
+            }
+        #endif
     }
 
     #if canImport(UIKit)

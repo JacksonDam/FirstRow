@@ -180,7 +180,8 @@ final class CoverCarouselLayerController: LayerController {
                     CGRect(x: 0, y: size.height, width: size.width, height: size.height),
                 )
                 lane.preview.contents = LayerImageCache.cgImage(for: image) ?? CoverArtPlaceholder.image(side: configuration.baseIconSize * 1.2)
-                lane.reflectionImage.contents = ReflectionImageCache.reflection(
+                ReflectionImageCache.show(
+                    on: lane.reflectionImage,
                     for: image,
                     size: size,
                     fadeEnd: Self.reflectionFadeEnd,
@@ -465,20 +466,54 @@ enum ReflectionImageCache {
         }
     }
 
-    static func reflection(for image: NSImage?, size: CGSize, fadeEnd: CGFloat, placeholderSide: CGFloat) -> CGImage? {
+    private static var requests: [ObjectIdentifier: Int] = [:]
+    private static var requestCount = 0
+    private static let drawingQueue = DispatchQueue(label: "firstrow.carousel-reflections", qos: .userInitiated, attributes: .concurrent)
+
+    /// Puts the cover's reflection on `layer`: at once if it has been drawn before, otherwise
+    /// when it has been drawn, off the main thread (the layer keeps what it showed until then).
+    static func show(on layer: CALayer, for image: NSImage?, size: CGSize, fadeEnd: CGFloat, placeholderSide: CGFloat) {
+        let id = ObjectIdentifier(layer)
         let source = LayerImageCache.cgImage(for: image) ?? CoverArtPlaceholder.image(side: placeholderSide)
-        guard let source, size.width > 0, size.height > 0 else { return nil }
+        guard let source, size.width > 0, size.height > 0 else {
+            requests[id] = nil
+            layer.contents = nil
+            return
+        }
         let key = ReflectionKey(source: source, width: Int(size.width), height: Int(size.height), fadeEnd: fadeEnd)
         if let cached = cache.object(forKey: key) {
-            return cached.image
+            requests[id] = nil
+            layer.contents = cached.image
+            return
         }
+        requestCount += 1
+        let request = requestCount
+        requests[id] = request
+        drawingQueue.async { [weak layer] in
+            let reflection = autoreleasepool { draw(source, size: size, fadeEnd: fadeEnd) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolatedIfPossible {
+                    if let reflection {
+                        // The key keeps its source picture alive too, so that counts towards the limit.
+                        cache.setObject(ReflectionBox(reflection), forKey: key, cost: reflection.bytesPerRow * reflection.height + source.bytesPerRow * source.height)
+                    }
+                    guard requests[id] == request else { return }
+                    requests[id] = nil
+                    guard let layer else { return }
+                    withoutLayerActions { layer.contents = reflection }
+                }
+            }
+        }
+    }
+
+    private nonisolated static func draw(_ source: CGImage, size: CGSize, fadeEnd: CGFloat) -> CGImage? {
         // Reflections are faint and soft, so a modest bitmap is plenty.
         let pixelScale = min(1.0, 512 / max(size.width, size.height))
         let width = max(1, Int(size.width * pixelScale))
         let height = max(1, Int(size.height * pixelScale))
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
+            space: ScreenColorSpace.current ?? CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: layerBitmapInfo,
         ) else { return nil }
         let rect = CGRect(x: 0, y: 0, width: width, height: height)
@@ -486,6 +521,11 @@ enum ReflectionImageCache {
         let fadeColors = [CGColor(gray: 1, alpha: 1), CGColor(gray: 1, alpha: 0)] as CFArray
         if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceGray(), colors: fadeColors, locations: [0, 1]) {
             context.saveGState()
+            // (Only the band above where it has faded out is drawn.)
+            if fadeEnd < 1 {
+                let band = ceil(CGFloat(height) * fadeEnd) + 1
+                context.clip(to: CGRect(x: 0, y: CGFloat(height) - band, width: CGFloat(width), height: band))
+            }
             context.clip(to: rect, mask: alphaMask(width: width, height: height, gradient: gradient, fadeEnd: fadeEnd) ?? source)
             // Flipped: the image's bottom row ends up at the top of the reflection.
             context.translateBy(x: 0, y: CGFloat(height))
@@ -495,13 +535,10 @@ enum ReflectionImageCache {
             drawAspectFill(source, in: rect, context: context)
             context.restoreGState()
         }
-        guard let reflection = context.makeImage() else { return nil }
-        // The key keeps its source picture alive too, so that counts towards the limit.
-        cache.setObject(ReflectionBox(reflection), forKey: key, cost: reflection.bytesPerRow * reflection.height + source.bytesPerRow * source.height)
-        return reflection
+        return context.makeImage()
     }
 
-    private static func alphaMask(width: Int, height: Int, gradient: CGGradient, fadeEnd: CGFloat) -> CGImage? {
+    private nonisolated static func alphaMask(width: Int, height: Int, gradient: CGGradient, fadeEnd: CGFloat) -> CGImage? {
         guard let mask = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue,
@@ -513,7 +550,7 @@ enum ReflectionImageCache {
         return mask.makeImage()
     }
 
-    static func drawAspectFill(_ image: CGImage, in rect: CGRect, context: CGContext) {
+    nonisolated static func drawAspectFill(_ image: CGImage, in rect: CGRect, context: CGContext) {
         let imageAspect = CGFloat(image.width) / CGFloat(max(1, image.height))
         let rectAspect = rect.width / max(1, rect.height)
         var drawRect = rect
@@ -544,7 +581,7 @@ enum CoverArtPlaceholder {
         }
         guard let context = CGContext(
             data: nil, width: pixelSide, height: pixelSide, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
+            space: ScreenColorSpace.current ?? CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
         ) else { return nil }
         let rect = CGRect(x: 0, y: 0, width: pixelSide, height: pixelSide)
         let colors = [

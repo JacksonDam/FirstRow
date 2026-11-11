@@ -175,6 +175,9 @@ final class FirstRowAppController {
         #endif
         containerSize = size
         backingScale = scale
+        #if os(macOS)
+            ScreenColorSpace.follow(hostView.window)
+        #endif
         withoutLayerActions {
             let bounds = CGRect(origin: .zero, size: size)
             menuContainer.frame = bounds
