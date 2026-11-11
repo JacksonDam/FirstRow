@@ -69,6 +69,108 @@ struct TextEntryStyle {
     }
 }
 
+/// One key of the modern look's keyboards, drawn as a menu's rows are: a translucent tile with
+/// a soft shadow all round it. Focus jumps to a key, which turns white with dark lettering and
+/// grows a little; only the growing and shrinking ease, and the white fades as focus leaves.
+@MainActor
+final class ModernKeyTile {
+    let layer = SceneLayer()
+    /// The shadow is cast by a layer of its own, cut out where the tile is, so it doesn't
+    /// darken the see-through tile from inside.
+    private let shadowCaster = SceneLayer()
+    private let shadowCutout = CAShapeLayer()
+    private let tile = SceneLayer()
+    private let content = SceneLayer()
+    private let light = SceneLayer()
+    private let dark = SceneLayer()
+    private var shadowKey = ""
+    private(set) var isFocused: Bool?
+
+    init() {
+        shadowCaster.shadowColor = CGColor(gray: 0, alpha: 1)
+        shadowCaster.shadowRadius = 14
+        shadowCaster.shadowOffset = .zero
+        shadowCaster.shadowOpacity = 0.6
+        shadowCutout.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull()]
+        shadowCutout.fillRule = .evenOdd
+        shadowCutout.fillColor = CGColor(gray: 0, alpha: 1)
+        shadowCaster.mask = shadowCutout
+        for sublayer in [shadowCaster, tile, content] { layer.addSublayer(sublayer) }
+        content.addSublayer(light)
+        content.addSublayer(dark)
+    }
+
+    /// Forgets which way it was, so the next update shows it as it is with nothing easing
+    /// (the keyboard has been away).
+    func reset() {
+        isFocused = nil
+    }
+
+    /// `lettering` draws the key's label, dark for the white tile or light. `animated` is
+    /// false as the keyboard comes on, so nothing grows as it appears.
+    func update(frame: CGRect, cornerRadius: CGFloat, fill: CGColor?, focusFill: CGColor, focused: Bool, animated: Bool, lettering: (_ dark: Bool) -> RenderedGraphic) {
+        let was = isFocused
+        isFocused = focused
+        let changed = was != nil && was != focused
+        let growth: Animation? = changed && animated ? .smooth(duration: ModernTheme.focusDuration) : nil
+        let unfocus: Animation? = changed && animated && !focused ? .smooth(duration: 0.22) : nil
+        layer.isHidden = false
+        layer.frame = frame
+        let rest = CGRect(origin: .zero, size: frame.size)
+        let key = "\(rest.width)x\(rest.height)|\(cornerRadius)"
+        if key != shadowKey {
+            shadowKey = key
+            shadowCaster.shadowPath = CGPath(roundedRect: rest, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+            let reach: CGFloat = 48
+            shadowCutout.frame = rest.insetBy(dx: -reach, dy: -reach)
+            let cutout = CGMutablePath()
+            cutout.addRect(CGRect(x: 0, y: 0, width: rest.width + reach * 2, height: rest.height + reach * 2))
+            let hole = CGRect(x: reach + 0.5, y: reach + 0.5, width: rest.width - 1, height: rest.height - 1)
+            cutout.addPath(CGPath(roundedRect: hole, cornerWidth: cornerRadius - 0.5, cornerHeight: cornerRadius - 0.5, transform: nil))
+            shadowCutout.path = cutout
+        }
+        shadowCaster.frame = rest
+        // The size eases; the colour changes at once, or fades on the way out.
+        if was != focused {
+            tile.set("backgroundColor", to: focused ? focusFill : (fill ?? CGColor(gray: 1, alpha: 0)), unchanged: false, animation: unfocus)
+            shadowCaster.set("shadowOpacity", to: Float(focused ? 0.75 : 0.6), unchanged: false, animation: unfocus ?? growth)
+        } else if !focused {
+            tile.backgroundColor = fill
+        }
+        let grow = ModernTheme.focusGrowth
+        tile.setFrame(focused ? rest.insetBy(dx: -grow.width, dy: -grow.height) : rest, growth)
+        let radius = focused ? cornerRadius + 3 : cornerRadius
+        tile.set("cornerRadius", to: radius, unchanged: tile.cornerRadius == radius, animation: growth)
+        content.place(rest)
+        var grown = CATransform3DMakeTranslation(rest.midX, rest.midY, 0)
+        grown = CATransform3DScale(grown, ModernTheme.focusedContentScale, ModernTheme.focusedContentScale, 1)
+        grown = CATransform3DTranslate(grown, -rest.midX, -rest.midY, 0)
+        content.setTransform(focused ? grown : CATransform3DIdentity, growth)
+
+        func show(_ target: SceneLayer, _ graphic: RenderedGraphic) {
+            target.show(graphic, at: CGPoint(x: (rest.midX - graphic.size.width * 0.5).rounded(), y: (rest.midY - graphic.size.height * 0.5).rounded()))
+        }
+        if focused {
+            show(dark, lettering(true))
+            light.isHidden = true
+            dark.isHidden = false
+            if was != focused { dark.setOpacity(1, nil) }
+        } else {
+            show(light, lettering(false))
+            light.isHidden = false
+            if let unfocus {
+                // The dark lettering, as last drawn, fades out over the light fading in.
+                light.setOpacity(0, nil)
+                light.setOpacity(1, unfocus)
+                dark.setOpacity(0, unfocus)
+            } else if was != focused {
+                light.setOpacity(1, nil)
+                dark.isHidden = true
+            }
+        }
+    }
+}
+
 /// Draws `MenuView.textEntry` (a field and a grid of keys) or `codeDisplay` (a big code)
 /// over the menu scene.
 @MainActor
@@ -81,8 +183,9 @@ final class TextEntryLayer {
     private let caret = SceneLayer()
     private let selection = SelectionBoxLayer()
     private var keys: [[SceneLayer]] = []
-    private var keyTiles: [[SceneLayer]] = []
-    private let focusTile = SceneLayer()
+    /// The modern look's keys, made when they're first shown.
+    private var modernKeys: [[ModernKeyTile]] = []
+    private var modernFocus: ModernKeyTile?
     private let code = SceneLayer()
     private var codeBoxes: [SceneLayer] = []
     private var codeDigits: [SceneLayer] = []
@@ -118,18 +221,6 @@ final class TextEntryLayer {
         field.addSublayer(fieldText)
         field.addSublayer(caret)
         for row in TextEntryKey.rows {
-            keyTiles.append(row.map { _ in
-                let tile = SceneLayer()
-                layer.addSublayer(tile)
-                return tile
-            })
-        }
-        focusTile.shadowColor = CGColor(gray: 0, alpha: 1)
-        focusTile.shadowOpacity = 0.45
-        focusTile.shadowRadius = 12
-        focusTile.shadowOffset = CGSize(width: 0, height: 6)
-        layer.addSublayer(focusTile)
-        for row in TextEntryKey.rows {
             keys.append(row.map { _ in
                 let key = SceneLayer()
                 layer.addSublayer(key)
@@ -154,6 +245,7 @@ final class TextEntryLayer {
             layer.opacity = 0
             wasVisible = false
             lastFocus = nil
+            for key in modernKeys.joined() { key.reset() }
             return
         }
         let style = TextEntryStyle.current
@@ -170,8 +262,8 @@ final class TextEntryLayer {
         }
 
         if let display {
-            for row in keys + keyTiles { for key in row { key.isHidden = true } }
-            focusTile.isHidden = true
+            for key in keys.joined() { key.isHidden = true }
+            for key in modernKeys.joined() { key.layer.isHidden = true }
             field.isHidden = true
             selection.layer.isHidden = true
             let wrap = min(1100, sceneSize.width - 160)
@@ -253,6 +345,26 @@ final class TextEntryLayer {
             let gridLeft = centerX - gridWidth * 0.5
             let gridTop: CGFloat = 470
             var focusFrame = CGRect.zero
+            // The modern look's keys are tiles that show focus themselves, as its menus' rows do.
+            let modernFill = style.focusFill
+            if modernFill != nil, modernKeys.isEmpty {
+                modernKeys = rows.map { row in
+                    row.map { _ in
+                        let key = ModernKeyTile()
+                        layer.addSublayer(key.layer)
+                        return key
+                    }
+                }
+            }
+            if modernFill == nil { for key in modernKeys.joined() { key.layer.isHidden = true } }
+            // (The key focus is on is drawn over its neighbours' shadows.)
+            if modernFill != nil, !entry.lastInputWasTyping, modernKeys.indices.contains(entry.focusRow), modernKeys[entry.focusRow].indices.contains(entry.focusColumn) {
+                let focused = modernKeys[entry.focusRow][entry.focusColumn]
+                if focused !== modernFocus {
+                    modernFocus = focused
+                    layer.addSublayer(focused.layer)
+                }
+            }
             for (rowIndex, row) in rows.enumerated() {
                 let total = row.reduce(0) { $0 + $1.units }
                 var units = (13 - total) * 0.5
@@ -263,22 +375,28 @@ final class TextEntryLayer {
                     units += key.units
                     let isWord: Bool = if case .character = key { false } else { true }
                     let isFocused = rowIndex == entry.focusRow && columnIndex == entry.focusColumn && !entry.lastInputWasTyping
-                    let tile = keyTiles[rowIndex][columnIndex]
-                    tile.isHidden = style.keyBackground == nil
-                    tile.backgroundColor = style.keyBackground
-                    tile.cornerRadius = style.keyCornerRadius
-                    tile.frame = frame
-                    let graphic = TextRenderer.render(TextSpec(
-                        text: key.label(shifted: entry.isShifted),
-                        fontName: style.keyFont,
-                        size: isWord ? style.wordKeySize : style.keySize,
-                        color: isFocused && style.focusFill != nil ? style.focusedText : style.text,
-                        maxWidth: width - 8,
-                        minimumScaleFactor: 0.6,
-                    ), scale: scale)
+                    func lettering(_ color: RGBA) -> RenderedGraphic {
+                        TextRenderer.render(TextSpec(
+                            text: key.label(shifted: entry.isShifted),
+                            fontName: style.keyFont,
+                            size: isWord ? style.wordKeySize : style.keySize,
+                            color: color,
+                            maxWidth: width - 8,
+                            minimumScaleFactor: 0.6,
+                        ), scale: scale)
+                    }
                     let label = keys[rowIndex][columnIndex]
-                    label.isHidden = false
-                    label.show(graphic, at: CGPoint(x: frame.midX - graphic.size.width * 0.5, y: frame.midY - graphic.size.height * 0.5))
+                    if let modernFill {
+                        label.isHidden = true
+                        modernKeys[rowIndex][columnIndex].update(
+                            frame: frame, cornerRadius: style.keyCornerRadius, fill: style.keyBackground, focusFill: modernFill,
+                            focused: isFocused, animated: !appearing,
+                        ) { lettering($0 ? style.focusedText : style.text) }
+                    } else {
+                        let graphic = lettering(style.text)
+                        label.isHidden = false
+                        label.show(graphic, at: CGPoint(x: frame.midX - graphic.size.width * 0.5, y: frame.midY - graphic.size.height * 0.5))
+                    }
                     if rowIndex == entry.focusRow, columnIndex == entry.focusColumn { focusFrame = frame }
                 }
             }
@@ -286,15 +404,6 @@ final class TextEntryLayer {
             let slide = appearing ? nil : pass.animation(.easeInOut(duration: 0.14), when: moved)
             lastFocus = (entry.focusRow, entry.focusColumn)
             selection.layer.isHidden = !style.usesGlossySelection || entry.lastInputWasTyping
-            focusTile.isHidden = style.focusFill == nil || entry.lastInputWasTyping
-            if let fill = style.focusFill {
-                // The focused key grows a little past its tile, as on a TV.
-                let grown = focusFrame.insetBy(dx: -5, dy: -5)
-                focusTile.backgroundColor = fill
-                focusTile.cornerRadius = style.keyCornerRadius + 3
-                focusTile.setFrame(grown, nil)
-                focusTile.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: grown.size), cornerWidth: style.keyCornerRadius + 3, cornerHeight: style.keyCornerRadius + 3, transform: nil)
-            }
             let boxHeight: CGFloat = 75
             selection.update(
                 frame: CGRect(x: focusFrame.minX - 46.5, y: focusFrame.midY - boxHeight * 0.5 - 29, width: focusFrame.width + 93, height: boxHeight + 58),

@@ -469,9 +469,10 @@ final class YouTubeSearchPadLayer {
     private let results = SceneLayer()
     private let box = SceneLayer()
     private let selection = SelectionBoxLayer()
-    private let focusTile = SceneLayer()
-    private var tiles: [SceneLayer] = []
     private var labels: [SceneLayer] = []
+    /// The modern look's keys (see `ModernKeyTile`), and the one focus was on last.
+    private var modernKeys: [ModernKeyTile] = []
+    private var modernFocus: ModernKeyTile?
     private let arrow = SceneLayer()
     private var lastFocus: (row: Int, column: Int)?
     private var wasShown = false
@@ -479,14 +480,10 @@ final class YouTubeSearchPadLayer {
     init() {
         layer.isHidden = true
         field.masksToBounds = true
-        for sublayer in [results, field, box, selection.layer, focusTile, arrow] {
+        for sublayer in [results, field, box, selection.layer, arrow] {
             layer.addSublayer(sublayer)
         }
         for sublayer in [glass, fieldText, caret] { field.addSublayer(sublayer) }
-        focusTile.shadowColor = CGColor(gray: 0, alpha: 1)
-        focusTile.shadowOpacity = 0.45
-        focusTile.shadowRadius = 10
-        focusTile.shadowOffset = CGSize(width: 0, height: 5)
         let blink = CABasicAnimation(keyPath: "opacity")
         blink.fromValue = 1
         blink.toValue = 0
@@ -502,6 +499,7 @@ final class YouTubeSearchPadLayer {
             layer.isHidden = true
             wasShown = false
             lastFocus = nil
+            for key in modernKeys { key.reset() }
             return
         }
         let appearing = !wasShown
@@ -551,60 +549,66 @@ final class YouTubeSearchPadLayer {
         box.cornerRadius = 16
         let count = rows.reduce(0) { $0 + $1.count }
         while labels.count < count {
-            let tile = SceneLayer()
             let label = SceneLayer()
-            layer.insertSublayer(tile, below: selection.layer)
             layer.addSublayer(label)
-            tiles.append(tile)
             labels.append(label)
         }
-        for index in labels.indices where index >= count {
-            labels[index].isHidden = true
-            tiles[index].isHidden = true
+        for index in labels.indices where index >= count { labels[index].isHidden = true }
+        // The modern look's keys are tiles that show focus themselves, as its menus' rows do.
+        let modernFill = style.focusFill
+        while modernFill != nil, modernKeys.count < count {
+            let key = ModernKeyTile()
+            layer.addSublayer(key.layer)
+            modernKeys.append(key)
         }
+        for (index, key) in modernKeys.enumerated() where modernFill == nil || index >= count { key.layer.isHidden = true }
+        // The key the arrows are on shows it: by the glossy box, or in the modern look by
+        // turning white. Not while the list has the arrows, or after typing on a keyboard.
+        let showsFocus = pad.hasFocus && !pad.lastInputWasTyping
         var focusFrame = CGRect.zero
         var index = 0
         for (rowIndex, row) in rows.enumerated() {
             for (column, key) in row.enumerated() {
                 let frame = geometry.keys[rowIndex][column]
-                let isFocused = pad.hasFocus && rowIndex == pad.row && column == pad.column && !pad.lastInputWasTyping
+                let isFocused = showsFocus && rowIndex == pad.row && column == pad.column
                 let isWord: Bool = if case .character = key { false } else { true }
-                let tile = tiles[index]
-                tile.isHidden = style.keyBackground == nil
-                tile.backgroundColor = style.keyBackground
-                tile.cornerRadius = style.keyCornerRadius
-                tile.frame = frame
-                let graphic = TextRenderer.render(TextSpec(
-                    text: key.label(showsSymbols: pad.showsSymbols),
-                    fontName: style.keyFont,
-                    size: isWord ? 31 : 40,
-                    color: isFocused && style.focusFill != nil ? style.focusedText : style.text,
-                    maxWidth: frame.width - 8,
-                    minimumScaleFactor: 0.6,
-                ), scale: scale)
+                func lettering(_ color: RGBA) -> RenderedGraphic {
+                    TextRenderer.render(TextSpec(
+                        text: key.label(showsSymbols: pad.showsSymbols),
+                        fontName: style.keyFont,
+                        size: isWord ? 31 : 40,
+                        color: color,
+                        maxWidth: frame.width - 8,
+                        minimumScaleFactor: 0.6,
+                    ), scale: scale)
+                }
                 let label = labels[index]
-                label.isHidden = false
-                label.show(graphic, at: CGPoint(x: (frame.midX - graphic.size.width / 2).rounded(), y: (frame.midY - graphic.size.height / 2).rounded()))
+                if let modernFill {
+                    label.isHidden = true
+                    let tile = modernKeys[index]
+                    // (Drawn over its neighbours' shadows.)
+                    if isFocused, tile !== modernFocus {
+                        modernFocus = tile
+                        layer.addSublayer(tile.layer)
+                    }
+                    tile.update(
+                        frame: frame, cornerRadius: style.keyCornerRadius, fill: style.keyBackground, focusFill: modernFill,
+                        focused: isFocused, animated: !appearing,
+                    ) { lettering($0 ? style.focusedText : style.text) }
+                } else {
+                    let graphic = lettering(style.text)
+                    label.isHidden = false
+                    label.show(graphic, at: CGPoint(x: (frame.midX - graphic.size.width / 2).rounded(), y: (frame.midY - graphic.size.height / 2).rounded()))
+                }
                 if rowIndex == pad.row, column == pad.column { focusFrame = frame }
                 index += 1
             }
         }
 
-        // The key the arrows are on: the glossy box, or the modern look's white tile. Neither
-        // while the list has the arrows, or after typing on a keyboard.
-        let showsFocus = pad.hasFocus && !pad.lastInputWasTyping
         let moved = lastFocus.map { $0.row != pad.row || $0.column != pad.column } ?? false
         let slide = appearing ? nil : pass.animation(.easeInOut(duration: 0.14), when: moved)
         lastFocus = (pad.row, pad.column)
         selection.layer.isHidden = !style.usesGlossySelection || !showsFocus
-        focusTile.isHidden = style.focusFill == nil || !showsFocus
-        if let fill = style.focusFill {
-            let grown = focusFrame.insetBy(dx: -4, dy: -4)
-            focusTile.backgroundColor = fill
-            focusTile.cornerRadius = style.keyCornerRadius + 3
-            focusTile.setFrame(grown, nil)
-            focusTile.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: grown.size), cornerWidth: style.keyCornerRadius + 3, cornerHeight: style.keyCornerRadius + 3, transform: nil)
-        }
         let boxHeight = focusFrame.height
         selection.update(
             frame: CGRect(x: focusFrame.minX - 46.5, y: focusFrame.midY - boxHeight * 0.5 - 29, width: focusFrame.width + 93, height: boxHeight + 58),
