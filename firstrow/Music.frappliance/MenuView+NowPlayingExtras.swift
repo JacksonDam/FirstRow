@@ -7,6 +7,43 @@ import Foundation
     import FirstRowPortable
 #endif
 
+#if os(macOS)
+    /// The list a song was played from, kept between launches. The Music app goes on playing after
+    /// First Row is closed, and when First Row opens again its song is put back in this list.
+    struct SavedMusicQueue: Codable, Equatable {
+        var songIDs: [String]
+        var title: String
+        var isShuffled: Bool
+    }
+
+    enum MusicQueueStore {
+        private static let writer = DispatchQueue(label: "firstrow.music-queue-store", qos: .utility)
+
+        static var fileURL: URL? {
+            var base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            if FirstRowHarness.isActive, let home = ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"] {
+                base = URL(fileURLWithPath: home, isDirectory: true).appendingPathComponent("Library/Application Support", isDirectory: true)
+            }
+            return base?.appendingPathComponent("First Row", isDirectory: true).appendingPathComponent("Now Playing List.json")
+        }
+
+        /// A whole library shuffled is tens of thousands of songs: written off the main thread.
+        static func save(_ queue: SavedMusicQueue) {
+            guard let fileURL else { return }
+            writer.async {
+                guard let data = try? JSONEncoder().encode(queue) else { return }
+                try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? data.write(to: fileURL, options: .atomic)
+            }
+        }
+
+        static func load() -> SavedMusicQueue? {
+            guard let fileURL, let data = try? Data(contentsOf: fileURL) else { return nil }
+            return try? JSONDecoder().decode(SavedMusicQueue.self, from: data)
+        }
+    }
+#endif
+
 /// Now Playing's extras for pointing and touching: the list it was started from, over its
 /// right side; the lyrics, when the song has some; and the on-screen buttons, which slide away
 /// while a song plays untouched.
@@ -73,8 +110,58 @@ extension MenuView {
     /// What the list is called: the menu it came from.
     var nowPlayingQueueTitle: String {
         if isInThirdMenu, !headerText.isEmpty { return headerText }
+        #if os(macOS)
+            if let restoredMusicQueueTitle, !isPodcastAudioNowPlaying { return restoredMusicQueueTitle }
+        #endif
         return isPodcastAudioNowPlaying ? "Episodes" : "Songs"
     }
+
+    #if os(macOS)
+        /// Keeps the list for the next launch, when the Music app could still be playing from it.
+        func rememberMusicQueueForNextLaunch(_ queue: [MusicLibrarySongEntry]) {
+            guard queue.count > 1, !queue.contains(where: { $0.spotify != nil || $0.jellyfin != nil }) else { return }
+            let songIDs = queue.map(\.id)
+            // Song to song the list is the same one, and isn't written again.
+            if let savedMusicQueue, savedMusicQueue.songIDs == songIDs { return }
+            restoredMusicQueueTitle = nil
+            let saved = SavedMusicQueue(songIDs: songIDs, title: nowPlayingQueueTitle, isShuffled: isMusicSongsShuffleMode)
+            savedMusicQueue = saved
+            didReadSavedMusicQueue = true
+            MusicQueueStore.save(saved)
+        }
+
+        /// The list the Music app's song was last played from here, rebuilt from the library: nil
+        /// when the song isn't in the list that was kept, or the library isn't in yet.
+        func recoveredMusicQueue(containing songID: String) -> (songs: [MusicLibrarySongEntry], title: String, isShuffled: Bool)? {
+            if !didReadSavedMusicQueue {
+                didReadSavedMusicQueue = true
+                savedMusicQueue = MusicQueueStore.load()
+            }
+            guard let saved = savedMusicQueue, saved.songIDs.contains(songID), let library = musicAllSongsCache, !library.isEmpty else { return nil }
+            var songsByID: [String: MusicLibrarySongEntry] = [:]
+            songsByID.reserveCapacity(library.count)
+            for song in library where songsByID[song.id] == nil {
+                songsByID[song.id] = song
+            }
+            // Songs that have left the library since are left out.
+            let songs = saved.songIDs.compactMap { songsByID[$0] }
+            guard songs.count > 1, songs.contains(where: { $0.id == songID }) else { return nil }
+            return (songs, saved.title, saved.isShuffled)
+        }
+
+        /// A song found playing in the Music app goes back in the list it was played from: the
+        /// list beside Now Playing, its place in it, and the songs before and after it.
+        func putRecoveredSongBackInItsList() {
+            guard isCurrentMusicPlaybackUsingAppleScript, let songID = activeMusicPlaybackSongID,
+                  !activeMusicPlaybackQueue.contains(where: { $0.id == songID }),
+                  let recovered = recoveredMusicQueue(containing: songID),
+                  let index = recovered.songs.firstIndex(where: { $0.id == songID }) else { return }
+            activeMusicPlaybackQueue = recovered.songs
+            restoredMusicQueueTitle = recovered.title
+            musicNowPlayingTrackPositionText = "\(index + 1) of \(recovered.songs.count)"
+            musicNowPlayingShowsShuffleGlyph = recovered.isShuffled
+        }
+    #endif
 
     /// Rows are this far apart in the list, in full-screen canvas points.
     static let nowPlayingQueueRowPitch: CGFloat = 78

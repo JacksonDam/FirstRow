@@ -247,7 +247,6 @@ extension MenuView {
     }
 
     func prefetchMusicArtworkIfNeeded(for song: MusicLibrarySongEntry) {
-        guard song.artwork == nil else { return }
         guard let cacheKey = musicArtworkCacheKey(for: song) else { return }
         guard musicPreviewCache[cacheKey] == nil else { return }
         guard musicArtworkPrefetchInFlightKeys.insert(cacheKey).inserted else { return }
@@ -453,6 +452,9 @@ extension MenuView {
         }
         if let playbackQueue {
             activeMusicPlaybackQueue = playbackQueue
+            #if os(macOS)
+                rememberMusicQueueForNextLaunch(playbackQueue)
+            #endif
         }
         isCurrentMusicPlaybackManagedByFirstRow = true
         hasPendingExternalMusicRestore = false
@@ -547,7 +549,9 @@ extension MenuView {
         musicNowPlayingTitle = song.title
         musicNowPlayingArtist = song.artist
         musicNowPlayingAlbum = song.album
-        musicNowPlayingArtwork = song.artwork ?? musicFallbackImage
+        // The copy decoded for the screen when there is one (the list it was chosen from showed
+        // it), so the cover isn't decoded on the main thread as Now Playing comes up.
+        musicNowPlayingArtwork = musicArtworkCacheKey(for: song).flatMap { musicPreviewCache[$0] } ?? song.artwork ?? musicFallbackImage
         musicNowPlayingElapsedSeconds = 0
         musicNowPlayingDurationSeconds = max(0, song.durationSeconds)
         musicNowPlayingShowsShuffleGlyph = isMusicSongsShuffleMode
@@ -1289,6 +1293,7 @@ extension MenuView {
             musicNowPlayingArtwork = artworkLookupSong.artwork ?? musicFallbackImage
             let artworkRequestID = incrementRequestID(&musicNowPlayingArtworkRequestID)
             updateNowPlayingArtworkIfNeeded(for: artworkLookupSong, requestID: artworkRequestID)
+            putRecoveredSongBackInItsList()
             startMusicAppleScriptProgressTimerIfNeeded()
             updateMusicNowPlayingFlipTimerState()
         }
