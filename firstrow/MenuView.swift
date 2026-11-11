@@ -166,6 +166,8 @@ final class MenuView: ObservableObject {
     let menuArrowAppearance = MenuConfiguration.defaultArrowAppearance
     let photosSelectionBoxWidthScale: CGFloat = 1.1
     let photosSelectionBoxHeightScale: CGFloat = 1.2
+    /// How tall a video's row is in the classic look, in rows.
+    let videoRowHeightScale: CGFloat = 1.72
     let selectionTextureVisualWidthDelta: CGFloat = 93
     let selectionTextureVisualHeightDelta: CGFloat = 58
     let photosSelectionTextureLeadingAdjustment: CGFloat = 6

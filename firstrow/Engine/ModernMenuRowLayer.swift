@@ -112,7 +112,8 @@ final class ModernMenuRowLayer: MenuRowLayering {
         if let image {
             let usesWordmark = item.leadingImage == nil && item.leadingImageAssetName == "appleTVNameImage"
             let side = min(capsuleHeight - 12, 64)
-            let size = usesWordmark ? CGSize(width: side * 1.8, height: side) : CGSize(width: side, height: side)
+            // (A video's picture keeps its shape.)
+            let size = usesWordmark ? CGSize(width: side * 1.8, height: side) : CGSize(width: item.media == nil ? side : (side * 16 / 9).rounded(), height: side)
             leadingImage.isHidden = false
             leadingImage.contents = LayerImageCache.cgImage(for: image)
             leadingImage.contentsGravity = usesWordmark ? .resizeAspect : .resizeAspectFill

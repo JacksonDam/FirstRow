@@ -52,6 +52,10 @@ struct YouTubeMenuState {
     /// The video the preview shows, its picture, and what was found out about videos lately.
     var previewVideoID: String?
     var previewImage: NSImage?
+    /// The small pictures of list rows, by video.
+    var rowPictures: [String: NSImage] = [:]
+    var rowPictureOrder: [String] = []
+    var rowPicturesInFlight: Set<String> = []
     var details: [String: YouTubeVideoDetails] = [:]
     var detailsOrder: [String] = []
     var detailsRequestID = 0
@@ -126,13 +130,43 @@ extension MenuView {
             return [menuMessageItem(id: "youtube_empty", title: state.page.emptyTitle)]
         }
         for (index, video) in state.videos.enumerated() {
-            items.append(plainMenuListItem(
+            var item = plainMenuListItem(
                 id: Self.youtubeVideoRowPrefix + String(index),
                 title: video.title,
+                leadingImage: youtube.rowPictures[video.id],
                 trailingText: video.isLive ? "Live" : video.durationText,
-            ))
+            )
+            item.media = MenuRowMedia(
+                byline: video.channel,
+                length: video.isLive ? "Live" : (video.durationText ?? ""),
+                count: video.viewsText ?? video.publishedText ?? "",
+            )
+            items.append(item)
         }
         return items
+    }
+
+    /// Fetches the small pictures of the rows around the selection that don't have theirs yet.
+    private func loadYouTubeRowPictures() {
+        guard thirdMenuMode == .youtube, let state = currentYouTubePage, state.isLoaded else { return }
+        let offset = youtubeMenuListItems().count - state.videos.count
+        let center = selectedThirdIndex - offset
+        let wanted = (center - 6 ... center + 12).filter { state.videos.indices.contains($0) }.map { state.videos[$0] }
+        for video in wanted where youtube.rowPictures[video.id] == nil && !youtube.rowPicturesInFlight.contains(video.id) {
+            guard let url = video.rowThumbnailURL else { continue }
+            youtube.rowPicturesInFlight.insert(video.id)
+            Task { @MainActor in
+                let image = await self.loadYouTubeImage(url, maxPixelSize: 400)
+                self.youtube.rowPicturesInFlight.remove(video.id)
+                guard let image else { return }
+                self.youtube.rowPictures[video.id] = image
+                self.youtube.rowPictureOrder.append(video.id)
+                // (Bounded: the ones fetched longest ago go.)
+                while self.youtube.rowPictureOrder.count > 80 {
+                    self.youtube.rowPictures[self.youtube.rowPictureOrder.removeFirst()] = nil
+                }
+            }
+        }
     }
 
     private func youtubeVideoIndex(forRowID id: String) -> Int? {
@@ -363,6 +397,7 @@ extension MenuView {
 
     func refreshYouTubePreviewForCurrentContext() {
         loadMoreYouTubeVideosIfNeeded()
+        loadYouTubeRowPictures()
         guard let video = selectedYouTubeVideo else {
             clearYouTubePreview()
             return
@@ -440,7 +475,7 @@ extension MenuView {
             lines.append(.init(label: "Views", value: Self.youtubeCountOnly(views)))
         }
         if let likes = details?.likesText, !likes.isEmpty { lines.append(.init(label: "Likes", value: likes)) }
-        let description = (details?.description ?? video.summary)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = Self.youtubePreviewDescription(details?.description ?? video.summary)
         items.append(GapItemSpec(
             key: "youtube_metadata",
             kind: .metadata(MetadataPreviewSpec(
@@ -449,7 +484,7 @@ extension MenuView {
                 forcedPreviewAspectRatio: nil,
                 sizeScale: 0.92,
                 title: video.title,
-                description: description.flatMap { $0.isEmpty ? nil : $0 },
+                description: description,
                 lines: lines,
                 baseIconSize: iconSize,
                 offsetX: musicGapPreviewHorizontalOffset - 56,
@@ -463,6 +498,24 @@ extension MenuView {
             fade: .easeInOut(duration: 0.22),
         ))
         return items
+    }
+
+    /// The start of a video's description, for the preview: its first paragraph (and the next,
+    /// if the first is only a line), a few lines at most. Descriptions run to pages of links
+    /// and credits, and the picture above gives up its room to whatever is shown.
+    static func youtubePreviewDescription(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let paragraphs = text.components(separatedBy: "\n\n")
+            .map { $0.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ") }
+            .filter { !$0.isEmpty }
+        guard var summary = paragraphs.first else { return nil }
+        if summary.count < 90, paragraphs.count > 1 { summary += " " + paragraphs[1] }
+        if summary.count > 260 {
+            let cut = summary.prefix(260)
+            let end = cut.lastIndex(of: " ") ?? cut.endIndex
+            summary = String(cut[..<end]) + "…"
+        }
+        return summary
     }
 
     /// "37,398,126 views" as "37,398,126": the line is already labelled Views.

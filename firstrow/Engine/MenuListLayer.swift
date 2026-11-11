@@ -498,6 +498,8 @@ final class MenuRowLayer: MenuRowLayering {
     private let divider = SceneLayer()
     private let background = SceneLayer()
     private let leadingImage = SceneLayer()
+    /// A video row's lines under its title, made when a row first shows a video.
+    private var videoLines: [SceneLayer] = []
     private let titleClip = SceneLayer()
     private let title = SceneLayer()
     private let marquee = MarqueeLayer()
@@ -528,9 +530,64 @@ final class MenuRowLayer: MenuRowLayering {
         if let backgroundFrame { background.frame = backgroundFrame }
     }
 
+    /// A video's row: its picture on the left; beside it the title, who it's from, and on the
+    /// last line its length and how many have watched it.
+    private func updateVideoRow(_ media: MenuRowMedia, spec: Spec, menu: MenuView) {
+        let scale = spec.scale
+        let item = spec.item
+        let rowHeight = spec.rowHeight
+        let isActive = spec.isSelected && spec.isSettled
+        trailingText.isHidden = true
+        trailingGlyph.isHidden = true
+        blueDot.isHidden = true
+        let pictureHeight = (rowHeight - 22).rounded()
+        let picture = CGRect(x: 34, y: ((rowHeight - pictureHeight) * 0.5).rounded(), width: (pictureHeight * 16 / 9).rounded(), height: pictureHeight)
+        leadingImage.isHidden = false
+        leadingImage.contents = LayerImageCache.cgImage(for: item.leadingImage)
+        leadingImage.contentsGravity = .resizeAspectFill
+        leadingImage.masksToBounds = true
+        leadingImage.backgroundColor = CGColor(gray: 0.12, alpha: 1)
+        leadingImage.frame = picture
+        leadingImage.shadowOpacity = 0
+        let textX = picture.maxX + 20
+        let textWidth = max(1, spec.rowWidth - textX - 30)
+        let titleHeight = FontMetrics.lineHeight(fontName: firstRowBoldFontName, size: 32)
+        let smallHeight = FontMetrics.lineHeight(fontName: firstRowRegularFontName, size: 25)
+        let top = ((rowHeight - (titleHeight + smallHeight * 2 + 4)) * 0.5).rounded()
+        titleClip.frame = CGRect(x: textX, y: top, width: textWidth, height: titleHeight)
+        let scrollsTitle = isActive && FontMetrics.width(item.title, fontName: firstRowBoldFontName, size: 32) > textWidth + 1
+        if scrollsTitle {
+            title.isHidden = true
+            marquee.show(title: item.title, viewportWidth: max(1, textWidth.rounded(.towardZero)), height: titleHeight, scale: scale, size: 32)
+        } else {
+            marquee.stop()
+            title.isHidden = false
+            title.show(TextRenderer.render(TextSpec(text: item.title, fontName: firstRowBoldFontName, size: 32, maxWidth: textWidth), scale: scale), at: .zero)
+        }
+        if videoLines.isEmpty {
+            videoLines = [SceneLayer(), SceneLayer(), SceneLayer()]
+            for line in videoLines { layer.addSublayer(line) }
+        }
+        for line in videoLines { line.isHidden = false }
+        let dim = RGBA(white: 1, alpha: 0.82)
+        let byline = TextRenderer.render(TextSpec(text: media.byline, fontName: firstRowRegularFontName, size: 25, color: dim, maxWidth: textWidth), scale: scale)
+        videoLines[0].show(byline, at: CGPoint(x: textX, y: top + titleHeight + 2))
+        let lastTop = top + titleHeight + 2 + smallHeight + 2
+        let length = TextRenderer.render(TextSpec(text: media.length, fontName: firstRowBoldFontName, size: 25, color: dim, maxWidth: textWidth * 0.3), scale: scale)
+        videoLines[1].show(length, at: CGPoint(x: textX, y: lastTop))
+        let count = TextRenderer.render(TextSpec(text: media.count, fontName: firstRowBoldFontName, size: 25, color: dim, maxWidth: textWidth * 0.66), scale: scale)
+        videoLines[2].show(count, at: CGPoint(x: textX + textWidth - count.size.width, y: lastTop))
+    }
+
     func update(_ spec: Spec, menu: MenuView) {
         guard spec != self.spec else { return }
         self.spec = spec
+        if let media = spec.item.media {
+            updateVideoRow(media, spec: spec, menu: menu)
+            return
+        }
+        for line in videoLines { line.isHidden = true }
+        leadingImage.backgroundColor = nil
         let scale = spec.scale
         let item = spec.item
         let arrow = spec.arrowAppearance

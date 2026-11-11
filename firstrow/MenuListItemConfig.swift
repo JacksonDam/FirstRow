@@ -7,6 +7,14 @@ import Foundation
     import FirstRowPortable
 #endif
 
+/// The extra lines of a row that shows a video: who it's from, how long it is and how many
+/// have watched it.
+struct MenuRowMedia: Equatable {
+    var byline: String
+    var length: String
+    var count: String
+}
+
 struct MenuListItemConfig: Identifiable, Equatable {
     let id: String
     let title: String
@@ -19,8 +27,11 @@ struct MenuListItemConfig: Identifiable, Equatable {
     let showsBlueDot: Bool
     let showsLightRowBackground: Bool
     let alignsTextToDividerStart: Bool
+    /// Set for a video's row (its picture is the leading image).
+    var media: MenuRowMedia?
     static func == (lhs: MenuListItemConfig, rhs: MenuListItemConfig) -> Bool {
         lhs.id == rhs.id &&
+            lhs.media == rhs.media &&
             lhs.title == rhs.title &&
             lhs.leadsToMenu == rhs.leadsToMenu &&
             lhs.leadingImageAssetName == rhs.leadingImageAssetName &&

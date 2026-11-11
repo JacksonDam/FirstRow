@@ -597,6 +597,8 @@ final class MenuSceneRenderer: TransactionRendering {
         if showsThird {
             let items = menu.thirdMenuListItems()
             let isPhotosThird = menu.activeRootItemID == "photos" && menu.thirdMenuMode == .photosDateAlbums
+            // A list of videos has tall rows in the classic look (see `MenuRowMedia`).
+            let hasVideoRows = theme == .classic && menu.thirdMenuMode == .youtube && items.contains { $0.media != nil }
             thirdList.layer.isHidden = false
             thirdList.layer.place(CGRect(x: 0, y: 0, width: menuWidth, height: menu.menuListLayoutHeight(for: menu.thirdLevelVisibleMenuRowCount)))
             thirdList.update(MenuListLayer.Configuration(
@@ -607,7 +609,7 @@ final class MenuSceneRenderer: TransactionRendering {
                 showsTopOverflowFade: true,
                 visibleRowCount: menu.thirdLevelVisibleMenuRowCount,
                 selectionBoxWidthScale: isPhotosThird ? menu.photosSelectionBoxWidthScale : 1,
-                selectionBoxHeightScale: isPhotosThird ? menu.photosSelectionBoxHeightScale : 1,
+                selectionBoxHeightScale: isPhotosThird ? menu.photosSelectionBoxHeightScale : (hasVideoRows ? menu.videoRowHeightScale : 1),
                 usesUniformRowLayout: menu.thirdMenuMode == .musicSongs,
                 theme: theme,
                 hidesSelection: menu.touchHidesSelection,
