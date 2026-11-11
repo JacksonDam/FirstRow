@@ -149,7 +149,7 @@ final class TouchControlsLayer {
     /// Where Now Playing's buttons start down from, when they're under its progress bar.
     private var transportTop: CGFloat?
 
-    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil, nowPlayingScale detailsScale: CGFloat? = nil, nowPlayingSlide slide: CGFloat? = nil) {
+    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil, nowPlayingScale detailsScale: CGFloat? = nil, nowPlayingSlide slide: CGFloat? = nil, movieOptionsPanel: CGRect? = nil) {
         if let bar { nowPlayingBar = bar }
         if let detailsScale { nowPlayingScale = detailsScale }
         if let slide { nowPlayingSlide = slide }
@@ -204,9 +204,14 @@ final class TouchControlsLayer {
                         Wanted(control: .playPause, frame: CGRect(x: middle.x - 36, y: middle.y - 36, width: 72, height: 72), symbol: menu.movieControlsGlyphState == .pause ? "play.fill" : "pause.fill", pointSize: 28),
                         Wanted(control: .skipForward, frame: CGRect(x: middle.x + 36 + 44, y: middle.y - 28, width: 56, height: 56), symbol: "goforward.10", pointSize: 22),
                     ]
-                    // (There the panel of subtitles, sound and speed opens where these buttons
-                    // are: they make way for it.)
-                    if isBent, menu.movieOptions != nil { wanted = [back] }
+                    // Where the panel of subtitles, sound and speed opens over these buttons
+                    // (bent at the fold, and across a phone held sideways) they make way for it.
+                    if menu.movieOptions != nil {
+                        let panel = movieOptionsPanel?.insetBy(dx: -6, dy: -6)
+                        if isBent || wanted.contains(where: { $0.control != .back && panel?.intersects($0.frame) == true }) {
+                            wanted = [back]
+                        }
+                    }
                 }
             } else if isNowPlaying {
                 let play: CGFloat = 64

@@ -450,6 +450,9 @@ final class MenuSceneRenderer: TransactionRendering {
             },
             nowPlayingScale: fullscreenScene.nowPlayingDetailsScale,
             nowPlayingSlide: fullscreenScene.nowPlayingDetailsSlide * canvasScale,
+            movieOptionsPanel: playback.options.panelFrame.map {
+                CGRect(x: $0.minX * canvasScale, y: $0.minY * canvasScale, width: $0.width * canvasScale, height: $0.height * canvasScale)
+            },
         )
         for (overlay, opacity) in [
             (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),
