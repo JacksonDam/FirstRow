@@ -73,6 +73,7 @@ final class GLDevice {
         let maskKind: GLint
         let maskPlace: GLint
         let maskGradient: GLint
+        let shadow: GLint
     }
 
     struct BlurProgram {
@@ -89,6 +90,8 @@ final class GLDevice {
         case radialGradient = 3
         case textureMasked = 4
         case shadowFromAlpha = 5
+        /// The shadow of a box (in `gradient`, as x, y, width, height), worked out per pixel.
+        case shadowBox = 6
     }
 
     private static let retiredLock = NSLock()
@@ -148,6 +151,7 @@ final class GLDevice {
             maskKind: glGetUniformLocation(main, "uMaskKind"),
             maskPlace: glGetUniformLocation(main, "uMaskPlace"),
             maskGradient: glGetUniformLocation(main, "uMaskGradient"),
+            shadow: glGetUniformLocation(main, "uShadow"),
         )
         let blurID = try Self.link(vertex: Shaders.blurVertex, fragment: Shaders.blurFragment)
         blur = BlurProgram(id: blurID, direction: glGetUniformLocation(blurID, "uDirection"), sigma: glGetUniformLocation(blurID, "uSigma"), sampler: glGetUniformLocation(blurID, "uTexture"))
@@ -338,7 +342,46 @@ enum Shaders {
     // vLocal * xy + zw is the place in the mask's own square (0...1).
     uniform vec4 uMaskPlace;
     uniform vec4 uMaskGradient;
+    // For a box's shadow: the blur's standard deviation and the box's corner radius.
+    uniform vec2 uShadow;
     out vec4 fragColor;
+
+    float erfNear(float x) {
+        float a = abs(x);
+        float t = 1.0 / (1.0 + 0.3275911 * a);
+        float y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-a * a);
+        return x < 0.0 ? -y : y;
+    }
+
+    // How much of a blurred box lies over `p`: 1 well inside, 0 well outside. A plain box's
+    // blur is exact (the two directions separate). With rounded corners the blur across is
+    // exact for each row, and the rows are summed at a few heights.
+    float boxShadow(vec2 p, vec4 box, float sigma, float corner) {
+        vec2 half_ = box.zw * 0.5;
+        vec2 q = p - (box.xy + half_);
+        float k = 0.70710678 / sigma;
+        if (corner <= 0.0) {
+            float across = erfNear((q.x + half_.x) * k) - erfNear((q.x - half_.x) * k);
+            float down = erfNear((q.y + half_.y) * k) - erfNear((q.y - half_.y) * k);
+            return 0.25 * across * down;
+        }
+        float low = q.y - half_.y;
+        float high = q.y + half_.y;
+        float from = clamp(-3.0 * sigma, low, high);
+        float to = clamp(3.0 * sigma, low, high);
+        const int rows = 8;
+        float gap = (to - from) / float(rows);
+        float value = 0.0;
+        for (int i = 0; i < rows; i++) {
+            float y = from + gap * (float(i) + 0.5);
+            // The row this far up or down, and how far its ends are from the middle.
+            float inset = min(half_.y - corner - abs(q.y - y), 0.0);
+            float reach = half_.x - corner + sqrt(max(0.0, corner * corner - inset * inset));
+            float across = 0.5 * (erfNear((q.x + reach) * k) - erfNear((q.x - reach) * k));
+            value += across * exp(-(y * y) / (2.0 * sigma * sigma)) / (2.50662827 * sigma) * gap;
+        }
+        return value;
+    }
 
     float pixels(float distance, float axis) {
         vec2 g = vec2(dFdx(axis), dFdy(axis));
@@ -371,6 +414,8 @@ enum Shaders {
             color = texture(uTexture, vec2(t, 0.5)) * uColor.a;
         } else if (uMode == 5) {
             color = uColor * texture(uTexture, vUV).a;
+        } else if (uMode == 6) {
+            color = uColor * boxShadow(vLocal, uGradient, max(uShadow.x, 0.01), uShadow.y);
         } else {
             color = uColor;
         }

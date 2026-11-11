@@ -31,6 +31,7 @@ public final class Compositor {
         var maskKind: GLint = -1
         var maskPlace: (GLfloat, GLfloat, GLfloat, GLfloat) = (.nan, .nan, .nan, .nan)
         var maskGradient: (GLfloat, GLfloat, GLfloat, GLfloat) = (.nan, .nan, .nan, .nan)
+        var shadow: (GLfloat, GLfloat) = (.nan, .nan)
     }
 
     /// A mask that goes on as each quad is drawn (see `directMask`).
@@ -197,6 +198,8 @@ public final class Compositor {
         var gradient: (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 1)
         var texture: GLuint = 0
         var mask: GLuint = 0
+        /// For a box's shadow: the blur's standard deviation and the box's corner radius.
+        var shadow: (CGFloat, CGFloat) = (0, 0)
     }
 
     private func submit(_ quad: Quad, _ mvp: CATransform3D) {
@@ -256,6 +259,13 @@ public final class Compositor {
         if gradient != sent.gradient {
             sent.gradient = gradient
             glUniform4f(p.gradient, gradient.0, gradient.1, gradient.2, gradient.3)
+        }
+        if quad.mode == .shadowBox {
+            let shadow = (GLfloat(quad.shadow.0), GLfloat(quad.shadow.1))
+            if shadow != sent.shadow {
+                sent.shadow = shadow
+                glUniform2f(p.shadow, shadow.0, shadow.1)
+            }
         }
         let maskKind = activeMask?.kind ?? 0
         if maskKind != sent.maskKind {
@@ -669,8 +679,41 @@ public final class Compositor {
 
     // MARK: Shadows
 
+    /// A path that is nothing but a rectangle, or one with its four corners rounded alike
+    /// (as `CGPath(rect:)` and `CGPath(roundedRect:)` make them): the box and the radius.
+    private static func boxShape(of path: CGPath) -> (box: CGRect, corner: CGFloat)? {
+        let e = path.elements
+        if e.count == 5, case let .move(a) = e[0], case let .line(b) = e[1], case let .line(c) = e[2], case let .line(d) = e[3], case .close = e[4] {
+            guard a.y == b.y, b.x == c.x, c.y == d.y, d.x == a.x, a.x != c.x, a.y != c.y else { return nil }
+            return (CGRect(x: min(a.x, c.x), y: min(a.y, c.y), width: abs(c.x - a.x), height: abs(c.y - a.y)), 0)
+        }
+        if e.count == 10, case let .move(start) = e[0], case let .line(side) = e[1], case let .cubic(_, _, turned) = e[2], case .line = e[3], case .cubic = e[4],
+           case .line = e[5], case .cubic = e[6], case .line = e[7], case .cubic = e[8], case .close = e[9]
+        {
+            let box = path.boundingBox
+            let down = start.y - box.minY, across = box.maxX - turned.x
+            guard abs(start.x - box.maxX) < 0.001, abs(side.x - box.maxX) < 0.001, abs(turned.y - box.maxY) < 0.001,
+                  across > 0, abs(across - down) < 0.01, across <= min(box.width, box.height) / 2 + 0.01 else { return nil }
+            return (box, across)
+        }
+        return nil
+    }
+
     private func drawShadowPath(_ layer: CALayer, _ s: LayerState, toClip: CATransform3D, opacity: Float) {
         guard s.shadowOpacity > 0, let path = s.shadowPath, let shadowColor = s.shadowColor, shadowColor.alpha > 0 else { return }
+        // A box's shadow is worked out as it's drawn: nothing to blur, to keep or to send to
+        // the graphics card, whatever size the box is and however it's turned. (Blurred into
+        // a picture each, the screen saver's photos' shadows came to hundreds of megabytes a
+        // turn of the wall.)
+        if let shape = Self.boxShape(of: path) {
+            let sigma = max(0.01, s.shadowRadius)
+            let reach = sigma * 3 + 1
+            let box = shape.box.offsetBy(dx: s.shadowOffset.width, dy: s.shadowOffset.height)
+            let tint = color(shadowColor, alpha: opacity * s.shadowOpacity)
+            submit(Quad(rect: box.insetBy(dx: -reach, dy: -reach), color: tint, mode: .shadowBox,
+                        gradient: (box.minX, box.minY, box.width, box.height), shadow: (sigma, shape.corner)), toClip)
+            return
+        }
         // In whole doublings, so a moving or zooming layer keeps its shadow rather than having
         // a new one blurred on the processor every frame. A soft shadow scales well.
         let rawDensity = max(0.5, min(2, pixelDensity(toClip, at: CGPoint(x: s.bounds.midX, y: s.bounds.midY))))
