@@ -45,17 +45,40 @@ public struct CATransform3D: Equatable, Sendable {
                   m31: v[8], m32: v[9], m33: v[10], m34: v[11], m41: v[12], m42: v[13], m43: v[14], m44: v[15])
     }
 
-    /// `self` applied first, then `other`.
-    func then(_ other: CATransform3D) -> CATransform3D {
-        let a = rows
-        let b = other.rows
-        var out = [[CGFloat]](repeating: [0, 0, 0, 0], count: 4)
-        for i in 0 ..< 4 {
-            for j in 0 ..< 4 {
-                out[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j] + a[i][3] * b[3][j]
-            }
-        }
-        return CATransform3D(rows: out)
+    /// `self` applied first, then `other`. Written out term by term: this runs several times
+    /// for every layer on every frame.
+    func then(_ b: CATransform3D) -> CATransform3D {
+        CATransform3D(
+            m11: m11 * b.m11 + m12 * b.m21 + m13 * b.m31 + m14 * b.m41,
+            m12: m11 * b.m12 + m12 * b.m22 + m13 * b.m32 + m14 * b.m42,
+            m13: m11 * b.m13 + m12 * b.m23 + m13 * b.m33 + m14 * b.m43,
+            m14: m11 * b.m14 + m12 * b.m24 + m13 * b.m34 + m14 * b.m44,
+            m21: m21 * b.m11 + m22 * b.m21 + m23 * b.m31 + m24 * b.m41,
+            m22: m21 * b.m12 + m22 * b.m22 + m23 * b.m32 + m24 * b.m42,
+            m23: m21 * b.m13 + m22 * b.m23 + m23 * b.m33 + m24 * b.m43,
+            m24: m21 * b.m14 + m22 * b.m24 + m23 * b.m34 + m24 * b.m44,
+            m31: m31 * b.m11 + m32 * b.m21 + m33 * b.m31 + m34 * b.m41,
+            m32: m31 * b.m12 + m32 * b.m22 + m33 * b.m32 + m34 * b.m42,
+            m33: m31 * b.m13 + m32 * b.m23 + m33 * b.m33 + m34 * b.m43,
+            m34: m31 * b.m14 + m32 * b.m24 + m33 * b.m34 + m34 * b.m44,
+            m41: m41 * b.m11 + m42 * b.m21 + m43 * b.m31 + m44 * b.m41,
+            m42: m41 * b.m12 + m42 * b.m22 + m43 * b.m32 + m44 * b.m42,
+            m43: m41 * b.m13 + m42 * b.m23 + m43 * b.m33 + m44 * b.m43,
+            m44: m41 * b.m14 + m42 * b.m24 + m43 * b.m34 + m44 * b.m44,
+        )
+    }
+
+    /// The sixteen values in row order, as single-precision floats for OpenGL.
+    func write(to floats: UnsafeMutablePointer<Float>) {
+        floats[0] = Float(m11); floats[1] = Float(m12); floats[2] = Float(m13); floats[3] = Float(m14)
+        floats[4] = Float(m21); floats[5] = Float(m22); floats[6] = Float(m23); floats[7] = Float(m24)
+        floats[8] = Float(m31); floats[9] = Float(m32); floats[10] = Float(m33); floats[11] = Float(m34)
+        floats[12] = Float(m41); floats[13] = Float(m42); floats[14] = Float(m43); floats[15] = Float(m44)
+    }
+
+    var isIdentity: Bool {
+        m11 == 1 && m22 == 1 && m33 == 1 && m44 == 1 && m12 == 0 && m13 == 0 && m14 == 0 && m21 == 0 && m23 == 0 && m24 == 0
+            && m31 == 0 && m32 == 0 && m34 == 0 && m41 == 0 && m42 == 0 && m43 == 0
     }
 
     /// Maps a point, returning homogeneous coordinates.
@@ -77,7 +100,7 @@ public struct CATransform3D: Equatable, Sendable {
 
 public let CATransform3DIdentity = CATransform3D()
 
-public func CATransform3DIsIdentity(_ t: CATransform3D) -> Bool { t == CATransform3DIdentity }
+public func CATransform3DIsIdentity(_ t: CATransform3D) -> Bool { t.isIdentity }
 public func CATransform3DEqualToTransform(_ a: CATransform3D, _ b: CATransform3D) -> Bool { a == b }
 
 public func CATransform3DMakeTranslation(_ tx: CGFloat, _ ty: CGFloat, _ tz: CGFloat) -> CATransform3D {

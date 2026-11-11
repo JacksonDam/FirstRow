@@ -50,10 +50,11 @@ public final class CATransaction: NSObject {
         }
     }
 
+    /// (Opening a transaction changes nothing on screen, so it doesn't ask for a frame: the
+    /// renderer opens one every pass, and each frame would ask for the next for ever.)
     private static func ensureFrame() {
         if stack.isEmpty {
             stack.append(Frame(implicit: true))
-            onChange?()
         }
     }
 
@@ -74,7 +75,6 @@ public final class CATransaction: NSObject {
         stack.removeLast()
         frame.record.committed = true
         frame.record.fireIfDone()
-        onChange?()
     }
 
     /// Commits the implicit transaction; the host calls this once per frame.
@@ -93,7 +93,11 @@ public final class CATransaction: NSObject {
     public static func animationDuration() -> CFTimeInterval { stack.last?.duration ?? 0.25 }
     public static func setAnimationTimingFunction(_ function: CAMediaTimingFunction?) { current.timingFunction = function }
     public static func animationTimingFunction() -> CAMediaTimingFunction? { stack.last?.timingFunction }
-    public static func setCompletionBlock(_ block: (() -> Void)?) { current.record.completion = block }
+    public static func setCompletionBlock(_ block: (() -> Void)?) {
+        current.record.completion = block
+        // It runs after a frame, so there has to be one.
+        if block != nil { onChange?() }
+    }
     public static func completionBlock() -> (() -> Void)? { stack.last?.record.completion }
     public static func setValue(_ value: Any?, forKey key: String) { current.values[key] = value }
     public static func value(forKey key: String) -> Any? { stack.last?.values[key] }

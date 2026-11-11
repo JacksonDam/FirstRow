@@ -93,6 +93,9 @@ open class CAAnimation: NSObject, CAMediaTiming, CAAction, NSCopying {
 
     var effectiveDuration: Double { duration > 0 ? duration : (inheritedDuration ?? 0.25) }
 
+    /// Repeats for ever (or as good as).
+    var neverEnds: Bool { repeatCount.isInfinite || repeatCount > 1e6 || repeatDuration > 1e6 }
+
     /// Applies the animation to `state` at `layerTime` and says whether it has finished.
     func apply(to _: inout LayerState, at _: Double, base _: LayerState) -> Bool { true }
 }
@@ -119,8 +122,19 @@ open class CAPropertyAnimation: CAAnimation {
     /// The value at `progress` (0...1 after timing), or nil when there is nothing to show.
     func value(at _: Double, base _: AnimValue) -> AnimValue? { nil }
 
+    /// The key the animation's path names, looked up once (it's asked for every frame).
+    private var resolvedKey: (keyPath: String, key: AnimatableKey?)?
+
+    var animatableKey: AnimatableKey? {
+        guard let keyPath else { return nil }
+        if let resolvedKey, resolvedKey.keyPath == keyPath { return resolvedKey.key }
+        let key = AnimatableKey(keyPath)
+        resolvedKey = (keyPath, key)
+        return key
+    }
+
     override func apply(to state: inout LayerState, at layerTime: Double, base: LayerState) -> Bool {
-        guard let keyPath, let key = AnimatableKey(keyPath) else { return true }
+        guard let key = animatableKey else { return true }
         let phase = phase(at: layerTime)
         guard phase.active else { return phase.finished }
         var fraction = phase.local / effectiveDuration
@@ -149,11 +163,15 @@ open class CABasicAnimation: CAPropertyAnimation {
         }
     }
 
+    /// The endpoints in the form that's interpolated, converted once for a key path.
+    private var endpoints: (keyPath: String, from: AnimValue?, to: AnimValue?, by: AnimValue?)?
+
     override func value(at progress: Double, base: AnimValue) -> AnimValue? {
-        guard let keyPath, let key = AnimatableKey(keyPath) else { return nil }
-        let from = fromValue.flatMap { key.kind.convert($0) }
-        let to = toValue.flatMap { key.kind.convert($0) }
-        let by = byValue.flatMap { key.kind.convert($0) }
+        guard let keyPath, let key = animatableKey else { return nil }
+        if endpoints?.keyPath != keyPath {
+            endpoints = (keyPath, fromValue.flatMap { key.kind.convert($0) }, toValue.flatMap { key.kind.convert($0) }, byValue.flatMap { key.kind.convert($0) })
+        }
+        let from = endpoints?.from, to = endpoints?.to, by = endpoints?.by
         let start: AnimValue
         let end: AnimValue
         switch (from, to, by) {
@@ -190,27 +208,28 @@ open class CAKeyframeAnimation: CAPropertyAnimation {
         }
     }
 
-    private var convertedCache: (String, [AnimValue])?
+    private var convertedCache: (String, [AnimValue], [Double])?
 
     override func value(at progress: Double, base _: AnimValue) -> AnimValue? {
-        guard let keyPath, let key = AnimatableKey(keyPath), let values, !values.isEmpty else { return nil }
+        guard let keyPath, let key = animatableKey, let values, !values.isEmpty else { return nil }
         let converted: [AnimValue]
+        let times: [Double]
         if let cache = convertedCache, cache.0 == keyPath {
             converted = cache.1
+            times = cache.2
         } else {
             converted = values.compactMap { key.kind.convert($0) }
-            convertedCache = (keyPath, converted)
+            if let keyTimes, keyTimes.count == converted.count {
+                times = keyTimes.map(\.doubleValue)
+            } else if calculationMode == .discrete {
+                times = (0 ..< converted.count).map { Double($0) / Double(max(1, converted.count)) }
+            } else {
+                times = (0 ..< converted.count).map { Double($0) / Double(max(1, converted.count - 1)) }
+            }
+            convertedCache = (keyPath, converted, times)
         }
         guard !converted.isEmpty else { return nil }
         if converted.count == 1 { return converted[0] }
-        let times: [Double]
-        if let keyTimes, keyTimes.count == converted.count {
-            times = keyTimes.map(\.doubleValue)
-        } else if calculationMode == .discrete {
-            times = (0 ..< converted.count).map { Double($0) / Double(converted.count) }
-        } else {
-            times = (0 ..< converted.count).map { Double($0) / Double(converted.count - 1) }
-        }
         if calculationMode == .discrete {
             var index = 0
             for (i, time) in times.enumerated() where progress >= time { index = i }

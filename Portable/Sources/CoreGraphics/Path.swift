@@ -26,7 +26,7 @@ public enum CGPathElementType: Int32, Sendable {
 }
 
 /// One path segment, with its points already in the path's own space.
-public enum PathElement: Equatable, Sendable {
+public enum PathElement: Hashable, Sendable {
     case move(CGPoint)
     case line(CGPoint)
     case quad(CGPoint, CGPoint)
@@ -40,6 +40,20 @@ public enum PathElement: Equatable, Sendable {
         case let .quad(c, p): .quad(c.applying(t), p.applying(t))
         case let .cubic(c1, c2, p): .cubic(c1.applying(t), c2.applying(t), p.applying(t))
         case .close: .close
+        }
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        func add(_ p: CGPoint) {
+            hasher.combine(Double(p.x))
+            hasher.combine(Double(p.y))
+        }
+        switch self {
+        case let .move(p): hasher.combine(0); add(p)
+        case let .line(p): hasher.combine(1); add(p)
+        case let .quad(c, p): hasher.combine(2); add(c); add(p)
+        case let .cubic(c1, c2, p): hasher.combine(3); add(c1); add(c2); add(p)
+        case .close: hasher.combine(4)
         }
     }
 }

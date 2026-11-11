@@ -451,6 +451,20 @@ open class CALayer: NSObject, CAMediaTiming {
 
     var hasAnimations: Bool { !animationList.isEmpty }
 
+    /// Whether the layer may be drawn out of its place among its siblings: a z position, or an
+    /// animation that could give it one.
+    var mayHaveZPosition: Bool {
+        if modelState.zPosition != 0 { return true }
+        guard !animationList.isEmpty else { return false }
+        return animationList.contains { entry in
+            guard let property = entry.animation as? CAPropertyAnimation else { return true }
+            return property.keyPath == "zPosition"
+        }
+    }
+
+    /// The frame the compositor last drew this layer in (it skips hidden and clear ones).
+    var lastDrawnFrame = 0
+
     /// Removes animations that finished by `time`, telling their delegates. The compositor
     /// calls this after each frame.
     func retireAnimations(at time: CFTimeInterval) {
@@ -472,10 +486,13 @@ open class CALayer: NSObject, CAMediaTiming {
         for animation in finished { ended(animation, finished: true) }
     }
 
-    /// True while some animation could still change what is drawn.
-    func isAnimating(at time: CFTimeInterval) -> Bool {
+    /// True while some animation could still change what is drawn. An animation that never
+    /// ends only counts on a layer that is being drawn: one on a hidden layer (a caret blinking
+    /// in a text field that isn't up) would otherwise have every frame drawn for ever.
+    func isAnimating(at time: CFTimeInterval, isDrawn: Bool) -> Bool {
         let local = convertTime(time, from: nil)
         return animationList.contains { entry in
+            if !isDrawn, entry.animation.neverEnds { return false }
             let phase = entry.animation.phase(at: local)
             return !phase.finished || entry.animation.isRemovedOnCompletion
         }
@@ -497,6 +514,9 @@ open class CALayer: NSObject, CAMediaTiming {
     }
 
     public func presentation() -> CALayer? {
+        // With nothing animating it, what's on screen is what the layer is set to: it answers
+        // for itself. (A copy for every question was a quarter of First Row's pass.)
+        if animationList.isEmpty { return self }
         let copy = CALayer(layer: self)
         copy.modelState = presentationState(at: CACurrentMediaTime())
         return copy
@@ -508,18 +528,13 @@ open class CALayer: NSObject, CAMediaTiming {
 
     /// Converts host time (or a time in `layer`'s space) into this layer's local time.
     public func convertTime(_ t: CFTimeInterval, from layer: CALayer?) -> CFTimeInterval {
-        let global = layer.map { $0.globalTime(fromLocal: t) } ?? t
-        var chain: [CALayer] = []
-        var node: CALayer? = self
-        while let current = node {
-            chain.append(current)
-            node = current.superlayer ?? current.maskOwner
-        }
-        var time = global
-        for layer in chain.reversed() {
-            time = (time - layer.beginTime) * Double(layer.speed) + layer.timeOffset
-        }
-        return time
+        localTime(fromGlobal: layer.map { $0.globalTime(fromLocal: t) } ?? t)
+    }
+
+    /// Each layer's clock runs on its superlayer's, from the root down.
+    private func localTime(fromGlobal global: CFTimeInterval) -> CFTimeInterval {
+        let parentTime = (superlayer ?? maskOwner)?.localTime(fromGlobal: global) ?? global
+        return (parentTime - beginTime) * Double(speed) + timeOffset
     }
 
     public func convertTime(_ t: CFTimeInterval, to layer: CALayer?) -> CFTimeInterval {
@@ -667,7 +682,8 @@ open class CALayer: NSObject, CAMediaTiming {
 
     func change(_ key: String, _ old: CGPath?, _ new: CGPath?, animatable _: Bool, apply: (inout LayerState) -> Void) {
         apply(&modelState)
-        if old !== new { markChanged() }
+        // The same shape in a new path object changes nothing on screen.
+        if old !== new, old != new { markChanged() }
         _ = key
     }
 
@@ -756,11 +772,17 @@ open class CALayer: NSObject, CAMediaTiming {
 func layerToSuperTransform(_ s: LayerState) -> CATransform3D {
     let anchorX = s.bounds.minX + s.bounds.width * s.anchorPoint.x
     let anchorY = s.bounds.minY + s.bounds.height * s.anchorPoint.y
-    var t = CATransform3DMakeTranslation(-anchorX, -anchorY, -s.anchorPointZ)
-    if !CATransform3DIsIdentity(s.transform) {
-        t = t.then(s.transform)
+    if s.transform.isIdentity {
+        // Most layers: one move, from the anchor to the position.
+        return CATransform3DMakeTranslation(s.position.x - anchorX, s.position.y - anchorY, s.zPosition - s.anchorPointZ)
     }
+    let t = CATransform3DMakeTranslation(-anchorX, -anchorY, -s.anchorPointZ).then(s.transform)
     return t.then(CATransform3DMakeTranslation(s.position.x, s.position.y, s.zPosition))
+}
+
+/// True when a layer's sublayers sit in its bounds space as they are (no flip, no transform).
+func hasPlainSublayerSpace(_ s: LayerState) -> Bool {
+    !s.isGeometryFlipped && s.sublayerTransform.isIdentity
 }
 
 /// From a layer's sublayer space to its own bounds space: geometry flip, then its

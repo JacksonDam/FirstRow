@@ -51,8 +51,9 @@ public final class PixelStorage: @unchecked Sendable {
         self.height = max(0, height)
         bytesPerRow = self.width * 4
         let count = max(1, bytesPerRow * self.height)
-        bytes = .allocate(capacity: count)
-        bytes.initialize(repeating: 0, count: count)
+        // Memory the system hands over already cleared: clearing it here as well touched
+        // every byte of every bitmap before anything was drawn in it.
+        bytes = calloc(count, 1)!.assumingMemoryBound(to: UInt8.self)
     }
 
     public init(copying source: UnsafePointer<UInt8>, width: Int, height: Int, bytesPerRow sourceStride: Int) {
@@ -60,14 +61,14 @@ public final class PixelStorage: @unchecked Sendable {
         self.height = height
         bytesPerRow = width * 4
         let count = max(1, bytesPerRow * height)
-        bytes = .allocate(capacity: count)
+        bytes = malloc(count)!.assumingMemoryBound(to: UInt8.self)
         for row in 0 ..< height {
             (bytes + row * bytesPerRow).update(from: source + row * sourceStride, count: bytesPerRow)
         }
     }
 
     deinit {
-        bytes.deallocate()
+        free(bytes)
     }
 
     public var byteCount: Int { bytesPerRow * height }

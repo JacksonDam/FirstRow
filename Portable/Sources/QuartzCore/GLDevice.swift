@@ -70,6 +70,9 @@ final class GLDevice {
         let gradient: GLint
         let sampler: GLint
         let maskSampler: GLint
+        let maskKind: GLint
+        let maskPlace: GLint
+        let maskGradient: GLint
     }
 
     struct BlurProgram {
@@ -102,7 +105,12 @@ final class GLDevice {
     let vao: GLuint
     let vbo: GLuint
     private var targetPool: [RenderTarget] = []
-    private var gradientCache: [String: GLuint] = [:]
+    private struct GradientKey: Hashable {
+        let colors: [ColorKey?]
+        let locations: [Double]?
+    }
+
+    private var gradientCache: [GradientKey: GLuint] = [:]
     private(set) var maxTextureSize: Int = 4096
 
     init() throws {
@@ -137,6 +145,9 @@ final class GLDevice {
             gradient: glGetUniformLocation(main, "uGradient"),
             sampler: glGetUniformLocation(main, "uTexture"),
             maskSampler: glGetUniformLocation(main, "uMask"),
+            maskKind: glGetUniformLocation(main, "uMaskKind"),
+            maskPlace: glGetUniformLocation(main, "uMaskPlace"),
+            maskGradient: glGetUniformLocation(main, "uMaskGradient"),
         )
         let blurID = try Self.link(vertex: Shaders.blurVertex, fragment: Shaders.blurFragment)
         blur = BlurProgram(id: blurID, direction: glGetUniformLocation(blurID, "uDirection"), sigma: glGetUniformLocation(blurID, "uSigma"), sampler: glGetUniformLocation(blurID, "uTexture"))
@@ -213,13 +224,14 @@ final class GLDevice {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GLint(GL_CLAMP_TO_EDGE))
         let box = TextureBox(texture: tex, width: source.width, height: source.height)
         RenderStats.textureUploads += 1
+        RenderStats.textureBytes += source.width * source.height * 4
         image.rendererResource = box
         return box
     }
 
     /// A 256-pixel strip of a gradient, premultiplied.
     func gradientTexture(colors: [CGColor], locations: [Double]?) -> GLuint {
-        let key = colors.map { "\($0.rgba)" }.joined(separator: ",") + "|" + (locations?.map { "\($0)" }.joined(separator: ",") ?? "")
+        let key = GradientKey(colors: colors.map { ColorKey($0) }, locations: locations)
         if let cached = gradientCache[key] { return cached }
         let stops: [Double] = locations ?? colors.indices.map { colors.count > 1 ? Double($0) / Double(colors.count - 1) : 0 }
         var pixels = [UInt8](repeating: 0, count: 256 * 4)
@@ -321,6 +333,11 @@ enum Shaders {
     uniform vec4 uGradient;
     uniform sampler2D uTexture;
     uniform sampler2D uMask;
+    // A mask put on as the quad is drawn: 0 none, 1 a picture's alpha, 2 a gradient's alpha.
+    uniform int uMaskKind;
+    // vLocal * xy + zw is the place in the mask's own square (0...1).
+    uniform vec4 uMaskPlace;
+    uniform vec4 uMaskGradient;
     out vec4 fragColor;
 
     float pixels(float distance, float axis) {
@@ -374,6 +391,18 @@ enum Shaders {
         if (uEdges.y > 0.0) coverage *= clamp(pixels(vLocal.y - uBounds.y, vLocal.y) + 0.5, 0.0, 1.0);
         if (uEdges.z > 0.0) coverage *= clamp(pixels(uBounds.x + uBounds.z - vLocal.x, vLocal.x) + 0.5, 0.0, 1.0);
         if (uEdges.w > 0.0) coverage *= clamp(pixels(uBounds.y + uBounds.w - vLocal.y, vLocal.y) + 0.5, 0.0, 1.0);
+        if (uMaskKind != 0) {
+            vec2 m = vLocal * uMaskPlace.xy + uMaskPlace.zw;
+            if (m.x < 0.0 || m.y < 0.0 || m.x > 1.0 || m.y > 1.0) {
+                coverage = 0.0;
+            } else if (uMaskKind == 1) {
+                coverage *= texture(uMask, m).a;
+            } else {
+                vec2 dir = uMaskGradient.zw - uMaskGradient.xy;
+                float t = clamp(dot(m - uMaskGradient.xy, dir) / max(dot(dir, dir), 1e-12), 0.0, 1.0);
+                coverage *= texture(uMask, vec2(t, 0.5)).a;
+            }
+        }
         fragColor = color * coverage;
     }
     """
