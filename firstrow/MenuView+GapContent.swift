@@ -739,6 +739,8 @@ extension MenuView {
                 shouldShowITunesTopCarouselContent(.musicVideos)
         case "photos":
             shouldUsePhotosCarouselSlot || shouldShowPhotosCarouselContent
+        case "youtube":
+            youtubeCarouselPictures != nil
         default:
             false
         }

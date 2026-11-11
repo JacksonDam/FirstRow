@@ -60,6 +60,14 @@ struct YouTubeMenuState {
     var detailsOrder: [String] = []
     var detailsRequestID = 0
     var isStartingPlayback = false
+    /// The menu's carousel: the pictures of each list's first videos (by the list's row),
+    /// the lists being fetched, and the one last shown, which stays while a row that has
+    /// no pictures (yet, or ever: Search) is selected.
+    var carouselPictures: [String: [NSImage?]] = [:]
+    var carouselInFlight: Set<String> = []
+    var carouselShownKey: String?
+    /// A list's first page, fetched for the carousel and kept for when the list is opened.
+    var firstPages: [String: (page: YouTubePage, fetched: Date)] = [:]
 }
 
 /// YouTube: lists of videos, search and what was watched here.
@@ -94,9 +102,73 @@ extension MenuView {
         }
     }
 
+    private static let youtubeMenuLists: [YouTubeList] = [.music, .trailers, .gaming, .news, .sports, .live]
+
+    // MARK: - The menu's carousel
+
+    /// What the carousel beside the YouTube menu is asked to show: the selected row's list,
+    /// or the videos watched here. Nil on a row that leads to no videos, and in the lists.
+    private var youtubeCarouselKey: String? {
+        guard let id = selectedSubmenuItemID(for: "youtube") else { return nil }
+        if id == "youtube_history" {
+            let history = YouTubeStore.shared.history
+            return history.first.map { "history:\($0.id):\(history.count)" }
+        }
+        return Self.youtubeMenuLists.contains { id == "youtube_list_\(Self.youtubeListToken($0))" } ? id : nil
+    }
+
+    /// The pictures the carousel shows now: the selected row's once they're here, until then
+    /// (and on rows with none) the ones it showed last.
+    var youtubeCarouselPictures: (key: String, pictures: [NSImage?])? {
+        guard selectedSubmenuItemID(for: "youtube") != nil else { return nil }
+        if let key = youtubeCarouselKey, let pictures = youtube.carouselPictures[key] { return (key, pictures) }
+        if let key = youtube.carouselShownKey, let pictures = youtube.carouselPictures[key] { return (key, pictures) }
+        return nil
+    }
+
+    private func loadYouTubeCarouselIfNeeded() {
+        guard let key = youtubeCarouselKey else { return }
+        if youtube.carouselPictures[key] != nil {
+            if youtube.carouselShownKey != key { youtube.carouselShownKey = key }
+            return
+        }
+        guard !youtube.carouselInFlight.contains(key) else { return }
+        youtube.carouselInFlight.insert(key)
+        Task { @MainActor in
+            defer { self.youtube.carouselInFlight.remove(key) }
+            // (Once the selection has rested on the row: rows passed over ask for nothing.)
+            try? await firstRowSleep(0.3)
+            guard self.youtubeCarouselKey == key else { return }
+            var videos: [YouTubeVideo] = []
+            if key.hasPrefix("history:") {
+                videos = YouTubeStore.shared.history
+            } else if let list = Self.youtubeMenuLists.first(where: { key == "youtube_list_\(Self.youtubeListToken($0))" }) {
+                guard let page = try? await YouTubeClient.shared.videos(in: list) else { return }
+                self.youtube.firstPages[key] = (page, Date())
+                videos = page.videos
+            }
+            let chosen = Array(videos.prefix(10))
+            var pictures = [NSImage?](repeating: nil, count: chosen.count)
+            await withTaskGroup(of: (Int, NSImage?).self) { group in
+                for (index, video) in chosen.enumerated() {
+                    group.addTask { await (index, self.loadYouTubeThumbnail(for: video)) }
+                }
+                for await (index, picture) in group { pictures[index] = picture }
+            }
+            let found = pictures.filter { $0 != nil }
+            guard found.count >= 3 else { return }
+            // (The pictures of what was watched here change with it: the old ones go.)
+            if key.hasPrefix("history:") {
+                for old in self.youtube.carouselPictures.keys where old.hasPrefix("history:") { self.youtube.carouselPictures[old] = nil }
+            }
+            self.youtube.carouselPictures[key] = found
+            if self.youtubeCarouselKey == key { self.youtube.carouselShownKey = key }
+        }
+    }
+
     /// Handles a row of the YouTube menu. Returns false for a row that isn't one of its own.
     func triggerYouTubeSubmenuItem(_ item: SubmenuItemConfig) -> Bool {
-        let lists: [YouTubeList] = [.music, .trailers, .gaming, .news, .sports, .live]
+        let lists = Self.youtubeMenuLists
         if let list = lists.first(where: { item.id == "youtube_list_\(Self.youtubeListToken($0))" }) {
             playSound(named: "Selection")
             enterYouTube(.list(list))
@@ -321,6 +393,11 @@ extension MenuView {
                 let page: YouTubePage
                 switch state.page {
                 case let .list(list):
+                    // (The carousel beside the menu may have fetched the list's start already.)
+                    if let kept = self.youtube.firstPages["youtube_list_\(Self.youtubeListToken(list))"], Date().timeIntervalSince(kept.fetched) < 600 {
+                        page = kept.page
+                        break
+                    }
                     page = try await YouTubeClient.shared.videos(in: list)
                 case let .search(query):
                     page = try await YouTubeClient.shared.search(query)
@@ -396,6 +473,7 @@ extension MenuView {
     }
 
     func refreshYouTubePreviewForCurrentContext() {
+        loadYouTubeCarouselIfNeeded()
         loadMoreYouTubeVideosIfNeeded()
         loadYouTubeRowPictures()
         guard let video = selectedYouTubeVideo else {
@@ -460,6 +538,13 @@ extension MenuView {
         let key = image == nil ? "none" : (video?.id ?? "none")
         let animation = pass.animation(.easeInOut(duration: 0.22), when: memo.youtubePreviewKey != nil && memo.youtubePreviewKey != key)
         memo.youtubePreviewKey = key
+        // Beside the menu itself: the selected list's videos, in the carousel the other
+        // sections have for their covers and posters.
+        if let carousel = youtubeCarouselPictures,
+           let item = gapCarouselItem(key: "youtube_carousel:\(carousel.key)", artworks: carousel.pictures, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
+        {
+            return [icon(0, animation), item]
+        }
         var items = [icon(image == nil ? 1 : 0, animation)]
         guard let video, let image else { return items }
         let details = youtube.details[video.id]
