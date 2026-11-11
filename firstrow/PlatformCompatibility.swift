@@ -106,11 +106,17 @@ extension Timer {
 }
 
 func firstRowSleep(_ seconds: Double) async throws {
-    if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
-        try await Task.sleep(for: .seconds(seconds))
-    } else {
-        try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-    }
+    #if os(Windows)
+        // Kept by the main loop there: a Task's sleep ends only on one of Windows' 64 clock
+        // ticks a second, so each of these pauses ran up to 16 ms over.
+        try await PortableApplication.sleep(seconds)
+    #else
+        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+            try await Task.sleep(for: .seconds(seconds))
+        } else {
+            try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+        }
+    #endif
 }
 
 #if FIRSTROW_PORTABLE

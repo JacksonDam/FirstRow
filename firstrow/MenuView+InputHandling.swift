@@ -7,6 +7,7 @@ import Foundation
     import UIKit
 #else
     import FirstRowPortable
+    import QuartzCore
 #endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
@@ -352,6 +353,7 @@ extension MenuView {
             activePodcastSeriesID = nil
             podcastEpisodesThirdMenuItems = []
             hasPresentedNoPodcastsErrorInCurrentSession = false
+            releasePhotosCarouselPictures()
             headerText = "First Row"
             isInSubmenu = false
             activeRootItemID = nil
@@ -374,6 +376,9 @@ extension MenuView {
         if activeRootItemID == "music", item.id == "music_now_playing" {
             guard hasActiveMusicPlaybackSession(), !isPodcastAudioNowPlaying else { return }
             clearMusicSongSwitchTransitionState()
+            #if os(macOS)
+                putRecoveredSongBackInItsList()
+            #endif
             isCurrentMusicPlaybackManagedByFirstRow = true
             playSound(named: "Selection")
             presentFullscreenScene(key: musicNowPlayingFullscreenKey)
@@ -884,10 +889,20 @@ extension MenuView {
         let totalHoldDuration = directionalHoldInitialDelay + elapsedInScrollingState
         let interval = minimumHoldRepeatInterval(for: totalHoldDuration)
         // Due from the last step's due time, so draw time and timer slack don't stretch the interval.
-        let now = ProcessInfo.processInfo.systemUptime
+        #if FIRSTROW_PORTABLE
+            let now = CACurrentMediaTime()
+        #else
+            let now = ProcessInfo.processInfo.systemUptime
+        #endif
         let due = max(now, (previousTickDue ?? now) + interval)
         directionalHoldTickWorkItem = Task {
-            try? await firstRowSleep(max(0, due - ProcessInfo.processInfo.systemUptime))
+            #if FIRSTROW_PORTABLE
+                // Timed by the main loop: on Windows a Task's sleep ends up to 16 ms late,
+                // by a different amount each time, and the steps came out uneven.
+                await PortableApplication.wait(until: due)
+            #else
+                try? await firstRowSleep(max(0, due - ProcessInfo.processInfo.systemUptime))
+            #endif
             guard !Task.isCancelled else { return }
             guard activeDirectionalHoldKey == key else { return }
             handleKeyInput(key, isRepeat: true, modifiers: modifiers)

@@ -44,6 +44,37 @@ final class FrameClock: NSObject {
             lastTarget = target
             if onFrame?(elapsed) != true { stop() }
         }
+    #elseif FIRSTROW_PORTABLE
+        // The main loop steps it, once for each frame it draws: asking for a frame each time
+        // keeps the loop turning at the screen's rate (it waits for the screen to show each one).
+        private var observer: Int?
+        private var last: CFTimeInterval = 0
+
+        func run() {
+            guard observer == nil else { return }
+            last = CACurrentMediaTime()
+            observer = FrameObservers.add { [weak self] in self?.tick() }
+            PortableApplication.requestFrame()
+        }
+
+        func stop() {
+            if let observer { FrameObservers.remove(observer) }
+            observer = nil
+        }
+
+        private func tick() {
+            guard observer != nil else { return }
+            let now = CACurrentMediaTime()
+            // (A pass of the loop that follows another at once, with no frame between, is no step.)
+            guard now - last >= 0.0005 else { return }
+            let elapsed = min(1.0 / 30, now - last)
+            last = now
+            if onFrame?(elapsed) == true {
+                PortableApplication.requestFrame()
+            } else {
+                stop()
+            }
+        }
     #else
         private var timer: Timer?
         private var last: CFTimeInterval = 0

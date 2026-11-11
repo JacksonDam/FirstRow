@@ -1,9 +1,32 @@
 import CoreGraphics
 import Foundation
+#if os(Windows)
+    import WinSDK
+#endif
 
-/// Seconds on a monotonic clock, as Core Animation measures time.
+#if os(Windows)
+    /// Seconds for each count of the performance counter (fixed from when Windows starts).
+    private let secondsPerCount: Double = {
+        var frequency = LARGE_INTEGER()
+        QueryPerformanceFrequency(&frequency)
+        return 1 / Double(max(1, frequency.QuadPart))
+    }()
+#endif
+
+/// Seconds on a monotonic clock, as Core Animation measures time: what everything is
+/// animated by.
 public func CACurrentMediaTime() -> CFTimeInterval {
-    ProcessInfo.processInfo.systemUptime
+    #if os(Windows)
+        // Not ProcessInfo's systemUptime: on Windows that is the tick count, which moves on
+        // 64 times a second (every 15.6 ms) whatever the screen's rate, so nothing could move
+        // more often than that and a faster screen drew the same moment two or three frames
+        // running. The performance counter moves in steps of well under a microsecond.
+        var counter = LARGE_INTEGER()
+        QueryPerformanceCounter(&counter)
+        return Double(counter.QuadPart) * secondsPerCount
+    #else
+        return ProcessInfo.processInfo.systemUptime
+    #endif
 }
 
 public struct CAMediaTimingFunctionName: RawRepresentable, Hashable, Sendable {

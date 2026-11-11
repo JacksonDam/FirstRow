@@ -23,7 +23,20 @@ public enum Harness {
     private static var pendingShots: [String] = []
     private static var scriptLines: [String] = []
 
-    static var isBusy: Bool { !scriptLines.isEmpty || !pendingShots.isEmpty || !queue.isEmpty }
+    /// How long the loop may sleep with nothing to draw, in milliseconds up to `limit`: until
+    /// the script's wait is over. Nil when there's a command to run now. (A script in a wait
+    /// used to keep the loop spinning.)
+    static func idleWait(limit: Int32) -> Int32? {
+        guard pendingShots.isEmpty, queue.isEmpty else { return nil }
+        lock.lock()
+        let hasIncoming = !incoming.isEmpty
+        lock.unlock()
+        if hasIncoming { return nil }
+        guard !scriptLines.isEmpty else { return limit }
+        let remaining = resumeAt - CACurrentMediaTime()
+        guard remaining > 0 else { return nil }
+        return max(1, min(limit, Int32(remaining * 1000)))
+    }
 
     static func start() {
         let environment = ProcessInfo.processInfo.environment
