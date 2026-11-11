@@ -22,7 +22,7 @@ final class DecodedDisplayArtworkCache {
     private var lruKeys: [String] = []
     private var totalCost: Int = 0
     private let maxEntries: Int = 240
-    private let maxCostBytes: Int = 220 * 1024 * 1024
+    private let maxCostBytes: Int = 128 * 1024 * 1024
     func image(for key: String) -> NSImage? {
         lock.lock()
         defer { lock.unlock() }
@@ -58,6 +58,32 @@ final class DecodedDisplayArtworkCache {
                 totalCost = max(0, totalCost - removed.cost)
             }
         }
+    }
+}
+
+/// How large a cover needs decoding for this screen. A cover is drawn at most some 600 scene
+/// points across (Now Playing's), which on a 1080p screen is as many pixels: decoded at 900
+/// each took twice the memory it needed, in the store of decoded covers and again on the
+/// graphics card.
+enum DisplayArtworkSize {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var pixels: CGFloat = 900
+
+    /// The longest side to decode a cover at, in pixels.
+    static var maxPixelSize: CGFloat {
+        lock.lock()
+        defer { lock.unlock() }
+        return pixels
+    }
+
+    /// The renderer says how many pixels a scene point covers. Sizes come in a few steps, so
+    /// that resizing a window doesn't have every cover decoded again for each new size.
+    static func noteScale(_ pixelsPerPoint: CGFloat) {
+        let needed = 620 * pixelsPerPoint
+        let size: CGFloat = [512, 640, 768].first { $0 >= needed } ?? 900
+        lock.lock()
+        pixels = size
+        lock.unlock()
     }
 }
 
@@ -142,7 +168,9 @@ func decompressedArtworkCGImage(from image: CGImage) -> CGImage {
     let width = image.width
     let height = image.height
     guard width > 0, height > 0 else { return image }
-    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    // (In the screen's own colours on the Mac, so the cover reaches the screen without being
+    // converted on the main thread: see `ScreenColorSpace`.)
+    let colorSpace = ScreenColorSpace.current ?? CGColorSpaceCreateDeviceRGB()
     let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(.init(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue))
     guard let context = CGContext(
         data: nil,

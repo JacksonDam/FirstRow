@@ -12,7 +12,7 @@ import Foundation
     import MediaPlayer
     import UIKit
 #endif
-#if os(tvOS)
+#if os(iOS) || os(tvOS)
     import MusicKit
 #endif
 #if canImport(iTunesLibrary)
@@ -476,6 +476,9 @@ extension MenuView {
                         #if canImport(iTunesLibrary)
                             self.musicLibraryItemIndexBySongID = snapshot.itemIndices
                         #endif
+                        #if os(macOS)
+                            self.putRecoveredSongBackInItsList()
+                        #endif
                         self.finishStartupMusicLibraryPreload()
                     }
                 } catch {
@@ -620,6 +623,19 @@ extension MenuView {
         thirdMenuMode == .musicCategories && activeMusicCategoryKind == .albums
     }
 
+    var isShowingMusicArtistsList: Bool {
+        thirdMenuMode == .musicCategories && activeMusicCategoryKind == .artists
+    }
+
+    var isShowingMusicPlaylistsList: Bool {
+        thirdMenuMode == .musicCategories && activeMusicCategoryKind == .playlists
+    }
+
+    /// Albums, artists and playlists show a cover beside their rows.
+    var isShowingMusicCategoryCovers: Bool {
+        isShowingMusicAlbumsList || isShowingMusicArtistsList || isShowingMusicPlaylistsList
+    }
+
     func resolveMusicPreviewTargetSong() -> MusicLibrarySongEntry? {
         guard isMusicLibraryContext, isInSubmenu, isInThirdMenu else { return nil }
         if thirdMenuMode == .spotify {
@@ -629,6 +645,14 @@ extension MenuView {
             guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
             let albumSongs = musicCategoryThirdMenuItems[selectedThirdIndex].songs
             return albumSongs.first { $0.artwork != nil || $0.artworkAlbumKey != nil || $0.url != nil } ?? albumSongs.first
+        }
+        if isShowingMusicArtistsList {
+            guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
+            return musicArtistCoverSong(for: musicCategoryThirdMenuItems[selectedThirdIndex])
+        }
+        if isShowingMusicPlaylistsList {
+            guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
+            return musicPlaylistCoverStandIn(for: musicCategoryThirdMenuItems[selectedThirdIndex])
         }
         guard thirdMenuMode == .musicSongs else { return nil }
         guard !musicSongsThirdMenuItems.isEmpty else { return nil }
@@ -640,6 +664,182 @@ extension MenuView {
         }
         return musicSongsThirdMenuItems[songIndex]
     }
+
+    /// An artist's picture is the cover of their first album in the library (by name, as the
+    /// Albums list has them), from its first song that has one. "All" has none.
+    func musicArtistCoverSong(for artist: MusicCategoryEntry) -> MusicLibrarySongEntry? {
+        guard artist.id != "\(MusicCategoryKind.artists.rawValue)::all" else { return nil }
+        return artist.songs
+            .filter { $0.artwork != nil || $0.artworkAlbumKey != nil || $0.url != nil }
+            .min { lhs, rhs in
+                let albums = lhs.album.localizedCaseInsensitiveCompare(rhs.album)
+                if albums != .orderedSame { return albums == .orderedAscending }
+                if lhs.discNumber != rhs.discNumber { return lhs.discNumber < rhs.discNumber }
+                return lhs.trackNumber < rhs.trackNumber
+            }
+    }
+
+    static let musicPlaylistCoverIDPrefix = "playlist-cover|"
+
+    /// A playlist's cover is asked for the way a song's is, through this stand-in for it (as a
+    /// Spotify list's is).
+    func musicPlaylistCoverStandIn(for playlist: MusicCategoryEntry) -> MusicLibrarySongEntry {
+        let id = Self.musicPlaylistCoverIDPrefix + playlist.id
+        return MusicLibrarySongEntry(
+            id: id, title: playlist.title, artist: "", album: "", genre: "", composer: "", durationSeconds: 0,
+            trackNumber: 0, discNumber: 0, artworkAlbumKey: id, url: nil, artwork: nil,
+        )
+    }
+
+    /// A playlist's first songs from different albums (four at most), in its own order: their
+    /// covers make its cover when it has none of its own.
+    nonisolated func musicPlaylistCoverSongs(from songsInOrder: [MusicLibrarySongEntry]) -> [MusicLibrarySongEntry] {
+        var albumsSeen: Set<String> = []
+        var coverSongs: [MusicLibrarySongEntry] = []
+        for song in songsInOrder {
+            guard albumsSeen.insert(song.artworkAlbumKey ?? "\(song.artist)|\(song.album)").inserted else { continue }
+            coverSongs.append(song)
+            if coverSongs.count == 4 { break }
+        }
+        return coverSongs
+    }
+
+    /// A playlist's cover as Apple Music makes one: the covers of its first four albums together,
+    /// or the first alone when there are fewer. Its own cover (one it was given, or the one a
+    /// playlist of Apple's comes with) takes this one's place a moment later, where there is one
+    /// and it can be asked for.
+    func resolveMusicPlaylistCover(standIn: MusicLibrarySongEntry, cacheKey: String) async -> NSImage? {
+        let playlistID = String(standIn.id.dropFirst(Self.musicPlaylistCoverIDPrefix.count))
+        guard let playlist = musicCategoryThirdMenuItems.first(where: { $0.id == playlistID }) else { return nil }
+        var covers: [CGImage] = []
+        for song in playlist.coverSongs {
+            var cover = song.artwork
+            if cover == nil, let songKey = musicArtworkCacheKey(for: song) {
+                cover = await resolveMusicArtworkImage(for: song, cacheKey: songKey)
+            }
+            if let cgImage = LayerImageCache.cgImage(for: cover) {
+                covers.append(cgImage)
+            }
+        }
+        followWithMusicPlaylistOwnCover(for: playlist, standInID: standIn.id, cacheKey: cacheKey)
+        return await Task.detached(priority: .userInitiated) { Self.musicPlaylistMosaic(of: covers) }.value
+    }
+
+    /// Four covers as one, two by two; fewer than four, the first as it is.
+    nonisolated static func musicPlaylistMosaic(of covers: [CGImage]) -> NSImage? {
+        guard let first = covers.first else { return nil }
+        let whole = NSImage(cgImage: first, size: NSSize(width: first.width, height: first.height))
+        guard covers.count >= 4 else { return whole }
+        let side = 800
+        let half = side / 2
+        guard let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            space: ScreenColorSpace.current ?? CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
+        ) else { return whole }
+        context.interpolationQuality = .high
+        for (index, cover) in covers.prefix(4).enumerated() {
+            // The first is at the top left. Each fills its square, cut about its middle.
+            let square = CGRect(x: (index % 2) * half, y: (1 - index / 2) * half, width: half, height: half)
+            let scale = max(CGFloat(half) / CGFloat(max(1, cover.width)), CGFloat(half) / CGFloat(max(1, cover.height)))
+            let size = CGSize(width: CGFloat(cover.width) * scale, height: CGFloat(cover.height) * scale)
+            context.saveGState()
+            context.clip(to: square)
+            context.draw(cover, in: CGRect(x: square.midX - size.width / 2, y: square.midY - size.height / 2, width: size.width, height: size.height))
+            context.restoreGState()
+        }
+        guard let made = context.makeImage() else { return whole }
+        return NSImage(cgImage: made, size: NSSize(width: side, height: side))
+    }
+
+    /// Apple Music's own cover for a playlist, in place of the one made from its albums. Asked
+    /// for once that one is up: it can take a moment, and has to be asked of the Music app (Mac)
+    /// or of Apple Music's library (iPhone and iPad, iOS 16 on).
+    func followWithMusicPlaylistOwnCover(for playlist: MusicCategoryEntry, standInID: String, cacheKey: String) {
+        #if os(macOS) || os(iOS)
+            #if os(macOS)
+                // (Only the Music library's own playlists: the Music app knows them by this.)
+                let prefix = "playlist::mac::"
+                guard playlist.id.hasPrefix(prefix),
+                      let persistentIDHex = Self.musicPersistentIDHexString(forDecimalString: String(playlist.id.dropFirst(prefix.count)))
+                else { return }
+            #else
+                guard playlist.id.hasPrefix("playlist::ios::") else { return }
+                let playlistTitle = playlist.title
+            #endif
+            Task.detached(priority: .utility) {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                var ownCover: NSImage?
+                #if os(macOS)
+                    if let data = await musicAppleScriptExecutor.run({ Self.musicPlaylistArtworkDataFromMusicApp(persistentIDHex: persistentIDHex) }) {
+                        ownCover = cachedDecodedDisplayArtworkImage(from: data, sourceKey: cacheKey + "|own", maxPixelSize: 900)
+                    }
+                #else
+                    if #available(iOS 16.0, *) {
+                        ownCover = await Self.appleMusicPlaylistArtwork(named: playlistTitle)
+                    }
+                #endif
+                guard let ownCover else { return }
+                await MainActor.run {
+                    self.musicPreviewCache[cacheKey] = ownCover
+                    guard self.musicPreviewTargetSongID == standInID else { return }
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        self.musicPreviewImage = ownCover
+                    }
+                }
+            }
+        #endif
+    }
+
+    #if os(macOS)
+        /// A playlist's own cover as the Music app has it (a playlist's artwork can be asked for
+        /// as a track's can): its data, or nil when it has none or the Music app isn't open.
+        nonisolated static func musicPlaylistArtworkDataFromMusicApp(persistentIDHex: String) -> Data? {
+            guard !FirstRowHarness.isActive else { return nil }
+            let source = """
+            tell application "\(musicApplicationName)"
+                if not running then return missing value
+                try
+                    set thePlaylist to first playlist whose persistent ID is "\(persistentIDHex)"
+                    if (count of artworks of thePlaylist) is 0 then return missing value
+                    return raw data of artwork 1 of thePlaylist
+                end try
+                return missing value
+            end tell
+            """
+            guard let script = NSAppleScript(source: source) else { return nil }
+            var errorInfo: NSDictionary?
+            let descriptor = autoreleasepool { script.executeAndReturnError(&errorInfo) }
+            guard errorInfo == nil else { return nil }
+            let data = descriptor.data
+            return data.count > 64 ? data : nil
+        }
+    #endif
+
+    #if os(iOS)
+        /// A playlist's own cover from Apple Music's library (iOS 16 on): nil when it has none,
+        /// and its albums' covers serve.
+        @available(iOS 16.0, *)
+        nonisolated static func appleMusicPlaylistArtwork(named name: String) async -> NSImage? {
+            guard MusicAuthorization.currentStatus == .authorized else { return nil }
+            var request = MusicLibraryRequest<Playlist>()
+            request.limit = 500
+            guard let playlists = try? await request.response().items,
+                  let artwork = playlists.first(where: { $0.name == name })?.artwork,
+                  var address = artwork.url(width: 800, height: 800) else { return nil }
+            // A picture kept on the phone comes as an address only Apple's own views open. It
+            // carries the web address of the same picture, which anything can fetch.
+            if address.scheme?.hasPrefix("http") != true {
+                guard let carried = URLComponents(url: address, resolvingAgainstBaseURL: false)?.queryItems?
+                    .compactMap(\.value).first(where: { $0.hasPrefix("http") }),
+                    let web = URL(string: carried.replacingOccurrences(of: "{w}", with: "800").replacingOccurrences(of: "{h}", with: "800")
+                        .replacingOccurrences(of: "{f}", with: "jpg"))
+                else { return nil }
+                address = web
+            }
+            guard let (data, _) = try? await URLSession.shared.data(from: address) else { return nil }
+            return NSImage(data: data)
+        }
+    #endif
 
     func generateMusicArtworkThumbnail(for url: URL) async -> NSImage? {
         await generateMusicArtworkThumbnailOffMain(for: url)
@@ -752,6 +952,9 @@ extension MenuView {
         for song: MusicLibrarySongEntry,
         cacheKey: String,
     ) async -> NSImage? {
+        if song.id.hasPrefix(Self.musicPlaylistCoverIDPrefix) {
+            return await resolveMusicPlaylistCover(standIn: song, cacheKey: cacheKey)
+        }
         if song.spotify != nil {
             return await loadSpotifyArtwork(for: song, cacheKey: cacheKey)
         }
@@ -765,7 +968,7 @@ extension MenuView {
                 return cachedDecodedDisplayArtworkImage(
                     from: libraryArtworkData,
                     sourceKey: cacheKey,
-                    maxPixelSize: 900,
+                    maxPixelSize: DisplayArtworkSize.maxPixelSize,
                 )
             }
             if let artworkURL = song.url?.standardizedFileURL {
@@ -801,7 +1004,7 @@ extension MenuView {
                     return cachedDecodedDisplayArtworkImage(
                         from: libraryArtworkData,
                         sourceKey: cacheKey,
-                        maxPixelSize: 900,
+                        maxPixelSize: DisplayArtworkSize.maxPixelSize,
                     )
                 }
                 return nil
@@ -922,19 +1125,18 @@ extension MenuView {
         let fadeDuration = isScrolling ? 0.06 : 0.18
         musicPreviewDisplayedSong = selectedSong
         prefetchMusicPreviewArtworkAroundCurrentSelection()
-        if let embeddedArtwork = selectedSong.artwork {
-            withAnimation(.easeInOut(duration: fadeDuration)) {
-                musicPreviewImage = embeddedArtwork
-            }
-            return
-        }
+        // (A cover that came in the song's own file is still as the file holds it. Shown like
+        // that it would be decoded on the main thread as it reached the screen, a missed frame
+        // or several for every song passed; so it's shown from the decoded copy, as any other.)
         guard let cacheKey = musicArtworkCacheKey(for: selectedSong) else {
             withAnimation(.easeInOut(duration: fadeDuration)) {
-                musicPreviewImage = nil
+                musicPreviewImage = selectedSong.artwork
             }
             return
         }
-        if let cached = musicPreviewCache[cacheKey] {
+        // (Another song of the album may have had the same cover decoded already.)
+        if let cached = musicPreviewCache[cacheKey] ?? selectedSong.url.flatMap({ decodedEmbeddedMusicCover(for: $0) }) {
+            musicPreviewCache[cacheKey] = cached
             withAnimation(.easeInOut(duration: fadeDuration)) {
                 musicPreviewImage = cached
             }
@@ -943,10 +1145,11 @@ extension MenuView {
         // Not decoded yet: keep the current cover up rather than flash the placeholder.
         let targetSongID = selectedSong.id
         Task.detached(priority: .userInitiated) {
+            // (Failing that copy, the song's own picture as it is.)
             let resolvedArtwork = await self.resolveMusicArtworkImage(
                 for: selectedSong,
                 cacheKey: cacheKey,
-            )
+            ) ?? selectedSong.artwork
             await MainActor.run {
                 if let resolvedArtwork {
                     // Kept even if the selection has moved on, for when it comes back.
@@ -1299,7 +1502,7 @@ extension MenuView {
             switch source {
             case let .libraryData(data, sourceKey):
                 await Task.detached(priority: .userInitiated) {
-                    cachedDecodedDisplayArtworkImage(from: data, sourceKey: sourceKey, maxPixelSize: 900)
+                    cachedDecodedDisplayArtworkImage(from: data, sourceKey: sourceKey, maxPixelSize: DisplayArtworkSize.maxPixelSize)
                 }.value
             case let .file(url):
                 await Task.detached(priority: .userInitiated) {
@@ -1697,7 +1900,7 @@ extension MenuView {
             return results
         }
 
-        nonisolated func makeMusicLibrarySongEntryFromAudioFile(_ url: URL) async -> MusicLibrarySongEntry? {
+        nonisolated func makeMusicLibrarySongEntryFromAudioFile(_ url: URL, covers: SharedCovers? = nil) async -> MusicLibrarySongEntry? {
             let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
             let commonMetadata: [AVMetadataItem]
             let metadata: [AVMetadataItem]
@@ -1748,7 +1951,7 @@ extension MenuView {
             let resolvedArtist = artist ?? "Unknown Artist"
             let resolvedAlbum = albumName ?? "Unknown Album"
             let durationSeconds = max(0, CMTimeGetSeconds(duration))
-            let artwork = artworkData.flatMap { NSImage(data: $0) }
+            let artwork = artworkData.flatMap { data in covers.map { $0.image(for: data) } ?? NSImage(data: data) }
             return MusicLibrarySongEntry(
                 id: "ext::\(url.standardizedFileURL.path)",
                 title: resolvedTitle,
@@ -1767,9 +1970,10 @@ extension MenuView {
 
         nonisolated func fetchExternalMusicSongEntries() async -> [MusicLibrarySongEntry] {
             var results: [MusicLibrarySongEntry] = []
+            let covers = SharedCovers()
             for root in externalMusicRootURLs() {
                 for url in scanExternalMusicFiles(in: root) {
-                    if let entry = await makeMusicLibrarySongEntryFromAudioFile(url) {
+                    if let entry = await makeMusicLibrarySongEntryFromAudioFile(url, covers: covers) {
                         results.append(entry)
                     }
                 }
@@ -1967,12 +2171,14 @@ extension MenuView {
                 let playlist = collection as? MPMediaPlaylist
                 let title = normalizedMusicLibraryText(playlist?.name, fallback: "Untitled Playlist")
                 let persistentID = playlist.map { "\($0.persistentID)" } ?? title.lowercased()
-                let songs = sortedMusicLibraryEntries(collection.items.compactMap { makeMusicLibrarySongEntry(from: $0, includeArtwork: false) })
+                let songsInOrder = collection.items.compactMap { makeMusicLibrarySongEntry(from: $0, includeArtwork: false) }
+                let songs = sortedMusicLibraryEntries(songsInOrder)
                 guard !songs.isEmpty else { return nil }
                 return MusicCategoryEntry(
                     id: "playlist::ios::\(persistentID)",
                     title: title,
                     songs: songs,
+                    coverSongs: musicPlaylistCoverSongs(from: songsInOrder),
                 )
             }
             return playlists.sorted {
@@ -1989,20 +2195,20 @@ extension MenuView {
                     }
                     let title = normalizedMusicLibraryText(playlist.name, fallback: "Untitled Playlist")
                     let playlistPersistentIDHex = musicPersistentIDHexString(for: playlist.persistentID)
-                    let songs = sortedMusicLibraryEntries(
-                        playlist.items.compactMap { item -> MusicLibrarySongEntry? in
-                            guard musicLibraryMediaKindMatches(item.mediaKind, requested: .songs) else { return nil }
-                            return makeMusicLibrarySongEntry(
-                                from: item,
-                                sourcePlaylistPersistentIDHex: playlistPersistentIDHex,
-                            )
-                        },
-                    )
+                    let songsInOrder = playlist.items.compactMap { item -> MusicLibrarySongEntry? in
+                        guard musicLibraryMediaKindMatches(item.mediaKind, requested: .songs) else { return nil }
+                        return makeMusicLibrarySongEntry(
+                            from: item,
+                            sourcePlaylistPersistentIDHex: playlistPersistentIDHex,
+                        )
+                    }
+                    let songs = sortedMusicLibraryEntries(songsInOrder)
                     guard !songs.isEmpty else { return nil }
                     return MusicCategoryEntry(
                         id: "playlist::mac::\(playlist.persistentID)",
                         title: title,
                         songs: songs,
+                        coverSongs: musicPlaylistCoverSongs(from: songsInOrder),
                     )
                 }
             }) ?? []
@@ -2039,10 +2245,12 @@ extension MenuView {
         nonisolated func iTunesXMLPlaylistEntries() -> [MusicCategoryEntry] {
             guard let contents = ITunesLibraryXML.shared.contents() else { return [] }
             return contents.playlists.map { playlist in
-                MusicCategoryEntry(
+                let songs = playlist.trackIDs.compactMap { contents.tracksByID[$0] }.map(iTunesXMLSongEntry)
+                return MusicCategoryEntry(
                     id: "playlist::xml::\(playlist.persistentID)",
                     title: playlist.name,
-                    songs: playlist.trackIDs.compactMap { contents.tracksByID[$0] }.map(iTunesXMLSongEntry),
+                    songs: songs,
+                    coverSongs: musicPlaylistCoverSongs(from: songs),
                 )
             }
         }
@@ -2151,7 +2359,7 @@ extension MenuView {
             return cachedDecodedDisplayArtworkImage(
                 from: artworkData,
                 sourceKey: sourceKey,
-                maxPixelSize: 900,
+                maxPixelSize: DisplayArtworkSize.maxPixelSize,
             )
         }
 
@@ -2774,6 +2982,42 @@ extension MenuView {
 }
 
 extension MenuView {
+    /// One picture for every song that carries the same cover: an album's songs each have a
+    /// copy of it in their file, and a library kept a copy for each song.
+    final class SharedCovers: @unchecked Sendable {
+        private struct Key: Hashable {
+            let data: Data
+
+            /// The length and a few stretches of it: covers of one size start with the same bytes.
+            func hash(into hasher: inout Hasher) {
+                hasher.combine(data.count)
+                let stretch = 48
+                guard data.count > stretch * 4 else {
+                    hasher.combine(data)
+                    return
+                }
+                for start in [data.count / 4, data.count / 2, data.count * 3 / 4, data.count - stretch] {
+                    hasher.combine(data.subdata(in: data.startIndex + start ..< data.startIndex + start + stretch))
+                }
+            }
+
+            static func == (a: Key, b: Key) -> Bool { a.data == b.data }
+        }
+
+        private let lock = NSLock()
+        private var images: [Key: NSImage?] = [:]
+
+        func image(for data: Data) -> NSImage? {
+            let key = Key(data: data)
+            lock.lock()
+            defer { lock.unlock() }
+            if let known = images[key] { return known }
+            let image = NSImage(data: data)
+            images[key] = image
+            return image
+        }
+    }
+
     struct MusicLibrarySongEntry: Identifiable {
         let id: String
         let title: String
@@ -2878,6 +3122,8 @@ extension MenuView {
         let id: String
         let title: String
         let songs: [MusicLibrarySongEntry]
+        /// A playlist's first songs from different albums, in its own order (`songs` is by name).
+        var coverSongs: [MusicLibrarySongEntry] = []
     }
 
     enum MusicCategoryKind: String {
@@ -2945,13 +3191,58 @@ func musicArtworkCacheKeyForFile(_ url: URL) -> String {
     url.isFileURL ? url.standardizedFileURL.path : url.absoluteString
 }
 
+/// Which picture each song file carries, by a name made from the picture itself. An album's
+/// songs each carry a copy of its cover, and this way they share one decoded copy of it (and
+/// with it one texture, one reflection and one background wash) instead of having one each.
+private final class EmbeddedCoverNames: @unchecked Sendable {
+    static let shared = EmbeddedCoverNames()
+    private let lock = NSLock()
+    private var names: [String: String] = [:]
+
+    func name(forFile file: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return names[file]
+    }
+
+    func set(_ name: String, forFile file: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        if names.count > 50000 { names.removeAll() }
+        names[file] = name
+    }
+
+    /// The picture's length and a 64-bit FNV-1a hash of all of it.
+    static func name(for data: Data) -> String {
+        var hash: UInt64 = 0xCBF2_9CE4_8422_2325
+        data.withUnsafeBytes { bytes in
+            for byte in bytes {
+                hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01B3
+            }
+        }
+        return "embedded-cover|\(data.count)|\(String(hash, radix: 16))"
+    }
+}
+
+/// The decoded copy of the cover a song file carries, if it's been made (for this song or for
+/// another with the same cover). Reads nothing from the disk.
+func decodedEmbeddedMusicCover(for url: URL) -> NSImage? {
+    guard let name = EmbeddedCoverNames.shared.name(forFile: musicArtworkCacheKeyForFile(url)) else { return nil }
+    return cachedDecodedDisplayArtworkImage(sourceKey: name, maxPixelSize: DisplayArtworkSize.maxPixelSize)
+}
+
 /// Artwork embedded in a song file, decoded for display; safe to call off the main thread.
 func generateMusicArtworkThumbnailOffMain(for url: URL) async -> NSImage? {
     let standardizedURL = url.standardizedFileURL
-    let cacheKey = musicArtworkCacheKeyForFile(standardizedURL)
-    if let cached = cachedDecodedDisplayArtworkImage(sourceKey: cacheKey, maxPixelSize: 900) {
+    let file = musicArtworkCacheKeyForFile(standardizedURL)
+    let size = DisplayArtworkSize.maxPixelSize
+    if let name = EmbeddedCoverNames.shared.name(forFile: file),
+       let cached = cachedDecodedDisplayArtworkImage(sourceKey: name, maxPixelSize: size)
+    {
         return cached
     }
     guard let data = await loadEmbeddedArtworkData(from: standardizedURL) else { return nil }
-    return cachedDecodedDisplayArtworkImage(from: data, sourceKey: cacheKey, maxPixelSize: 900)
+    let name = EmbeddedCoverNames.name(for: data)
+    EmbeddedCoverNames.shared.set(name, forFile: file)
+    return cachedDecodedDisplayArtworkImage(from: data, sourceKey: name, maxPixelSize: size)
 }

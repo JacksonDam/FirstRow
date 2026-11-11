@@ -178,7 +178,7 @@ extension MenuView {
     var shouldShowMusicPreviewContent: Bool {
         isMusicLibraryContext &&
             isInThirdMenu &&
-            (thirdMenuMode == .musicSongs || isShowingMusicAlbumsList || isShowingSpotifyCollectionCovers) &&
+            (thirdMenuMode == .musicSongs || isShowingMusicCategoryCovers || isShowingSpotifyCollectionCovers) &&
             musicPreviewTargetSongID != nil
     }
 
@@ -198,7 +198,7 @@ extension MenuView {
 
     var shouldUseMusicSongMetadataPreview: Bool {
         guard shouldShowMusicPreviewContent else { return false }
-        // The Albums list shows just the cover.
+        // The Albums, Artists and Playlists lists show just the cover.
         guard thirdMenuMode == .musicSongs else { return false }
         guard activeMusicLibraryMediaType == .songs else { return false }
         if !isMusicSongsCategoryScoped {
@@ -352,8 +352,9 @@ extension MenuView {
     }
 
     var selectedPhotoAlbumForCarousel: PhotoLibraryAlbumEntry? {
-        if let selectedPhotosDateAlbumID {
-            return photosDateAlbums.first(where: { $0.id == selectedPhotosDateAlbumID })
+        if selectedPhotosDateAlbumID != nil {
+            // (The selected row is the album's place in the list: no need to look for it.)
+            return photosDateAlbums[selectedThirdIndex]
         }
         guard let selectedPhotosSubmenuItemID else { return nil }
         return photoAlbumForSubmenuItemID(selectedPhotosSubmenuItemID)
