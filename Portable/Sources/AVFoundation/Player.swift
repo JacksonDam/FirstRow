@@ -63,10 +63,31 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     private var pendingLoad = false
     private var playing = false
     private var lastTime: Double = 0
+    /// The file has reached its end, and mpv is playing out the last of its sound (or has):
+    /// until that's done mpv answers nothing, for up to half a second, so nothing that waits
+    /// for an answer is asked of it until the player is played, sought or given another file.
+    private var hasReachedEnd = false
     private var timeObservers: [ObjectIdentifier: TimeObserver] = [:]
 
-    public var volume: Float = 1 { didSet { core?.setProperty("volume", Double(volume) * 100) } }
-    public var isMuted = false { didSet { core?.setFlag("mute", isMuted) } }
+    public var volume: Float = 1 {
+        didSet {
+            if hasReachedEnd {
+                core?.setPropertyWithoutWaiting("volume", Double(volume) * 100)
+            } else {
+                core?.setProperty("volume", Double(volume) * 100)
+            }
+        }
+    }
+
+    public var isMuted = false {
+        didSet {
+            if hasReachedEnd {
+                core?.setFlagWithoutWaiting("mute", isMuted)
+            } else {
+                core?.setFlag("mute", isMuted)
+            }
+        }
+    }
 
     public var rate: Float {
         get { playing ? 1 : 0 }
@@ -120,7 +141,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     /// Every player can show video, so a layer attached after creation still gets frames.
     private func ensureCore() -> MPVCore? {
         if let core { return core }
-        guard let made = MPVCore(video: true) else { return nil }
+        guard let made = MPVCore.forPlayer() else { return nil }
         made.setProperty("volume", Double(volume) * 100)
         made.setFlag("mute", isMuted)
         made.setFlag("pause", !playing)
@@ -156,6 +177,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         guard let core = ensureCore() else { return }
         MPVCore.debug("loadfile \(item.asset.url.lastPathComponent) playing \(playing) render \(core.renderContext != nil)")
         pendingLoad = false
+        hasReachedEnd = false
         core.setFlag("pause", !playing)
         let url = item.asset.url
         var options: [String] = []
@@ -178,10 +200,17 @@ open class AVPlayer: NSObject, @unchecked Sendable {
                   data.format == MPV_FORMAT_FLAG, let flag = data.data?.assumingMemoryBound(to: Int32.self).pointee, flag != 0
             else { return }
             playing = false
-            core?.setFlag("pause", true)
-            if let item = currentItem {
-                NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: item)
+            hasReachedEnd = true
+            // mpv is playing out the last of the sound, and answers nothing until it has (up
+            // to half a second, which the main thread used to spend waiting for this pause).
+            // So the pause isn't waited for, and its answer, which comes when the sound has
+            // been heard out, is what says the file has played to its end.
+            if core?.setFlagWithoutWaiting("pause", true, reply: Self.endReply) != true {
+                tellOfEnd()
             }
+        case MPV_EVENT_SET_PROPERTY_REPLY:
+            guard event.pointee.reply_userdata == Self.endReply, hasReachedEnd else { return }
+            tellOfEnd()
         case MPV_EVENT_END_FILE:
             if let data = event.pointee.data?.assumingMemoryBound(to: mpv_event_end_file.self).pointee, data.reason == MPV_END_FILE_REASON_ERROR {
                 currentItem?.status = .failed
@@ -194,9 +223,19 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Marks mpv's answer to the pause sent at a file's end.
+    private static let endReply: UInt64 = 0x656E64
+
+    private func tellOfEnd() {
+        if let item = currentItem {
+            NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: item)
+        }
+    }
+
     public func play() {
         MPVCore.debug("play()")
         playing = true
+        hasReachedEnd = false
         let core = ensureCore()
         if playbackSpeed != 1 { core?.setProperty("speed", playbackSpeed) }
         if normalizesLoudness { core?.setProperty("af", "lavfi=[loudnorm=I=-16:TP=-1.5:LRA=11]") }
@@ -238,6 +277,8 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     public func pause() {
         MPVCore.debug("pause()")
         playing = false
+        // (At its file's end it has stopped by itself, and isn't to be waited for.)
+        guard !hasReachedEnd else { return }
         core?.setFlag("pause", true)
         lastTime = currentTime().seconds.isFinite ? currentTime().seconds : lastTime
         fireObservers()
@@ -248,7 +289,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     }
 
     public func currentTime() -> CMTime {
-        if let position = core?.double("time-pos"), position.isFinite {
+        if !hasReachedEnd, let position = core?.double("time-pos"), position.isFinite {
             lastTime = position
         }
         return CMTime(seconds: lastTime, preferredTimescale: 600)
@@ -269,6 +310,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     public func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter _: CMTime, completionHandler: @escaping (Bool) -> Void) {
         let seconds = max(0, time.seconds.isFinite ? time.seconds : 0)
         lastTime = seconds
+        hasReachedEnd = false
         let exact = toleranceBefore == .zero
         if !pendingLoad {
             core?.command(["seek", String(seconds), "absolute", exact ? "exact" : "keyframes"])
@@ -336,6 +378,8 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     /// Where mpv's renderer finds OpenGL functions; set by the host.
     public static func setOpenGLLoader(_ loader: @escaping (String) -> UnsafeMutableRawPointer?) {
         MPVCore.procAddress = loader
+        // (First Row is starting: the first player's core is made ahead from here.)
+        MPVCore.prepareSpare()
     }
 }
 

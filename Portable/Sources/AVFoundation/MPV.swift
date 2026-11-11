@@ -3,12 +3,77 @@ import CoreGraphics
 import CPortable
 import Foundation
 
-/// One libmpv instance. All calls happen on the main thread; events are pumped once a frame.
+/// One libmpv instance. A player's calls happen on the main thread; events are pumped once a frame.
 final class MPVCore {
     let handle: OpaquePointer
     var onEvent: ((UnsafeMutablePointer<mpv_event>) -> Void)?
     private(set) var renderContext: OpaquePointer?
+    /// The players' cores, whose events are delivered each frame (main thread only).
     nonisolated(unsafe) static var live: [ObjectIdentifier: MPVCore] = [:]
+    private var isRegistered = false
+
+    /// Whether mpv has said it has events waiting. mpv says so on a thread of its own, and
+    /// may go on saying so while the core is being closed down, so this is kept apart from
+    /// the core and handed to mpv with a reference of its own.
+    private final class Wakeup: @unchecked Sendable {
+        private let lock = NSLock()
+        private var isSet = true
+
+        func set() {
+            lock.lock()
+            isSet = true
+            lock.unlock()
+        }
+
+        /// Whether it was set; it's cleared.
+        func take() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            let was = isSet
+            isSet = false
+            return was
+        }
+    }
+
+    private let wakeup = Wakeup()
+    private var wakeupReference: Unmanaged<Wakeup>?
+
+    // MARK: A core made ahead
+
+    private static let spareLock = NSLock()
+    nonisolated(unsafe) private static var spare: MPVCore?
+    nonisolated(unsafe) private static var isMakingSpare = false
+
+    /// A core for a player: the one made ahead if it's ready (another is started for next
+    /// time), or a new one. Making a core takes milliseconds (mpv starts its threads and
+    /// sets itself up), and one is wanted the moment a song or a movie starts, which is the
+    /// moment its screen starts to come in.
+    static func forPlayer() -> MPVCore? {
+        spareLock.lock()
+        let ready = spare
+        spare = nil
+        spareLock.unlock()
+        let core = ready ?? MPVCore(video: true)
+        core?.register()
+        prepareSpare()
+        return core
+    }
+
+    /// Makes the next player's core now, off the main thread.
+    static func prepareSpare() {
+        spareLock.lock()
+        let needed = spare == nil && !isMakingSpare
+        if needed { isMakingSpare = true }
+        spareLock.unlock()
+        guard needed else { return }
+        DispatchQueue.global(qos: .utility).async {
+            let made = MPVCore(video: true)
+            spareLock.lock()
+            spare = made
+            isMakingSpare = false
+            spareLock.unlock()
+        }
+    }
 
     /// Runs mpv with no audio output, for tests and headless runs.
     static var silent: Bool { ProcessInfo.processInfo.environment["FIRSTROW_NO_AUDIO"] == "1" }
@@ -40,8 +105,22 @@ final class MPVCore {
         }
         observe("eof-reached", MPV_FORMAT_FLAG, id: 1)
         if Self.debugEnabled { mpv_request_log_messages(handle, "v") }
-        Self.live[ObjectIdentifier(self)] = self
+        // mpv says when it has events, so that it's asked for them only then: asking takes
+        // a lock inside mpv and a wait on it, which every pass of the main loop was paying
+        // for every player.
+        let reference = Unmanaged.passRetained(wakeup)
+        wakeupReference = reference
+        mpv_set_wakeup_callback(handle, { context in
+            guard let context else { return }
+            Unmanaged<Wakeup>.fromOpaque(context).takeUnretainedValue().set()
+        }, reference.toOpaque())
         Self.debug("core created (video \(video))")
+    }
+
+    /// Takes its place among the players' cores (on the main thread).
+    func register() {
+        isRegistered = true
+        Self.live[ObjectIdentifier(self)] = self
     }
 
     static let debugEnabled = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_MPV"] == "1"
@@ -52,14 +131,39 @@ final class MPVCore {
         FileHandle.standardError.write(Data("[mpv] \(stamp) \(message())\n".utf8))
     }
 
+    /// Whether `close` has handed mpv over to be shut down.
+    private var isShutDown = false
+
     deinit {
+        guard !isShutDown else { return }
         if let renderContext { mpv_render_context_free(renderContext) }
         mpv_terminate_destroy(handle)
+        // (mpv is gone, and with it the last thing that could call on this.)
+        wakeupReference?.release()
     }
 
+    /// The player is done with it (on the main thread). mpv is shut down on another thread:
+    /// that waits for mpv's own threads to finish, and at a song's end mpv is still playing
+    /// out the sound it holds, for up to half a second.
     func close() {
         Self.debug("core closed")
-        Self.live.removeValue(forKey: ObjectIdentifier(self))
+        if isRegistered {
+            isRegistered = false
+            Self.live.removeValue(forKey: ObjectIdentifier(self))
+        }
+        guard !isShutDown else { return }
+        isShutDown = true
+        // (The renderer goes here, where OpenGL is.)
+        if let renderContext { mpv_render_context_free(renderContext) }
+        renderContext = nil
+        let handle = handle
+        let reference = wakeupReference
+        wakeupReference = nil
+        DispatchQueue.global(qos: .utility).async {
+            mpv_terminate_destroy(handle)
+            // (mpv is gone, and with it the last thing that could call on this.)
+            reference?.release()
+        }
     }
 
     @discardableResult
@@ -79,6 +183,20 @@ final class MPVCore {
     func setFlag(_ name: String, _ value: Bool) {
         var v: Int32 = value ? 1 : 0
         mpv_set_property(handle, name, MPV_FORMAT_FLAG, &v)
+    }
+
+    /// Sets a flag without waiting for mpv to have done it: for when mpv may be busy (at a
+    /// file's end it plays out the sound it holds before it answers anything).
+    /// (mpv's answer comes later as an event carrying `reply`. False if it couldn't be sent.)
+    @discardableResult
+    func setFlagWithoutWaiting(_ name: String, _ value: Bool, reply: UInt64 = 0) -> Bool {
+        var v: Int32 = value ? 1 : 0
+        return mpv_set_property_async(handle, reply, name, MPV_FORMAT_FLAG, &v) >= 0
+    }
+
+    func setPropertyWithoutWaiting(_ name: String, _ value: Double) {
+        var v = value
+        mpv_set_property_async(handle, 0, name, MPV_FORMAT_DOUBLE, &v)
     }
 
     func double(_ name: String) -> Double? {
@@ -119,6 +237,8 @@ final class MPVCore {
 
     /// Delivers queued events to `onEvent`.
     func pump() {
+        // Nothing new since they were last collected.
+        guard wakeup.take() else { return }
         while true {
             guard let event = mpv_wait_event(handle, 0) else { return }
             if event.pointee.event_id == MPV_EVENT_NONE { return }
