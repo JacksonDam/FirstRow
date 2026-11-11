@@ -1596,7 +1596,8 @@ extension MenuView {
             title: episode.title,
             artist: episode.artist,
             album: episode.seriesTitle,
-            artwork: episode.artwork ?? podcastFallbackImage,
+            // (Its own picture, else its show's, as its menus have it.)
+            artwork: episode.artwork ?? podcastSeriesItems.first(where: { $0.id == episode.seriesID })?.artwork ?? podcastFallbackImage,
             playbackID: episode.id,
             trackIndex: trackIndex,
             trackCount: trackCount,

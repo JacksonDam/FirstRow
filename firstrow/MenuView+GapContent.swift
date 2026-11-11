@@ -643,8 +643,10 @@ extension MenuView {
             return items
 
         case "podcasts":
-            let series = selectedPodcastSeriesForPreview
             let episode = selectedPodcastEpisodeForPreview
+            // (In a show's list of episodes, the show is the episode's: its picture stands in
+            // for an episode that has none of its own.)
+            let series = selectedPodcastSeriesForPreview ?? episode.flatMap { shown in podcastSeriesItems.first(where: { $0.id == shown.seriesID }) }
             let seriesArtwork = series?.artwork ?? podcastFallbackImage
             let seriesImage = seriesArtwork ?? image
             let episodeImage = episode?.artwork ?? seriesArtwork ?? image

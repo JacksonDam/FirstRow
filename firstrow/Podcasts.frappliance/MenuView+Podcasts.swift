@@ -378,6 +378,9 @@ extension MenuView {
                         self.podcastsHasLoadedAtLeastOnce = true
                         self.podcastsLoadError = nil
                         self.hasPresentedNoPodcastsErrorInCurrentSession = false
+                        #if os(macOS)
+                            self.findMissingPodcastArtwork()
+                        #endif
                         guard !self.isInSubmenu, !self.isEnteringSubmenu else { return }
                         if series.isEmpty {
                             self.presentNoPodcastsFeatureErrorScreen()
@@ -431,6 +434,9 @@ extension MenuView {
                         self.podcastSeriesItems = series
                         self.podcastsHasLoadedAtLeastOnce = true
                         self.podcastsLoadError = nil
+                        #if os(macOS)
+                            self.findMissingPodcastArtwork()
+                        #endif
                         if self.isInThirdMenu, self.thirdMenuMode == .podcastsEpisodes {
                             self.syncPodcastEpisodesForActiveSeries()
                         } else {
@@ -1298,6 +1304,35 @@ extension MenuView {
             return URLSession(configuration: configuration)
         }()
 
+        /// Shows' pictures found in the directory, by the show's id in the menus, for as long
+        /// as First Row is open; and the shows already asked about, found or not.
+        @MainActor static var artworkFound: [String: NSImage] = [:]
+        @MainActor static var artworkAsked: Set<String> = []
+
+        /// For shows' pictures: what the directory answers and the pictures themselves are
+        /// kept on disk, since every show without a picture is asked about each time First
+        /// Row opens Podcasts, and neither changes from day to day.
+        private static let artworkSession: URLSession = {
+            let configuration = URLSessionConfiguration.default
+            configuration.timeoutIntervalForRequest = 8
+            configuration.timeoutIntervalForResource = 20
+            configuration.requestCachePolicy = .returnCacheDataElseLoad
+            if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+                let folder = caches.appendingPathComponent("First Row", isDirectory: true).appendingPathComponent("Podcast Artwork", isDirectory: true)
+                configuration.urlCache = URLCache(memoryCapacity: 1 << 20, diskCapacity: 64 << 20, directory: folder)
+            }
+            return URLSession(configuration: configuration)
+        }()
+
+        /// The show's picture from the directory, decoded for the screen; nil when the show
+        /// isn't there, or the directory can't be reached.
+        static func findArtwork(seriesTitle: String, artist: String) async -> NSImage? {
+            guard let url = await lookUpShows(title: seriesTitle, artist: artist, wantsVideo: false, using: artworkSession).first?.artwork,
+                  let (data, _) = try? await artworkSession.data(from: url)
+            else { return nil }
+            return cachedDecodedDisplayArtworkImage(from: data, sourceKey: url.absoluteString, maxPixelSize: DisplayArtworkSize.maxPixelSize)
+        }
+
         /// Whether First Row may open the file itself.
         static func canRead(_ url: URL) -> Bool {
             guard url.isFileURL else { return true }
@@ -1342,7 +1377,7 @@ extension MenuView {
         /// The show in Apple's podcast directory (its feed and artwork), best match first: the
         /// same name and maker, the same name, then the maker's shows with the name in theirs
         /// (a show's video version, say), video versions first when that's what's wanted.
-        private static func lookUpShows(title: String, artist: String, wantsVideo: Bool) async -> [Show] {
+        private static func lookUpShows(title: String, artist: String, wantsVideo: Bool, using session: URLSession = session) async -> [Show] {
             var components = URLComponents(string: "https://itunes.apple.com/search")
             components?.queryItems = [
                 URLQueryItem(name: "media", value: "podcast"),
@@ -1484,6 +1519,45 @@ extension MenuView {
     }
 
     extension MenuView {
+        /// Finds a picture for each show that came without one, in Apple's podcast directory:
+        /// the show being pointed at first, then the rest, one at a time. (Without Full Disk
+        /// Access First Row can't read the Podcasts app's own pictures, and these shows had
+        /// none until one of their episodes had been played.)
+        func findMissingPodcastArtwork() {
+            for entry in podcastSeriesItems where entry.artwork == nil {
+                if let known = PodcastFeedStreams.artworkFound[entry.id] { showPodcastArtwork(known, forSeriesID: entry.id) }
+            }
+            var missing = podcastSeriesItems.filter { $0.artwork == nil && !PodcastFeedStreams.artworkAsked.contains($0.id) }
+            guard !missing.isEmpty else { return }
+            if let pointedAt = selectedPodcastSeriesForPreview?.id, let index = missing.firstIndex(where: { $0.id == pointedAt }) {
+                missing.insert(missing.remove(at: index), at: 0)
+            }
+            for entry in missing { PodcastFeedStreams.artworkAsked.insert(entry.id) }
+            let wanted = missing.map { (id: $0.id, title: $0.title, artist: $0.artist) }
+            Task.detached(priority: .utility) {
+                for (index, show) in wanted.enumerated() {
+                    // The directory answers some twenty questions a minute: a long list of
+                    // shows is asked about no faster than that.
+                    if index >= 15 { try? await Task.sleep(nanoseconds: 3_200_000_000) }
+                    guard let picture = await PodcastFeedStreams.findArtwork(seriesTitle: show.title, artist: show.artist) else { continue }
+                    await MainActor.run {
+                        PodcastFeedStreams.artworkFound[show.id] = picture
+                        self.showPodcastArtwork(picture, forSeriesID: show.id)
+                    }
+                }
+            }
+        }
+
+        /// Gives a show that has no picture this one, in its menus.
+        func showPodcastArtwork(_ picture: NSImage, forSeriesID id: String) {
+            guard let index = podcastSeriesItems.firstIndex(where: { $0.id == id }), podcastSeriesItems[index].artwork == nil else { return }
+            let entry = podcastSeriesItems[index]
+            podcastSeriesItems[index] = PodcastSeriesEntry(
+                id: entry.id, title: entry.title, artist: entry.artist, description: entry.description,
+                artwork: picture, episodes: entry.episodes,
+            )
+        }
+
         /// Plays an episode whose download First Row can't open from the podcast's feed, once
         /// it's found (and its show's artwork with it), video in the movie player; says so if it
         /// can't be found.
@@ -1524,16 +1598,8 @@ extension MenuView {
                         return
                     }
                     PodcastFeedStreams.found[episode.id] = found
-                    // The show's picture, for its menus too, where the Podcasts app's own couldn't be read.
-                    if let artwork = found.artwork, let index = self.podcastSeriesItems.firstIndex(where: { $0.id == episode.seriesID }),
-                       self.podcastSeriesItems[index].artwork == nil
-                    {
-                        let entry = self.podcastSeriesItems[index]
-                        self.podcastSeriesItems[index] = PodcastSeriesEntry(
-                            id: entry.id, title: entry.title, artist: entry.artist, description: entry.description,
-                            artwork: artwork, episodes: entry.episodes,
-                        )
-                    }
+                    // The show's picture, for its menus too, if the directory hadn't given one yet.
+                    if let artwork = found.artwork { self.showPodcastArtwork(artwork, forSeriesID: episode.seriesID) }
                     play(found)
                 }
             }
