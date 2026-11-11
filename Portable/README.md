@@ -28,6 +28,8 @@ dist/linux/FirstRow/first-row
 
 The Swift runtime is linked in, so `dist/linux/FirstRow` only needs SDL 3 and libmpv on the machine it runs on.
 
+The window brings its own icon where the desktop lets a window do that (X11, and Wayland desktops with the `xdg-toplevel-icon` protocol, such as KDE Plasma). GNOME on Wayland takes a window's icon from the app's desktop entry and nowhere else: `dist/linux/FirstRow/install.sh` adds one for this user (which also puts First Row in the applications menu), and `install.sh remove` takes it out again.
+
 ### Windows
 
 Swift 6.4 for Windows and Visual Studio's C++ build tools. From a Developer PowerShell:
@@ -37,7 +39,7 @@ Portable\scripts\build-windows.ps1            # or -Arch arm64
 & "dist\windows\FirstRow\First Row.exe"
 ```
 
-The script downloads SDL 3 and libmpv the first time and copies their DLLs and the Swift runtime next to the app. The Arm libmpv build has no OpenGL renderer, so on Windows on Arm video frames are converted on the processor and uploaded, which costs more processor time with large videos.
+The script downloads SDL 3 and libmpv the first time and copies their DLLs and the Swift runtime next to the app. It also makes the program's icon from the app icon's pictures (`firstrow/Assets.xcassets/AppIcon.appiconset`) and links it into `First Row.exe` with the app's name and version, so Explorer, the task bar and Alt+Tab show it. The Arm libmpv build has no OpenGL renderer, so on Windows on Arm video frames are converted on the processor and uploaded, which costs more processor time with large videos.
 
 First Row needs OpenGL 3.3, which every current graphics driver provides. A machine or virtual machine without one can use Mesa's software renderer instead: put `opengl32.dll`, `libgallium_wgl.dll` and the DLLs they load (MSYS2's `mingw-w64-clang-x86_64-mesa` or `mingw-w64-clang-aarch64-mesa` package) next to `First Row.exe`, and set `GALLIUM_DRIVER=llvmpipe` (`setx GALLIUM_DRIVER llvmpipe`, then open First Row again): left to choose for itself, Mesa can pick a renderer that quits First Row at startup. In a virtual machine whose graphics driver supports Direct3D 12 (UTM's guest tools, for example), `GALLIUM_DRIVER=d3d12` with `dxil.dll` from the Windows SDK next to `First Row.exe` draws on the GPU instead.
 

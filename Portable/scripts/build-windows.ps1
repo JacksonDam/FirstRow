@@ -52,6 +52,116 @@ $sdlInclude = Join-Path $sdl "include"
 $sdlLib = Join-Path $sdl "lib\$Arch"
 $mpvInclude = Join-Path $mpv "include"
 
+# The program's icon and its name and version, as a resource the linker puts into
+# First Row.exe: Explorer, the task bar, Alt+Tab and the window all take the icon from there.
+# The icon is put together from the app icon's own pictures: the sizes it has as they are,
+# and the sizes in between that Windows asks for (20, 24, 40 and 48 pixels) scaled down
+# from the next larger one.
+$resources = Join-Path $root ".build\windows-resources"
+New-Item -ItemType Directory -Force -Path $resources | Out-Null
+$iconSet = Join-Path $root "firstrow\Assets.xcassets\AppIcon.appiconset"
+Add-Type -AssemblyName System.Drawing
+function Get-IconPicture([int] $Size) {
+    $exact = @{ 16 = "icon-mac-16x16.png"; 32 = "icon-mac-32x32.png"; 64 = "icon-mac-32x32@2x.png"; 128 = "icon-mac-128x128.png"; 256 = "icon-mac-256x256.png" }
+    if ($exact.ContainsKey($Size)) { return [System.Drawing.Bitmap]::new((Join-Path $iconSet $exact[$Size])) }
+    $larger = if ($Size -le 32) { "icon-mac-128x128.png" } else { "icon-mac-256x256.png" }
+    $source = [System.Drawing.Bitmap]::new((Join-Path $iconSet $larger))
+    $scaled = [System.Drawing.Bitmap]::new($Size, $Size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $graphics = [System.Drawing.Graphics]::FromImage($scaled)
+    $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+    $graphics.DrawImage($source, [System.Drawing.Rectangle]::new(0, 0, $Size, $Size))
+    $graphics.Dispose(); $source.Dispose()
+    return $scaled
+}
+# One picture as an icon file holds it: the 256 pixel one as a PNG, the others as bitmaps
+# (blue, green, red, alpha, bottom row first) followed by an unused one-bit mask.
+function Get-IconEntry([int] $Size) {
+    $picture = Get-IconPicture $Size
+    $stream = [System.IO.MemoryStream]::new()
+    if ($Size -ge 256) {
+        $picture.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
+    } else {
+        $writer = [System.IO.BinaryWriter]::new($stream)
+        $maskRow = [int]([math]::Ceiling($Size / 32.0)) * 4
+        $writer.Write([uint32]40); $writer.Write([int32]$Size); $writer.Write([int32]($Size * 2))
+        $writer.Write([uint16]1); $writer.Write([uint16]32); $writer.Write([uint32]0)
+        $writer.Write([uint32]($Size * $Size * 4 + $maskRow * $Size))
+        $writer.Write([int32]0); $writer.Write([int32]0); $writer.Write([uint32]0); $writer.Write([uint32]0)
+        $area = [System.Drawing.Rectangle]::new(0, 0, $Size, $Size)
+        $data = $picture.LockBits($area, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        $row = [byte[]]::new($Size * 4)
+        for ($y = $Size - 1; $y -ge 0; $y--) {
+            [System.Runtime.InteropServices.Marshal]::Copy([IntPtr]::Add($data.Scan0, $y * $data.Stride), $row, 0, $row.Length)
+            $writer.Write($row)
+        }
+        $picture.UnlockBits($data)
+        $writer.Write([byte[]]::new($maskRow * $Size))
+        $writer.Flush()
+    }
+    $picture.Dispose()
+    return , $stream.ToArray()
+}
+$iconSizes = 16, 20, 24, 32, 40, 48, 64, 128, 256
+$iconEntries = $iconSizes | ForEach-Object { , (Get-IconEntry $_) }
+$iconPath = Join-Path $resources "FirstRow.ico"
+$iconFile = [System.IO.File]::Create($iconPath)
+$iconWriter = [System.IO.BinaryWriter]::new($iconFile)
+$iconWriter.Write([uint16]0); $iconWriter.Write([uint16]1); $iconWriter.Write([uint16]$iconSizes.Count)
+$offset = 6 + 16 * $iconSizes.Count
+for ($index = 0; $index -lt $iconSizes.Count; $index++) {
+    $side = if ($iconSizes[$index] -ge 256) { 0 } else { $iconSizes[$index] }
+    $iconWriter.Write([byte]$side); $iconWriter.Write([byte]$side); $iconWriter.Write([byte]0); $iconWriter.Write([byte]0)
+    $iconWriter.Write([uint16]1); $iconWriter.Write([uint16]32)
+    $iconWriter.Write([uint32]$iconEntries[$index].Length); $iconWriter.Write([uint32]$offset)
+    $offset += $iconEntries[$index].Length
+}
+foreach ($entry in $iconEntries) { $iconWriter.Write([byte[]]$entry) }
+$iconWriter.Dispose(); $iconFile.Dispose()
+
+# The version Windows shows in the file's properties is the Mac app's.
+$versionMatch = Select-String -Path (Join-Path $root "First Row.xcodeproj\project.pbxproj") -Pattern "MARKETING_VERSION = ([0-9.]+);" | Select-Object -First 1
+$version = if ($versionMatch) { $versionMatch.Matches[0].Groups[1].Value } else { "0.0.0" }
+$versionParts = @($version.Split(".") | ForEach-Object { [int]$_ }) + 0, 0, 0, 0 | Select-Object -First 4
+$versionCommas = $versionParts -join ","
+Set-Content (Join-Path $resources "FirstRow.rc") -Encoding ASCII @"
+1 ICON "FirstRow.ico"
+1 VERSIONINFO
+FILEVERSION $versionCommas
+PRODUCTVERSION $versionCommas
+FILEOS 0x40004L
+FILETYPE 0x1L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "First Row"
+            VALUE "ProductName", "First Row"
+            VALUE "FileVersion", "$version"
+            VALUE "ProductVersion", "$version"
+            VALUE "InternalName", "FirstRow"
+            VALUE "OriginalFilename", "First Row.exe"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+"@
+$resourceCompiler = @("rc.exe", "llvm-rc.exe") | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+if (-not $resourceCompiler) { throw "The resource compiler (rc.exe) wasn't found: run this from a Developer PowerShell" }
+$compiledResources = Join-Path $resources "FirstRow.res"
+Push-Location $resources
+try {
+    & $resourceCompiler /nologo /fo FirstRow.res FirstRow.rc
+    if ($LASTEXITCODE -ne 0) { throw "The icon resource didn't compile" }
+} finally {
+    Pop-Location
+}
+
 Push-Location $root
 # Swift prints warnings on stderr, which Windows PowerShell would otherwise treat as fatal.
 $ErrorActionPreference = "Continue"
@@ -61,7 +171,8 @@ try {
     swift build -c release --product FirstRow @extra `
         -Xcc "-I$sdlInclude" -Xcc "-I$mpvInclude" `
         -Xlinker "/LIBPATH:$sdlLib" -Xlinker "/LIBPATH:$mpv" `
-        -Xlinker /SUBSYSTEM:WINDOWS -Xlinker /ENTRY:mainCRTStartup
+        -Xlinker /SUBSYSTEM:WINDOWS -Xlinker /ENTRY:mainCRTStartup `
+        -Xlinker $compiledResources
     if ($LASTEXITCODE -ne 0) { throw "swift build failed" }
 } finally {
     Pop-Location
