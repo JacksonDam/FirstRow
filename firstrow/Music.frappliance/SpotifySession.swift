@@ -17,6 +17,57 @@ protocol SpotifyPageHost: AnyObject {
     func forgetAccount(_ completion: @escaping () -> Void)
 }
 
+/// Spotify keeps each picture in several sizes, as JPEG and as WebP, told apart by eight digits
+/// of its address: the first eight say what it's a picture of, the next eight which copy. A list
+/// can name any of them (a playlist's own cover comes as a 300-pixel WebP), and the Linux and
+/// Windows builds read JPEG and PNG only. So every picture is asked for as its 640-pixel JPEG.
+/// The copies are the ones Spotify's own web player chooses between.
+enum SpotifyPicture {
+    /// What it's a picture of -> (its 640-pixel JPEG, its other copies).
+    private static let copies: [String: (jpeg: String, others: Set<String>)] = [
+        // album covers
+        "ab67616d": ("0000b273", ["00004851", "00001e02", "000011eb", "000090d5", "0000e1a3", "0000ab87", "0000aa54", "000075a0"]),
+        // a playlist's own cover
+        "ab67706c": ("0000bebb", ["00006c11", "0000da84", "0000dec5", "0000d72c", "000097ac"]),
+        // artists
+        "ab676161": ("0000e5eb", ["0000f178", "00005174", "0000101f", "0000939b", "000086f7"]),
+        // Spotify's own playlists
+        "ab67706f": ("00000003", ["00000001", "00000002", "00000004", "00009e8c", "000036f3", "00000311", "0000f147"]),
+        "ab676d63": ("00001475", ["0000ea68", "000076a0", "0000e1f0", "000024d3", "0000caee", "00001726", "00006677"]),
+        // episodes, shows and the rest that can turn up in a list
+        "ab676563": ("0000ba8a", ["0000f68d", "00005f1f", "0000955f", "0000bdcf", "0000eeee"]),
+        "ab676663": ("000022a8", ["0000703b", "0000db5b", "00000c35", "000076bd", "0000382d"]),
+        "ab671e2d": ("00002335", ["0000d75e", "0000cfe9", "00003de9", "00001501", "00002efc"]),
+        "ab679c11": ("0000a7f0", ["0000f785", "0000dbdb", "0000b661"]),
+        "ab676168": ("00001e07", ["00005d40"]),
+    ]
+
+    private static let hosts = ["https://i.scdn.co/image/", "spotify:image:"]
+
+    /// The address to fetch for a picture Spotify named: its JPEG, at a web address.
+    static func address(_ named: String) -> String {
+        // Covers made of four albums' covers: "spotify:mosaic:a:b:c:d", or a smaller size's address.
+        if named.hasPrefix("spotify:mosaic:") {
+            return "https://mosaic.scdn.co/640/" + named.dropFirst("spotify:mosaic:".count).replacingOccurrences(of: ":", with: "")
+        }
+        for small in ["https://mosaic.scdn.co/300/", "https://mosaic.scdn.co/60/"] where named.hasPrefix(small) {
+            return "https://mosaic.scdn.co/640/" + named.dropFirst(small.count)
+        }
+        var prefix = hosts.first { named.hasPrefix($0) }
+        if prefix == nil, named.hasPrefix("https://image-cdn-"), let end = named.range(of: ".spotifycdn.com/image/") {
+            prefix = String(named[..<end.upperBound])
+        }
+        guard let prefix else { return named }
+        let rest = named.dropFirst(prefix.count)
+        let webPrefix = prefix == "spotify:image:" ? "https://i.scdn.co/image/" : prefix
+        guard rest.count > 16 else { return webPrefix + rest }
+        let kind = String(rest.prefix(8)).lowercased()
+        let copy = String(rest.dropFirst(8).prefix(8)).lowercased()
+        guard let known = copies[kind], known.others.contains(copy) else { return webPrefix + rest }
+        return webPrefix + kind + known.jpeg + rest.dropFirst(16)
+    }
+}
+
 struct SpotifyTrack {
     let uri: String
     let name: String
@@ -374,7 +425,7 @@ final class SpotifySession {
     }
 
     private static func url(_ value: Any?) -> URL? {
-        (value as? String).flatMap { URL(string: $0) }
+        (value as? String).flatMap { $0.isEmpty ? nil : URL(string: SpotifyPicture.address($0)) }
     }
 
     private static func tracks(from value: Any?) throws -> [SpotifyTrack] {
@@ -425,8 +476,10 @@ final class SpotifySession {
     }
 }
 
+private let spotifyDebugLogs = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_SPOTIFY"] == "1"
+
 func spotifyDebugLog(_ message: @autoclosure () -> String) {
-    if ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_SPOTIFY"] == "1" {
+    if spotifyDebugLogs {
         FileHandle.standardError.write(Data("[spotify] \(message())\n".utf8))
     }
 }

@@ -152,6 +152,40 @@ let spotifyBridgeScript = #"""
     return items;
   };
 
+  // Every playlist's picture, by the playlist's uri, as the library lists them: 50 at a time, with
+  // folders as rows to open in turn. Whatever it can't read is simply left out.
+  const libraryPlaylistPictures = async () => {
+    const pictures = new Map();
+    const opened = new Set();
+    let folders = [null];
+    const read = async folderUri => {
+      const rows = await allPages(async (offset, limit) => {
+        const page = await service('LibraryAPI').getContents({ filters: ['Playlists'], folderUri: folderUri || undefined, offset, limit });
+        return { rows: page.items || [], total: page.totalLength || 0 };
+      }, 50, 5000);
+      const inside = [];
+      for (const row of rows) {
+        if (!row || !row.uri) continue;
+        if (row.type === 'folder') {
+          if (!opened.has(row.uri)) { opened.add(row.uri); inside.push(row.uri); }
+        } else {
+          const image = largestImage(row.images);
+          if (image) pictures.set(row.uri, image);
+        }
+      }
+      return inside;
+    };
+    while (folders.length && opened.size <= 300) {
+      const next = [];
+      for (let at = 0; at < folders.length; at += 4) {
+        const found = await Promise.all(folders.slice(at, at + 4).map(folder => read(folder).catch(() => [])));
+        next.push(...found.flat());
+      }
+      folders = next;
+    }
+    return pictures;
+  };
+
   const collection = (item, subtitle) => item && item.uri && {
     uri: item.uri,
     name: item.name || '',
@@ -181,6 +215,23 @@ let spotifyBridgeScript = #"""
         }
       };
       walk(contents && contents.items);
+      // That list has no picture for the playlists people make themselves, with their own cover or
+      // the four album covers Spotify gives them. The library has them all.
+      const missing = () => out.filter(item => item && !item.image);
+      if (missing().length) {
+        const pictures = await libraryPlaylistPictures();
+        for (const item of missing()) item.image = pictures.get(item.uri) || null;
+      }
+      // Any the library didn't have are asked about one by one, a few at a time.
+      const rest = missing().slice(0, 60);
+      for (let at = 0; at < rest.length; at += 6) {
+        await Promise.all(rest.slice(at, at + 6).map(async item => {
+          try {
+            const metadata = await service('PlaylistAPI').getMetadata(item.uri);
+            item.image = largestImage(metadata && metadata.images);
+          } catch (e) {}
+        }));
+      }
       return out;
     },
 
