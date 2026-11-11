@@ -493,7 +493,9 @@ final class MovieOptionsLayer {
         switch kind {
         case .subtitles: "captions.bubble"
         case .audio: "waveform"
+        case .quality: "4k.tv"
         case .speed: "gauge.with.dots.needle.67percent"
+        case .comments: "text.bubble"
         }
     }
 
@@ -709,7 +711,7 @@ final class MovieOptionsLayer {
             pair.title.show(titleGraphic, at: CGPoint(x: inset + 30, y: top + (rowHeight - titleGraphic.size.height) / 2))
             let value = row.values.indices.contains(row.selected) ? row.values[row.selected] : ""
             let canGoBack = row.selected > 0
-            let canGoOn = row.selected + 1 < row.values.count
+            let canGoOn = row.selected + 1 < row.values.count || row.opensMore
             let text = (canGoBack ? "‹  " : "   ") + value + (canGoOn ? "  ›" : "   ")
             let valueGraphic = TextRenderer.render(TextSpec(text: text, fontName: valueFont, size: 30, color: secondary, maxWidth: width * 0.6, minimumScaleFactor: 0.7), scale: scale)
             let valueOrigin = CGPoint(x: width - inset - 26 - valueGraphic.size.width, y: top + (rowHeight - valueGraphic.size.height) / 2)

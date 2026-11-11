@@ -665,6 +665,10 @@ final class MenuView: ObservableObject {
     @Published var youtube = YouTubeMenuState()
     /// The YouTube video in the movie player, while one is.
     @Published var youtubeSession: YouTubePlaybackSession?
+    /// The video's comments, over the right of the picture, while they're open.
+    @Published var youtubeComments: YouTubeCommentsState?
+    /// How far that panel is out (0 away, 1 out).
+    @Published var youtubeCommentsReveal: CGFloat = 0
     @Published var textEntry: TextEntryState?
     @Published var codeDisplay: CodeDisplayState?
     @Published var textEntryOpacity: Double = 0

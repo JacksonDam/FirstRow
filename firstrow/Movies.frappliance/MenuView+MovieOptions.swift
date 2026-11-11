@@ -2,20 +2,25 @@ import AVFoundation
 import Foundation
 
 /// The panel ↓ opens during a movie (or its buttons above the bar): subtitles, audio track and
-/// playback speed. Up and down move between rows, left and right (or Select) change the value,
-/// Menu or ↑ from the top closes it, back into its buttons.
+/// playback speed, and for a YouTube video the size of its picture and its comments.
+/// Up and down move between rows, left and right (or Select) change the value, Menu or ↑ from
+/// the top closes it, back into its buttons.
 extension MenuView {
     struct MovieOptionRow: Equatable {
         enum Kind: Hashable {
             case subtitles
             case audio
+            case quality
             case speed
+            case comments
         }
 
         let kind: Kind
         let title: String
         var values: [String]
         var selected: Int
+        /// The row opens something more (Select or →) and has no value to change.
+        var opensMore = false
     }
 
     struct MovieOptionsState {
@@ -25,6 +30,10 @@ extension MenuView {
         var hasMoved = false
         /// The row to open on (the button it was opened from), once the rows are in.
         var preferredKind: MovieOptionRow.Kind?
+        /// For a YouTube video: its caption tracks (nil for none) and the sizes of its picture
+        /// (nil for whatever suits), in the order of their rows' values.
+        var captionTracks: [Int?] = []
+        var pictureHeights: [Int?] = []
         #if FIRSTROW_PORTABLE
             var subtitleIDs: [Int?] = []
             var audioIDs: [Int] = []
@@ -93,6 +102,11 @@ extension MenuView {
 
     /// Finds what the movie offers (subtitles, more than one audio track) for its buttons.
     func probeMovieOptionKinds(_ player: AVPlayer) {
+        if youtubeSession != nil {
+            let kinds = youtubeOptionKinds()
+            if kinds != movieOptionKinds { movieOptionKinds = kinds }
+            return
+        }
         #if FIRSTROW_PORTABLE
             var kinds: [MovieOptionRow.Kind] = []
             if !player.tracks(ofType: "sub").isEmpty { kinds.append(.subtitles) }
@@ -123,6 +137,10 @@ extension MenuView {
 
     /// Fills in the subtitle and audio rows from the file's tracks.
     private func loadMovieTrackRows(_ player: AVPlayer) {
+        if youtubeSession != nil {
+            loadYouTubeOptionRows()
+            return
+        }
         #if FIRSTROW_PORTABLE
             let subtitles = player.tracks(ofType: "sub")
             let audio = player.tracks(ofType: "audio")
@@ -231,6 +249,14 @@ extension MenuView {
     private func changeMovieOption(by step: Int, wrapping: Bool) {
         guard var state = movieOptions, state.rows.indices.contains(state.focusedRow) else { return }
         var row = state.rows[state.focusedRow]
+        if row.opensMore {
+            if step > 0, row.kind == .comments {
+                openYouTubeComments()
+            } else {
+                playLimitSoundOnceForCurrentHold()
+            }
+            return
+        }
         var next = row.selected + step
         if wrapping {
             next = (next + row.values.count) % max(1, row.values.count)
@@ -252,7 +278,19 @@ extension MenuView {
         case .speed:
             movieSpeed = Self.movieSpeeds[row.selected]
             applyMovieSpeed(player)
+        case .quality:
+            if state.pictureHeights.indices.contains(row.selected) {
+                setYouTubeMaximumHeight(state.pictureHeights[row.selected])
+            }
+        case .comments:
+            break
         case .subtitles:
+            if youtubeSession != nil {
+                if state.captionTracks.indices.contains(row.selected) {
+                    selectYouTubeCaptions(state.captionTracks[row.selected])
+                }
+                return
+            }
             #if FIRSTROW_PORTABLE
                 if state.subtitleIDs.indices.contains(row.selected) {
                     player.selectTrack(ofType: "sub", id: state.subtitleIDs[row.selected])

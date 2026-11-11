@@ -441,6 +441,7 @@ extension MenuView {
     }
 
     func handleMoviePlaybackInput(_ key: KeyCode, isRepeat: Bool) {
+        if handleYouTubeCommentsInput(key) { return }
         if handleMovieOptionsInput(key) { return }
         switch key {
         case .downArrow:

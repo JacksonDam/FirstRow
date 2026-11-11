@@ -20,6 +20,9 @@ final class MoviePlaybackLayers {
     let controls = MovieControlsLayer()
     let modernControls = ModernMovieControlsLayer()
     let options = MovieOptionsLayer()
+    /// A YouTube video's captions and comments (see `YouTubeVideoLayers`).
+    let captions = YouTubeCaptionLayer()
+    let comments = YouTubeCommentsLayer()
 
     init() {
         playerLayer.videoGravity = .resizeAspect
@@ -29,7 +32,7 @@ final class MoviePlaybackLayers {
         controls.layer.isHidden = true
         backdrop.backgroundColor = CGColor(gray: 0, alpha: 1)
         backdrop.isHidden = true
-        for sublayer in [backdrop, playerLayer, controls.layer, modernControls.layer, options.layer] {
+        for sublayer in [backdrop, playerLayer, captions.layer, controls.layer, modernControls.layer, comments.layer, options.layer] {
             group.addSublayer(sublayer)
         }
     }
@@ -70,6 +73,17 @@ final class MoviePlaybackLayers {
         let showsControls = menu.isMoviePlaybackVisible && menu.showsMovieControls
         let controlsOpacity = menu.shownMovieControlsOpacity
         let isModern = ModernTheme.isActive
+        canvas.apply(to: captions.layer)
+        captions.update(
+            text: showsPlayer ? menu.youtubeCaptionText : nil,
+            raised: showsControls && controlsOpacity > 0.5,
+            width: controlsSize.width - (menu.youtubeComments != nil && menu.youtubeCommentsReveal > 0.5 ? YouTubeCommentsLayer.width(in: controlsSize) : 0),
+            size: controlsSize,
+            scale: canvas.pixelScale(backingScale: scale),
+            pass: pass,
+        )
+        canvas.apply(to: comments.layer)
+        comments.update(menu: menu, size: controlsSize, scale: canvas.pixelScale(backingScale: scale), pass: pass)
         controls.layer.isHidden = !showsControls || isModern
         modernControls.layer.isHidden = !showsControls || !isModern
         // The options' buttons sit above the right end of the bar, and the panel grows out of them.
