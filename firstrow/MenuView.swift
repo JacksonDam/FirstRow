@@ -694,6 +694,9 @@ final class MenuView: ObservableObject {
     @Published var youtubePanelReveal: CGFloat = 0
     /// A change of picture size waiting to be acted on (where the player has to start again for it).
     var youtubeStreamReloadTask: Task<Void, Never>?
+    /// Watches the size a video's picture is shown at, to learn where the next should start.
+    var youtubeSizeWatchTask: Task<Void, Never>?
+    var youtubeSizeWatch = YouTubeSizeWatch()
     @Published var textEntry: TextEntryState?
     @Published var codeDisplay: CodeDisplayState?
     @Published var textEntryOpacity: Double = 0

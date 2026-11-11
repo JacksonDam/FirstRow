@@ -1,7 +1,7 @@
 import Foundation
 
-/// What First Row keeps about YouTube between launches: the videos watched here and the
-/// picture size last asked for, in a file only this user can read.
+/// What First Row keeps about YouTube between launches: the videos watched here, the
+/// picture size last asked for and the size videos start at, in a file only this user can read.
 @MainActor
 final class YouTubeStore {
     static let shared = YouTubeStore()
@@ -10,10 +10,14 @@ final class YouTubeStore {
     private(set) var history: [YouTubeVideo] = []
     /// The tallest picture to play, in lines; nil for whatever suits the screen.
     private(set) var maximumHeight: Int?
+    /// The size a video starts at when none is asked for, in lines, as learned from how videos
+    /// have played here; nil until one has had to come down from the largest that suits the screen.
+    private(set) var startingHeight: Int?
 
     private struct Contents: Codable {
         var history: [YouTubeVideo]
         var maximumHeight: Int?
+        var startingHeight: Int?
     }
 
     private init() {
@@ -22,6 +26,7 @@ final class YouTubeStore {
         else { return }
         history = contents.history
         maximumHeight = contents.maximumHeight
+        startingHeight = contents.startingHeight
         // (A test version kept a sign-in in this file. First Row has no use for one: the
         // file is written again without it.)
         if let whole = try? JSONSerialization.jsonObject(with: data) as? [String: Any], whole["account"] != nil { write() }
@@ -37,6 +42,12 @@ final class YouTubeStore {
 
     func setMaximumHeight(_ height: Int?) {
         maximumHeight = height
+        write()
+    }
+
+    func setStartingHeight(_ height: Int?) {
+        guard height != startingHeight else { return }
+        startingHeight = height
         write()
     }
 
@@ -58,7 +69,7 @@ final class YouTubeStore {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(Contents(history: history, maximumHeight: maximumHeight)) else { return }
+        guard let data = try? encoder.encode(Contents(history: history, maximumHeight: maximumHeight, startingHeight: startingHeight)) else { return }
         // Written with no permissions for anyone else from the start: what was watched is
         // nobody else's to read.
         if FileManager.default.fileExists(atPath: url.path) {

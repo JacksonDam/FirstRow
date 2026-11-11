@@ -26,14 +26,20 @@ struct YouTubePlaybackSession {
     var captionTrack: Int?
     var cues: [YouTubeCaptionCue] = []
     var captionRequestID = 0
+    /// The size the video started at with none asked for (nil when one was, and for mpv,
+    /// which is given one size and stays at it): how it plays against that is what the next
+    /// video's start is learned from.
+    var startHeight: Int?
 }
 
 #if !FIRSTROW_PORTABLE
-    /// Gives the system's player a YouTube video at one size of picture. Handed the video's
-    /// whole playlist the player picks sizes for itself as it goes; for a size that was asked
-    /// for it is handed the playlist with only that size's streams left in, under an address
-    /// of First Row's own, and asks here for what is at that address. (The streams the
-    /// playlist names are at YouTube's own addresses, which the player fetches as ever.)
+    /// Gives the system's player a YouTube video's playlist as First Row has put it, under an
+    /// address of First Row's own, and answers when the player asks for what is at that
+    /// address. Handed the video's own playlist the player starts small and works up; it is
+    /// handed one with only one size's streams left in (a size that was asked for), or with
+    /// the size to start at first (see `YouTubeClient.playlist(_:startingAtHeight:)`). (The
+    /// streams the playlist names are at YouTube's own addresses, which the player fetches
+    /// as ever.)
     final class YouTubePlaylistLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
         static let shared = YouTubePlaylistLoader()
         private static let scheme = "firstrow-youtube"
@@ -42,8 +48,8 @@ struct YouTubePlaybackSession {
         private let queue = DispatchQueue(label: "firstrow.youtube.playlists")
 
         /// Keeps a playlist, and gives the address the player is to ask for it by.
-        func address(for playlist: String, videoID: String, height: Int) -> URL? {
-            guard let url = URL(string: "\(Self.scheme)://playlist/\(videoID)/\(height).m3u8") else { return nil }
+        func address(for playlist: String, videoID: String, name: String) -> URL? {
+            guard let url = URL(string: "\(Self.scheme)://playlist/\(videoID)/\(name).m3u8") else { return nil }
             lock.lock()
             // (Only the video being played, and the one before it, have any use for theirs.)
             if playlists.count > 16 { playlists.removeAll() }
@@ -57,7 +63,11 @@ struct YouTubePlaybackSession {
             guard url.scheme == Self.scheme else { return nil }
             let asset = AVURLAsset(url: url)
             asset.resourceLoader.setDelegate(self, queue: queue)
-            return AVPlayerItem(asset: asset)
+            let item = AVPlayerItem(asset: asset)
+            // (The playlist's first stream is the one to start on: left to itself the player
+            // starts on a small one and works up.)
+            if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) { item.startsOnFirstEligibleVariant = true }
+            return item
         }
 
         func resourceLoader(_: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
@@ -105,9 +115,9 @@ extension MenuView {
             defer { self.youtube.isStartingPlayback = false }
             do {
                 let playback = try await YouTubeClient.shared.playback(of: video.id)
-                let (url, variants, manifestText) = try await self.youtubePlayerURL(for: playback, videoID: video.id, maximumHeight: YouTubeStore.shared.maximumHeight)
+                let (url, variants, manifestText, startHeight) = try await self.youtubePlayerURL(for: playback, videoID: video.id, maximumHeight: YouTubeStore.shared.maximumHeight)
                 guard self.thirdMenuMode == .youtube, !self.isMovieTransitioning, !self.isMoviePlaybackVisible else { return }
-                self.youtubeSession = YouTubePlaybackSession(video: video, playback: playback, url: url, variants: variants, manifestText: manifestText)
+                self.youtubeSession = YouTubePlaybackSession(video: video, playback: playback, url: url, variants: variants, manifestText: manifestText, startHeight: startHeight)
                 // (Nothing to resume: what YouTube hands out to play is good for a few hours.)
                 self.lastClosedMovieURL = nil
                 self.lastClosedMovieTimestamp = 0
@@ -127,9 +137,10 @@ extension MenuView {
         }
     }
 
-    /// What the movie player plays a video from, and the sizes its picture comes in (with
-    /// the playlist that names them) when they had to be looked up to choose one.
-    private func youtubePlayerURL(for playback: YouTubePlayback, videoID: String, maximumHeight: Int?) async throws -> (URL, [YouTubeStreamVariant], String?) {
+    /// What the movie player plays a video from, the sizes its picture comes in (with the
+    /// playlist that names them) when they had to be looked up, and the size it starts at
+    /// when that was First Row's choice and may change as it plays.
+    private func youtubePlayerURL(for playback: YouTubePlayback, videoID: String, maximumHeight: Int?) async throws -> (URL, [YouTubeStreamVariant], String?, Int?) {
         #if FIRSTROW_PORTABLE
             // mpv is given one size of the picture and its sound, by their own addresses: left
             // to read the whole playlist, it opens all seventeen sizes before it starts.
@@ -138,20 +149,20 @@ extension MenuView {
             if !playback.isLive, let chosen = Self.youtubeVariant(in: variants, maximumHeight: limit),
                let url = AVPlayer.pairedStreamsURL(video: chosen.url, audio: chosen.audioURL)
             {
-                return (url, variants, nil)
+                return (url, variants, nil, nil)
             }
-            return (playback.manifestURL, variants, nil)
+            return (playback.manifestURL, variants, nil, nil)
         #else
             _ = YouTubeDecoders.prepared
-            // With no size asked for the player has the whole playlist, to pick from as it
-            // goes; a size that was asked for is played as that size.
-            if let maximumHeight, !playback.isLive,
-               let manifest = try? await YouTubeClient.shared.manifest(of: playback.manifestURL),
-               let url = Self.youtubeAddress(forHeight: maximumHeight, videoID: videoID, manifestText: manifest.text, variants: manifest.variants)
+            // A size that was asked for is played as that size. With none asked for the
+            // player has every size, the one to start at first: the largest that suits the
+            // screen, or the size videos have lately held.
+            if !playback.isLive, let manifest = try? await YouTubeClient.shared.manifest(of: playback.manifestURL),
+               let address = Self.youtubeAddress(forHeight: maximumHeight, videoID: videoID, manifestText: manifest.text, variants: manifest.variants)
             {
-                return (url, manifest.variants, manifest.text)
+                return (address.url, manifest.variants, manifest.text, address.startHeight)
             }
-            return (playback.manifestURL, [], nil)
+            return (playback.manifestURL, [], nil, nil)
         #endif
     }
 
@@ -161,13 +172,24 @@ extension MenuView {
     }
 
     #if !FIRSTROW_PORTABLE
-        /// The address the system's player is given for one size of a video's picture: the
-        /// largest the video has that is no taller than `limit`.
-        private static func youtubeAddress(forHeight limit: Int, videoID: String, manifestText: String, variants: [YouTubeStreamVariant]) -> URL? {
+        /// The address the system's player is given for a video: for one size of its picture
+        /// (the largest the video has that is no taller than `limit`), or with no limit for
+        /// every size, starting at `startHeight`.
+        private static func youtubeAddress(forHeight limit: Int?, videoID: String, manifestText: String, variants: [YouTubeStreamVariant]) -> (url: URL, startHeight: Int?)? {
             let heights = youtubePictureHeights(in: variants)
-            guard let smallest = heights.min(), let height = heights.filter({ $0 <= max(limit, smallest) }).max(),
-                  let playlist = YouTubeClient.playlist(manifestText, keepingHeight: height) else { return nil }
-            return YouTubePlaylistLoader.shared.address(for: playlist, videoID: videoID, height: height)
+            guard let smallest = heights.min() else { return nil }
+            if let limit {
+                guard let height = heights.filter({ $0 <= max(limit, smallest) }).max(),
+                      let playlist = YouTubeClient.playlist(manifestText, keepingHeight: height),
+                      let url = YouTubePlaylistLoader.shared.address(for: playlist, videoID: videoID, name: String(height)) else { return nil }
+                return (url, nil)
+            }
+            let suited = youtubeHeightSuitingTheScreen
+            let wanted = min(suited, YouTubeStore.shared.startingHeight ?? suited)
+            let start = heights.filter { $0 <= wanted }.max() ?? smallest
+            guard let playlist = YouTubeClient.playlist(manifestText, startingAtHeight: start),
+                  let url = YouTubePlaylistLoader.shared.address(for: playlist, videoID: videoID, name: "from-\(start)") else { return nil }
+            return (url, start)
         }
     #endif
 
@@ -205,6 +227,7 @@ extension MenuView {
             // Captions are First Row's to draw (see `selectYouTubeCaptions`): the player isn't
             // to turn the playlist's own on as well.
             moviePlayer?.appliesMediaSelectionCriteriaAutomatically = false
+            watchYouTubePictureSize()
         #endif
         loadYouTubeVideoExtras()
     }
@@ -215,6 +238,8 @@ extension MenuView {
         youtubeSession = nil
         youtubeStreamReloadTask?.cancel()
         youtubeStreamReloadTask = nil
+        youtubeSizeWatchTask?.cancel()
+        youtubeSizeWatchTask = nil
         youtubePanel = nil
         youtubePanelReveal = 0
         // The history has this video at its top now.
@@ -376,24 +401,23 @@ extension MenuView {
             else { return }
             let item = AVPlayerItem(url: url)
         #else
-            var url = session.playback.manifestURL
-            if let height = YouTubeStore.shared.maximumHeight {
-                if session.manifestText == nil {
-                    // (Asked for before the video's sizes had been looked up.)
-                    let videoID = session.video.id
-                    guard let manifest = try? await YouTubeClient.shared.manifest(of: session.playback.manifestURL),
-                          var current = youtubeSession, current.video.id == videoID, moviePlayer === player, !Task.isCancelled else { return }
-                    current.variants = manifest.variants
-                    current.manifestText = manifest.text
-                    youtubeSession = current
-                    session = current
-                }
-                guard let text = session.manifestText,
-                      let address = Self.youtubeAddress(forHeight: height, videoID: session.video.id, manifestText: text, variants: session.variants)
-                else { return }
-                url = address
+            if session.manifestText == nil {
+                // (Asked for before the video's sizes had been looked up.)
+                let videoID = session.video.id
+                guard let manifest = try? await YouTubeClient.shared.manifest(of: session.playback.manifestURL),
+                      var current = youtubeSession, current.video.id == videoID, moviePlayer === player, !Task.isCancelled else { return }
+                current.variants = manifest.variants
+                current.manifestText = manifest.text
+                youtubeSession = current
+                session = current
             }
+            guard let text = session.manifestText,
+                  let address = Self.youtubeAddress(forHeight: YouTubeStore.shared.maximumHeight, videoID: session.video.id, manifestText: text, variants: session.variants)
+            else { return }
+            let url = address.url
             guard url != session.url else { return }
+            session.startHeight = address.startHeight
+            youtubeSizeWatch = YouTubeSizeWatch()
             let item = YouTubePlaylistLoader.shared.playerItem(for: url) ?? AVPlayerItem(url: url)
         #endif
         let time = player.currentTime()
@@ -424,3 +448,77 @@ extension MenuView {
         }
     }
 }
+
+/// How long a video has shown each size of its picture, while it played with no size asked for.
+struct YouTubeSizeWatch {
+    var seconds: [Int: Double] = [:]
+    /// Where the video was at the last look, to tell a jump from playing on.
+    var lastPosition: Double?
+    /// No looks count until then: after a jump the player shows a small size for a moment.
+    var settlesAt = Date.distantPast
+}
+
+#if !FIRSTROW_PORTABLE
+    // MARK: - Learning the size to start at
+
+    extension MenuView {
+        private static let youtubeSizeWatchInterval = 2.0
+
+        /// Looks every two seconds at the size the player is showing, while a video plays
+        /// with no size asked for, and learns from it where the next video should start.
+        func watchYouTubePictureSize() {
+            youtubeSizeWatchTask?.cancel()
+            youtubeSizeWatch = YouTubeSizeWatch()
+            youtubeSizeWatchTask = Task { @MainActor in
+                while !Task.isCancelled {
+                    try? await firstRowSleep(Self.youtubeSizeWatchInterval)
+                    guard !Task.isCancelled, let session = self.youtubeSession, let player = self.moviePlayer else { return }
+                    self.noteYouTubePictureSize(session: session, player: player)
+                }
+            }
+        }
+
+        private func noteYouTubePictureSize(session: YouTubePlaybackSession, player: AVPlayer) {
+            guard let start = session.startHeight, YouTubeStore.shared.maximumHeight == nil else { return }
+            let position = player.currentTime().seconds
+            defer { youtubeSizeWatch.lastPosition = position }
+            // Only steady playing at its own speed says anything about the connection.
+            guard player.timeControlStatus == .playing, abs(player.rate - 1) < 0.05, movieScrubDirection == 0, position.isFinite else { return }
+            if let last = youtubeSizeWatch.lastPosition, abs(position - last - Self.youtubeSizeWatchInterval) > 3 {
+                youtubeSizeWatch.settlesAt = Date().addingTimeInterval(8)
+                return
+            }
+            guard Date() >= youtubeSizeWatch.settlesAt, let size = player.currentItem?.presentationSize, size.width > 1, size.height > 1 else { return }
+            // (A size as the playlist names it: the picture's shorter side.)
+            let shown = Int(min(size.width, size.height).rounded())
+            let heights = Self.youtubePictureHeights(in: session.variants).sorted(by: >)
+            guard let height = heights.min(by: { abs($0 - shown) < abs($1 - shown) }) else { return }
+            youtubeSizeWatch.seconds[height, default: 0] += Self.youtubeSizeWatchInterval
+            if let learned = Self.youtubeStartingHeight(learnedFrom: youtubeSizeWatch.seconds, start: start, heights: heights) {
+                // (As large as suits this screen is no limit at all: a larger screen starts at its own.)
+                YouTubeStore.shared.setStartingHeight(learned >= Self.youtubeHeightSuitingTheScreen ? nil : learned)
+            }
+        }
+
+        /// Where the next video should start, going by how long this one showed each size
+        /// (`heights` largest first), having started at `start`; nil for no change. Lower,
+        /// when it came down from where it started and stayed down: at the size it spent
+        /// longest at. Higher, when it held a larger size for most of a minute or more.
+        static func youtubeStartingHeight(learnedFrom seconds: [Int: Double], start: Int, heights: [Int]) -> Int? {
+            let total = seconds.values.reduce(0, +)
+            guard total >= 30 else { return nil }
+            let below = seconds.filter { $0.key < start }
+            let belowTotal = below.values.reduce(0, +)
+            if belowTotal >= 20, belowTotal >= total * 0.25 {
+                return below.max { ($0.value, $0.key) < ($1.value, $1.key) }?.key
+            }
+            let ceiling = youtubeHeightSuitingTheScreen
+            var held = 0.0
+            for height in heights where height > start {
+                held += seconds[height] ?? 0
+                if held >= 60, held >= total * 0.6 { return min(height, ceiling) }
+            }
+            return nil
+        }
+    }
+#endif

@@ -787,6 +787,60 @@ actor YouTubeClient {
         return streams > 0 ? kept.joined(separator: "\n") : nil
     }
 
+    /// A video's playlist with its streams in another order: first the ones no taller than
+    /// `height`, tallest first (and at each size the smoothest, then the kind every machine
+    /// decodes without effort), then the rest as they were. A player told to start on the
+    /// first stream it can play starts at that size, and moves down the list, or up it, as
+    /// the connection allows. Nil if the video has no stream to start on.
+    static func playlist(_ text: String, startingAtHeight height: Int) -> String? {
+        struct Stream {
+            var lines: [Substring]
+            var height: Int
+            var rate: Double
+            var isPlain: Bool
+            var bandwidth: Int
+            /// Ordinary picture with its sound beside it: one of the sizes that can be asked for.
+            var isUsable: Bool
+        }
+        var before: [Substring] = []
+        var after: [Substring] = []
+        var streams: [Stream] = []
+        var pending: Substring?
+        for line in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+            if let named = pending {
+                pending = nil
+                if !line.isEmpty, !line.hasPrefix("#") {
+                    let fields = playlistFields(named)
+                    streams.append(Stream(
+                        lines: [named, line],
+                        height: pictureHeight(fields) ?? 0,
+                        rate: Double(fields["FRAME-RATE"] ?? "") ?? 30,
+                        isPlain: (fields["CODECS"] ?? "").hasPrefix("avc1"),
+                        bandwidth: Int(fields["BANDWIDTH"] ?? "") ?? 0,
+                        isUsable: (fields["VIDEO-RANGE"] ?? "SDR") == "SDR" && fields["AUDIO"] != nil && pictureHeight(fields) != nil,
+                    ))
+                    continue
+                }
+                // (A stream named with no address after it: left where it was.)
+                if streams.isEmpty { before.append(named) } else { after.append(named) }
+            }
+            if line.hasPrefix("#EXT-X-STREAM-INF:") {
+                pending = line
+            } else if streams.isEmpty {
+                before.append(line)
+            } else {
+                after.append(line)
+            }
+        }
+        guard let smallest = streams.filter(\.isUsable).map(\.height).min() else { return nil }
+        let limit = max(height, smallest)
+        let first = streams.filter { $0.isUsable && $0.height <= limit }.sorted {
+            ($0.height, $0.rate, $0.isPlain ? 1 : 0, $0.bandwidth) > ($1.height, $1.rate, $1.isPlain ? 1 : 0, $1.bandwidth)
+        }
+        let rest = streams.filter { !($0.isUsable && $0.height <= limit) }
+        return (before + (first + rest).flatMap(\.lines) + after).joined(separator: "\n")
+    }
+
     static func variants(inPlaylist text: String) -> [YouTubeStreamVariant] {
         let attributes = playlistFields
         let lines = text.split(whereSeparator: \.isNewline)
