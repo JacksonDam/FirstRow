@@ -229,7 +229,19 @@ final class NowPlayingQueueLayer {
         let content = SceneLayer()
         let light = Ink()
         let dark = Ink()
-        var contentKey = ""
+        /// What a row's two inks are drawn from.
+        struct ContentKey: Equatable {
+            let title: String
+            let detail: String
+            let isPlaying: Bool
+            let isModern: Bool
+            let scale: CGFloat
+            let width: CGFloat
+        }
+
+        var contentKey: ContentKey?
+        /// What the dark ink was last drawn from: it's drawn when its row is first focused.
+        var darkKey: ContentKey?
         var index = -1
         var isFocused = false
 
@@ -439,16 +451,21 @@ final class NowPlayingQueueLayer {
         row.layer.frame = frame
         let size = frame.size
 
-        // Both inks drawn once per song, size and look.
-        let key = "\(content.title)|\(content.detail)|\(isPlaying)|\(isModern)|\(scale)|\(size.width)"
+        // Each ink drawn once per song, size and look: the light one for every row, the dark
+        // one (the modern look's, on its white focus capsule) once its row is focused.
+        let key = Row.ContentKey(title: content.title, detail: content.detail, isPlaying: isPlaying, isModern: isModern, scale: scale, width: size.width)
+        var inks: [(Row.Ink, RGBA, RGBA)] = []
         if key != row.contentKey {
             row.contentKey = key
+            inks.append((row.light, isModern ? ModernTheme.text : RGBA(white: 1, alpha: 0.96), isModern ? ModernTheme.secondaryText : RGBA(white: 1, alpha: 0.6)))
+        }
+        if isModern, focused, key != row.darkKey {
+            row.darkKey = key
+            inks.append((row.dark, ModernTheme.focusedText, ModernTheme.focusedSecondaryText))
+        }
+        if !inks.isEmpty {
             let titleFont = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
             let detailFont = isModern ? ModernTheme.regularFontName : firstRowRegularFontName
-            let inks: [(Row.Ink, RGBA, RGBA)] = [
-                (row.light, isModern ? ModernTheme.text : RGBA(white: 1, alpha: 0.96), isModern ? ModernTheme.secondaryText : RGBA(white: 1, alpha: 0.6)),
-                (row.dark, ModernTheme.focusedText, ModernTheme.focusedSecondaryText),
-            ]
             for (ink, primary, secondary) in inks {
                 ink.layer.frame = CGRect(origin: .zero, size: size)
                 var right = size.width - 26

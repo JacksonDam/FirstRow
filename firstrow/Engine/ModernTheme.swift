@@ -116,6 +116,20 @@ enum ModernTheme {
         default: "play.rectangle.fill"
         }
     }
+
+    private static let cardGlyphNames = ["film.fill", "tv.fill", "music.note", "mic.fill", "photo.fill", "gearshape.fill", "externaldrive.fill", "play.rectangle.fill"]
+    private static var preparedCardGlyphs: (pointSize: CGFloat, scale: CGFloat)?
+
+    /// Has every section's card symbol drawn off the main thread, ready for when the card
+    /// comes to it: one this large takes several milliseconds to draw the first time.
+    @MainActor
+    static func prepareCardGlyphs(pointSize: CGFloat, scale: CGFloat) {
+        if let prepared = preparedCardGlyphs, prepared.pointSize == pointSize, prepared.scale == scale { return }
+        preparedCardGlyphs = (pointSize, scale)
+        SymbolRenderer.prepare(cardGlyphNames.map {
+            SymbolRenderer.Request(name: $0, pointSize: pointSize, weight: .semibold, color: tileGlyph, scale: scale)
+        })
+    }
 }
 
 // MARK: - Background
@@ -156,16 +170,20 @@ final class ModernBackgroundLayer {
             DispatchQueue.main.asyncAfter(deadline: .now() + fade.duration + 0.05) { old.removeFromSuperlayer() }
             ambient = nil
         }
-        guard let image, let blurred = Self.cachedAmbient(image) else { return }
-        let next = SceneLayer()
-        next.contents = blurred
-        next.contentsGravity = .resizeAspectFill
-        next.magnificationFilter = .linear
-        next.frame = layer.bounds
-        next.opacity = 0
-        layer.addSublayer(next)
-        next.setOpacity(0.55, fade)
-        ambient = next
+        guard let image else { return }
+        // A wash that has to be made first comes in a moment later, unless the card has moved on.
+        Self.ambient(for: image) { [weak self] blurred in
+            guard let self, let blurred, ambientKey == key, ambient == nil else { return }
+            let next = SceneLayer()
+            next.contents = blurred
+            next.contentsGravity = .resizeAspectFill
+            next.magnificationFilter = .linear
+            next.frame = layer.bounds
+            next.opacity = 0
+            layer.addSublayer(next)
+            next.setOpacity(0.55, fade)
+            ambient = next
+        }
     }
 
     /// Near black, with two broad soft glows so it reads as blurred rather than flat.
@@ -191,20 +209,38 @@ final class ModernBackgroundLayer {
 
     private static var ambientCache: [ObjectIdentifier: (NSImage, CGImage)] = [:]
 
-    /// `blurredAmbient`, remembered for the last few pictures.
-    static func cachedAmbient(_ image: NSImage) -> CGImage? {
-        if let hit = ambientCache[ObjectIdentifier(image)], hit.0 === image { return hit.1 }
-        guard let blurred = blurredAmbient(image) else { return nil }
-        if ambientCache.count >= 24 { ambientCache.removeAll() }
-        ambientCache[ObjectIdentifier(image)] = (image, blurred)
-        return blurred
+    private static let ambientQueue = DispatchQueue(label: "firstrow.ambient", qos: .userInitiated)
+
+    /// `blurredAmbient` of a picture, remembered for the last few. One made before is handed
+    /// over at once. A new one is made off the main thread (it reads the whole picture, which
+    /// may still have to be decoded) and handed over when it's done.
+    static func ambient(for image: NSImage, then use: @escaping @MainActor (CGImage?) -> Void) {
+        if let hit = ambientCache[ObjectIdentifier(image)], hit.0 === image {
+            use(hit.1)
+            return
+        }
+        guard let source = LayerImageCache.cgImage(for: image) else {
+            use(nil)
+            return
+        }
+        ambientQueue.async {
+            let blurred = autoreleasepool { blurredAmbient(source) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolatedIfPossible {
+                    if let blurred {
+                        if ambientCache.count >= 24 { ambientCache.removeAll() }
+                        ambientCache[ObjectIdentifier(image)] = (image, blurred)
+                    }
+                    use(blurred)
+                }
+            }
+        }
     }
 
     /// The picture's colours averaged into a 16 by 9 grid, darkened, and blurred into a soft
     /// wash. The blur is done here, at a size big enough to stretch over the screen smoothly:
     /// the grid itself stretched that far showed the straight seams between its pixels.
-    static func blurredAmbient(_ image: NSImage) -> CGImage? {
-        guard let source = LayerImageCache.cgImage(for: image) else { return nil }
+    nonisolated static func blurredAmbient(_ source: CGImage) -> CGImage? {
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         // The picture filling a small 16:9 frame, cropping its longer side.
         let sampleWidth = 128, sampleHeight = 72
@@ -277,15 +313,20 @@ final class ModernBackgroundLayer {
             boxBlur(&plane, width: width, height: height, radius: radius, horizontal: false)
         }
 
-        // Back to 8 bits, with a touch of noise so dark gradients don't band.
-        var generator = SystemRandomNumberGenerator()
+        // Back to 8 bits, with a touch of noise so dark gradients don't band. The noise comes
+        // from a small generator of its own: the system's is a secure one, and asking it for
+        // every pixel took longer than everything else here together.
+        var noiseState: UInt32 = 0x9E37_79B9
         return makeOpaqueImage(width: width, height: height, space: space) { bytes, bytesPerRow in
             for y in 0 ..< height {
                 let row = bytes + y * bytesPerRow
                 for x in 0 ..< width {
                     let pixel = row + x * 4
                     let source = (y * width + x) * 3
-                    let noise = Float(UInt8.random(in: 0 ... 255, using: &generator)) / 255 - 0.5
+                    noiseState ^= noiseState << 13
+                    noiseState ^= noiseState >> 17
+                    noiseState ^= noiseState << 5
+                    let noise = Float(noiseState >> 24) / 255 - 0.5
                     for channel in 0 ..< 3 {
                         pixel[channel] = UInt8(max(0, min(255, (plane[source + channel] + noise).rounded())))
                     }
@@ -297,7 +338,7 @@ final class ModernBackgroundLayer {
 
     /// Averages each value with `radius` neighbours either side along rows or columns of a
     /// three-channel plane, holding the edge values beyond the ends.
-    private static func boxBlur(_ plane: inout [Float], width: Int, height: Int, radius: Int, horizontal: Bool) {
+    private nonisolated static func boxBlur(_ plane: inout [Float], width: Int, height: Int, radius: Int, horizontal: Bool) {
         let count = horizontal ? width : height
         let lines = horizontal ? height : width
         let window = Float(radius * 2 + 1)
@@ -319,7 +360,7 @@ final class ModernBackgroundLayer {
     }
 
     /// Lets `body` read a bitmap context's pixels (four bytes each, alpha last, top row first).
-    private static func withPixels(of context: CGContext, _ body: (UnsafePointer<UInt8>, Int) -> Void) -> Bool {
+    private nonisolated static func withPixels(of context: CGContext, _ body: (UnsafePointer<UInt8>, Int) -> Void) -> Bool {
         #if FIRSTROW_PORTABLE
             guard let image = context.makeImage() else { return false }
             body(UnsafePointer(image.storage.bytes), image.storage.bytesPerRow)
@@ -332,7 +373,7 @@ final class ModernBackgroundLayer {
     }
 
     /// An opaque image whose pixels `fill` writes (four bytes each, alpha last, top row first).
-    private static func makeOpaqueImage(width: Int, height: Int, space: CGColorSpace, fill: (UnsafeMutablePointer<UInt8>, Int) -> Void) -> CGImage? {
+    private nonisolated static func makeOpaqueImage(width: Int, height: Int, space: CGColorSpace, fill: (UnsafeMutablePointer<UInt8>, Int) -> Void) -> CGImage? {
         #if FIRSTROW_PORTABLE
             let storage = PixelStorage(width: width, height: height)
             fill(storage.bytes, storage.bytesPerRow)
@@ -461,6 +502,7 @@ final class ModernCardLayer {
             let graphic = SymbolRenderer.render(ModernTheme.glyphName(forRootID: rootID), pointSize: 180 * unit, weight: .semibold, color: ModernTheme.tileGlyph, scale: scale)
             glyph.show(graphic, at: CGPoint(x: frame.midX - graphic.size.width / 2, y: frame.midY - graphic.size.height / 2))
             slot.addSublayer(glyph)
+            ModernTheme.prepareCardGlyphs(pointSize: 180 * unit, scale: scale)
         case let .artwork(image, caption):
             let size = image.size
             let aspect = size.height > 0 ? size.width / size.height : 1
@@ -634,10 +676,18 @@ extension ModernTheme {
     static func rowIcon(symbol: String) -> NSImage? {
         let key = "row|\(symbol)"
         if let cached = placeholders[key] { return cached }
+        guard let cgImage = drawRowIcon(symbol: symbol) else { return nil }
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        placeholders[key] = image
+        return image
+    }
+
+    private nonisolated static func drawRowIcon(symbol: String) -> CGImage? {
         let side = 192
+        // (In the screen's colours on the Mac, like the covers: see `ScreenColorSpace`.)
         guard let context = CGContext(
             data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
+            space: ScreenColorSpace.current ?? CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
         ) else { return nil }
         let rect = CGRect(x: 0, y: 0, width: side, height: side)
         context.addPath(CGPath(roundedRect: rect, cornerWidth: 42, cornerHeight: 42, transform: nil))
@@ -652,10 +702,7 @@ extension ModernTheme {
             let box = glyph.imageFrame(at: CGPoint(x: (CGFloat(side) - glyph.size.width) / 2, y: (CGFloat(side) - glyph.size.height) / 2))
             context.draw(image, in: CGRect(x: box.minX, y: CGFloat(side) - box.maxY, width: box.width, height: box.height))
         }
-        guard let cgImage = context.makeImage() else { return nil }
-        let image = NSImage(cgImage: cgImage, size: NSSize(width: side, height: side))
-        placeholders[key] = image
-        return image
+        return context.makeImage()
     }
 
     /// Artwork for items without any, in the modern look: a quiet grey tile with a symbol.
@@ -663,11 +710,18 @@ extension ModernTheme {
     static func placeholderArtwork(symbol: String, aspect: CGFloat = 1) -> NSImage? {
         let key = "\(symbol)|\(aspect)"
         if let cached = placeholders[key] { return cached }
+        guard let cgImage = drawPlaceholderArtwork(symbol: symbol, aspect: aspect) else { return nil }
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        placeholders[key] = image
+        return image
+    }
+
+    private nonisolated static func drawPlaceholderArtwork(symbol: String, aspect: CGFloat) -> CGImage? {
         let height = 600
         let width = Int((CGFloat(height) * aspect).rounded())
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
+            space: ScreenColorSpace.current ?? CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
         ) else { return nil }
         let rect = CGRect(x: 0, y: 0, width: width, height: height)
         let colors = [CGColor(gray: 0.27, alpha: 1), CGColor(gray: 0.17, alpha: 1)] as CFArray
@@ -680,9 +734,36 @@ extension ModernTheme {
             let box = glyph.imageFrame(at: CGPoint(x: (CGFloat(width) - glyph.size.width) / 2, y: (CGFloat(height) - glyph.size.height) / 2))
             context.draw(image, in: box)
         }
-        guard let cgImage = context.makeImage() else { return nil }
-        let image = NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
-        placeholders[key] = image
-        return image
+        return context.makeImage()
+    }
+
+    private static var placeholdersPrepared = false
+
+    /// Draws the stand-in artwork and the row symbols off the main thread, ahead of the first
+    /// list that needs them: each has a large symbol to draw, which takes milliseconds.
+    @MainActor
+    static func preparePlaceholders() {
+        guard !placeholdersPrepared else { return }
+        placeholdersPrepared = true
+        let artwork: [(symbol: String, aspect: CGFloat)] = [("music.note", 1), ("film.fill", 2.0 / 3.0), ("mic.fill", 1)]
+        let rows = ["photo.fill.on.rectangle.fill", "calendar", "square.and.arrow.down.fill", "photo.fill"]
+        DispatchQueue.global(qos: .utility).async {
+            func keep(_ cgImage: CGImage?, as key: String) {
+                guard let cgImage else { return }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolatedIfPossible {
+                        // One asked for meanwhile was drawn there and then, and stays the one in use.
+                        guard placeholders[key] == nil else { return }
+                        placeholders[key] = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                    }
+                }
+            }
+            for item in artwork {
+                autoreleasepool { keep(drawPlaceholderArtwork(symbol: item.symbol, aspect: item.aspect), as: "\(item.symbol)|\(item.aspect)") }
+            }
+            for symbol in rows {
+                autoreleasepool { keep(drawRowIcon(symbol: symbol), as: "row|\(symbol)") }
+            }
+        }
     }
 }

@@ -68,6 +68,20 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
     /// while the list or the words come out: see `NowPlayingSideLayout.detailsPlace`).
     var detailsSlide: CGFloat { incoming.detailsSlide }
 
+    private func showBackdrop(_ blurred: CGImage?) {
+        withoutLayerActions {
+            if backdrop.contents != nil {
+                backdrop.removeAnimation(forKey: "contents")
+                let fade = CABasicAnimation(keyPath: "contents")
+                fade.duration = 0.8
+                fade.fromValue = backdrop.contents
+                fade.toValue = blurred
+                backdrop.addAtFullRate(fade, forKey: "contents")
+            }
+            backdrop.contents = blurred
+        }
+    }
+
     override func update(menu: MenuView, scene _: FullscreenScenePresentation, pass: RenderPass, size: CGSize, scale: CGFloat) {
         let bounds = CGRect(origin: .zero, size: size)
         backdrop.frame = bounds
@@ -80,17 +94,18 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         let snapshot = menu.currentMusicNowPlayingSnapshot
         if snapshot.artworkImage !== backdropSource || backdropMissing {
             backdropSource = snapshot.artworkImage
-            let blurred = snapshot.artworkImage.flatMap { ModernBackgroundLayer.cachedAmbient($0) }
-            backdropMissing = blurred == nil
-            if backdrop.contents != nil {
-                backdrop.removeAnimation(forKey: "contents")
-                let fade = CABasicAnimation(keyPath: "contents")
-                fade.duration = 0.8
-                fade.fromValue = backdrop.contents
-                fade.toValue = blurred
-                backdrop.addAtFullRate(fade, forKey: "contents")
+            if let source = snapshot.artworkImage {
+                // One not made before is made off the main thread and comes in when it's done.
+                backdropMissing = false
+                ModernBackgroundLayer.ambient(for: source) { [weak self] blurred in
+                    guard let self, backdropSource === source else { return }
+                    backdropMissing = blurred == nil
+                    showBackdrop(blurred)
+                }
+            } else {
+                backdropMissing = true
+                showBackdrop(nil)
             }
-            backdrop.contents = blurred
         }
 
         let hasTransition = menu.musicSongTransitionSnapshot != nil
