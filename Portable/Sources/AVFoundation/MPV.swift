@@ -108,16 +108,18 @@ final class MPVCore {
 
     // MARK: A core made ahead
 
-    private static let spareLock = NSLock()
+    private static let spareLock = NSCondition()
     nonisolated(unsafe) private static var spare: MPVCore?
     nonisolated(unsafe) private static var isMakingSpare = false
 
-    /// A core for a player: the one made ahead if it's ready (another is started for next
-    /// time), or a new one. Making a core takes milliseconds (mpv starts its threads and
-    /// sets itself up), and one is wanted the moment a song or a movie starts, which is the
-    /// moment its screen starts to come in.
+    /// A core for a player: the one made ahead (another is started for next time), or a new
+    /// one. Making a core takes milliseconds (mpv starts its threads and sets itself up),
+    /// and one is wanted the moment a song or a movie starts, which is the moment its
+    /// screen starts to come in. One that is still being made is waited for: it's nearer
+    /// done than a new one would be, and two made at once take longer than either.
     static func forPlayer() -> MPVCore? {
         spareLock.lock()
+        while spare == nil, isMakingSpare { spareLock.wait() }
         let ready = spare
         spare = nil
         spareLock.unlock()
@@ -134,11 +136,13 @@ final class MPVCore {
         if needed { isMakingSpare = true }
         spareLock.unlock()
         guard needed else { return }
-        DispatchQueue.global(qos: .utility).async {
+        // (At the priority of what may come to wait for it: the main thread, in `forPlayer`.)
+        DispatchQueue.global(qos: .userInitiated).async {
             let made = MPVCore(video: true)
             spareLock.lock()
             spare = made
             isMakingSpare = false
+            spareLock.broadcast()
             spareLock.unlock()
         }
     }

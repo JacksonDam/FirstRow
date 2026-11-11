@@ -399,7 +399,13 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     /// Where mpv's renderer finds OpenGL functions; set by the host.
     public static func setOpenGLLoader(_ loader: @escaping (String) -> UnsafeMutableRawPointer?) {
         MPVCore.procAddress = loader
-        // (First Row is starting: the first player's core is made ahead from here.)
+        MPVCore.prepareSpare()
+    }
+
+    /// Starts making the first player's core, off the main thread. Called as First Row
+    /// starts, so that it's being made while the window and OpenGL are: the intro movie
+    /// wants it the moment the interface is up.
+    public static func prepareFirstPlayer() {
         MPVCore.prepareSpare()
     }
 }
@@ -429,6 +435,9 @@ final class VideoSurface: ExternalTextureProviding {
     private var texture: GLuint = 0
     private var size = (0, 0)
     private var hasFrame = false
+    /// A few pixels for a frame drawn before its size is known (see `drawUnseen`).
+    private var unseenFramebuffer: GLuint = 0
+    private var unseenTexture: GLuint = 0
     /// Where the software renderer draws, when mpv can't draw with OpenGL.
     private var pixels: UnsafeMutableRawPointer?
     private var stride = 0
@@ -450,6 +459,8 @@ final class VideoSurface: ExternalTextureProviding {
         var tex = texture
         if fbo != 0 { glDeleteFramebuffers(1, &fbo) }
         if tex != 0 { glDeleteTextures(1, &tex) }
+        if unseenFramebuffer != 0 { glDeleteFramebuffers(1, &unseenFramebuffer) }
+        if unseenTexture != 0 { glDeleteTextures(1, &unseenTexture) }
         pixels?.deallocate()
     }
 
@@ -468,7 +479,11 @@ final class VideoSurface: ExternalTextureProviding {
         let width = core.videoWidth
         let height = core.videoHeight
         // (Before mpv has a frame of its file there is nothing of it to draw: only black.)
-        guard width > 0, height > 0, core.hasVideoFrame else { return }
+        guard core.hasVideoFrame else { return }
+        guard width > 0, height > 0 else {
+            if hasNewFrame { drawUnseen(context, inMemory: core.softwareRendering) }
+            return
+        }
         if size != (width, height) {
             resize(width, height)
         } else if !hasNewFrame, hasFrame {
@@ -478,7 +493,54 @@ final class VideoSurface: ExternalTextureProviding {
             renderInMemory(context, width, height)
             return
         }
-        var fbo = mpv_opengl_fbo(fbo: Int32(framebuffer), w: Int32(width), h: Int32(height), internal_format: 0)
+        draw(context, into: framebuffer, width: width, height: height)
+        hasFrame = true
+    }
+
+    /// Lets mpv go on from the first frame of a file whose picture size isn't known yet. Its
+    /// core does nothing more until that frame has been drawn, telling the size included,
+    /// and gives up waiting after a fifth of a second: every movie began that much late. So
+    /// the frame is drawn into a few pixels that are never shown. The size comes within a
+    /// pass or two of the main loop, and the frame is drawn properly then.
+    private func drawUnseen(_ context: OpaquePointer, inMemory: Bool) {
+        let side = 16
+        if inMemory {
+            var rowBytes = 64
+            let scratch = UnsafeMutableRawPointer.allocate(byteCount: rowBytes * side, alignment: 64)
+            defer { scratch.deallocate() }
+            var surfaceSize: [Int32] = [Int32(side), Int32(side)]
+            let format = strdup("rgb0")
+            defer { free(format) }
+            surfaceSize.withUnsafeMutableBufferPointer { sizePointer in
+                withUnsafeMutablePointer(to: &rowBytes) { stridePointer in
+                    var params = [
+                        mpv_render_param(type: MPV_RENDER_PARAM_SW_SIZE, data: UnsafeMutableRawPointer(sizePointer.baseAddress)),
+                        mpv_render_param(type: MPV_RENDER_PARAM_SW_FORMAT, data: UnsafeMutableRawPointer(format)),
+                        mpv_render_param(type: MPV_RENDER_PARAM_SW_STRIDE, data: UnsafeMutableRawPointer(stridePointer)),
+                        mpv_render_param(type: MPV_RENDER_PARAM_SW_POINTER, data: scratch),
+                        mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
+                    ]
+                    _ = mpv_render_context_render(context, &params)
+                }
+            }
+            return
+        }
+        if unseenTexture == 0 {
+            glGenTextures(1, &unseenTexture)
+            glGenFramebuffers(1, &unseenFramebuffer)
+            glBindTexture(GL_TEXTURE_2D, unseenTexture)
+            glTexImage2D(GL_TEXTURE_2D, 0, GLint(GL_RGBA8), GLsizei(side), GLsizei(side), 0, GL_RGBA, GL_UNSIGNED_BYTE, nil)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GLint(GL_LINEAR))
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GLint(GL_LINEAR))
+            glBindFramebuffer(GL_FRAMEBUFFER, unseenFramebuffer)
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, unseenTexture, 0)
+        }
+        draw(context, into: unseenFramebuffer, width: side, height: side)
+    }
+
+    /// Has mpv draw its current frame into a framebuffer.
+    private func draw(_ context: OpaquePointer, into target: GLuint, width: Int, height: Int) {
+        var fbo = mpv_opengl_fbo(fbo: Int32(target), w: Int32(width), h: Int32(height), internal_format: 0)
         var flip: Int32 = 0
         // Never wait for the frame's display time: the interface draws on this thread too.
         var block: Int32 = 0
@@ -495,7 +557,6 @@ final class VideoSurface: ExternalTextureProviding {
                 }
             }
         }
-        hasFrame = true
     }
 
     private func resize(_ width: Int, _ height: Int) {

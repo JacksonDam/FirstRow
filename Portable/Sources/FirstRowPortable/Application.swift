@@ -213,6 +213,7 @@ public enum PortableApplication {
         // (Before the first thread is started: see the function.)
         fr_tune_allocator()
         AssetCatalog.decodeAhead()
+        AVPlayer.prepareFirstPlayer()
         let environment = ProcessInfo.processInfo.environment
         let headless = environment["SDL_VIDEO_DRIVER"] == "offscreen"
         isHeadless = headless
