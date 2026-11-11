@@ -806,15 +806,16 @@ enum LetteringInProgress {
 
     /// The pass is over: every bitmap is put on its layer. Lettering no thread has started on
     /// is drawn here, alongside the threads drawing the rest, and what they're still drawing
-    /// is waited for (a fraction of a millisecond a string); a symbol not yet drawn follows
-    /// when it is.
+    /// is waited for (a fraction of a millisecond a string). A symbol not yet drawn follows
+    /// when it is, on a layer that shows nothing so far; one taking another's place (Play
+    /// for Pause) is waited for, so the old one is never left standing in the new one's box.
     static func endPass() {
         depth -= 1
         guard depth == 0, !waiting.isEmpty else { return }
         let shown = waiting
         waiting.removeAll(keepingCapacity: true)
         for (id, entry) in shown {
-            if entry.graphic.mayFollow, !entry.graphic.isDrawn {
+            if entry.graphic.mayFollow, !entry.graphic.isDrawn, entry.layer.contents == nil {
                 follow(entry.graphic, on: entry.layer, id)
             } else {
                 entry.layer.contents = entry.graphic.image
