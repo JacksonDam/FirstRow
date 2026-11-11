@@ -92,7 +92,11 @@ struct YouTubeVideo: Equatable, Codable, Sendable {
     /// A small picture for a list row, and the largest there is for the preview.
     var rowThumbnailURL: URL? { URL(string: "https://i.ytimg.com/vi/\(id)/mqdefault.jpg") }
     var largeThumbnailURL: URL? { URL(string: "https://i.ytimg.com/vi/\(id)/hq720.jpg") }
-    var fallbackThumbnailURL: URL? { URL(string: "https://i.ytimg.com/vi/\(id)/hqdefault.jpg") }
+    /// For a video with no large picture: its other large one, then the small one every video
+    /// has. (Not "hqdefault": that one has black bands above and below the picture.)
+    var fallbackThumbnailURLs: [URL] {
+        ["maxresdefault", "mqdefault"].compactMap { URL(string: "https://i.ytimg.com/vi/\(id)/\($0).jpg") }
+    }
 }
 
 struct YouTubePage: Sendable {

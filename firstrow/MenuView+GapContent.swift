@@ -403,14 +403,16 @@ extension MenuView {
         gapContentHorizontalOffset - 450
     }
 
-    func gapCarouselItem(key: String, artworks: [NSImage?], exitOpacity: Double) -> GapItemSpec? {
+    /// A carousel of these pictures. `asCovers` gives Music's carousel: every picture a
+    /// square that it fills, whatever its own shape.
+    func gapCarouselItem(key: String, artworks: [NSImage?], exitOpacity: Double, asCovers: Bool = false) -> GapItemSpec? {
         guard !artworks.isEmpty else { return nil }
         return GapItemSpec(key: key, kind: .coverCarousel(CoverCarouselConfiguration(
             source: .images(artworks),
             baseIconSize: iconSize,
             horizontalOffset: musicTopLevelCarouselHorizontalOffset,
             verticalOffset: gapContentVerticalOffset - 34,
-            preserveArtworkAspectRatio: true,
+            preserveArtworkAspectRatio: !asCovers,
         ), exitOverlayOpacity: exitOpacity))
     }
 

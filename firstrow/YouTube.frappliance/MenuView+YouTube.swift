@@ -82,10 +82,12 @@ extension MenuView {
 
     func youtubeSubmenuItems() -> [SubmenuItemConfig] {
         var items: [SubmenuItemConfig] = []
+        // (No dividers: with them the menu's rows were a little more than the list shows,
+        // and the last was cut off.)
         for list in [YouTubeList.music, .trailers, .gaming, .news, .sports, .live] {
             items.append(SubmenuItemConfig(id: "youtube_list_\(Self.youtubeListToken(list))", title: list.title, leadsToMenu: true))
         }
-        items.append(SubmenuItemConfig(id: "youtube_history", title: "History", leadsToMenu: true, showsTopDivider: true))
+        items.append(SubmenuItemConfig(id: "youtube_history", title: "History", leadsToMenu: true))
         items.append(SubmenuItemConfig(id: "youtube_search", title: "Search", trailingText: "..."))
         return items
     }
@@ -511,7 +513,7 @@ extension MenuView {
 
     /// A video's picture: the large one, or the smaller one every video has.
     func loadYouTubeThumbnail(for video: YouTubeVideo) async -> NSImage? {
-        for url in [video.largeThumbnailURL, video.fallbackThumbnailURL].compactMap({ $0 }) {
+        for url in [video.largeThumbnailURL].compactMap({ $0 }) + video.fallbackThumbnailURLs {
             if let image = await loadYouTubeImage(url) { return image }
         }
         return nil
@@ -538,10 +540,10 @@ extension MenuView {
         let key = image == nil ? "none" : (video?.id ?? "none")
         let animation = pass.animation(.easeInOut(duration: 0.22), when: memo.youtubePreviewKey != nil && memo.youtubePreviewKey != key)
         memo.youtubePreviewKey = key
-        // Beside the menu itself: the selected list's videos, in the carousel the other
-        // sections have for their covers and posters.
+        // Beside the menu itself: the selected list's videos, in Music's carousel (each
+        // picture a square, as its covers are).
         if let carousel = youtubeCarouselPictures,
-           let item = gapCarouselItem(key: "youtube_carousel:\(carousel.key)", artworks: carousel.pictures, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
+           let item = gapCarouselItem(key: "youtube_carousel:\(carousel.key)", artworks: carousel.pictures, exitOpacity: iTunesTopCarouselExitOverlayOpacity, asCovers: true)
         {
             return [icon(0, animation), item]
         }
