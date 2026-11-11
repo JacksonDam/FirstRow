@@ -1023,7 +1023,28 @@ extension MenuView {
                 forProperty: MPMediaItemPropertyPersistentID,
                 comparisonType: .equalTo,
             ))
-            return query.items?.first?.artwork?.image(at: CGSize(width: 800, height: 800))
+            let item = query.items?.first ?? PlaylistItems.item(persistentID)
+            return item?.artwork?.image(at: CGSize(width: 800, height: 800))
+        }
+
+        /// The playlists' own items, by their identifiers. A song can be in a playlist without
+        /// being in the library (added to the playlist in Music): looking among the library's
+        /// songs doesn't find it, for its cover or to play it.
+        enum PlaylistItems {
+            private static let lock = NSLock()
+            nonisolated(unsafe) private static var items: [String: MPMediaItem] = [:]
+
+            static func remember(_ found: [MPMediaItem]) {
+                lock.lock()
+                for item in found { items["\(item.persistentID)"] = item }
+                lock.unlock()
+            }
+
+            static func item(_ persistentID: String) -> MPMediaItem? {
+                lock.lock()
+                defer { lock.unlock() }
+                return items[persistentID]
+            }
         }
     #endif
 
@@ -2171,14 +2192,15 @@ extension MenuView {
                 let playlist = collection as? MPMediaPlaylist
                 let title = normalizedMusicLibraryText(playlist?.name, fallback: "Untitled Playlist")
                 let persistentID = playlist.map { "\($0.persistentID)" } ?? title.lowercased()
-                let songsInOrder = collection.items.compactMap { makeMusicLibrarySongEntry(from: $0, includeArtwork: false) }
-                let songs = sortedMusicLibraryEntries(songsInOrder)
+                // (In the playlist's own order, not by title.)
+                PlaylistItems.remember(collection.items)
+                let songs = collection.items.compactMap { makeMusicLibrarySongEntry(from: $0, includeArtwork: false) }
                 guard !songs.isEmpty else { return nil }
                 return MusicCategoryEntry(
                     id: "playlist::ios::\(persistentID)",
                     title: title,
                     songs: songs,
-                    coverSongs: musicPlaylistCoverSongs(from: songsInOrder),
+                    coverSongs: musicPlaylistCoverSongs(from: songs),
                 )
             }
             return playlists.sorted {
@@ -2202,12 +2224,12 @@ extension MenuView {
                             sourcePlaylistPersistentIDHex: playlistPersistentIDHex,
                         )
                     }
-                    let songs = sortedMusicLibraryEntries(songsInOrder)
-                    guard !songs.isEmpty else { return nil }
+                    // (In the playlist's own order, not by title.)
+                    guard !songsInOrder.isEmpty else { return nil }
                     return MusicCategoryEntry(
                         id: "playlist::mac::\(playlist.persistentID)",
                         title: title,
-                        songs: songs,
+                        songs: songsInOrder,
                         coverSongs: musicPlaylistCoverSongs(from: songsInOrder),
                     )
                 }

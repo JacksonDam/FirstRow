@@ -1767,9 +1767,6 @@ extension MenuView {
         /// Songs whose catalogue number wouldn't play, since First Row started: they're asked
         /// for as the library's own.
         private static var appleTVSongsOnlyFromLibrary: Set<String> = []
-        /// How many songs in a row couldn't be played and were passed over.
-        private static var appleTVSongsPassedOver = 0
-
         /// Apple TV's way of starting a song (the rest is as on iPhone).
         ///
         /// On tvOS 27 what the music service tells an app about a song from the library can't
@@ -1815,10 +1812,10 @@ extension MenuView {
                         continue
                     }
                     musicMediaPlayerIsResuming = false
-                    passOverAppleTVSong(song, error: failure)
+                    passOverUnplayableSong(song)
                     return
                 }
-                Self.appleTVSongsPassedOver = 0
+                Self.unplayableSongsInARow = 0
                 // (Paused while it got ready: it waits for Play.)
                 guard musicNowPlayingLeadingGlyphState != .pause else {
                     musicMediaPlayerIsResuming = false
@@ -1870,13 +1867,24 @@ extension MenuView {
             }
         }
 
-        /// A song that couldn't be got ready: in a run of songs the next is tried, unless
-        /// three in a row have failed or it was the last.
-        private func passOverAppleTVSong(_ song: MusicLibrarySongEntry, error: Error) {
-            Self.appleTVSongsPassedOver += 1
+        #endif
+
+        #if os(iOS) || os(tvOS)
+        /// How many songs in a row couldn't be played and were passed over.
+        private static var unplayableSongsInARow = 0
+
+        /// A song the system's player couldn't get ready. In a run of songs the next is tried;
+        /// if three in a row have failed, or it was the last, it stays, not playing. (The list
+        /// it was chosen from is left as it is: the failure used to replace it with "Unable to
+        /// access Music library".)
+        private func passOverUnplayableSong(_ song: MusicLibrarySongEntry) {
+            Self.unplayableSongsInARow += 1
             let queue = resolvedActiveMusicPlaybackQueue()
-            guard Self.appleTVSongsPassedOver <= 3, let index = queue.firstIndex(where: { $0.id == song.id }), index + 1 < queue.count else {
-                musicSongsLoadError = musicLibraryErrorMessage(for: error)
+            guard Self.unplayableSongsInARow <= 3, let index = queue.firstIndex(where: { $0.id == song.id }), index + 1 < queue.count else {
+                musicMediaPlayerWasPlaying = false
+                musicMediaPlayerAskedToPlay = nil
+                musicNowPlayingLeadingGlyphState = .pause
+                playSound(named: "Limit")
                 return
             }
             Task { @MainActor in
@@ -1904,7 +1912,21 @@ extension MenuView {
             let player = MPMusicPlayerController.applicationQueuePlayer
             player.repeatMode = .none
             player.shuffleMode = .off
-            player.setQueue(with: MPMediaQuery(filterPredicates: [predicate]))
+            let query = MPMediaQuery(filterPredicates: [predicate])
+            if query.items?.isEmpty == false {
+                player.setQueue(with: query)
+            } else if let item = PlaylistItems.item(song.id) {
+                // In a playlist but not in the library: by its Apple Music number, or failing
+                // that as the playlist's own item.
+                let storeID = item.playbackStoreID
+                if !storeID.isEmpty, storeID != "0" {
+                    player.setQueue(with: [storeID])
+                } else {
+                    player.setQueue(with: MPMediaItemCollection(items: [item]))
+                }
+            } else {
+                return false
+            }
             return true
         }
         #endif
@@ -1939,15 +1961,12 @@ extension MenuView {
                     return self.setMediaPlayerQueue(for: song)
                 }
                 guard activeMusicPlaybackSongID == song.id else { return }
-                guard queued else {
-                    isCurrentMusicPlaybackUsingMediaPlayer = false
-                    return
-                }
-                if let error = await SystemMusicPlayerCalls.prepareToPlay() {
+                guard queued, await SystemMusicPlayerCalls.prepareToPlay() == nil else {
                     guard activeMusicPlaybackSongID == song.id else { return }
-                    musicSongsLoadError = musicLibraryErrorMessage(for: error)
+                    passOverUnplayableSong(song)
                     return
                 }
+                Self.unplayableSongsInARow = 0
                 // (Paused while it got ready: it waits for Play.)
                 guard activeMusicPlaybackSongID == song.id, musicNowPlayingLeadingGlyphState != .pause else { return }
                 SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.play() }
