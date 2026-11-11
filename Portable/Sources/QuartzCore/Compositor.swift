@@ -586,7 +586,12 @@ public final class Compositor {
     /// A shape layer's fill and stroke as a picture, and the box it covers in the layer's space.
     private func shapePicture(_ s: LayerState, toClip: CATransform3D) -> (CGImage, CGRect)? {
         guard let path = s.shapePath, !path.isEmpty else { return nil }
-        let density = max(1, min(4, pixelDensity(toClip, at: CGPoint(x: s.bounds.midX, y: s.bounds.midY))))
+        // The next quarter step up from the scale it's seen at. While a scene is scaled in or
+        // out that scale is different every frame, and a picture made for each one meant every
+        // shape and rounded mask on screen was drawn again and sent to the graphics card every
+        // frame of the move. One made a little too fine is simply drawn smaller.
+        let seenAt = max(1, min(4, pixelDensity(toClip, at: CGPoint(x: s.bounds.midX, y: s.bounds.midY))))
+        let density = min(4, (seenAt * 4 - 0.02).rounded(.up) / 4)
         let stroke = s.strokeColor != nil ? s.lineWidth : 0
         let box = path.boundingBox.insetBy(dx: -stroke - 1, dy: -stroke - 1)
         guard box.width > 0, box.height > 0 else { return nil }
@@ -814,8 +819,20 @@ public final class Compositor {
             density = maxSide / max(extent.width, extent.height)
             wholePixels = nil
         }
-        let width = wholePixels?.width ?? max(1, Int(ceil(extent.width * density)))
-        let height = wholePixels?.height ?? max(1, Int(ceil(extent.height * density)))
+        var width = wholePixels?.width ?? max(1, Int(ceil(extent.width * density)))
+        var height = wholePixels?.height ?? max(1, Int(ceil(extent.height * density)))
+        // In steps (of 16 to 64 pixels), the area drawn growing by whole pixels to match (what's
+        // added is empty, or more of the layer). A group that's being scaled, or moved by
+        // fractions of a pixel, comes out a few pixels bigger or smaller each frame, and a
+        // target of exactly that size had to be made new each time, which a graphics card
+        // takes its time over. In steps, the target the last frame used fits this one.
+        let steppedWidth = Self.stepped(width), steppedHeight = Self.stepped(height)
+        if steppedWidth <= device.maxTextureSize, steppedHeight <= device.maxTextureSize {
+            extent.size = CGSize(width: extent.width * CGFloat(steppedWidth) / CGFloat(width),
+                                 height: extent.height * CGFloat(steppedHeight) / CGFloat(height))
+            width = steppedWidth
+            height = steppedHeight
+        }
         let toTarget = CATransform3DMakeTranslation(-extent.minX, -extent.minY, 0)
             .then(CATransform3DMakeScale(2 / extent.width, 2 / extent.height, 1))
             .then(CATransform3DMakeTranslation(-1, -1, 0))
@@ -901,6 +918,13 @@ public final class Compositor {
         }
         submit(Quad(rect: extent, uv: (0, 0, 1, 1), color: (opacity, opacity, opacity, opacity), mode: .texture, antialias: !isAxisAligned(toClip), texture: result.texture), toClip)
         device.releaseTarget(result)
+    }
+
+    /// A target's side rounded up to the next step: finer steps for small groups, which
+    /// would otherwise be drawn much bigger than they are.
+    private static func stepped(_ pixels: Int) -> Int {
+        let step = pixels < 256 ? 16 : pixels < 1024 ? 32 : 64
+        return (pixels + step - 1) / step * step
     }
 
     private func rectThrough(_ t: CATransform3D, _ r: CGRect) -> CGRect {
