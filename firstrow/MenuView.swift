@@ -411,8 +411,6 @@ final class MenuView: ObservableObject {
         /// Select held on the remote in Now Playing (see `remoteSelectBegan`).
         var remoteSelectHold: Task<Void, Never>?
         var remoteSelectIsDown = false
-        /// A question to the system's music player about where it is hasn't been answered yet.
-        var isReadingMusicKitProgress = false
         /// The last play or pause from the remote, and whether it came as a button press or
         /// as the system's media command (see `takesPlayPause`).
         var lastPlayPause: (date: Date, fromRemotePress: Bool)?
@@ -621,11 +619,13 @@ final class MenuView: ObservableObject {
         @Published var musicKitProgressTimer: Timer?
         @Published var musicKitDidHandleTrackEnd = false
     #endif
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
         @Published var isCurrentMusicPlaybackUsingMediaPlayer = false
         var musicMediaPlayerWasPlaying = false
         /// What Play or Pause last asked the system player for, until it says so too.
         var musicMediaPlayerAskedToPlay: AskedPlayState?
+        /// A song that stopped by itself is being started again where it stopped (Apple TV).
+        var musicMediaPlayerIsResuming = false
     #endif
     @Published var isCurrentMusicPlaybackManagedByFirstRow = false
     @Published var musicAppleScriptCurrentTrackPersistentIDHex: String?

@@ -1,9 +1,7 @@
 import AVFoundation
 import Foundation
-#if os(iOS)
+#if os(iOS) || os(tvOS)
     import MediaPlayer
-#elseif os(tvOS)
-    import MusicKit
 #endif
 #if os(macOS)
     import AppKit
@@ -867,13 +865,9 @@ extension MenuView {
     /// Apple TV), which plays without an AVPlayer of First Row's.
     func seekSystemMusicPlayer(toSeconds seconds: Double) {
         guard activeMusicPlaybackSongID != nil, !isCurrentMusicPlaybackUsingSpotify else { return }
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
             if isCurrentMusicPlaybackUsingMediaPlayer {
                 SystemMusicPlayerCalls.send { MPMusicPlayerController.applicationQueuePlayer.currentPlaybackTime = seconds }
-            }
-        #elseif os(tvOS)
-            if !isCurrentMusicPlaybackUsingAppleScript {
-                MusicKitPlayerCalls.send { ApplicationMusicPlayer.shared.playbackTime = seconds }
             }
         #endif
     }
