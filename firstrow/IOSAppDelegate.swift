@@ -1,5 +1,8 @@
 #if os(iOS) || os(tvOS)
     import AVFoundation
+    #if os(iOS)
+        import CoreMotion
+    #endif
     import UIKit
 
     /// Scene-based, since iOS and tvOS 27 won't launch apps without the scene life cycle.
@@ -63,6 +66,12 @@
             private var isBent = false
             /// The stance the scene was last laid out for.
             private var stance: UprightStance?
+            private var deviceTurnObserver: NSObjectProtocol?
+            /// The phone's own reading of which way is down, for following it sideways when
+            /// closed (see `gravityChanged`).
+            private let motion = CMMotionManager()
+            private var lastPull: (x: Double, time: CFTimeInterval)?
+            private var steadyPull: (rightward: Bool, readings: Int)?
         #endif
 
         /// What First Row draws in.
@@ -93,6 +102,11 @@
                         window.addInteraction(UIHingeInteraction { [weak self] _, update in
                             self?.hingeChanged(hasHinge: update.hinge != nil, closed: update.hinge?.status == .closed, bent: update.hinge?.status == .partiallyOpen)
                         })
+                        // Closed, it goes with the phone from one sideways way round to the other.
+                        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+                        deviceTurnObserver = NotificationCenter.default.addObserver(forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                            MainActor.assumeIsolatedIfPossible { self?.followDeviceSideways() }
+                        }
                     }
                 #endif
             }
@@ -152,8 +166,82 @@
                     } else {
                         UIViewController.attemptRotationToDeviceOrientation()
                     }
+                    followDeviceSideways()
                 }
+                watchGravity(isFoldable && isClosed)
                 viewIfLoaded?.setNeedsLayout()
+            }
+
+            /// On a closed foldable's outside screen First Row is sideways, and turns with the
+            /// phone from one sideways way round to the other, never upright. Both ways round
+            /// are allowed (`supportedInterfaceOrientations`); the turn is also asked for
+            /// outright here as the phone settles on its other side, so it doesn't rest on the
+            /// system deciding to make it.
+            private func followDeviceSideways() {
+                let device = UIDevice.current.orientation
+                guard isFoldable, isClosed, device == .landscapeLeft || device == .landscapeRight else { return }
+                // Which way the phone's own reading of down goes with which way round is
+                // checked against every turn the system reports (a foldable's two screens face
+                // opposite ways, and the reading could be either screen's).
+                if let pull = lastPull, abs(pull.x) > 0.6, CACurrentMediaTime() - pull.time < 1 {
+                    let rightwardIsLandscapeRight = (pull.x > 0) == (device == .landscapeRight)
+                    if UserDefaults.standard.object(forKey: Self.pullDirectionKey) as? Bool != rightwardIsLandscapeRight {
+                        UserDefaults.standard.set(rightwardIsLandscapeRight, forKey: Self.pullDirectionKey)
+                    }
+                }
+                turnSideways(toMatch: device)
+            }
+
+            private static let pullDirectionKey = "FirstRowClosedPullToRightIsLandscapeRight"
+
+            /// Turns the interface to suit the phone held sideways that way round, if it
+            /// isn't already.
+            private func turnSideways(toMatch device: UIDeviceOrientation) {
+                guard isFoldable, isClosed, #available(iOS 16.0, *), let scene = viewIfLoaded?.window?.windowScene else { return }
+                // (The phone's two sideways names are the interface's the other way round.)
+                let wanted: UIInterfaceOrientation = device == .landscapeLeft ? .landscapeRight : .landscapeLeft
+                guard scene.interfaceOrientation != wanted else { return }
+                scene.requestGeometryUpdate(.iOS(interfaceOrientations: wanted == .landscapeLeft ? .landscapeLeft : .landscapeRight))
+            }
+
+            /// Reads which way is down from the phone itself while it's closed. The system
+            /// stops reporting turns while its rotation lock is on; closed, First Row still
+            /// goes with the phone from one sideways way round to the other.
+            private func watchGravity(_ watch: Bool) {
+                guard motion.isAccelerometerAvailable else { return }
+                guard watch else {
+                    if motion.isAccelerometerActive { motion.stopAccelerometerUpdates() }
+                    steadyPull = nil
+                    return
+                }
+                guard !motion.isAccelerometerActive else { return }
+                motion.accelerometerUpdateInterval = 0.25
+                motion.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
+                    guard let acceleration = data?.acceleration else { return }
+                    MainActor.assumeIsolatedIfPossible { self?.gravityChanged(x: acceleration.x, y: acceleration.y) }
+                }
+            }
+
+            private func gravityChanged(x: Double, y: Double) {
+                lastPull = (x, CACurrentMediaTime())
+                // Held clearly sideways (within some 40 degrees of level), for two readings.
+                guard isFoldable, isClosed, abs(x) > 0.75, abs(x) > abs(y) else {
+                    steadyPull = nil
+                    return
+                }
+                let rightward = x > 0
+                if let steady = steadyPull, steady.rightward == rightward {
+                    steadyPull = (rightward, steady.readings + 1)
+                } else {
+                    steadyPull = (rightward, 1)
+                }
+                // Once it has settled that way round, and again every couple of seconds in case
+                // the system has put the interface back.
+                guard let steady = steadyPull, steady.readings >= 2, steady.readings % 8 == 2 else { return }
+                // A pull to the phone's right is the phone turned onto its right side, as on any
+                // iPhone, unless a turn the system reported has shown otherwise.
+                let rightwardIsLandscapeRight = UserDefaults.standard.object(forKey: Self.pullDirectionKey) as? Bool ?? true
+                turnSideways(toMatch: rightward == rightwardIsLandscapeRight ? .landscapeRight : .landscapeLeft)
             }
         #endif
 
