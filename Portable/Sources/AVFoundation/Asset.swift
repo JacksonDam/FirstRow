@@ -139,6 +139,9 @@ public final class AVAssetTrack: NSObject, @unchecked Sendable {
 open class AVAsset: NSObject, @unchecked Sendable {
     public let url: URL
     lazy var info: MediaFileInfo = TagReader.info(for: url)
+    /// The file's tags with its pictures, which `info` leaves out: read from the file when
+    /// metadata is asked for, and held only as long as this asset is.
+    private lazy var tagsWithPictures: [MediaFileInfo.Tag] = TagReader.info(for: url, withPictures: true).tags
 
     init(url: URL) {
         self.url = url
@@ -151,11 +154,11 @@ open class AVAsset: NSObject, @unchecked Sendable {
     }
 
     public var commonMetadata: [AVMetadataItem] {
-        info.tags.filter { $0.commonKey != nil }.map { AVMetadataItem(tag: $0, common: true) }
+        tagsWithPictures.filter { $0.commonKey != nil }.map { AVMetadataItem(tag: $0, common: true) }
     }
 
     public var metadata: [AVMetadataItem] {
-        info.tags.map { AVMetadataItem(tag: $0, common: false) }
+        tagsWithPictures.map { AVMetadataItem(tag: $0, common: false) }
     }
 
     public var tracks: [AVAssetTrack] {

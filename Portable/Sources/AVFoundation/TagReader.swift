@@ -14,6 +14,8 @@ struct MediaFileInfo {
     var hasVideo = false
     var hasAudio = false
     var videoSize: CGSize?
+    /// True of a copy that has had the file's pictures (its cover) taken out.
+    var leavesOutPictures = false
 
     func string(_ identifier: String) -> String? {
         tags.first { $0.identifier == identifier }?.value as? String
@@ -60,13 +62,18 @@ private func ascii(_ b: [UInt8], _ i: Int, _ n: Int) -> String {
 }
 
 enum TagReader {
+    /// What has been read of each file, without its pictures. A song's cover is a megabyte as
+    /// often as not, and it's in every song of its album: kept here, a library's covers were
+    /// most of the memory First Row used, well over a gigabyte for a thousand songs.
     nonisolated(unsafe) private static var cache: [String: MediaFileInfo] = [:]
     private static let lock = NSLock()
 
-    static func info(for url: URL) -> MediaFileInfo {
+    /// A file's tags and length. Its pictures come only if they're asked for, and then the
+    /// file is read again for them unless this is the first time it's read.
+    static func info(for url: URL, withPictures: Bool = false) -> MediaFileInfo {
         let key = url.standardizedFileURL.path
         lock.lock()
-        if let cached = cache[key] {
+        if let cached = cache[key], !(withPictures && cached.leavesOutPictures) {
             lock.unlock()
             return cached
         }
@@ -98,11 +105,14 @@ enum TagReader {
             }
             if ["ogg", "oga", "opus", "wma", "aac"].contains(ext) { info.hasAudio = true }
         }
+        var kept = info
+        kept.tags.removeAll { $0.value is Data }
+        kept.leavesOutPictures = kept.tags.count != info.tags.count
         lock.lock()
         if cache.count > 4000 { cache.removeAll() }
-        cache[key] = info
+        cache[key] = kept
         lock.unlock()
-        return info
+        return withPictures ? info : kept
     }
 
     // MARK: ID3
