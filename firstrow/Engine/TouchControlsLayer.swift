@@ -42,6 +42,22 @@ final class TouchControlsLayer {
     /// transport's, turned on its side.
     private let queueHint = HintBarLayer()
     private var wasEnabled = false
+    #if os(macOS)
+        /// When the buttons were last laid out: nothing on screen has changed since.
+        private var lastUpdate: CFTimeInterval = 0
+        /// Makes the system's glass buttons ahead (see `NativeControls.makeAhead`), one at a
+        /// time while nothing is happening.
+        private var aheadTimer: Timer?
+        private var hasMadeButtonsAhead = false
+        /// The buttons most often wanted: Back, and Now Playing's.
+        private static let usualButtons: [(control: TouchControl, inScene: Bool, symbol: String, pointSize: CGFloat, side: CGFloat)] = [
+            (.back, false, "chevron.left", 19, 46),
+            (.playPause, true, "pause.fill", 26, 64),
+            (.previous, true, "backward.fill", 20, 52),
+            (.next, true, "forward.fill", 20, 52),
+            (.lyrics, true, "quote.bubble", 19, 46),
+        ]
+    #endif
 
     private final class Button {
         /// Positioned at the button's frame; fades and shrinks when pressed.
@@ -142,6 +158,9 @@ final class TouchControlsLayer {
         let enabled = menu.showsOnScreenControls && menu.showsPointingHints && menu.onboardingStep == nil
         let putAwayForKeys = wasEnabled && !enabled
         wasEnabled = enabled
+        #if os(macOS)
+            lastUpdate = CACurrentMediaTime()
+        #endif
         let isModern = ModernTheme.isActive
         // Laid out in the screen's own points, so the buttons are finger-sized on any screen,
         // and kept clear of the notch or Dynamic Island and of the screen's rounded corners.
@@ -294,10 +313,13 @@ final class TouchControlsLayer {
             drift: CGSize(width: 0, height: -9),
             session: menu.nowPlayingSession,
         )
-        // Beside where the list comes out: under the fold, standing upright.
+        // At the screen's edge, where the list comes out, half way down it (under the fold,
+        // standing upright). Right at the edge whichever way round the phone is held: not in
+        // from it by that side's safe area, which is wide on the side the sensor housing is
+        // and put the bar over Now Playing.
         let queueHintY = menu.upright.map { FullscreenCanvas(screenSize: size, upright: $0).window($0.lowerPane).midY } ?? size.height / 2
         queueHint.update(
-            frame: CGRect(x: size.width - max(insets.right, 8) - 16, y: queueHintY - 40, width: 5, height: 80),
+            frame: CGRect(x: size.width - 24, y: queueHintY - 40, width: 5, height: 80),
             shown: isNowPlaying && menu.canShowNowPlayingQueue && menu.nowPlayingQueueReveal <= 0.001 && !menu.isNowPlayingLyricsVisible && menu.nowPlayingWordsGlide == nil &&
                 !menu.isFullscreenSceneTransitioning && menu.showsPointingHints && menu.onboardingStep == nil,
             drift: CGSize(width: -9, height: 0),
@@ -309,6 +331,9 @@ final class TouchControlsLayer {
         #if os(iOS) || os(macOS)
             if #available(macOS 26.0, iOS 26.0, *), let native = NativeControls.shared {
                 if isModern {
+                    #if os(macOS)
+                        makeButtonsAhead(size: size)
+                    #endif
                     for (_, button) in buttons where button.isShown {
                         hide(button, instantly: true)
                     }
@@ -405,12 +430,16 @@ final class TouchControlsLayer {
                 button.label.isHidden = true
                 parts = [(graphic, glyphOrigin)]
             }
-            let blurKey = "\(item.symbol)|\(frame.size.width)|\(frame.size.height)|\(isModern)|\(item.label.map { ObjectIdentifier($0.image ?? Self.placeholderImage) }.map(String.init(describing:)) ?? "")"
+            let blurKey = "\(item.symbol)|\(frame.size.width)|\(frame.size.height)|\(isModern)|\(item.label.flatMap(\.identity).map(String.init(describing:)) ?? "")"
             if button.blurKey != blurKey {
                 button.blurKey = blurKey
-                let blur = Self.blurredButton(size: frame.size, fill: fill, border: !isModern, parts: parts)
-                button.blurred.contents = blur?.image
-                button.blurred.frame = local.insetBy(dx: -(blur?.margin ?? 0), dy: -(blur?.margin ?? 0))
+                button.blurred.frame = local.insetBy(dx: -Self.blurMargin, dy: -Self.blurMargin)
+                // Made on another thread (out of the symbol, which may still be being drawn
+                // there): the button is only starting to fade in when it comes.
+                Self.blurredButton(size: frame.size, fill: fill, border: !isModern, parts: parts) { image in
+                    guard button.blurKey == blurKey else { return }
+                    withoutLayerActions { button.blurred.contents = image }
+                }
             }
             // Slid away, they can't be pressed.
             if !(item.inScene && transportHidden) { frames[item.control] = frame }
@@ -429,6 +458,31 @@ final class TouchControlsLayer {
             }
         }
     }
+
+    #if os(macOS)
+        /// Starts making the usual glass buttons ahead, if that hasn't been done: one every
+        /// so often, at a moment when nothing on screen has changed for half a second.
+        private func makeButtonsAhead(size: CGSize) {
+            guard !hasMadeButtonsAhead, aheadTimer == nil else { return }
+            aheadTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolatedIfPossible {
+                    guard let self, #available(macOS 26.0, *), let native = NativeControls.shared else { return }
+                    guard CACurrentMediaTime() - self.lastUpdate > 0.5 else { return }
+                    for button in Self.usualButtons {
+                        let item = NativeControls.Item(
+                            control: button.control, inScene: button.inScene, frame: CGRect(x: 0, y: 0, width: button.side, height: button.side),
+                            symbol: button.symbol, pointSize: button.pointSize, dimmed: false, dimmedAlpha: 1,
+                        )
+                        // One a turn.
+                        if native.makeAhead(item, size: size) { return }
+                    }
+                    self.hasMadeButtonsAhead = true
+                    self.aheadTimer?.invalidate()
+                    self.aheadTimer = nil
+                }
+            }
+        }
+    #endif
 
     /// Fades a button in from its blurred copy (or puts it straight up, when what it belongs
     /// to is fading in anyway).
@@ -476,22 +530,41 @@ final class TouchControlsLayer {
         }
     }
 
-    private static var blurCache: [String: (image: CGImage, margin: CGFloat)] = [:]
+    private static var blurCache: [String: CGImage] = [:]
+    private nonisolated static let blurSigma: CGFloat = 7
+    /// The room round a button that its blurred copy spreads into.
+    private nonisolated static let blurMargin = (blurSigma * 3).rounded(.up)
 
     /// The button drawn soft, as if out of focus: its circle and symbol under a near-Gaussian
-    /// blur, with room around them for the blur to spread into. Small enough to make at once.
-    private static func blurredButton(size: CGSize, fill: CGColor, border: Bool, parts: [(RenderedGraphic, CGPoint)]) -> (image: CGImage, margin: CGFloat)? {
+    /// blur, with room around them (`blurMargin`) for the blur to spread into. Made on another
+    /// thread, and handed to `show` on this one: at once when it has been made before.
+    private static func blurredButton(size: CGSize, fill: CGColor, border: Bool, parts: [(RenderedGraphic, CGPoint)], then show: @escaping @MainActor (CGImage?) -> Void) {
         #if !FIRSTROW_PORTABLE
-            let key = "\(size.width)|\(size.height)|\(border)|" + parts.map { "\(ObjectIdentifier($0.0.image ?? Self.placeholderImage))@\($0.1.x),\($0.1.y)" }.joined(separator: "|")
-            if let cached = blurCache[key] { return cached }
-            #if os(iOS) && (DEBUG || FIRSTROW_HARNESS_BUILD)
-                let started = CACurrentMediaTime()
-                defer { FirstRowHarness.touchLog(String(format: "[touch] blurred a button in %.1f ms", (CACurrentMediaTime() - started) * 1000)) }
-            #endif
+            let key = "\(size.width)|\(size.height)|\(border)|" + parts.map { "\($0.0.identity.map(String.init(describing:)) ?? "")@\($0.1.x),\($0.1.y)" }.joined(separator: "|")
+            if let cached = blurCache[key] {
+                show(cached)
+                return
+            }
+            let margin = blurMargin
+            LetteringInProgress.queue.async {
+                let image = drawBlurredButton(size: size, fill: fill, border: border, parts: parts, margin: margin)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolatedIfPossible {
+                        if blurCache.count > 40 { blurCache.removeAll() }
+                        if let image { blurCache[key] = image }
+                        show(image)
+                    }
+                }
+            }
+        #endif
+    }
+
+    #if !FIRSTROW_PORTABLE
+        /// Draws and blurs the button (any thread: it waits for parts still being drawn).
+        private nonisolated static func drawBlurredButton(size: CGSize, fill: CGColor, border: Bool, parts: [(RenderedGraphic, CGPoint)], margin: CGFloat) -> CGImage? {
             // Drawn at a point a pixel: blurred, it needs no more.
             let pixels: CGFloat = 1
-            let sigma: CGFloat = 7
-            let margin = (sigma * 3).rounded(.up)
+            let sigma = blurSigma
             let width = Int((size.width + margin * 2) * pixels)
             let height = Int((size.height + margin * 2) * pixels)
             guard let context = CGContext(
@@ -528,19 +601,12 @@ final class TouchControlsLayer {
                     boxBlur(data + x * 4, count: height, stride: context.bytesPerRow, radius: radius)
                 }
             }
-            guard let blurred = context.makeImage() else { return nil }
-            if blurCache.count > 40 { blurCache.removeAll() }
-            blurCache[key] = (blurred, margin)
-            return (blurred, margin)
-        #else
-            return nil
-        #endif
-    }
+            return context.makeImage()
+        }
 
-    #if !FIRSTROW_PORTABLE
         /// Averages each pixel with `radius` on either side along a line of `count` pixels
         /// `stride` bytes apart (all four channels), treating what lies beyond as clear.
-        private static func boxBlur(_ start: UnsafeMutablePointer<UInt8>, count: Int, stride: Int, radius: Int) {
+        private nonisolated static func boxBlur(_ start: UnsafeMutablePointer<UInt8>, count: Int, stride: Int, radius: Int) {
             let window = Int32(2 * radius + 1)
             let values = UnsafeMutablePointer<Int32>.allocate(capacity: count)
             defer { values.deallocate() }
@@ -563,12 +629,6 @@ final class TouchControlsLayer {
         }
 
     #endif
-
-    /// Stands in for a missing picture in cache keys.
-    private static let placeholderImage: CGImage = {
-        let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo)!
-        return context.makeImage()!
-    }()
 
     private static var safeAreaInsets: (left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat) {
         #if os(iOS)

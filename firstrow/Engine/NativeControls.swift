@@ -118,6 +118,8 @@
     final class NativeGlassButton: NativeView {
         var onPress: (() -> Void)?
         private(set) var isShownState = false
+        /// Whether it has ever been on screen (one made ahead hasn't).
+        private var hasBeenShown = false
         private var generation = 0
         /// Whether it's dimmed, and how far, as last set.
         private var dimmedState: (Bool, CGFloat) = (false, 1)
@@ -185,7 +187,8 @@
                 glass.contentView?.frame = local
             #endif
             if symbol != symbolName || pointSize != symbolSize, let image = nativeSymbol(symbol, pointSize: pointSize) {
-                let changes = !symbolName.isEmpty
+                // (One made ahead with another symbol hasn't shown it: nothing to change from.)
+                let changes = !symbolName.isEmpty && hasBeenShown
                 symbolName = symbol
                 symbolSize = pointSize
                 if changes {
@@ -205,6 +208,7 @@
             guard shown != wasShown || dimmed != dimmedState.0 || dimmedAlpha != dimmedState.1 else { return }
             dimmedState = (dimmed, dimmedAlpha)
             isShownState = shown
+            if shown { hasBeenShown = true }
             generation += 1
             let current = generation
             if shown { isHidden = false }
@@ -737,6 +741,33 @@
                 button.setState(shown: shown, dimmed: item.dimmed, dimmedAlpha: item.dimmedAlpha, animation: animation)
             }
         }
+
+        #if os(macOS)
+            /// Makes a button ahead of its first showing, hidden: the system takes about 5 ms
+            /// to make one and to lay it out and draw it for the first time (the glass is a
+            /// view of its own making, with layout and vibrancy to set up), which all of a
+            /// screen's buttons otherwise cost together the moment the pointer first moves.
+            /// False when it's there already.
+            func makeAhead(_ item: Item, size: CGSize) -> Bool {
+                let key = Key(control: item.control, inScene: item.inScene)
+                guard buttons[key] == nil else { return false }
+                let bounds = CGRect(origin: .zero, size: size)
+                for container in [view, sceneView, optionsView, transportView] where container.frame.isEmpty {
+                    container.frame = bounds
+                }
+                let made = NativeGlassButton()
+                made.onPress = { [weak self] in self?.onPress?(item.control) }
+                (item.inScene ? transportView : view).addSubview(made)
+                buttons[key] = made
+                made.place(item.frame, symbol: item.symbol, pointSize: item.pointSize, nudge: 0)
+                // Laid out and drawn once, clear, so that's done with; then hidden again.
+                made.isHidden = false
+                made.layoutSubtreeIfNeeded()
+                made.displayIfNeeded()
+                made.isHidden = true
+                return true
+            }
+        #endif
 
         /// Everything away (quitting, or the classic look).
         func hideAll(animation: Animation?) {
