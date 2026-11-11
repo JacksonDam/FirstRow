@@ -51,8 +51,8 @@ final class PointerInputState {
     fileprivate var pressTarget: PointerTarget?
     /// The row of Now Playing's list a click started on.
     fileprivate var queuePressRow: Int?
-    /// The comment of a YouTube video the button went down on (-1 for their panel between two).
-    fileprivate var commentPress: Int?
+    /// The row of a YouTube video's panel the button went down on (-1 for the panel between two).
+    fileprivate var panelRowPress: Int?
     /// The on-screen button a click started on.
     fileprivate var pressedControl: TouchControl?
     var drag: Drag?
@@ -384,13 +384,13 @@ extension MenuView {
             }
             return
         }
-        // A video's comments take clicks on them; one beside them puts them away.
-        if let hit = youtubeCommentsHit(at: point) {
+        // A video's panel takes clicks on its rows; one beside it puts it away.
+        if let hit = youtubePanelHit(at: point) {
             pointer.pressTarget = nil
             if hit.isOnPanel {
-                pointer.commentPress = hit.index ?? -1
+                pointer.panelRowPress = hit.index ?? -1
             } else {
-                closeYouTubeComments()
+                closeYouTubePanel()
             }
             return
         }
@@ -432,10 +432,10 @@ extension MenuView {
             finishProgressDrag(at: point)
             return
         }
-        if let pressedComment = pointer.commentPress {
-            pointer.commentPress = nil
-            if pressedComment >= 0, youtubeCommentsHit(at: point)?.index == pressedComment {
-                showYouTubeComment(pressedComment, playsSound: true)
+        if let pressedRow = pointer.panelRowPress {
+            pointer.panelRowPress = nil
+            if pressedRow >= 0, youtubePanelHit(at: point)?.index == pressedRow {
+                pressYouTubePanelRow(pressedRow)
             }
             return
         }
@@ -548,11 +548,11 @@ extension MenuView {
         }
         pointer.lastWheelDate = now
         if isMoviePlaybackVisible {
-            if let comments = youtubeComments, youtubeCommentsHit(at: point)?.isOnPanel == true {
-                // Over a video's comments the wheel goes through them, one a notch.
+            if let panel = youtubePanel, youtubePanelHit(at: point)?.isOnPanel == true {
+                // Over a video's panel the wheel goes through its rows, one a notch.
                 pointer.wheelAccumulator += precise ? -dy / 40 : -dy
                 let steps = wholeSteps(&pointer.wheelAccumulator)
-                if steps != 0 { showYouTubeComment(max(0, min(comments.comments.count - 1, comments.focused + steps))) }
+                if steps != 0 { showYouTubePanelRow(max(0, min(panel.rows.count - 1, panel.focused + steps))) }
                 return
             }
             // Ten seconds a notch.

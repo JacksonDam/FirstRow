@@ -13,6 +13,10 @@ enum YouTubeMenuPage: Equatable {
     case search(String)
     case history
     case related(YouTubeVideo)
+    /// A playlist's videos.
+    case playlist(YouTubePlaylist)
+    /// A channel's playlists.
+    case channelPlaylists(id: String, name: String)
 
     var title: String {
         switch self {
@@ -20,6 +24,8 @@ enum YouTubeMenuPage: Equatable {
         case let .search(query): query
         case .history: "History"
         case .related: "Related Videos"
+        case let .playlist(playlist): playlist.title
+        case let .channelPlaylists(_, name): name
         }
     }
 
@@ -27,6 +33,8 @@ enum YouTubeMenuPage: Equatable {
         switch self {
         case .search: "No Videos Found"
         case .history: "Nothing Watched Yet"
+        case .channelPlaylists: "No Playlists"
+        case .playlist: "No Videos in This Playlist"
         default: "No Videos"
         }
     }
@@ -43,6 +51,8 @@ struct YouTubePageState {
     var isLoadingMore = false
     /// Set for the search screen: its field and keys (see `YouTubeSearchPad`).
     var searchPad: YouTubeSearchPad?
+    /// A page of playlists: the playlists.
+    var playlists: [YouTubePlaylist] = []
 }
 
 /// The YouTube pages' state, kept together so the menu holds one value for all of it.
@@ -72,6 +82,9 @@ struct YouTubeMenuState {
     var carouselShownKey: String?
     /// A list's first page, fetched for the carousel and kept for when the list is opened.
     var firstPages: [String: (page: YouTubePage, fetched: Date)] = [:]
+    /// The round pictures shown in a video's panel (a channel's), by their address.
+    var panelPictures: [URL: NSImage] = [:]
+    var panelPicturesInFlight: Set<URL> = []
 }
 
 /// YouTube: lists of videos, search and what was watched here.
@@ -109,6 +122,8 @@ extension MenuView {
     }
 
     private static let youtubeMenuLists: [YouTubeList] = [.music, .trailers, .gaming, .news, .sports, .live]
+    private static let youtubePlaylistRowPrefix = "youtube_playlist_"
+    private static let youtubeChannelPlaylistsRowID = "youtube_action_playlists"
 
     // MARK: - The menu's carousel
 
@@ -213,8 +228,22 @@ extension MenuView {
             let waiting = pad.isSearching || pad.text.trimmingCharacters(in: .whitespaces).isEmpty
             return waiting ? [] : [menuMessageItem(id: "youtube_empty", title: state.page.emptyTitle)]
         }
-        if state.videos.isEmpty, youtube.error == nil {
-            return [menuMessageItem(id: "youtube_empty", title: state.page.emptyTitle)]
+        // A channel's playlists have a row before its videos.
+        if case .list(.channel) = state.page {
+            items.append(plainMenuListItem(id: Self.youtubeChannelPlaylistsRowID, title: "Playlists", leadsToMenu: true))
+        }
+        if state.videos.isEmpty, state.playlists.isEmpty, youtube.error == nil {
+            return items + [menuMessageItem(id: "youtube_empty", title: state.page.emptyTitle)]
+        }
+        for (index, playlist) in state.playlists.enumerated() {
+            var item = plainMenuListItem(
+                id: Self.youtubePlaylistRowPrefix + String(index),
+                title: playlist.title,
+                leadsToMenu: true,
+                leadingImage: youtube.rowPictures[Self.youtubeRowPictureKey(playlist)],
+            )
+            item.media = MenuRowMedia(byline: playlist.notes.first ?? "", length: "", count: playlist.notes.dropFirst().joined(separator: ", "))
+            items.append(item)
         }
         for (index, video) in state.videos.enumerated() {
             var item = plainMenuListItem(
@@ -233,21 +262,30 @@ extension MenuView {
         return items
     }
 
+    private static func youtubeRowPictureKey(_ playlist: YouTubePlaylist) -> String {
+        "playlist:" + playlist.id
+    }
+
     /// Fetches the small pictures of the rows around the selection that don't have theirs yet.
     private func loadYouTubeRowPictures() {
         guard thirdMenuMode == .youtube, let state = currentYouTubePage, state.isLoaded else { return }
-        let offset = youtubeMenuListItems().count - state.videos.count
-        let center = selectedThirdIndex - offset
-        let wanted = (center - 6 ... center + 12).filter { state.videos.indices.contains($0) }.map { state.videos[$0] }
-        for video in wanted where youtube.rowPictures[video.id] == nil && !youtube.rowPicturesInFlight.contains(video.id) {
-            guard let url = video.rowThumbnailURL else { continue }
-            youtube.rowPicturesInFlight.insert(video.id)
+        let rows = youtubeMenuListItems()
+        var wanted: [(key: String, url: URL)] = []
+        for row in rows.indices where row >= selectedThirdIndex - 6 && row <= selectedThirdIndex + 12 {
+            if let index = youtubeVideoIndex(forRowID: rows[row].id), state.videos.indices.contains(index), let url = state.videos[index].rowThumbnailURL {
+                wanted.append((state.videos[index].id, url))
+            } else if let index = youtubePlaylistIndex(forRowID: rows[row].id), state.playlists.indices.contains(index), let url = state.playlists[index].pictureURL {
+                wanted.append((Self.youtubeRowPictureKey(state.playlists[index]), url))
+            }
+        }
+        for (key, url) in wanted where youtube.rowPictures[key] == nil && !youtube.rowPicturesInFlight.contains(key) {
+            youtube.rowPicturesInFlight.insert(key)
             Task { @MainActor in
                 let image = await self.loadYouTubeImage(url, maxPixelSize: 400)
-                self.youtube.rowPicturesInFlight.remove(video.id)
+                self.youtube.rowPicturesInFlight.remove(key)
                 guard let image else { return }
-                self.youtube.rowPictures[video.id] = image
-                self.youtube.rowPictureOrder.append(video.id)
+                self.youtube.rowPictures[key] = image
+                self.youtube.rowPictureOrder.append(key)
                 // (Bounded: the ones fetched longest ago go.)
                 while self.youtube.rowPictureOrder.count > 80 {
                     self.youtube.rowPictures[self.youtube.rowPictureOrder.removeFirst()] = nil
@@ -259,6 +297,21 @@ extension MenuView {
     private func youtubeVideoIndex(forRowID id: String) -> Int? {
         guard id.hasPrefix(Self.youtubeVideoRowPrefix) else { return nil }
         return Int(id.dropFirst(Self.youtubeVideoRowPrefix.count))
+    }
+
+    private func youtubePlaylistIndex(forRowID id: String) -> Int? {
+        guard id.hasPrefix(Self.youtubePlaylistRowPrefix) else { return nil }
+        return Int(id.dropFirst(Self.youtubePlaylistRowPrefix.count))
+    }
+
+    /// The playlist under the selection on the current page.
+    var selectedYouTubePlaylist: YouTubePlaylist? {
+        guard thirdMenuMode == .youtube, let state = currentYouTubePage else { return nil }
+        let rows = youtubeMenuListItems()
+        guard rows.indices.contains(selectedThirdIndex), let index = youtubePlaylistIndex(forRowID: rows[selectedThirdIndex].id),
+              state.playlists.indices.contains(index)
+        else { return nil }
+        return state.playlists[index]
     }
 
     var shouldHideYouTubeMenuUntilLoaded: Bool {
@@ -387,12 +440,13 @@ extension MenuView {
         let requestID = youtube.requestID &+ 1
         youtube.requestID = requestID
         let pageIndex = youtube.pages.count - 1
-        func finish(_ page: YouTubePage?, error: String?) {
+        func finish(_ page: YouTubePage?, playlists: [YouTubePlaylist]? = nil, error: String?) {
             guard youtube.requestID == requestID, youtube.pages.indices.contains(pageIndex) else { return }
             if let page {
                 youtube.pages[pageIndex].videos = page.videos
                 youtube.pages[pageIndex].continuation = page.continuation
             }
+            if let playlists { youtube.pages[pageIndex].playlists = playlists }
             youtube.pages[pageIndex].isLoaded = true
             youtube.error = error
             if youtube.pages[pageIndex].selectedRowID != nil { selectYouTubeRememberedRow() }
@@ -408,6 +462,11 @@ extension MenuView {
             do {
                 let page: YouTubePage
                 switch state.page {
+                case let .channelPlaylists(id, _):
+                    finish(nil, playlists: try await YouTubeClient.shared.channelPlaylists(id), error: nil)
+                    return
+                case let .playlist(playlist):
+                    page = try await YouTubeClient.shared.playlistVideos(playlist.id)
                 case let .list(list):
                     // (The carousel beside the menu may have fetched the list's start already.)
                     if let kept = self.youtube.firstPages["youtube_list_\(Self.youtubeListToken(list))"], Date().timeIntervalSince(kept.fetched) < 600 {
@@ -433,9 +492,8 @@ extension MenuView {
     private func loadMoreYouTubeVideosIfNeeded() {
         guard thirdMenuMode == .youtube, let pageIndex = youtube.pages.indices.last else { return }
         let state = youtube.pages[pageIndex]
-        guard state.isLoaded, !state.isLoadingMore, let continuation = state.continuation,
-              selectedThirdIndex >= youtubeMenuListItems().count - 8, state.videos.count < 400
-        else { return }
+        guard state.isLoaded, !state.isLoadingMore, selectedThirdIndex >= youtubeMenuListItems().count - 8 else { return }
+        guard let continuation = state.continuation, state.videos.count < 400 else { return }
         youtube.pages[pageIndex].isLoadingMore = true
         let requestID = youtube.requestID
         Task { @MainActor in
@@ -465,6 +523,12 @@ extension MenuView {
         let id = rows[selectedThirdIndex].id
         if let index = youtubeVideoIndex(forRowID: id), state.videos.indices.contains(index) {
             playYouTubeVideo(state.videos[index])
+        } else if let index = youtubePlaylistIndex(forRowID: id), state.playlists.indices.contains(index) {
+            playSound(named: "Selection")
+            pushYouTubePage(.playlist(state.playlists[index]))
+        } else if id == Self.youtubeChannelPlaylistsRowID, case let .list(.channel(channelID, name)) = state.page {
+            playSound(named: "Selection")
+            pushYouTubePage(.channelPlaylists(id: channelID, name: name))
         } else if id == "youtube_error" {
             youtube.error = nil
             if let pageIndex = youtube.pages.indices.last { youtube.pages[pageIndex].isLoaded = false }
@@ -496,6 +560,20 @@ extension MenuView {
         // (The search screen has its keys where the preview goes.)
         guard youtubeSearchPad == nil else {
             clearYouTubePreview()
+            return
+        }
+        if let playlist = selectedYouTubePlaylist {
+            // A playlist's own picture, under a name no video has.
+            let key = Self.youtubeRowPictureKey(playlist)
+            guard youtube.previewVideoID != key else { return }
+            youtube.previewVideoID = key
+            youtube.previewImage = nil
+            guard let url = playlist.pictureURL else { return }
+            Task { @MainActor in
+                let image = await self.loadYouTubeImage(url)
+                guard self.youtube.previewVideoID == key else { return }
+                self.youtube.previewImage = image
+            }
             return
         }
         guard let video = selectedYouTubeVideo else {
@@ -568,6 +646,37 @@ extension MenuView {
            let item = gapCarouselItem(key: "youtube_carousel:\(carousel.key)", artworks: carousel.pictures, exitOpacity: iTunesTopCarouselExitOverlayOpacity, asCovers: true)
         {
             return [icon(0, animation), item]
+        }
+        if let playlist = selectedYouTubePlaylist {
+            // A playlist: its picture, its name and what YouTube says of it.
+            let key = Self.youtubeRowPictureKey(playlist)
+            let picture = youtube.previewVideoID == key ? youtube.previewImage : nil
+            let change = pass.animation(.easeInOut(duration: 0.22), when: memo.youtubePreviewKey != nil && memo.youtubePreviewKey != key)
+            memo.youtubePreviewKey = picture == nil ? "none" : key
+            var shown = [icon(picture == nil ? 1 : 0, change)]
+            guard let picture else { return shown }
+            shown.append(GapItemSpec(
+                key: "youtube_metadata",
+                kind: .metadata(MetadataPreviewSpec(
+                    image: picture,
+                    aspectRatio: aspectRatio(for: picture, fallback: 16.0 / 9.0),
+                    forcedPreviewAspectRatio: nil,
+                    sizeScale: 0.92,
+                    title: playlist.title,
+                    description: playlist.notes.isEmpty ? nil : playlist.notes.joined(separator: ", "),
+                    lines: [],
+                    baseIconSize: iconSize,
+                    offsetX: musicGapPreviewHorizontalOffset - 56,
+                    offsetY: gapContentVerticalOffset - 8,
+                    identity: "youtube:\(key)",
+                    transitionDelay: 0,
+                    animatesTransition: false,
+                )),
+                animation: change,
+                transition: change,
+                fade: .easeInOut(duration: 0.22),
+            ))
+            return shown
         }
         var items = [icon(image == nil ? 1 : 0, animation)]
         guard let video, let image else { return items }

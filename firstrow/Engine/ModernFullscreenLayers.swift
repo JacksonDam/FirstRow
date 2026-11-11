@@ -495,6 +495,7 @@ final class MovieOptionsLayer {
         case .audio: "waveform"
         case .quality: "4k.tv"
         case .speed: "gauge.with.dots.needle.67percent"
+        case .info: "info.circle"
         case .comments: "text.bubble"
         }
     }
@@ -523,7 +524,9 @@ final class MovieOptionsLayer {
         // picked out while the panel's open. The classic look has none: ↓ opens the panel.
         let kinds = menu.movieOptionKinds.first.map { [$0] } ?? []
         let slot = Self.buttonSlot
-        let showsButtons = isModern && anchor != nil && menu.isMoviePlaybackVisible && !kinds.isEmpty
+        // (It makes way for a video's panel, which comes out over where it is.)
+        let panelIsOut = menu.youtubePanel != nil && menu.youtubePanelReveal > 0.5
+        let showsButtons = isModern && anchor != nil && menu.isMoviePlaybackVisible && !kinds.isEmpty && !panelIsOut
         var clusterFrame = CGRect.zero
         if let anchor {
             let width = slot.width * CGFloat(max(1, kinds.count)) + 12

@@ -19,7 +19,7 @@ final class YouTubeCaptionLayer {
     }
 
     /// `raised` while the transport bar is up, so the line clears it; `width` is how much of
-    /// the picture's width is clear of the comments.
+    /// the picture's width is clear of the panel beside it.
     func update(text: String?, raised: Bool, width: CGFloat, size: CGSize, scale: CGFloat, pass _: RenderPass) {
         guard let text, !text.isEmpty else {
             line.isHidden = true
@@ -44,10 +44,13 @@ final class YouTubeCaptionLayer {
     }
 }
 
-/// A YouTube video's comments: a panel over the right of the picture, one comment picked out,
-/// the list moving under it as up and down go through them.
+/// The panel over the right of a YouTube video's picture (see `YouTubePanelState`): a title,
+/// then rows with one picked out, the list moving under it as up and down go through them.
+/// In the classic look it's a dark band down the right of the screen; in the modern look a
+/// sheet standing clear of the screen's edges, of the system's glass where there is some, with
+/// the row picked out on white as the options' rows are.
 @MainActor
-final class YouTubeCommentsLayer {
+final class YouTubePanelLayer {
     let layer = SceneLayer()
     private let panel = SceneLayer()
     private let title = SceneLayer()
@@ -57,44 +60,82 @@ final class YouTubeCommentsLayer {
     private let list = SceneLayer()
     private var blocks: [String: Block] = [:]
     /// What the panel last showed, kept while it slides away.
-    private var shown: YouTubeCommentsState?
+    private var shown: YouTubePanelState?
+    private var isOut = false
     private var lastFocus: Int?
     private var lastOffset: CGFloat = 0
+    private var lastKind: YouTubePanelState.Kind?
+    /// Whether the system's glass has been asked for (it's made the first time it is).
+    private var hasUsedGlass = false
     /// The panel in canvas points, while it's out (for clicks and touches).
     private(set) var panelFrame: CGRect?
-    /// Where each comment that has been laid out shows on the canvas (the gap between two is
+    /// Where each row that has been laid out shows on the canvas (the gap between two is
     /// shared out between them), and how far apart their tops are.
-    private var commentFrames: [CGRect] = []
-    private var commentPitches: [CGFloat] = []
+    private var rowFrames: [CGRect] = []
+    private var rowPitches: [CGFloat] = []
 
-    /// The comment at a point of the canvas, while the panel is out.
-    func comment(at point: CGPoint) -> Int? {
+    /// The row at a point of the canvas, while the panel is out.
+    func row(at point: CGPoint) -> Int? {
         guard panelFrame != nil else { return nil }
-        return commentFrames.firstIndex { $0.contains(point) }
+        return rowFrames.firstIndex { $0.contains(point) }
     }
 
-    /// From a comment's top to the next one's, on the canvas.
-    func pitch(ofComment index: Int) -> CGFloat? {
-        commentPitches.indices.contains(index) ? commentPitches[index] : nil
+    /// From a row's top to the next one's, on the canvas.
+    func pitch(ofRow index: Int) -> CGFloat? {
+        rowPitches.indices.contains(index) ? rowPitches[index] : nil
     }
 
-    /// How wide the panel is on a canvas of this size.
+    /// Where the panel goes on a canvas of this size.
+    static func frame(in size: CGSize) -> CGRect {
+        if ModernTheme.isActive {
+            let margin: CGFloat = 36
+            let width = min(820, (size.width * 0.43).rounded())
+            return CGRect(x: size.width - margin - width, y: margin, width: width, height: size.height - margin * 2)
+        }
+        let width = min(840, (size.width * 0.44).rounded())
+        return CGRect(x: size.width - width, y: 0, width: width, height: size.height)
+    }
+
+    /// How much of the canvas's width the panel takes, from the right edge.
     static func width(in size: CGSize) -> CGFloat {
-        min(840, (size.width * 0.44).rounded())
+        size.width - frame(in: size).minX
     }
 
     private final class Block {
         let layer = SceneLayer()
-        let author = SceneLayer()
-        let when = SceneLayer()
-        let text = SceneLayer()
+        let picture = SceneLayer()
+        let heading = SceneLayer()
+        let aside = SceneLayer()
+        let mark = SceneLayer()
+        let body = SceneLayer()
         let footer = SceneLayer()
+        var row: YouTubePanelRow?
         var key = ""
         var height: CGFloat = 0
 
         init() {
-            for sublayer in [author, when, text, footer] { layer.addSublayer(sublayer) }
+            for sublayer in [picture, heading, aside, mark, body, footer] { layer.addSublayer(sublayer) }
+            picture.masksToBounds = true
         }
+    }
+
+    /// How a row is drawn: the width its words have, how far its box reaches past them (the
+    /// modern look's white box under the row picked out), and whether it's that row.
+    private struct Look {
+        var column: CGFloat
+        var pad: CGSize
+        var isModern: Bool
+        var isFocused: Bool
+        var scale: CGFloat
+
+        var bold: String { isModern ? ModernTheme.boldFontName : firstRowBoldFontName }
+        var medium: String { isModern ? ModernTheme.mediumFontName : firstRowBoldFontName }
+        var regular: String { isModern ? ModernTheme.regularFontName : firstRowRegularFontName }
+        /// On the white box the words are dark.
+        var isOnWhite: Bool { isModern && isFocused }
+        var primary: RGBA { isOnWhite ? ModernTheme.focusedText : RGBA(white: 1, alpha: 0.94) }
+        var words: RGBA { isOnWhite ? ModernTheme.focusedText : .white }
+        var dim: RGBA { isOnWhite ? ModernTheme.focusedSecondaryText : RGBA(white: 1, alpha: 0.5) }
     }
 
     init() {
@@ -106,136 +147,272 @@ final class YouTubeCommentsLayer {
         clip.addSublayer(list)
     }
 
-    func update(menu: MenuView, size: CGSize, scale: CGFloat, pass: RenderPass) {
-        let state = menu.isMoviePlaybackVisible ? menu.youtubeComments : nil
+    /// The system's Liquid Glass for the sheet, where there is some (the modern look).
+    private var nativeGlass: AnyObject? {
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *), ModernTheme.isActive {
+                return NativeControls.shared?.sheet
+            }
+        #endif
+        return nil
+    }
+
+    private func putGlassAway() {
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *), hasUsedGlass {
+                NativeControls.shared?.sheet.hide()
+            }
+        #endif
+    }
+
+    /// `canvasScale` is window points per canvas point (for the system's glass).
+    func update(menu: MenuView, size: CGSize, scale: CGFloat, canvasScale: CGFloat, pass: RenderPass) {
+        let state = menu.isMoviePlaybackVisible ? menu.youtubePanel : nil
         if let state { shown = state }
-        let reveal = state == nil ? 0 : menu.youtubeCommentsReveal
+        let reveal = state == nil ? 0 : menu.youtubePanelReveal
         guard let content = shown else {
             panel.isHidden = true
             panelFrame = nil
-            commentFrames = []
+            rowFrames = []
+            putGlassAway()
             return
         }
-        if state == nil, panel.opacity < 0.01 {
-            // Away and out of sight: let go of its comments.
+        if state == nil, !isOut {
+            // Away and out of sight: let go of its rows.
             shown = nil
             for block in blocks.values { block.layer.removeFromSuperlayer() }
             blocks = [:]
             lastFocus = nil
+            lastKind = nil
             panel.isHidden = true
             panelFrame = nil
-            commentFrames = []
+            rowFrames = []
+            putGlassAway()
             return
         }
         let isModern = ModernTheme.isActive
-        let width = Self.width(in: size)
-        let frame = CGRect(x: size.width - width, y: 0, width: width, height: size.height)
+        let frame = Self.frame(in: size)
+        let width = frame.width
         let wasHidden = panel.isHidden
         panel.isHidden = false
-        panel.place(frame)
-        panel.backgroundColor = CGColor(gray: isModern ? 0.07 : 0, alpha: isModern ? 0.86 : 0.84)
-        let away = CATransform3DMakeTranslation(width, 0, 0)
-        if wasHidden {
-            panel.setTransform(away, nil)
-            panel.setOpacity(0, nil)
-        }
+        isOut = reveal > 0.5
+        // It comes in from past the right edge, and goes back there.
+        let reach = size.width - frame.minX
+        let away = CATransform3DMakeTranslation(reach, 0, 0)
         let move = pass.animation
-        panel.setTransform(reveal > 0.5 ? CATransform3DIdentity : away, move)
-        panel.setOpacity(reveal > 0.5 ? 1 : 0, move)
-        panelFrame = reveal > 0.5 ? frame : nil
+        var isInGlass = false
+        #if os(iOS) || os(macOS)
+            if #available(macOS 26.0, iOS 26.0, *), let glass = nativeGlass as? NativeGlassSheet {
+                // The rows are drawn at canvas size inside the glass, which is in window points.
+                isInGlass = true
+                hasUsedGlass = true
+                if panel.superlayer !== glass.layerHost {
+                    panel.removeAllAnimations()
+                    glass.layerHost.addSublayer(panel)
+                }
+                panel.backgroundColor = CGColor(gray: 0, alpha: 0)
+                panel.cornerRadius = 0
+                panel.bounds = CGRect(origin: .zero, size: frame.size)
+                panel.position = .zero
+                panel.setTransform(CATransform3DMakeScale(canvasScale, canvasScale, 1), nil)
+                panel.setOpacity(1, nil)
+                glass.update(
+                    frame: CGRect(x: frame.minX * canvasScale, y: frame.minY * canvasScale, width: frame.width * canvasScale, height: frame.height * canvasScale),
+                    cornerRadius: Self.modernCornerRadius * canvasScale,
+                    shown: isOut,
+                    away: CATransform3DMakeTranslation(reach * canvasScale, 0, 0),
+                    animation: move,
+                )
+            } else if panel.superlayer !== layer {
+                panel.removeAllAnimations()
+                layer.addSublayer(panel)
+            }
+        #endif
+        if !isInGlass {
+            panel.place(frame)
+            // (The modern look's own dark sheet, as its options panel has without the glass.)
+            panel.backgroundColor = CGColor(gray: isModern ? 0.08 : 0, alpha: 0.84)
+            panel.cornerRadius = isModern ? Self.modernCornerRadius : 0
+            if wasHidden {
+                panel.setTransform(away, nil)
+                panel.setOpacity(0, nil)
+            }
+            panel.setTransform(isOut ? CATransform3DIdentity : away, move)
+            panel.setOpacity(isOut ? 1 : 0, move)
+        }
+        panelFrame = isOut ? frame : nil
 
         let inset: CGFloat = 44
         let column = width - inset * 2
-        let bold = isModern ? ModernTheme.boldFontName : firstRowBoldFontName
-        let medium = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
-        let regular = isModern ? ModernTheme.regularFontName : firstRowRegularFontName
-        let titleGraphic = TextRenderer.render(TextSpec(text: "Comments", fontName: bold, size: 44), scale: scale)
-        title.show(titleGraphic, at: CGPoint(x: inset, y: 54))
-        // "5,240 Comments" as "5,240" beside the title.
-        let total = content.totalText?.split(separator: " ").first.map(String.init) ?? ""
-        let countGraphic = TextRenderer.render(TextSpec(text: total, fontName: regular, size: 30, color: RGBA(white: 1, alpha: 0.55)), scale: scale)
+        var look = Look(column: column, pad: isModern ? CGSize(width: 24, height: 16) : .zero, isModern: isModern, isFocused: false, scale: scale)
+        let titleTop: CGFloat = isModern ? 38 : 54
+        let titleGraphic = TextRenderer.render(TextSpec(text: content.title, fontName: look.bold, size: 44, maxWidth: column), scale: scale)
+        title.show(titleGraphic, at: CGPoint(x: inset, y: titleTop))
+        // "5,240" beside the title.
+        let total = content.countText ?? ""
+        let countGraphic = TextRenderer.render(TextSpec(text: total, fontName: look.regular, size: 30, color: RGBA(white: 1, alpha: 0.55)), scale: scale)
         count.isHidden = total.isEmpty
-        count.show(countGraphic, at: CGPoint(x: inset + titleGraphic.size.width + 18, y: 54 + titleGraphic.size.height - countGraphic.size.height - 4))
+        count.show(countGraphic, at: CGPoint(x: inset + titleGraphic.size.width + 18, y: titleTop + titleGraphic.size.height - countGraphic.size.height - 4))
 
-        let top = 54 + titleGraphic.size.height + 30
-        let viewport = CGRect(x: 0, y: top, width: width, height: size.height - top - 40)
+        let top = titleTop + titleGraphic.size.height + (isModern ? 22 : 30)
+        let viewport = CGRect(x: 0, y: top, width: width, height: frame.height - top - (isModern ? 22 : 40))
         clip.place(viewport)
 
-        let note = content.isLoading ? "Loading..." : (content.comments.isEmpty ? (content.error ?? "") : "")
-        message.isHidden = note.isEmpty
-        if !note.isEmpty {
-            let graphic = TextRenderer.render(TextSpec(text: note, fontName: regular, size: 30, color: RGBA(white: 1, alpha: 0.6), wrapWidth: column), scale: scale)
-            message.show(graphic, at: CGPoint(x: inset, y: top + 8))
-        }
-
-        // The comments from the top to a little past the one picked out are laid out (each
-        // one's height is only known once its text is set); the rest wait their turn.
-        let focus = min(max(0, content.focused), max(0, content.comments.count - 1))
-        let prepared = min(content.comments.count, focus + 10)
-        let gap: CGFloat = 34
+        // The rows from the top to a little past the one picked out are laid out (each one's
+        // height is only known once its words are set); the rest wait their turn.
+        let focus = min(max(0, content.focused), max(0, content.rows.count - 1))
+        // (The modern look's rows have their boxes' room around them already.)
+        let gap: CGFloat = isModern ? 4 : 34
         var tops: [CGFloat] = []
         var pitches: [CGFloat] = []
         var y: CGFloat = 0
         var live = Set<String>()
-        for index in 0 ..< prepared {
-            let comment = content.comments[index]
-            live.insert(comment.id)
+        let kindChanged = lastKind != nil && lastKind != content.kind
+        var prepared = 0
+        for index in content.rows.indices {
+            // Enough to fill the panel under the one picked out, and a few more.
+            if index > focus + 4, y > tops[focus] + viewport.height + 200 { break }
+            prepared = index + 1
+            let row = content.rows[index]
+            live.insert(row.id)
             let block: Block
-            if let known = blocks[comment.id] {
+            if let known = blocks[row.id] {
                 block = known
             } else {
                 block = Block()
-                blocks[comment.id] = block
+                blocks[row.id] = block
                 list.addSublayer(block.layer)
             }
-            let key = "\(column)|\(scale)|\(isModern)"
-            if block.key != key {
+            let picture = row.pictureURL.flatMap { menu.youtube.panelPictures[$0] }
+            look.isFocused = index == focus
+            let key = "\(column)|\(scale)|\(isModern)|\(look.isOnWhite)|\(picture != nil)"
+            if block.key != key || block.row != row {
                 block.key = key
-                let authorGraphic = TextRenderer.render(TextSpec(text: comment.author, fontName: medium, size: 26, color: RGBA(white: 1, alpha: 0.92), maxWidth: column * 0.62), scale: scale)
-                block.author.show(authorGraphic, at: .zero)
-                var whenText = comment.publishedText
-                if comment.isPinned { whenText = whenText.isEmpty ? "Pinned" : "Pinned, " + whenText }
-                let whenGraphic = TextRenderer.render(TextSpec(text: whenText, fontName: regular, size: 22, color: RGBA(white: 1, alpha: 0.5), maxWidth: column * 0.34), scale: scale)
-                block.when.show(whenGraphic, at: CGPoint(x: authorGraphic.size.width + 14, y: authorGraphic.size.height - whenGraphic.size.height - 2))
-                var words = comment.text
-                if words.count > 700 { words = String(words.prefix(700)) + "…" }
-                let textGraphic = TextRenderer.render(TextSpec(text: words, fontName: regular, size: 28, color: .white, wrapWidth: column, lineSpacing: 3), scale: scale)
-                let textTop = authorGraphic.size.height + 8
-                block.text.show(textGraphic, at: CGPoint(x: 0, y: textTop))
-                var parts: [String] = []
-                if !comment.likesText.isEmpty { parts.append(comment.likesText == "1" ? "1 like" : "\(comment.likesText) likes") }
-                if !comment.replyCountText.isEmpty { parts.append(comment.replyCountText == "1" ? "1 reply" : "\(comment.replyCountText) replies") }
-                if comment.isHearted { parts.append("liked by the creator") }
-                let footerGraphic = TextRenderer.render(TextSpec(text: parts.joined(separator: ", "), fontName: regular, size: 22, color: RGBA(white: 1, alpha: 0.5), maxWidth: column), scale: scale)
-                block.footer.isHidden = parts.isEmpty
-                let footerTop = textTop + textGraphic.size.height + 8
-                block.footer.show(footerGraphic, at: CGPoint(x: 0, y: footerTop))
-                block.height = parts.isEmpty ? textTop + textGraphic.size.height : footerTop + footerGraphic.size.height
+                block.row = row
+                set(block, to: row, picture: picture, look: look)
             }
             tops.append(y)
             pitches.append(block.height + gap)
-            block.layer.frame = CGRect(x: inset, y: y, width: column, height: block.height)
-            block.layer.setOpacity(index == focus ? 1 : 0.42, pass.animation(.easeInOut(duration: 0.2), when: lastFocus != nil && lastFocus != focus))
+            block.layer.frame = CGRect(x: inset - look.pad.width, y: y, width: column + look.pad.width * 2, height: block.height)
+            if isModern {
+                // The one picked out stands on white; focus jumps to it, as in the menus.
+                block.layer.backgroundColor = look.isOnWhite ? ModernTheme.focusFill.cgColor : nil
+                block.layer.cornerRadius = min(28, block.height / 2)
+                block.layer.opacity = 1
+            } else {
+                block.layer.backgroundColor = nil
+                block.layer.setOpacity(index == focus ? 1 : 0.42, pass.animation(.easeInOut(duration: 0.2), when: lastFocus != nil && lastFocus != focus && !kindChanged))
+            }
             y += block.height + gap
         }
         for (id, block) in blocks where !live.contains(id) {
             block.layer.removeFromSuperlayer()
             blocks[id] = nil
         }
-        // The one picked out sits at the top of the list, until the list's end comes up.
         let contentHeight = max(0, y - gap)
+
+        // Under the rows (or in their place): that more is on its way, or why there are none.
+        let note = content.isLoading ? "Loading..." : (content.rows.isEmpty ? (content.note ?? "") : "")
+        message.isHidden = note.isEmpty
+        if !note.isEmpty {
+            let graphic = TextRenderer.render(TextSpec(text: note, fontName: look.regular, size: 30, color: RGBA(white: 1, alpha: 0.6), wrapWidth: column), scale: scale)
+            message.show(graphic, at: CGPoint(x: inset, y: top + (content.rows.isEmpty ? 8 : contentHeight + max(gap, 20))))
+        }
+
+        // The one picked out sits at the top of the list, until the list's end comes up.
         let wanted = tops.indices.contains(focus) ? tops[focus] : 0
-        let offset = prepared == content.comments.count ? min(wanted, max(0, contentHeight - viewport.height)) : wanted
+        let offset = prepared == content.rows.count ? min(wanted, max(0, contentHeight - viewport.height)) : wanted
         let shownViewport = viewport.offsetBy(dx: frame.minX, dy: frame.minY)
-        commentPitches = pitches
-        commentFrames = tops.indices.map { index in
+        rowPitches = pitches
+        rowFrames = tops.indices.map { index in
             CGRect(x: frame.minX, y: shownViewport.minY + tops[index] - offset - gap / 2, width: width, height: pitches[index])
                 .intersection(shownViewport)
         }
-        let slides = lastFocus != nil && lastFocus != focus && !wasHidden
-        list.setFrame(CGRect(x: 0, y: -offset, width: width, height: max(contentHeight, 1)), slides ? .easeInOut(duration: 0.22) : (offset == lastOffset ? nil : pass.animation))
+        let slides = lastFocus != nil && lastFocus != focus && !wasHidden && !kindChanged
+        let slide: Animation = isModern ? .smooth(duration: 0.34) : .easeInOut(duration: 0.22)
+        list.setFrame(CGRect(x: 0, y: -offset, width: width, height: max(contentHeight, 1)), slides ? slide : (offset == lastOffset || kindChanged ? nil : pass.animation))
         lastFocus = focus
         lastOffset = offset
+        lastKind = content.kind
+    }
+
+    /// The modern sheet's corners, as its options panel's.
+    private static let modernCornerRadius: CGFloat = 34
+
+    /// Sets a row's words (and its picture, tick or arrow) in its block, and the block's height.
+    private func set(_ block: Block, to row: YouTubePanelRow, picture: NSImage?, look: Look) {
+        let scale = look.scale
+        let column = look.column
+        let pad = look.pad
+        var isComment = false
+        if case .comment = row.role { isComment = true }
+        // A channel's round picture stands to the left of its lines.
+        let pictureSide: CGFloat = 64
+        let left: CGFloat = row.pictureURL == nil ? 0 : pictureSide + 18
+        block.picture.isHidden = row.pictureURL == nil
+        if row.pictureURL != nil {
+            block.picture.frame = CGRect(x: pad.width, y: pad.height, width: pictureSide, height: pictureSide)
+            block.picture.cornerRadius = pictureSide / 2
+            block.picture.backgroundColor = CGColor(gray: look.isOnWhite ? 0 : 1, alpha: 0.12)
+            block.picture.contents = LayerImageCache.cgImage(for: picture)
+            block.picture.contentsGravity = .resizeAspectFill
+        }
+        // At the right end: an arrow where pressing leads on.
+        var markWidth: CGFloat = 0
+        block.mark.isHidden = !row.leadsOn
+        var markGraphic: RenderedGraphic?
+        if row.leadsOn {
+            let color = look.isOnWhite ? RGBA(white: 0.04, alpha: 0.55) : RGBA(white: 1, alpha: 0.6)
+            let graphic = SymbolRenderer.render("chevron.right", pointSize: isComment ? 20 : 24, weight: .bold, color: color, scale: scale)
+            markGraphic = graphic
+            markWidth = graphic.size.width + 16
+        }
+        let room = column - left - markWidth
+        var height: CGFloat = 0
+        // The first line: who or what, and beside it when or how many.
+        let headingSize: CGFloat = isComment ? 26 : 32
+        block.heading.isHidden = row.heading.isEmpty
+        block.aside.isHidden = row.aside.isEmpty || row.heading.isEmpty
+        if !row.heading.isEmpty {
+            // (What's beside the name takes the width it needs, up to a third; the name the rest.)
+            let asideGraphic = row.aside.isEmpty ? nil : TextRenderer.render(TextSpec(text: row.aside, fontName: look.regular, size: 22, color: look.dim, maxWidth: room * 0.34), scale: scale)
+            let headingRoom = room - (asideGraphic.map { $0.size.width + 14 } ?? 0)
+            let headingGraphic = TextRenderer.render(TextSpec(text: row.heading, fontName: look.medium, size: headingSize, color: look.primary, maxWidth: headingRoom), scale: scale)
+            block.heading.show(headingGraphic, at: CGPoint(x: pad.width + left, y: pad.height))
+            if let asideGraphic {
+                block.aside.show(asideGraphic, at: CGPoint(x: pad.width + left + headingGraphic.size.width + 14, y: pad.height + headingGraphic.size.height - asideGraphic.size.height - 2))
+            }
+            height = headingGraphic.size.height
+            if let markGraphic {
+                block.mark.show(markGraphic, at: CGPoint(x: pad.width + column - markGraphic.size.width, y: pad.height + ((headingGraphic.size.height - markGraphic.size.height) / 2).rounded()))
+            }
+        } else if let markGraphic {
+            block.mark.show(markGraphic, at: CGPoint(x: pad.width + column - markGraphic.size.width, y: pad.height + 4))
+        }
+        // The words.
+        block.body.isHidden = row.body.isEmpty
+        if !row.body.isEmpty {
+            let bodyGraphic = TextRenderer.render(TextSpec(
+                text: row.body,
+                fontName: row.isTitle ? look.bold : look.regular,
+                size: row.isTitle ? 36 : 28,
+                color: look.words,
+                wrapWidth: column - left,
+                lineSpacing: 3,
+            ), scale: scale)
+            let bodyTop = height == 0 ? 0 : height + 8
+            block.body.show(bodyGraphic, at: CGPoint(x: pad.width + left, y: pad.height + bodyTop))
+            height = bodyTop + bodyGraphic.size.height
+        }
+        // A dim last line.
+        block.footer.isHidden = row.footer.isEmpty
+        if !row.footer.isEmpty {
+            let footerGraphic = TextRenderer.render(TextSpec(text: row.footer, fontName: look.regular, size: 22, color: look.dim, maxWidth: column - left), scale: scale)
+            let footerTop = height == 0 ? 0 : height + 8
+            block.footer.show(footerGraphic, at: CGPoint(x: pad.width + left, y: pad.height + footerTop))
+            height = footerTop + footerGraphic.size.height
+        }
+        block.height = max(height, row.pictureURL == nil ? 0 : pictureSide) + pad.height * 2
     }
 }
 

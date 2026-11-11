@@ -488,6 +488,106 @@
         #endif
     }
 
+    /// A sheet of glass that's only for show, with First Row's own layers inside it: the panel
+    /// beside a YouTube video's picture. Clicks and taps go through to the scene, which knows
+    /// where the panel's rows are.
+    @available(macOS 26.0, iOS 26.0, *)
+    @MainActor
+    final class NativeGlassSheet {
+        #if os(macOS)
+            private let glass = NativePassiveGlass()
+            private let host: NSView = {
+                let view = NSView()
+                view.wantsLayer = true
+                return view
+            }()
+            /// Holds First Row's own layers, laid out from the top left.
+            let layerHost: CALayer = {
+                let layer = CALayer()
+                layer.isGeometryFlipped = true
+                return layer
+            }()
+        #else
+            private let glass = UIVisualEffectView(effect: nil)
+            private let host = UIView()
+            var layerHost: CALayer { host.layer }
+        #endif
+        private var isShown = false
+        private var generation = 0
+
+        init(in container: NativeView) {
+            #if os(macOS)
+                glass.style = .regular
+                glass.alphaValue = 0
+                glass.isHidden = true
+                container.addSubview(glass)
+                glass.contentView = host
+                host.layer?.addSublayer(layerHost)
+            #else
+                glass.isUserInteractionEnabled = false
+                glass.isHidden = true
+                container.addSubview(glass)
+                glass.contentView.addSubview(host)
+            #endif
+        }
+
+        /// The sheet (window points), out or away; `away` is the move that takes it off.
+        func update(frame: CGRect, cornerRadius: CGFloat, shown: Bool, away: CATransform3D, animation: Animation?) {
+            if glass.bounds.size != frame.size || glass.frame.origin != frame.origin, shown || !isShown {
+                // Placed by bounds and position, so a move part way doesn't shift it.
+                #if os(macOS)
+                    glass.setFrameOrigin(frame.origin)
+                    glass.setFrameSize(frame.size)
+                    glass.cornerRadius = cornerRadius
+                    withoutLayerActions { layerHost.frame = CGRect(origin: .zero, size: frame.size) }
+                #else
+                    glass.bounds = CGRect(origin: .zero, size: frame.size)
+                    glass.center = CGPoint(x: frame.midX, y: frame.midY)
+                    glass.cornerConfiguration = .uniformCorners(radius: .fixed(cornerRadius))
+                #endif
+                host.frame = CGRect(origin: .zero, size: frame.size)
+            }
+            let appearing = shown && !isShown
+            #if os(macOS)
+                if appearing, glass.alphaValue < 0.02 { glass.layer?.setTransform(away, nil) }
+                glass.layer?.setTransform(shown ? CATransform3DIdentity : away, animation)
+            #else
+                if appearing, glass.isHidden { glass.layer.setTransform(away, nil) }
+                glass.layer.setTransform(shown ? CATransform3DIdentity : away, animation)
+            #endif
+            setShown(shown, animation: animation)
+        }
+
+        func hide() {
+            setShown(false, animation: nil)
+        }
+
+        private func setShown(_ shown: Bool, animation: Animation?) {
+            guard shown != isShown else { return }
+            isShown = shown
+            generation += 1
+            let current = generation
+            let done: () -> Void = { [weak self] in
+                guard let self, self.generation == current, !self.isShown else { return }
+                self.glass.isHidden = true
+            }
+            #if os(macOS)
+                if shown { glass.isHidden = false }
+                animateViews(animation, { self.glass.animator().alphaValue = shown ? 1 : 0 }, completion: done)
+            #else
+                // (Glass ignores opacity here: it comes and goes by materialising.)
+                if shown {
+                    glass.isHidden = false
+                    UIView.performWithoutAnimation { self.host.alpha = 0 }
+                }
+                animateViews(animation, {
+                    self.glass.effect = shown ? UIGlassEffect(style: .regular) : nil
+                    self.host.alpha = shown ? 1 : 0
+                }, completion: done)
+            #endif
+        }
+    }
+
     #if os(macOS)
         /// The modern look's volume display in the system's own Liquid Glass, moving as macOS 26's
         /// own does: in from a little smaller, the fill sweeping dash to dash, the speaker
@@ -612,6 +712,11 @@
         private let transportView = NativePassthroughView()
         private let optionsView = NativePassthroughView()
         private(set) lazy var options = NativeOptionsGlass(in: optionsView)
+        /// The panel beside a YouTube video's picture, over the options' glass.
+        private(set) lazy var sheet: NativeGlassSheet = {
+            _ = options
+            return NativeGlassSheet(in: optionsView)
+        }()
         #if os(macOS)
             /// Over everything else.
             private(set) lazy var volumeHUD = NativeVolumeHUD(in: view)
@@ -775,6 +880,7 @@
                 button.setState(shown: false, dimmed: false, dimmedAlpha: 1, animation: animation)
             }
             options.hideAll()
+            sheet.hide()
         }
     }
 #endif

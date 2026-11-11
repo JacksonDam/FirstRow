@@ -921,15 +921,15 @@ extension MenuSceneRenderer {
         playback.options.button(at: fullscreenCanvas.point(windowPoint))
     }
 
-    func youtubeComment(at windowPoint: CGPoint) -> (isOnPanel: Bool, index: Int?)? {
-        guard let panel = playback.comments.panelFrame else { return nil }
+    func youtubePanelRow(at windowPoint: CGPoint) -> (isOnPanel: Bool, index: Int?)? {
+        guard let panel = playback.panel.panelFrame else { return nil }
         let point = fullscreenCanvas.point(windowPoint)
         guard panel.contains(point) else { return (false, nil) }
-        return (true, playback.comments.comment(at: point))
+        return (true, playback.panel.row(at: point))
     }
 
-    func youtubeCommentTravel(_ index: Int) -> CGFloat {
-        (playback.comments.pitch(ofComment: index) ?? 220) * max(fullscreenCanvas.scale, 0.0001)
+    func youtubePanelRowTravel(_ index: Int) -> CGFloat {
+        (playback.panel.pitch(ofRow: index) ?? 220) * max(fullscreenCanvas.scale, 0.0001)
     }
 
     var pointerScene: PointerScene {

@@ -687,10 +687,11 @@ final class MenuView: ObservableObject {
     @Published var youtube = YouTubeMenuState()
     /// The YouTube video in the movie player, while one is.
     @Published var youtubeSession: YouTubePlaybackSession?
-    /// The video's comments, over the right of the picture, while they're open.
-    @Published var youtubeComments: YouTubeCommentsState?
+    /// The panel over the right of the video's picture, while it's out: its comments, what
+    /// it is and who it's from, or the playlists it can be kept in.
+    @Published var youtubePanel: YouTubePanelState?
     /// How far that panel is out (0 away, 1 out).
-    @Published var youtubeCommentsReveal: CGFloat = 0
+    @Published var youtubePanelReveal: CGFloat = 0
     /// A change of picture size waiting to be acted on (where the player has to start again for it).
     var youtubeStreamReloadTask: Task<Void, Never>?
     @Published var textEntry: TextEntryState?

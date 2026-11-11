@@ -46,9 +46,9 @@ extension MenuView {
             case queueSelecting
             /// Pulling Now Playing's list out from the right edge, or pushing it back.
             case queuePull
-            /// On a YouTube video's comments (up and down goes through them, a tap picks one
-            /// out, a push to the right puts them away) or beside them (a tap puts them away).
-            case comments(onPanel: Bool)
+            /// On a YouTube video's panel (up and down goes through its rows, a tap presses
+            /// one, a push to the right puts it away) or beside it (a tap puts it away).
+            case panel(onPanel: Bool)
             case ignored
         }
 
@@ -92,10 +92,10 @@ extension MenuView {
         /// finger's recent sideways positions, for how fast it let go.
         var pullStartReveal: CGFloat = 0
         var pullOriginX: CGFloat = 0
-        /// A video's comments: where the finger was when the comment now picked out was
-        /// reached, and whether it has moved at all.
-        var commentsAnchorY: CGFloat = 0
-        var commentsDidMove = false
+        /// A video's panel: where the finger was when the row now picked out was reached,
+        /// and whether it has moved at all.
+        var panelAnchorY: CGFloat = 0
+        var panelDidMove = false
         var xSamples: [(time: TimeInterval, x: CGFloat)] = []
         /// Frames at the screen's full rate while a finger is down or a list moves on its own.
         let clock = FrameClock()
@@ -287,10 +287,10 @@ extension MenuView {
                 pointer.hitTester?.highlightTouchControl(control)
                 return
             }
-            if let hit = youtubeCommentsHit(at: point) {
-                state.mode = .comments(onPanel: hit.isOnPanel)
-                state.commentsAnchorY = point.y
-                state.commentsDidMove = false
+            if let hit = youtubePanelHit(at: point) {
+                state.mode = .panel(onPanel: hit.isOnPanel)
+                state.panelAnchorY = point.y
+                state.panelDidMove = false
                 return
             }
             // In from the right edge, Now Playing's list follows the thumb.
@@ -449,9 +449,9 @@ extension MenuView {
                 }
             case .scrolling:
                 if let level = state.level { scrollTouchList(level: level, by: point.y - state.scrollOriginY) }
-            case let .comments(onPanel):
-                if (dx * dx + dy * dy).squareRoot() > Self.touchSlop { state.commentsDidMove = true }
-                if onPanel, state.commentsDidMove { dragYouTubeComments(to: point) }
+            case let .panel(onPanel):
+                if (dx * dx + dy * dy).squareRoot() > Self.touchSlop { state.panelDidMove = true }
+                if onPanel, state.panelDidMove { dragYouTubePanel(to: point) }
             case .swiping, .ignored:
                 break
             }
@@ -524,17 +524,18 @@ extension MenuView {
                 handleTouchSwipe(dx: dx, dy: dy, start: state.start)
             case .undecided:
                 handleTouchTap(at: point, target: state.startTarget)
-            case let .comments(onPanel):
-                if !state.commentsDidMove {
-                    // A tap: on a comment picks it out, beside the panel puts it away.
+            case let .panel(onPanel):
+                if !state.panelDidMove {
+                    // A tap: on a row presses it, beside the panel puts it away.
                     if !onPanel {
-                        closeYouTubeComments()
-                    } else if let index = youtubeCommentsHit(at: point)?.index {
-                        showYouTubeComment(index, playsSound: true)
+                        closeYouTubePanel()
+                    } else if let index = youtubePanelHit(at: point)?.index {
+                        pressYouTubePanelRow(index)
                     }
                 } else if onPanel, dx > Self.touchSwipeDistance, abs(dx) > abs(dy) * 1.5 {
-                    // Pushed back to the right, where it came from.
-                    closeYouTubeComments()
+                    // Pushed back to the right, where it came from (a comment's replies give
+                    // way to the comments first).
+                    _ = handleYouTubePanelInput(.escape)
                 }
             case .ignored:
                 break
@@ -1016,33 +1017,33 @@ extension MenuView {
             startTouchClock()
         }
 
-        /// A finger moving up the comments goes on to the next one once it has travelled the
+        /// A finger moving up the panel goes on to the next row once it has travelled the
         /// height of the one picked out, and back to the one before the other way.
-        private func dragYouTubeComments(to point: CGPoint) {
-            guard let comments = youtubeComments, let hitTester = pointer.hitTester else { return }
+        private func dragYouTubePanel(to point: CGPoint) {
+            guard let panel = youtubePanel, let hitTester = pointer.hitTester else { return }
             let state = touch
             // (Sideways is a push, not a scroll.)
             guard abs(point.y - state.start.y) >= abs(point.x - state.start.x) else { return }
-            var focus = comments.focused
+            var focus = panel.focused
             while true {
-                let travelled = state.commentsAnchorY - point.y
-                if travelled > 0, focus + 1 < comments.comments.count {
-                    let needed = hitTester.youtubeCommentTravel(focus)
+                let travelled = state.panelAnchorY - point.y
+                if travelled > 0, focus + 1 < panel.rows.count {
+                    let needed = hitTester.youtubePanelRowTravel(focus)
                     guard travelled >= needed else { break }
                     focus += 1
-                    state.commentsAnchorY -= needed
+                    state.panelAnchorY -= needed
                 } else if travelled < 0, focus > 0 {
-                    let needed = hitTester.youtubeCommentTravel(focus - 1)
+                    let needed = hitTester.youtubePanelRowTravel(focus - 1)
                     guard -travelled >= needed else { break }
                     focus -= 1
-                    state.commentsAnchorY += needed
+                    state.panelAnchorY += needed
                 } else {
                     // At an end: the finger starts afresh from here when it turns round.
-                    state.commentsAnchorY = point.y
+                    state.panelAnchorY = point.y
                     break
                 }
             }
-            showYouTubeComment(focus)
+            showYouTubePanelRow(focus)
         }
 
         private func handleMovieTouchTap(at point: CGPoint) {

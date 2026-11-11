@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 
 /// The panel ↓ opens during a movie (or its buttons above the bar): subtitles, audio track and
-/// playback speed, and for a YouTube video the size of its picture and its comments.
+/// playback speed, and for a YouTube video the size of its picture, what it is and its comments.
 /// Up and down move between rows, left and right (or Select) change the value, Menu or ↑ from
 /// the top closes it, back into its buttons.
 extension MenuView {
@@ -12,6 +12,7 @@ extension MenuView {
             case audio
             case quality
             case speed
+            case info
             case comments
         }
 
@@ -250,8 +251,14 @@ extension MenuView {
         guard var state = movieOptions, state.rows.indices.contains(state.focusedRow) else { return }
         var row = state.rows[state.focusedRow]
         if row.opensMore {
-            if step > 0, row.kind == .comments {
-                openYouTubeComments()
+            // (A row that opens a panel of its own, over the right of the picture.)
+            let panel: YouTubePanelState.Kind? = switch row.kind {
+            case .comments: .comments
+            case .info: .info
+            default: nil
+            }
+            if step > 0, let panel {
+                openYouTubePanel(panel)
             } else {
                 playLimitSoundOnceForCurrentHold()
             }
@@ -282,7 +289,7 @@ extension MenuView {
             if state.pictureHeights.indices.contains(row.selected) {
                 setYouTubeMaximumHeight(state.pictureHeights[row.selected])
             }
-        case .comments:
+        case .comments, .info:
             break
         case .subtitles:
             if youtubeSession != nil {

@@ -215,8 +215,8 @@ extension MenuView {
         youtubeSession = nil
         youtubeStreamReloadTask?.cancel()
         youtubeStreamReloadTask = nil
-        youtubeComments = nil
-        youtubeCommentsReveal = 0
+        youtubePanel = nil
+        youtubePanelReveal = 0
         // The history has this video at its top now.
         if thirdMenuMode == .youtube, let index = youtube.pages.indices.last, case .history = youtube.pages[index].page {
             youtube.pages[index].videos = YouTubeStore.shared.history
@@ -231,20 +231,7 @@ extension MenuView {
     }
 }
 
-/// A video's comments, open over the right of its picture.
-struct YouTubeCommentsState {
-    var videoID: String
-    /// "5,240 Comments", as YouTube words it.
-    var totalText: String?
-    var comments: [YouTubeComment] = []
-    var continuation: String?
-    var isLoading = true
-    var isLoadingMore = false
-    var error: String?
-    var focused = 0
-}
-
-// MARK: - A video's options: captions, picture size, comments
+// MARK: - A video's options: captions, picture size, what it is, comments
 
 extension MenuView {
     /// What a YouTube video offers in the movie's options.
@@ -254,6 +241,7 @@ extension MenuView {
         if !session.playback.captions.isEmpty { kinds.append(.subtitles) }
         if !youtubeOfferedHeights(session).isEmpty { kinds.append(.quality) }
         kinds.append(.speed)
+        kinds.append(.info)
         kinds.append(.comments)
         return kinds
     }
@@ -280,6 +268,7 @@ extension MenuView {
             rows.append(MovieOptionRow(kind: .quality, title: "Quality", values: ["Auto"] + heights.map { "\($0)p" }, selected: chosen.map { $0 + 1 } ?? 0))
         }
         rows += state.rows.filter { $0.kind == .speed }
+        rows.append(MovieOptionRow(kind: .info, title: "Info", values: ["View"], selected: 0, opensMore: true))
         rows.append(MovieOptionRow(kind: .comments, title: "Comments", values: ["View"], selected: 0, opensMore: true))
         let focusedKind = state.preferredKind ?? (state.rows.indices.contains(state.focusedRow) ? state.rows[state.focusedRow].kind : .speed)
         state.rows = rows
@@ -432,135 +421,6 @@ extension MenuView {
         if wasPlaying {
             player.play()
             if movieSpeed != 1 { applyMovieSpeed(player) }
-        }
-    }
-
-    // MARK: Comments
-
-    /// Opens the video's comments over the right of the picture.
-    func openYouTubeComments() {
-        guard let session = youtubeSession, youtubeComments == nil else { return }
-        let videoID = session.video.id
-        playSound(named: "Selection")
-        withAnimation(.smoothInOut(duration: 0.3)) {
-            movieOptions = nil
-            movieOptionsReveal = 0
-        }
-        youtubeComments = YouTubeCommentsState(videoID: videoID)
-        withAnimation(.smooth(duration: 0.36)) {
-            youtubeCommentsReveal = 1
-        }
-        showMovieControlsInstantly()
-        Task { @MainActor in
-            do {
-                var token = self.youtube.details[videoID]?.commentsToken
-                if token == nil {
-                    let details = try await YouTubeClient.shared.details(of: videoID)
-                    self.rememberYouTubeDetails(details, for: videoID)
-                    token = details.commentsToken
-                }
-                guard self.youtubeComments?.videoID == videoID else { return }
-                guard let token else {
-                    self.youtubeComments?.isLoading = false
-                    self.youtubeComments?.error = "Comments are turned off."
-                    return
-                }
-                let page = try await YouTubeClient.shared.comments(token)
-                guard self.youtubeComments?.videoID == videoID else { return }
-                self.youtubeComments?.isLoading = false
-                self.youtubeComments?.totalText = page.totalText
-                self.youtubeComments?.comments = page.comments
-                self.youtubeComments?.continuation = page.continuation
-                if page.comments.isEmpty { self.youtubeComments?.error = "No comments yet." }
-            } catch {
-                guard self.youtubeComments?.videoID == videoID else { return }
-                self.youtubeComments?.isLoading = false
-                self.youtubeComments?.error = error.localizedDescription
-            }
-        }
-    }
-
-    func closeYouTubeComments(playsSound: Bool = true) {
-        guard youtubeComments != nil, youtubeCommentsReveal > 0 else { return }
-        if playsSound { playSound(named: "Exit") }
-        withAnimation(.smoothInOut(duration: 0.3)) {
-            youtubeCommentsReveal = 0
-        }
-        scheduleMovieControlsAutoHide()
-        Task { @MainActor in
-            try? await firstRowSleep(0.32)
-            guard self.youtubeCommentsReveal <= 0.001 else { return }
-            self.youtubeComments = nil
-        }
-    }
-
-    /// Picks out another comment (for a click, the wheel or a finger; the arrows have their
-    /// own way below).
-    func showYouTubeComment(_ index: Int, playsSound: Bool = false) {
-        guard var state = youtubeComments, youtubeCommentsReveal > 0, index != state.focused,
-              state.comments.indices.contains(index) else { return }
-        state.focused = index
-        youtubeComments = state
-        if playsSound { playSound(named: "SelectionChange") }
-        loadMoreYouTubeCommentsIfNeeded()
-    }
-
-    /// The comments' panel under a point of the window, while it's out: whether the point is
-    /// on it, and on which comment.
-    func youtubeCommentsHit(at windowPoint: CGPoint) -> (isOnPanel: Bool, index: Int?)? {
-        guard isMoviePlaybackVisible, youtubeComments != nil, youtubeCommentsReveal > 0 else { return nil }
-        return pointer.hitTester?.youtubeComment(at: windowPoint)
-    }
-
-    /// Keys while the comments are open. Returns true when they took the key.
-    func handleYouTubeCommentsInput(_ key: KeyCode) -> Bool {
-        guard var state = youtubeComments, youtubeCommentsReveal > 0 else { return false }
-        switch key {
-        case .escape, .delete, .leftArrow:
-            closeYouTubeComments()
-        case .upArrow:
-            guard state.focused > 0 else {
-                playLimitSoundOnceForCurrentHold()
-                return true
-            }
-            state.focused -= 1
-            youtubeComments = state
-            playSound(named: "SelectionChange")
-        case .downArrow:
-            guard state.focused + 1 < state.comments.count else {
-                playLimitSoundOnceForCurrentHold()
-                return true
-            }
-            state.focused += 1
-            youtubeComments = state
-            playSound(named: "SelectionChange")
-            loadMoreYouTubeCommentsIfNeeded()
-        case .space:
-            handleMovieSpacebarPressed()
-        default:
-            break
-        }
-        return true
-    }
-
-    private func loadMoreYouTubeCommentsIfNeeded() {
-        guard let state = youtubeComments, !state.isLoadingMore, let token = state.continuation,
-              state.focused >= state.comments.count - 6, state.comments.count < 400
-        else { return }
-        youtubeComments?.isLoadingMore = true
-        let videoID = state.videoID
-        Task { @MainActor in
-            let page = try? await YouTubeClient.shared.comments(token)
-            guard self.youtubeComments?.videoID == videoID else { return }
-            self.youtubeComments?.isLoadingMore = false
-            guard let page else {
-                self.youtubeComments?.continuation = nil
-                return
-            }
-            let known = Set(self.youtubeComments?.comments.map(\.id) ?? [])
-            let fresh = page.comments.filter { !known.contains($0.id) }
-            self.youtubeComments?.comments += fresh
-            self.youtubeComments?.continuation = fresh.isEmpty ? nil : page.continuation
         }
     }
 }

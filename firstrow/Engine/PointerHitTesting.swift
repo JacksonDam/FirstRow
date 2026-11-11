@@ -87,11 +87,11 @@ protocol PointerHitTesting: AnyObject {
     func movieOptionsButton(at windowPoint: CGPoint) -> MenuView.MovieOptionRow.Kind?
     /// Where Now Playing's list is, when Now Playing could show one.
     var nowPlayingQueueGeometry: NowPlayingQueueGeometry? { get }
-    /// A YouTube video's comments, while they're out: whether `windowPoint` is on their panel
-    /// and, if it's on a comment, which.
-    func youtubeComment(at windowPoint: CGPoint) -> (isOnPanel: Bool, index: Int?)?
-    /// How far a finger travels, in window points, to move on from comment `index` to the next.
-    func youtubeCommentTravel(_ index: Int) -> CGFloat
+    /// A YouTube video's panel, while it's out: whether `windowPoint` is on it and, if it's on
+    /// one of its rows, which.
+    func youtubePanelRow(at windowPoint: CGPoint) -> (isOnPanel: Bool, index: Int?)?
+    /// How far a finger travels, in window points, to move on from row `index` to the next.
+    func youtubePanelRowTravel(_ index: Int) -> CGFloat
     /// The on-screen button at `windowPoint`, if one is showing there.
     func touchControl(at windowPoint: CGPoint) -> TouchControl?
     /// Shows an on-screen button as held down (nil for none).

@@ -109,6 +109,7 @@ enum YouTubeContinuation: Equatable, Sendable {
     case search(String)
     case browse(String)
     case related(String)
+    case playlist(String)
 }
 
 struct YouTubeVideoDetails: Sendable {
@@ -119,9 +120,20 @@ struct YouTubeVideoDetails: Sendable {
     var channel: String?
     var channelID: String?
     var subscribersText: String?
+    /// The round picture of who the video is from.
+    var channelPictureURL: URL?
     var description: String?
     var related = YouTubePage()
     var commentsToken: String?
+}
+
+/// One of a channel's playlists.
+struct YouTubePlaylist: Equatable, Sendable {
+    var id: String
+    var title: String
+    /// What YouTube says with it: how many videos it holds.
+    var notes: [String] = []
+    var pictureURL: URL?
 }
 
 struct YouTubeComment: Equatable, Sendable {
@@ -135,6 +147,8 @@ struct YouTubeComment: Equatable, Sendable {
     var isByCreator = false
     var isHearted = false
     var avatarURL: URL?
+    /// Where its replies come from, if it has any.
+    var repliesToken: String?
 }
 
 struct YouTubeCommentsPage: Sendable {
@@ -166,6 +180,8 @@ struct YouTubePlayback: Sendable {
     /// Every size of the picture in one playlist, with the sound beside it.
     var manifestURL: URL
     var captions: [YouTubeCaptionTrack]
+    /// The whole description, as it was written.
+    var description: String?
 }
 
 /// One size of a video's picture in its playlist, and the sound that goes with it.
@@ -226,17 +242,19 @@ actor YouTubeClient {
     static let shared = YouTubeClient()
 
     /// The apps First Row speaks as. YouTube answers each of its own apps differently: the
-    /// web site's lists and comments are open to anyone, and the headset app is given addresses
-    /// a player can open as they are.
+    /// web site's lists and comments are open to anyone, the headset app is given addresses a
+    /// player can open as they are, and the television app is given a playlist as a plain list.
     private enum App {
         case web
         case headset
+        case television
         case charts
 
         var name: String {
             switch self {
             case .web: "WEB"
             case .headset: "VISIONOS"
+            case .television: "TVHTML5"
             case .charts: "WEB_MUSIC_ANALYTICS"
             }
         }
@@ -245,6 +263,7 @@ actor YouTubeClient {
             switch self {
             case .web: "1"
             case .headset: "101"
+            case .television: "7"
             case .charts: "31"
             }
         }
@@ -253,6 +272,7 @@ actor YouTubeClient {
             switch self {
             case .web: "2.20261106.00.00"
             case .headset: "1.04"
+            case .television: "7.20261102.18.00"
             case .charts: "2.0"
             }
         }
@@ -263,6 +283,8 @@ actor YouTubeClient {
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15"
             case .headset:
                 "com.google.visionos.youtube/1.04(RealityDevice17,1; U; CPU visionOS 26_6_0 like Mac OS X; GB)"
+            case .television:
+                "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)"
             }
         }
     }
@@ -317,7 +339,7 @@ actor YouTubeClient {
             client["deviceModel"] = "RealityDevice17,1"
             client["osName"] = "visionOS"
             client["osVersion"] = "26.6.0.23O770"
-        case .charts:
+        case .television, .charts:
             break
         }
         if let visitor, app != .charts { client["visitorData"] = visitor }
@@ -377,6 +399,8 @@ actor YouTubeClient {
             request.setValue("https://charts.youtube.com", forHTTPHeaderField: "Referer")
         case .headset:
             request.setValue("2", forHTTPHeaderField: "X-Goog-Api-Format-Version")
+        case .television:
+            break
         }
         let (data, response) = try await send(request)
         guard (200 ..< 300).contains(response.statusCode) else { throw YouTubeError.badResponse(response.statusCode) }
@@ -545,6 +569,9 @@ actor YouTubeClient {
         case let .related(value):
             let answer = try await call("next", as: .web, ["continuation": value])
             return page(in: answer["onResponseReceivedEndpoints"], more: { .related($0) })
+        case let .playlist(value):
+            let answer = try await call("browse", as: .television, ["continuation": value])
+            return page(in: answer["continuationContents"], more: { .playlist($0) })
         }
     }
 
@@ -575,7 +602,8 @@ actor YouTubeClient {
                 details.channel = owner["title"].text
                 details.channelID = owner["title"]["runs"][0]["navigationEndpoint"]["browseEndpoint"]["browseId"].string
                 details.subscribersText = owner["subscriberCountText"].text
-                details.description = secondary["attributedDescription"]["content"].string
+                details.channelPictureURL = owner["thumbnail"]["thumbnails"].array.last?["url"].string.flatMap(Self.pictureURL)
+                details.description = secondary["attributedDescription"]["content"].string ?? secondary["description"].text
             }
             let section = item["itemSectionRenderer"]
             if section["targetId"].string == "comments-section" {
@@ -617,6 +645,9 @@ actor YouTubeClient {
                     if let toolbar = model["toolbarStateKey"].string {
                         comment.isHearted = entities[toolbar]?["engagementToolbarStateEntityPayload"]["heartState"].string == "TOOLBAR_HEART_STATE_HEARTED"
                     }
+                    let replies = thread["replies"]["commentRepliesRenderer"]
+                    comment.repliesToken = replies["contents"][0]["continuationItemRenderer"]["continuationEndpoint"]["continuationCommand"]["token"].string
+                        ?? replies.all(["continuationCommand"]).first?.value["token"].string
                     if !comment.text.isEmpty { page.comments.append(comment) }
                 }
                 let next = item["continuationItemRenderer"]
@@ -666,6 +697,7 @@ actor YouTubeClient {
                     isLive: details["isLive"].bool ?? false,
                     manifestURL: manifest,
                     captions: tracks,
+                    description: details["shortDescription"].string,
                 )
             }
             let reason = status["reason"].string ?? status["messages"][0].string ?? ""
@@ -810,5 +842,39 @@ actor YouTubeClient {
             }
         }
         return cues
+    }
+
+    // MARK: Playlists
+
+    /// A channel's playlists.
+    func channelPlaylists(_ channelID: String) async throws -> [YouTubePlaylist] {
+        try? await ensureVisitor()
+        let answer = try await call("browse", as: .web, ["browseId": channelID, "params": "EglwbGF5bGlzdHPyBgQKAkIA"])
+        var playlists: [YouTubePlaylist] = []
+        for (_, item) in answer["contents"].all(["lockupViewModel"]) {
+            guard let kind = item["contentType"].string, kind == "LOCKUP_CONTENT_TYPE_PLAYLIST" || kind == "LOCKUP_CONTENT_TYPE_PODCAST",
+                  let id = item["contentId"].string, !id.isEmpty,
+                  let title = item["metadata"]["lockupMetadataViewModel"]["title"]["content"].string, !title.isEmpty,
+                  !playlists.contains(where: { $0.id == id })
+            else { continue }
+            var playlist = YouTubePlaylist(id: id, title: title)
+            let picture = item["contentImage"]["collectionThumbnailViewModel"]["primaryThumbnail"]["thumbnailViewModel"]
+            playlist.notes = Array(picture.all(["thumbnailBadgeViewModel"]).compactMap { $0.value["text"].string }.prefix(1))
+            playlist.pictureURL = picture["image"]["sources"].array.last?["url"].string.flatMap(Self.pictureURL)
+            playlists.append(playlist)
+        }
+        return playlists
+    }
+
+    /// A playlist's videos, read as the television app reads them: a plain list.
+    func playlistVideos(_ id: String) async throws -> YouTubePage {
+        let answer = try await call("browse", as: .television, ["browseId": "VL" + id])
+        let list = answer["contents"].all(["playlistVideoListRenderer"]).first?.value
+        return page(in: list ?? answer["contents"], more: { .playlist($0) })
+    }
+
+    /// A picture's address as YouTube writes them (some without the "https:").
+    private static func pictureURL(_ text: String) -> URL? {
+        URL(string: text.hasPrefix("//") ? "https:" + text : text)
     }
 }
