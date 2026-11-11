@@ -11,6 +11,71 @@ final class MPVCore {
     /// The players' cores, whose events are delivered each frame (main thread only).
     nonisolated(unsafe) static var live: [ObjectIdentifier: MPVCore] = [:]
     private var isRegistered = false
+    /// Cores their players have let go of, until mpv has let go of their renderers (see
+    /// `close`; main thread only).
+    nonisolated(unsafe) private static var closing: [ObjectIdentifier: MPVCore] = [:]
+    private var closingSince: TimeInterval = 0
+
+    // MARK: What mpv last said
+
+    // Asking mpv for something waits for its core to answer, and the core doesn't while it
+    // opens a file's sound, plays a file's last sound out or shuts its video down: a fifth
+    // of a second and more with the main thread stopped, at the moments the interface is
+    // moving. So what's wanted every frame is watched instead (mpv says when it changes)
+    // and kept here as mpv's events come in.
+
+    /// Where playback had got to when mpv last said, and when that was (in system uptime).
+    private(set) var reportedTime: Double?
+    private(set) var reportedTimeAt: TimeInterval = 0
+    private(set) var reportedDuration: Double?
+    private(set) var videoWidth = 0
+    private(set) var videoHeight = 0
+    /// Paused, waiting for data or between files: the time isn't moving.
+    private(set) var isCoreIdle = true
+    /// No file is open, so mpv is showing no video.
+    private(set) var isIdle = true
+
+    static let endOfFileID: UInt64 = 1
+    private static let timeID: UInt64 = 2
+    static let durationID: UInt64 = 3
+    private static let widthID: UInt64 = 4
+    private static let heightID: UInt64 = 5
+    private static let coreIdleID: UInt64 = 6
+    private static let idleID: UInt64 = 7
+
+    /// Keeps what a watched property has changed to.
+    private func note(_ event: UnsafeMutablePointer<mpv_event>) {
+        guard let property = event.pointee.data?.assumingMemoryBound(to: mpv_event_property.self).pointee else { return }
+        let number = property.format == MPV_FORMAT_DOUBLE ? property.data?.assumingMemoryBound(to: Double.self).pointee : nil
+        let whole = property.format == MPV_FORMAT_INT64 ? property.data?.assumingMemoryBound(to: Int64.self).pointee : nil
+        let flag = property.format == MPV_FORMAT_FLAG ? property.data?.assumingMemoryBound(to: Int32.self).pointee : nil
+        switch event.pointee.reply_userdata {
+        case Self.timeID:
+            reportedTime = number
+            reportedTimeAt = ProcessInfo.processInfo.systemUptime
+        case Self.durationID:
+            reportedDuration = number
+        case Self.widthID:
+            videoWidth = Int(whole ?? 0)
+        case Self.heightID:
+            videoHeight = Int(whole ?? 0)
+        case Self.coreIdleID:
+            isCoreIdle = flag.map { $0 != 0 } ?? true
+            // (The time stood still until now, or stands still from now.)
+            reportedTimeAt = ProcessInfo.processInfo.systemUptime
+        case Self.idleID:
+            if let flag { isIdle = flag != 0 }
+        default:
+            break
+        }
+    }
+
+    /// A file is about to be opened: what was known of the last one no longer holds.
+    func noteLoading() {
+        reportedTime = nil
+        reportedDuration = nil
+        isIdle = false
+    }
 
     /// Whether mpv has said it has events waiting. mpv says so on a thread of its own, and
     /// may go on saying so while the core is being closed down, so this is kept apart from
@@ -103,7 +168,13 @@ final class MPVCore {
             mpv_terminate_destroy(handle)
             return nil
         }
-        observe("eof-reached", MPV_FORMAT_FLAG, id: 1)
+        observe("eof-reached", MPV_FORMAT_FLAG, id: Self.endOfFileID)
+        observe("time-pos", MPV_FORMAT_DOUBLE, id: Self.timeID)
+        observe("duration", MPV_FORMAT_DOUBLE, id: Self.durationID)
+        observe("dwidth", MPV_FORMAT_INT64, id: Self.widthID)
+        observe("dheight", MPV_FORMAT_INT64, id: Self.heightID)
+        observe("core-idle", MPV_FORMAT_FLAG, id: Self.coreIdleID)
+        observe("idle-active", MPV_FORMAT_FLAG, id: Self.idleID)
         if Self.debugEnabled { mpv_request_log_messages(handle, "v") }
         // mpv says when it has events, so that it's asked for them only then: asking takes
         // a lock inside mpv and a wait on it, which every pass of the main loop was paying
@@ -145,6 +216,12 @@ final class MPVCore {
     /// The player is done with it (on the main thread). mpv is shut down on another thread:
     /// that waits for mpv's own threads to finish, and at a song's end mpv is still playing
     /// out the sound it holds, for up to half a second.
+    ///
+    /// A core that showed video has a renderer, which has to be let go of here, where OpenGL
+    /// is, and letting go of it waits for mpv to shut its video down: up to a fifth of a
+    /// second when mpv is waiting to show a frame, with the main thread stopped, just as a
+    /// movie's screen goes out and the menus come in. So mpv is asked to stop, which isn't
+    /// waited for, and the renderer goes once mpv says it has stopped (see `finishClosing`).
     func close() {
         Self.debug("core closed")
         if isRegistered {
@@ -153,6 +230,34 @@ final class MPVCore {
         }
         guard !isShutDown else { return }
         isShutDown = true
+        onEvent = nil
+        guard renderContext != nil else {
+            shutDown()
+            return
+        }
+        commandWithoutWaiting(["stop"])
+        closingSince = ProcessInfo.processInfo.systemUptime
+        Self.closing[ObjectIdentifier(self)] = self
+    }
+
+    /// A closing core's turn in a pass of the main loop. Its renderer goes once mpv is idle,
+    /// when nothing on screen is moving if such a moment comes within three seconds (what's
+    /// left to do then is giving OpenGL's things back, which is quick, but not nothing); and
+    /// after five seconds whatever mpv says.
+    private func finishClosing(interfaceIsMoving: Bool) {
+        if wakeup.take() {
+            while let event = mpv_wait_event(handle, 0), event.pointee.event_id != MPV_EVENT_NONE {
+                if event.pointee.event_id == MPV_EVENT_PROPERTY_CHANGE { note(event) }
+            }
+        }
+        let waited = ProcessInfo.processInfo.systemUptime - closingSince
+        guard (isIdle && (!interfaceIsMoving || waited > 3)) || waited > 5 else { return }
+        Self.debug("core let go of after \(Int(waited * 1000)) ms")
+        Self.closing.removeValue(forKey: ObjectIdentifier(self))
+        shutDown()
+    }
+
+    private func shutDown() {
         // (The renderer goes here, where OpenGL is.)
         if let renderContext { mpv_render_context_free(renderContext) }
         renderContext = nil
@@ -197,6 +302,25 @@ final class MPVCore {
     func setPropertyWithoutWaiting(_ name: String, _ value: Double) {
         var v = value
         mpv_set_property_async(handle, 0, name, MPV_FORMAT_DOUBLE, &v)
+    }
+
+    func setPropertyWithoutWaiting(_ name: String, _ value: String) {
+        var text: UnsafeMutablePointer<CChar>? = strdup(value)
+        defer { free(text) }
+        mpv_set_property_async(handle, 0, name, MPV_FORMAT_STRING, &text)
+    }
+
+    /// Sends a command without waiting for mpv to have carried it out. Commands and
+    /// properties sent this way are carried out in the order they were sent.
+    func commandWithoutWaiting(_ args: [String]) {
+        var cStrings = args.map { strdup($0) }
+        cStrings.append(nil)
+        defer { cStrings.forEach { free($0) } }
+        cStrings.withUnsafeMutableBufferPointer { buffer in
+            buffer.baseAddress!.withMemoryRebound(to: UnsafePointer<CChar>?.self, capacity: buffer.count) { pointer in
+                _ = mpv_command_async(handle, 0, pointer)
+            }
+        }
     }
 
     func double(_ name: String) -> Double? {
@@ -248,13 +372,24 @@ final class MPVCore {
                 }
                 continue
             }
-            Self.debug("event \(String(cString: mpv_event_name(event.pointee.event_id)))")
+            if event.pointee.event_id == MPV_EVENT_PROPERTY_CHANGE {
+                note(event)
+            } else {
+                if event.pointee.event_id == MPV_EVENT_START_FILE {
+                    // (What comes after this is about the new file.)
+                    reportedTime = nil
+                    reportedDuration = nil
+                }
+                Self.debug("event \(String(cString: mpv_event_name(event.pointee.event_id)))")
+            }
             onEvent?(event)
         }
     }
 
-    static func pumpAll() {
+    static func pumpAll(interfaceIsMoving: Bool) {
         for core in live.values { core.pump() }
+        guard !closing.isEmpty else { return }
+        for core in Array(closing.values) { core.finishClosing(interfaceIsMoving: interfaceIsMoving) }
     }
 
     // MARK: Video

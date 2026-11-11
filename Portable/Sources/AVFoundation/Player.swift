@@ -63,30 +63,25 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     private var pendingLoad = false
     private var playing = false
     private var lastTime: Double = 0
-    /// The file has reached its end, and mpv is playing out the last of its sound (or has):
-    /// until that's done mpv answers nothing, for up to half a second, so nothing that waits
-    /// for an answer is asked of it until the player is played, sought or given another file.
+    /// The file has reached its end, and mpv is playing out the last of its sound (or has).
     private var hasReachedEnd = false
+    /// A place was asked for and mpv hasn't said it's there yet: until it does (or a second
+    /// has gone by) the place asked for is where the player is.
+    private var seekAskedAt: TimeInterval?
+    /// What mpv had last said when the player was paused. The time counted on from that is
+    /// where it stopped, until mpv says something else.
+    private var reportedAtPause: Double?
     private var timeObservers: [ObjectIdentifier: TimeObserver] = [:]
 
+    // Nothing here waits for mpv: what it's told is sent without waiting for it to be done
+    // (it is done in the order sent), and what it knows is kept as it says (see MPVCore).
+
     public var volume: Float = 1 {
-        didSet {
-            if hasReachedEnd {
-                core?.setPropertyWithoutWaiting("volume", Double(volume) * 100)
-            } else {
-                core?.setProperty("volume", Double(volume) * 100)
-            }
-        }
+        didSet { core?.setPropertyWithoutWaiting("volume", Double(volume) * 100) }
     }
 
     public var isMuted = false {
-        didSet {
-            if hasReachedEnd {
-                core?.setFlagWithoutWaiting("mute", isMuted)
-            } else {
-                core?.setFlag("mute", isMuted)
-            }
-        }
+        didSet { core?.setFlagWithoutWaiting("mute", isMuted) }
     }
 
     public var rate: Float {
@@ -120,7 +115,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         item?.player = self
         lastTime = 0
         guard item != nil else {
-            core?.command(["stop"])
+            core?.commandWithoutWaiting(["stop"])
             return
         }
         pendingLoad = true
@@ -142,9 +137,9 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     private func ensureCore() -> MPVCore? {
         if let core { return core }
         guard let made = MPVCore.forPlayer() else { return nil }
-        made.setProperty("volume", Double(volume) * 100)
-        made.setFlag("mute", isMuted)
-        made.setFlag("pause", !playing)
+        made.setPropertyWithoutWaiting("volume", Double(volume) * 100)
+        made.setFlagWithoutWaiting("mute", isMuted)
+        made.setFlagWithoutWaiting("pause", !playing)
         made.onEvent = { [weak self] event in self?.handle(event) }
         if wantsVideo { _ = made.makeRenderContext() }
         core = made
@@ -178,14 +173,16 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         MPVCore.debug("loadfile \(item.asset.url.lastPathComponent) playing \(playing) render \(core.renderContext != nil)")
         pendingLoad = false
         hasReachedEnd = false
-        core.setFlag("pause", !playing)
+        seekAskedAt = nil
+        core.setFlagWithoutWaiting("pause", !playing)
+        core.noteLoading()
         let url = item.asset.url
         var options: [String] = []
         if lastTime > 0 { options.append("start=\(lastTime)") }
         if options.isEmpty {
-            core.command(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace"])
+            core.commandWithoutWaiting(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace"])
         } else {
-            core.command(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace", "-1", options.joined(separator: ",")])
+            core.commandWithoutWaiting(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace", "-1", options.joined(separator: ",")])
         }
     }
 
@@ -193,8 +190,17 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         switch event.pointee.event_id {
         case MPV_EVENT_FILE_LOADED:
             currentItem?.status = .readyToPlay
-            currentItem?.loadedDuration = core?.double("duration")
+            if let duration = core?.reportedDuration { currentItem?.loadedDuration = duration }
+        case MPV_EVENT_PLAYBACK_RESTART:
+            // (Playing again from the place asked for, or from the start.)
+            seekAskedAt = nil
         case MPV_EVENT_PROPERTY_CHANGE:
+            if event.pointee.reply_userdata == MPVCore.durationID {
+                // The file's length, which mpv may say before or after it says it's loaded.
+                if let duration = core?.reportedDuration, currentItem?.status == .readyToPlay { currentItem?.loadedDuration = duration }
+                return
+            }
+            guard event.pointee.reply_userdata == MPVCore.endOfFileID else { return }
             guard let data = event.pointee.data?.assumingMemoryBound(to: mpv_event_property.self).pointee,
                   let name = data.name.map({ String(cString: $0) }), name == "eof-reached",
                   data.format == MPV_FORMAT_FLAG, let flag = data.data?.assumingMemoryBound(to: Int32.self).pointee, flag != 0
@@ -237,16 +243,16 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         playing = true
         hasReachedEnd = false
         let core = ensureCore()
-        if playbackSpeed != 1 { core?.setProperty("speed", playbackSpeed) }
-        if normalizesLoudness { core?.setProperty("af", "lavfi=[loudnorm=I=-16:TP=-1.5:LRA=11]") }
-        core?.setFlag("pause", false)
+        if playbackSpeed != 1 { core?.setPropertyWithoutWaiting("speed", playbackSpeed) }
+        if normalizesLoudness { core?.setPropertyWithoutWaiting("af", "lavfi=[loudnorm=I=-16:TP=-1.5:LRA=11]") }
+        core?.setFlagWithoutWaiting("pause", false)
         fireObservers()
     }
 
     /// How fast playback runs (1 is normal), kept across pauses. First Row's own addition:
     /// AVFoundation sets this through `rate` instead.
     public var playbackSpeed: Double = 1 {
-        didSet { core?.setProperty("speed", playbackSpeed) }
+        didSet { core?.setPropertyWithoutWaiting("speed", playbackSpeed) }
     }
 
     /// Levels the sound to about -16 LUFS as it plays (for previews mastered louder than the
@@ -271,16 +277,18 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     /// Chooses a subtitle or audio track by its id, or none (subtitles off) for nil.
     public func selectTrack(ofType type: String, id: Int?) {
         let property = type == "sub" ? "sid" : "aid"
-        core?.setProperty(property, id.map(String.init) ?? "no")
+        core?.setPropertyWithoutWaiting(property, id.map(String.init) ?? "no")
     }
 
     public func pause() {
         MPVCore.debug("pause()")
+        // (Where it has got to, read while it still counts as playing.)
+        _ = currentTime()
+        reportedAtPause = core?.reportedTime
         playing = false
-        // (At its file's end it has stopped by itself, and isn't to be waited for.)
+        // (At its file's end it has stopped by itself.)
         guard !hasReachedEnd else { return }
-        core?.setFlag("pause", true)
-        lastTime = currentTime().seconds.isFinite ? currentTime().seconds : lastTime
+        core?.setFlagWithoutWaiting("pause", true)
         fireObservers()
     }
 
@@ -288,9 +296,20 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         if rate > 0 { play() } else { pause() }
     }
 
+    /// Where playback is: where mpv last said it was, counted on from then while it plays
+    /// (mpv says a few times to sixty times a second, with the picture's frames).
     public func currentTime() -> CMTime {
-        if !hasReachedEnd, let position = core?.double("time-pos"), position.isFinite {
-            lastTime = position
+        let now = ProcessInfo.processInfo.systemUptime
+        if let asked = seekAskedAt, now - asked > 1 { seekAskedAt = nil }
+        if !hasReachedEnd, seekAskedAt == nil, let core, let reported = core.reportedTime, reported.isFinite,
+           playing || reported != reportedAtPause
+        {
+            var position = reported
+            if playing, !core.isCoreIdle {
+                position += min(0.5, max(0, now - core.reportedTimeAt)) * playbackSpeed
+            }
+            if let duration = core.reportedDuration, duration > 0 { position = min(position, duration) }
+            lastTime = max(0, position)
         }
         return CMTime(seconds: lastTime, preferredTimescale: 600)
     }
@@ -312,8 +331,10 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         lastTime = seconds
         hasReachedEnd = false
         let exact = toleranceBefore == .zero
-        if !pendingLoad {
-            core?.command(["seek", String(seconds), "absolute", exact ? "exact" : "keyframes"])
+        if !pendingLoad, let core {
+            core.commandWithoutWaiting(["seek", String(seconds), "absolute", exact ? "exact" : "keyframes"])
+            seekAskedAt = ProcessInfo.processInfo.systemUptime
+            reportedAtPause = nil
         }
         fireObservers()
         DispatchQueue.main.async { completionHandler(true) }
@@ -355,18 +376,18 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         for observer in timeObservers.values { observer.block(time) }
     }
 
-    /// Delivers mpv events for every player; the host calls this once a frame.
-    public static func pumpEvents() {
-        MPVCore.pumpAll()
+    /// Delivers mpv events for every player; the host calls this once a frame, saying whether
+    /// anything on screen is moving (players that have been let go of are cleared away when
+    /// nothing is).
+    public static func pumpEvents(interfaceIsMoving: Bool = false) {
+        MPVCore.pumpAll(interfaceIsMoving: interfaceIsMoving)
         if debugLog {
             let now = Date()
             if now.timeIntervalSince(lastDebug) > 1 {
                 lastDebug = now
                 for core in MPVCore.live.values {
-                    let position = core.double("time-pos") ?? -1
-                    let paused = core.flag("pause") ?? false
-                    let core_idle = core.flag("core-idle") ?? false
-                    FileHandle.standardError.write(Data("[mpv] time-pos \(position) pause \(paused) core-idle \(core_idle) vo-configured \(core.flag("vo-configured") ?? false)\n".utf8))
+                    // (What mpv has said: asking it here would hold the main thread up, which is what's being looked for.)
+                    FileHandle.standardError.write(Data("[mpv] time-pos \(core.reportedTime ?? -1) core-idle \(core.isCoreIdle) idle \(core.isIdle) picture \(core.videoWidth)x\(core.videoHeight)\n".utf8))
                 }
             }
         }
@@ -434,8 +455,8 @@ final class VideoSurface: ExternalTextureProviding {
     func update() {
         guard let player, let core = player.core, let context = core.renderContext else { return }
         let flags = mpv_render_context_update(context)
-        let width = core.int("dwidth") ?? 0
-        let height = core.int("dheight") ?? 0
+        let width = core.videoWidth
+        let height = core.videoHeight
         guard width > 0, height > 0 else { return }
         if size != (width, height) {
             resize(width, height)

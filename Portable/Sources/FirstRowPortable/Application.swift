@@ -306,7 +306,7 @@ public enum PortableApplication {
                 _ = RunLoop.main.run(mode: .default, before: .distantPast)
                 turns += 1
             } while turns < 8 && (turns < 2 || !pumpMarkerRan)
-            AVPlayer.pumpEvents()
+            AVPlayer.pumpEvents(interfaceIsMoving: compositor?.isAnimating ?? false)
             AVAudioPlayer.pumpEvents()
             let pumped = CACurrentMediaTime()
             Harness.tick()
