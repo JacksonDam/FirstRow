@@ -185,12 +185,23 @@ final class TouchControlsLayer {
                     let canvas = FullscreenCanvas(screenSize: size, upright: menu.upright)
                     let spot = canvas.upright.map { canvas.window($0.movieButtonsCenter) }
                     let middle = spot ?? CGPoint(x: size.width / 2, y: size.height / 2)
+                    // Bent at the fold, the picture has the part above it to itself: Back goes
+                    // to the top left of the part below, with the rest of the controls.
+                    var back = back
+                    let isBent = canvas.upright?.isBent == true
+                    if let upright = canvas.upright, isBent {
+                        let lower = canvas.window(upright.lowerPane)
+                        back = Wanted(control: .back, frame: CGRect(x: backFrame.minX, y: lower.minY + 10, width: 46, height: 46), symbol: "chevron.left", pointSize: 19)
+                    }
                     wanted = [
                         back,
                         Wanted(control: .skipBack, frame: CGRect(x: middle.x - 36 - 44 - 56, y: middle.y - 28, width: 56, height: 56), symbol: "gobackward.10", pointSize: 22),
                         Wanted(control: .playPause, frame: CGRect(x: middle.x - 36, y: middle.y - 36, width: 72, height: 72), symbol: menu.movieControlsGlyphState == .pause ? "play.fill" : "pause.fill", pointSize: 28),
                         Wanted(control: .skipForward, frame: CGRect(x: middle.x + 36 + 44, y: middle.y - 28, width: 56, height: 56), symbol: "goforward.10", pointSize: 22),
                     ]
+                    // (There the panel of subtitles, sound and speed opens where these buttons
+                    // are: they make way for it.)
+                    if isBent, menu.movieOptions != nil { wanted = [back] }
                 }
             } else if isNowPlaying {
                 let play: CGFloat = 64
