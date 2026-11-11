@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 #if os(macOS)
     import AppKit
@@ -11,9 +12,41 @@ import Foundation
     import iTunesLibrary
 #endif
 
+/// A piece of the menus' state: the value itself, with whoever is watching the menus told before
+/// it changes. (This stands in for Combine's `@Published`, which reaches each value through a
+/// key path into the object. A render pass reads these thousands of times, and that was a
+/// quarter of the main thread's work while a list scrolled.)
+@propertyWrapper
+struct Published<Value> {
+    private var value: Value
+
+    init(wrappedValue: Value) {
+        value = wrappedValue
+    }
+
+    var wrappedValue: Value {
+        get { value }
+        set {
+            MenuStateWatch.willChange()
+            value = newValue
+        }
+        _modify {
+            MenuStateWatch.willChange()
+            yield &value
+        }
+    }
+}
+
+/// Called before any piece of the menus' state changes (set by the menus when they're made).
+enum MenuStateWatch {
+    nonisolated(unsafe) static var willChange: () -> Void = {}
+}
+
 /// The menu system's navigation, library and playback state. Its logic is in the `MenuView+*` files.
 @MainActor
 final class MenuView: ObservableObject {
+    /// Sends before any `@Published` state changes, and when something else asks for a redraw.
+    let objectWillChange = ObservableObjectPublisher()
     let menuItems = MenuConfiguration.rootItems
 
     // MARK: - Layout constants
@@ -159,6 +192,7 @@ final class MenuView: ObservableObject {
     #endif
 
     init() {
+        MenuStateWatch.willChange = { [weak self] in self?.objectWillChange.send() }
         mediaSourcesObserver = NotificationCenter.default.addObserver(
             forName: MediaSources.didChangeNotification,
             object: nil,
@@ -470,7 +504,18 @@ final class MenuView: ObservableObject {
     @Published var photoLibraryHasLoadedAtLeastOnce = false
     @Published var photoLibraryRequestID = 0
     @Published var photosAlbumCoverImageCache: [String: NSImage] = [:]
-    @Published var photosAlbumCoverRequestsInFlight: Set<String> = []
+    var photosAlbumCoverRequestsInFlight: Set<String> = []
+    /// Covers that have come in but aren't in the cache yet: they go in together, a few times a second.
+    var pendingPhotosAlbumCovers: [String: NSImage] = [:]
+    var isPhotosAlbumCoverFlushScheduled = false
+    /// The album whose pictures the carousel has (`photosCarouselIdentity` is the one asked for),
+    /// and the load on its way.
+    var photosCarouselLoadedIdentity = ""
+    var photosCarouselLoadTask: Task<Void, Never>?
+    var hasRequestedPhotoSourceAlbums = false
+    /// When covers were last asked for on account of the list moving, and whether one more ask is waiting.
+    var lastPhotosScrollCoverRequestTime: CFTimeInterval = 0
+    var isPhotosScrollCoverRequestPending = false
     @Published var photosCarouselArtworks: [NSImage?] = []
     @Published var photosCarouselIdentity: String = ""
     @Published var photosCarouselRequestID = 0
@@ -478,8 +523,8 @@ final class MenuView: ObservableObject {
     @Published var photoSlideshowRequestID = 0
     @Published var photoSlideshowAssetLocalIdentifiers: [String] = []
     @Published var photoSlideshowImageCache: [Int: NSImage] = [:]
-    @Published var photoSlideshowImageRequestsInFlight: Set<Int> = []
-    @Published var photoSlideshowImageFallbackAttempted: Set<Int> = []
+    var photoSlideshowImageRequestsInFlight: Set<Int> = []
+    var photoSlideshowImageFallbackAttempted: Set<Int> = []
     @Published var photoSlideshowVisiblePrimaryIndex = 0
     @Published var photoSlideshowVisibleSecondaryIndex: Int?
     @Published var photoSlideshowAlbumTitle: String = ""
@@ -509,6 +554,14 @@ final class MenuView: ObservableObject {
     @Published var hasPendingExternalMusicRestore = false
     @Published var isMusicSongsShuffleMode = false
     @Published var activeMusicPlaybackQueue: [MusicLibrarySongEntry] = []
+    #if os(macOS)
+        /// The list kept for the next launch, so it's only written when it changes; and whether
+        /// the one from the last launch has been read yet.
+        var savedMusicQueue: SavedMusicQueue?
+        var didReadSavedMusicQueue = false
+        /// What a list put back after a relaunch is called: the menu it was started from isn't open.
+        var restoredMusicQueueTitle: String?
+    #endif
     @Published var activeMusicPlaybackSongID: String?
     @Published var musicNowPlayingTitle = "Unknown Song"
     @Published var musicNowPlayingArtist = "Unknown Artist"

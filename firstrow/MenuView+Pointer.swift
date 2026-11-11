@@ -61,6 +61,51 @@ final class PointerInputState {
     fileprivate var lastWheelDate = Date.distantPast
     fileprivate var cursorHideTask: Task<Void, Never>?
 
+    #if os(macOS)
+        private var lastMoveTime: CFTimeInterval = 0
+        private var pendingMove: CGPoint?
+        private var pendingMoveTimer: Timer?
+
+        /// Hands back the position to act on now, or nil when one was acted on within this
+        /// frame: then the newest position is kept and `perFrame` gets it when the frame is up.
+        fileprivate func moveToActOn(_ point: CGPoint, perFrame: @escaping (CGPoint) -> Void) -> CGPoint? {
+            var framesPerSecond = 60
+            if #available(macOS 12.0, *) { framesPerSecond = max(60, NSScreen.main?.maximumFramesPerSecond ?? 60) }
+            let frame = 1 / Double(framesPerSecond)
+            let now = CACurrentMediaTime()
+            if pendingMove == nil, now - lastMoveTime >= frame {
+                lastMoveTime = now
+                return point
+            }
+            pendingMove = point
+            if pendingMoveTimer == nil {
+                let timer = Timer(timeInterval: max(0.001, frame - (now - lastMoveTime)), repeats: false) { [weak self] _ in
+                    MainActor.assumeIsolatedIfPossible {
+                        guard let self else { return }
+                        self.pendingMoveTimer = nil
+                        guard let point = self.pendingMove else { return }
+                        self.pendingMove = nil
+                        self.lastMoveTime = CACurrentMediaTime()
+                        perFrame(point)
+                    }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                pendingMoveTimer = timer
+            }
+            return nil
+        }
+
+        /// The position still waiting for its frame, if any, for acting on at once.
+        fileprivate func takePendingMove() -> CGPoint? {
+            guard let point = pendingMove else { return nil }
+            pendingMove = nil
+            pendingMoveTimer?.invalidate()
+            pendingMoveTimer = nil
+            lastMoveTime = CACurrentMediaTime()
+            return point
+        }
+    #endif
+
     /// The pinned scroll for the list with `identity`, nudged to show all of the selected row.
     func pinnedScrollOffset(
         identity: String,
@@ -172,6 +217,23 @@ extension MenuView {
     }
 
     func handlePointerEvent(_ event: PointerEvent) {
+        #if os(macOS)
+            // A mouse can report where it is a thousand times a second, and each report had the
+            // menus worked out and drawn again. Where it has got to is acted on once a frame;
+            // anything else (a click, the wheel) first puts the pointer where it now is.
+            if case let .moved(point) = event {
+                guard let now = pointer.moveToActOn(point, perFrame: { [weak self] in self?.actOnPointerEvent(.moved($0)) }) else { return }
+                actOnPointerEvent(.moved(now))
+                return
+            }
+            if let pending = pointer.takePendingMove() {
+                actOnPointerEvent(.moved(pending))
+            }
+        #endif
+        actOnPointerEvent(event)
+    }
+
+    private func actOnPointerEvent(_ event: PointerEvent) {
         if onboardingStep != nil {
             handleOnboardingPointer(event)
             return
@@ -585,6 +647,7 @@ extension MenuView {
         }
         didPlayLimitForCurrentHold = false
         pointer.pin = (state.identity, target)
+        requestPhotoCoversForScrolledList()
         useLinearSelectionSweepAnimation = false
         selectionAnimationDuration = Self.pointerScrollDuration
         updateOverflowFadeVisibility(oldOffset: current, newOffset: target)
