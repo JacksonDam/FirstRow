@@ -684,39 +684,79 @@ actor YouTubeClient {
 
     /// The sizes a video's picture comes in, largest first, read from its playlist.
     func variants(of manifest: URL) async throws -> [YouTubeStreamVariant] {
+        try await self.manifest(of: manifest).variants
+    }
+
+    /// A video's playlist as it is sent (it names a playlist for each size of the picture),
+    /// and those sizes.
+    func manifest(of manifest: URL) async throws -> (text: String, variants: [YouTubeStreamVariant]) {
         var request = URLRequest(url: manifest)
         request.timeoutInterval = 15
         let (data, response) = try await send(request)
         guard (200 ..< 300).contains(response.statusCode), let text = String(data: data, encoding: .utf8) else {
             throw YouTubeError.badResponse(response.statusCode)
         }
-        return Self.variants(inPlaylist: text)
+        return (text, Self.variants(inPlaylist: text))
+    }
+
+    /// The fields of a playlist's line: `#EXT-X-STREAM-INF:BANDWIDTH=1,CODECS="a,b"`.
+    private static func playlistFields(_ line: Substring) -> [String: String] {
+        var result: [String: String] = [:]
+        var rest = line.drop { $0 != ":" }.dropFirst()
+        while !rest.isEmpty {
+            guard let equals = rest.firstIndex(of: "=") else { break }
+            let key = String(rest[..<equals])
+            rest = rest[rest.index(after: equals)...]
+            var value: Substring
+            if rest.first == "\"" {
+                rest = rest.dropFirst()
+                let end = rest.firstIndex(of: "\"") ?? rest.endIndex
+                value = rest[..<end]
+                rest = end < rest.endIndex ? rest[rest.index(after: end)...] : rest[end...]
+            } else {
+                let end = rest.firstIndex(of: ",") ?? rest.endIndex
+                value = rest[..<end]
+                rest = rest[end...]
+            }
+            result[key] = String(value)
+            if rest.first == "," { rest = rest.dropFirst() }
+        }
+        return result
+    }
+
+    /// The height a stream's line gives its picture. (An upright video's size is its shorter
+    /// side, as "1080p" is for a wide one.)
+    private static func pictureHeight(_ fields: [String: String]) -> Int? {
+        let size = (fields["RESOLUTION"] ?? "").split(separator: "x").compactMap { Int($0) }
+        return size.count == 2 ? min(size[0], size[1]) : nil
+    }
+
+    /// A video's playlist with only the streams of one size of picture left in, so that a
+    /// player given it plays that size and no other (given the whole playlist it picks for
+    /// itself as it goes). Nil if the video has no stream of that size.
+    static func playlist(_ text: String, keepingHeight height: Int) -> String? {
+        var kept: [Substring] = []
+        var streams = 0
+        var dropsAddress = false
+        for line in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+            if line.hasPrefix("#EXT-X-STREAM-INF:") {
+                dropsAddress = pictureHeight(playlistFields(line)) != height
+                if !dropsAddress {
+                    kept.append(line)
+                    streams += 1
+                }
+            } else if dropsAddress, !line.isEmpty, !line.hasPrefix("#") {
+                // (The address of a stream that was left out.)
+                dropsAddress = false
+            } else {
+                kept.append(line)
+            }
+        }
+        return streams > 0 ? kept.joined(separator: "\n") : nil
     }
 
     static func variants(inPlaylist text: String) -> [YouTubeStreamVariant] {
-        func attributes(_ line: Substring) -> [String: String] {
-            var result: [String: String] = [:]
-            var rest = line.drop { $0 != ":" }.dropFirst()
-            while !rest.isEmpty {
-                guard let equals = rest.firstIndex(of: "=") else { break }
-                let key = String(rest[..<equals])
-                rest = rest[rest.index(after: equals)...]
-                var value: Substring
-                if rest.first == "\"" {
-                    rest = rest.dropFirst()
-                    let end = rest.firstIndex(of: "\"") ?? rest.endIndex
-                    value = rest[..<end]
-                    rest = end < rest.endIndex ? rest[rest.index(after: end)...] : rest[end...]
-                } else {
-                    let end = rest.firstIndex(of: ",") ?? rest.endIndex
-                    value = rest[..<end]
-                    rest = rest[end...]
-                }
-                result[key] = String(value)
-                if rest.first == "," { rest = rest.dropFirst() }
-            }
-            return result
-        }
+        let attributes = playlistFields
         let lines = text.split(whereSeparator: \.isNewline)
         var audio: [String: URL] = [:]
         for line in lines where line.hasPrefix("#EXT-X-MEDIA:") {
@@ -727,11 +767,9 @@ actor YouTubeClient {
         for (index, line) in lines.enumerated() where line.hasPrefix("#EXT-X-STREAM-INF:") {
             guard lines.indices.contains(index + 1), let url = URL(string: String(lines[index + 1])) else { continue }
             let fields = attributes(line)
-            let size = (fields["RESOLUTION"] ?? "").split(separator: "x").compactMap { Int($0) }
-            guard size.count == 2 else { continue }
+            guard let height = pictureHeight(fields) else { continue }
             variants.append(YouTubeStreamVariant(
-                // (An upright video's size is its shorter side, as "1080p" is for a wide one.)
-                height: min(size[0], size[1]),
+                height: height,
                 framesPerSecond: Double(fields["FRAME-RATE"] ?? "") ?? 30,
                 codec: String((fields["CODECS"] ?? "").split(separator: ",").first ?? ""),
                 bandwidth: Int(fields["BANDWIDTH"] ?? "") ?? 0,

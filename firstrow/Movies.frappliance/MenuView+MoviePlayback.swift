@@ -296,7 +296,12 @@ extension MenuView {
         if hasActiveMusicPlaybackSession() {
             stopMusicPlaybackSession(clearDisplayState: false)
         }
-        let player = AVPlayer(url: url)
+        #if FIRSTROW_PORTABLE
+            let player = AVPlayer(url: url)
+        #else
+            // (A YouTube video at a size that was asked for has a playlist of First Row's making.)
+            let player = YouTubePlaylistLoader.shared.playerItem(for: url).map { AVPlayer(playerItem: $0) } ?? AVPlayer(url: url)
+        #endif
         player.isMuted = FirstRowHarness.isActive
         configureMoviePlaybackObservation(for: player)
         currentMoviePlaybackURL = url.standardizedFileURL
