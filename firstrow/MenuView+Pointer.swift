@@ -873,7 +873,7 @@ extension MenuView {
             }
         #elseif os(tvOS)
             if !isCurrentMusicPlaybackUsingAppleScript {
-                ApplicationMusicPlayer.shared.playbackTime = seconds
+                MusicKitPlayerCalls.send { ApplicationMusicPlayer.shared.playbackTime = seconds }
             }
         #endif
     }

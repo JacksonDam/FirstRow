@@ -411,6 +411,8 @@ final class MenuView: ObservableObject {
         /// Select held on the remote in Now Playing (see `remoteSelectBegan`).
         var remoteSelectHold: Task<Void, Never>?
         var remoteSelectIsDown = false
+        /// A question to the system's music player about where it is hasn't been answered yet.
+        var isReadingMusicKitProgress = false
         /// The last play or pause from the remote, and whether it came as a button press or
         /// as the system's media command (see `takesPlayPause`).
         var lastPlayPause: (date: Date, fromRemotePress: Bool)?
