@@ -11,7 +11,8 @@ import QuartzCore
 @MainActor
 final class GapContentLayer {
     let layer = SceneLayer()
-    /// Holds the pieces to the screen, and upright to the room above the fold.
+    /// Upright, holds the pieces to the room above the fold. Otherwise it cuts nothing off: the
+    /// window does, which can be taller or wider than the scene drawn in it.
     private let clip = SceneLayer()
     /// Upright, a piece or its reflection sinks into the dark above the fold instead of being cut off along it.
     private let foot = SceneGradientLayer()
@@ -21,7 +22,6 @@ final class GapContentLayer {
     private var isShowing = false
 
     init() {
-        clip.masksToBounds = true
         layer.addSublayer(clip)
         foot.colors = [CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0.75), CGColor(gray: 0, alpha: 1)]
         foot.locations = [0, 0.6, 1]
@@ -79,6 +79,9 @@ final class GapContentLayer {
             clip.bounds = window
             clip.position = window.origin
         }
+        // The scene is fitted into the window, so on a 16:10 screen there's room above and below it
+        // (and beside it on a long phone): a cover passing the scene's edge carries on to the window's.
+        clip.masksToBounds = show != nil
         let footHeight: CGFloat = 120
         foot.place(CGRect(x: window.minX, y: window.maxY - footHeight, width: window.width, height: footHeight))
         foot.setOpacity(show == nil ? 0 : 1, nil)
@@ -277,7 +280,7 @@ final class GapIconLayer: GapItemLayer {
         reflection.isHidden = !reflected
         if reflected {
             // Flipped below the icon, raised a little, fading out over 60% of its height.
-            reflection.contents = ReflectionRenderer.reflection(of: icon, size: CGSize(width: side, height: side), fill: false, stops: [(1, 0), (0, 0.6)])
+            ReflectionRenderer.show(on: reflection, of: icon, size: CGSize(width: side, height: side), fill: false, stops: [(1, 0), (0, 0.6)])
             reflection.frame = CGRect(x: center.x - side / 2, y: center.y + side / 2 - side * 0.215, width: side, height: side)
         }
     }
@@ -339,7 +342,8 @@ final class MoviePreviewLayer: GapItemLayer {
         reflection.position = center
         reflection.transform = yawTransform(degrees: spec.reflectionYaw, perspective: 0.75, viewSize: size)
         reflectionImage.frame = CGRect(x: 0, y: height, width: width, height: height)
-        reflectionImage.contents = ReflectionRenderer.reflection(
+        ReflectionRenderer.show(
+            on: reflectionImage,
             of: spec.image,
             size: size,
             fill: true,
@@ -479,7 +483,7 @@ final class MusicPreviewLayer: GapItemLayer {
         reflection.position = center
         reflection.transform = yawTransform(degrees: 23.8, perspective: 0.75, viewSize: size)
         reflectionImage.frame = CGRect(x: 0, y: side, width: side, height: side)
-        reflectionImage.contents = artwork.flatMap { ReflectionRenderer.reflection(of: $0, size: size, fill: true, stops: [(1, 0), (0, 0.25)]) }
+        ReflectionRenderer.show(on: reflectionImage, of: artwork, size: size, fill: true, stops: [(1, 0), (0, 0.25)])
     }
 }
 
@@ -595,27 +599,71 @@ enum ReflectionRenderer {
         return cache
     }()
 
-    static func reflection(of image: NSImage, size: CGSize, fill: Bool, stops: [(alpha: CGFloat, location: CGFloat)]) -> CGImage? {
-        guard let source = LayerImageCache.cgImage(for: image) else { return nil }
-        return reflection(of: source, size: size, fill: fill, stops: stops)
+    /// Reflections being drawn, by the layer they're for: the newest request for a layer wins.
+    private static var requests: [ObjectIdentifier: Int] = [:]
+    private static var requestCount = 0
+    private static let drawingQueue = DispatchQueue(label: "firstrow.reflections", qos: .userInitiated, attributes: .concurrent)
+
+    /// Puts the picture's reflection on `layer`: at once if it has been drawn before. If not
+    /// it's drawn off the main thread (a new one takes several milliseconds, more if the picture
+    /// is still to be decoded) and put there when it's done; the layer keeps what it showed
+    /// until then, which is a frame or two.
+    static func show(on layer: CALayer, of image: NSImage?, size: CGSize, fill: Bool, stops: [(alpha: CGFloat, location: CGFloat)]) {
+        show(on: layer, of: LayerImageCache.cgImage(for: image), size: size, fill: fill, stops: stops)
     }
 
     /// `stops` give the reflection's opacity by distance from its top edge (the mirror line).
-    static func reflection(of source: CGImage, size: CGSize, fill: Bool, stops: [(alpha: CGFloat, location: CGFloat)]) -> CGImage? {
-        guard size.width > 0, size.height > 0 else { return nil }
+    static func show(on layer: CALayer, of source: CGImage?, size: CGSize, fill: Bool, stops: [(alpha: CGFloat, location: CGFloat)]) {
+        let id = ObjectIdentifier(layer)
+        guard let source, size.width > 0, size.height > 0 else {
+            requests[id] = nil
+            layer.contents = nil
+            return
+        }
         // Reflections are faint, so a modest bitmap is plenty.
         let pixelScale = min(1.0, 640 / max(size.width, size.height))
         let width = max(1, Int(size.width * pixelScale))
         let height = max(1, Int(size.height * pixelScale))
-        let key = Key(source: source, width: width, height: height, fill: fill, stops: stops.flatMap { [$0.alpha, $0.location] })
+        let flatStops = stops.flatMap { [$0.alpha, $0.location] }
+        let key = Key(source: source, width: width, height: height, fill: fill, stops: flatStops)
         if let cached = cache.object(forKey: key) {
-            return cached.image
+            requests[id] = nil
+            layer.contents = cached.image
+            return
         }
+        requestCount += 1
+        let request = requestCount
+        requests[id] = request
+        drawingQueue.async { [weak layer] in
+            let reflection = autoreleasepool { draw(source, width: width, height: height, fill: fill, stops: flatStops) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolatedIfPossible {
+                    if let reflection {
+                        cache.setObject(Box(reflection), forKey: key, cost: reflection.bytesPerRow * reflection.height)
+                    }
+                    guard requests[id] == request else { return }
+                    requests[id] = nil
+                    guard let layer else { return }
+                    withoutLayerActions { layer.contents = reflection }
+                }
+            }
+        }
+    }
+
+    /// Draws a reflection. Off the main thread is fine: it touches nothing but its own bitmap.
+    private nonisolated static func draw(_ source: CGImage, width: Int, height: Int, fill: Bool, stops flatStops: [CGFloat]) -> CGImage? {
+        let stops = stride(from: 0, to: flatStops.count - 1, by: 2).map { (alpha: flatStops[$0], location: flatStops[$0 + 1]) }
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
+            space: ScreenColorSpace.current ?? CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
         ), let mask = alphaMask(width: width, height: height, stops: stops) else { return nil }
         let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        // Past the last stop, where the reflection has faded to nothing, there's nothing to
+        // draw: only the band above it is.
+        if let last = stops.last, last.alpha <= 0, last.location < 1 {
+            let band = ceil(CGFloat(height) * last.location) + 1
+            context.clip(to: CGRect(x: 0, y: CGFloat(height) - band, width: CGFloat(width), height: band))
+        }
         context.clip(to: rect, mask: mask)
         // Flipped: the picture's bottom row ends up at the top of the reflection.
         context.translateBy(x: 0, y: CGFloat(height))
@@ -635,12 +683,10 @@ enum ReflectionRenderer {
             }
             context.draw(source, in: drawRect)
         }
-        guard let reflection = context.makeImage() else { return nil }
-        cache.setObject(Box(reflection), forKey: key, cost: reflection.bytesPerRow * reflection.height)
-        return reflection
+        return context.makeImage()
     }
 
-    private static func alphaMask(width: Int, height: Int, stops: [(alpha: CGFloat, location: CGFloat)]) -> CGImage? {
+    private nonisolated static func alphaMask(width: Int, height: Int, stops: [(alpha: CGFloat, location: CGFloat)]) -> CGImage? {
         guard let mask = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue,

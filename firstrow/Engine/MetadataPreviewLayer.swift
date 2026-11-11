@@ -24,7 +24,21 @@ final class MetadataPreviewLayer: GapItemLayer {
     private let sweep = SceneGradientLayer()
     private let details = SceneLayer()
     private var identity: String?
-    private var layoutKey: String?
+    /// What the layout depends on, to tell when it has to be done again.
+    private struct LayoutKey: Equatable {
+        let image: ObjectIdentifier
+        let title: String
+        let description: String?
+        let lines: [MetadataPreviewSpec.Line]
+        let boxFrame: CGRect
+        let sceneSize: CGSize
+        let scale: CGFloat
+        let offsetX: CGFloat
+        let offsetY: CGFloat
+        let pane: CGRect
+    }
+
+    private var layoutKey: LayoutKey?
     /// Start of the current move, so a re-layout part way through continues it.
     private var transitionBegin: CFTimeInterval?
     /// The layout on screen, for carrying the poster over to the next one.
@@ -68,7 +82,9 @@ final class MetadataPreviewLayer: GapItemLayer {
         guard case let .metadata(spec) = kind else { return }
         let restarts = spec.identity != identity
         identity = spec.identity
-        let layoutKey = "\(ObjectIdentifier(spec.image))|\(spec.title)|\(spec.description ?? "")|\(spec.lines.map { "\($0.label)=\($0.value)" })|\(context.boxFrame)|\(context.sceneSize)|\(context.scale)|\(spec.offsetX)|\(spec.offsetY)|\(context.show?.pane ?? .zero)"
+        let layoutKey = LayoutKey(image: ObjectIdentifier(spec.image), title: spec.title, description: spec.description, lines: spec.lines,
+                                  boxFrame: context.boxFrame, sceneSize: context.sceneSize, scale: context.scale,
+                                  offsetX: spec.offsetX, offsetY: spec.offsetY, pane: context.show?.pane ?? .zero)
         guard restarts || layoutKey != self.layoutKey else { return }
         self.layoutKey = layoutKey
         if restarts {
