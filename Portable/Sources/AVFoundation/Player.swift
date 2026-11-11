@@ -416,7 +416,15 @@ public struct AVLayerVideoGravity: RawRepresentable, Hashable, Sendable {
 
 /// The texture an mpv render context draws video frames into.
 final class VideoSurface: ExternalTextureProviding {
-    weak var player: AVPlayer?
+    weak var player: AVPlayer? {
+        didSet {
+            // The texture still holds the last picture drawn into it, which was another
+            // player's: nothing is shown until this one has drawn. (The movie screen keeps one
+            // layer, so a movie used to open on the last frame of the movie before.)
+            if player !== oldValue { hasFrame = false }
+        }
+    }
+
     private var framebuffer: GLuint = 0
     private var texture: GLuint = 0
     private var size = (0, 0)
@@ -455,12 +463,15 @@ final class VideoSurface: ExternalTextureProviding {
     func update() {
         guard let player, let core = player.core, let context = core.renderContext else { return }
         let flags = mpv_render_context_update(context)
+        let hasNewFrame = flags & UInt64(MPV_RENDER_UPDATE_FRAME.rawValue) != 0
+        if hasNewFrame { core.hasVideoFrame = true }
         let width = core.videoWidth
         let height = core.videoHeight
-        guard width > 0, height > 0 else { return }
+        // (Before mpv has a frame of its file there is nothing of it to draw: only black.)
+        guard width > 0, height > 0, core.hasVideoFrame else { return }
         if size != (width, height) {
             resize(width, height)
-        } else if flags & UInt64(MPV_RENDER_UPDATE_FRAME.rawValue) == 0, hasFrame {
+        } else if !hasNewFrame, hasFrame {
             return
         }
         if core.softwareRendering {

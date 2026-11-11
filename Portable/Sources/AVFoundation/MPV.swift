@@ -34,6 +34,8 @@ final class MPVCore {
     private(set) var isCoreIdle = true
     /// No file is open, so mpv is showing no video.
     private(set) var isIdle = true
+    /// mpv has had a frame of the file it has open to draw (set by what draws its frames).
+    var hasVideoFrame = false
 
     static let endOfFileID: UInt64 = 1
     private static let timeID: UInt64 = 2
@@ -74,6 +76,7 @@ final class MPVCore {
     func noteLoading() {
         reportedTime = nil
         reportedDuration = nil
+        hasVideoFrame = false
         isIdle = false
     }
 
@@ -379,6 +382,7 @@ final class MPVCore {
                     // (What comes after this is about the new file.)
                     reportedTime = nil
                     reportedDuration = nil
+                    hasVideoFrame = false
                 }
                 Self.debug("event \(String(cString: mpv_event_name(event.pointee.event_id)))")
             }
