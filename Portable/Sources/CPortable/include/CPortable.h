@@ -48,6 +48,7 @@ int fr_png_write(const char* path, const uint8_t* rgba, int width, int height, i
 
 /* Sets the C library's allocator up for First Row (fr_pixels.c). Call before any thread is started. */
 void fr_tune_allocator(void);
+void fr_release_free_memory(void);
 
 /* Blocking TCP to 127.0.0.1, for talking to a browser's DevTools. Sockets are -1 on failure;
    receive returns 0 once the other end has closed. */

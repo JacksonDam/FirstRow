@@ -204,7 +204,7 @@ void fr_extract_mask(const uint8_t* pixels, int width, int height, int stride, i
     }
 }
 
-#if defined(__GLIBC__)
+#if defined(__GLIBC__) || defined(_WIN32)
 #include <malloc.h>
 #endif
 
@@ -218,5 +218,16 @@ void fr_tune_allocator(void) {
     mallopt(M_ARENA_MAX, 4);
     mallopt(M_MMAP_THRESHOLD, 128 * 1024);
     mallopt(M_TRIM_THRESHOLD, 128 * 1024);
+#endif
+}
+
+/* Hands the allocator's freed memory back to the system. glibc keeps what's freed in the middle of its
+   pools until asked: after a film, or a screenful of pictures, that is tens of megabytes First Row no
+   longer uses and the system still counts as its own. Takes a few milliseconds: not for the main thread. */
+void fr_release_free_memory(void) {
+#if defined(__GLIBC__)
+    malloc_trim(0);
+#elif defined(_WIN32)
+    _heapmin();
 #endif
 }

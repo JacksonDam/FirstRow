@@ -157,7 +157,17 @@ final class MPVCore {
         set("input-default-bindings", "no")
         set("input-vo-keyboard", "no")
         set("osc", "no")
-        set("hwdec", "no")
+        // The graphics card decodes where mpv knows its decoder to be dependable, and the
+        // frames are copied back, so they're drawn as ever. On the processor a 4K film has a
+        // frame in the making on every thread (hundreds of megabytes) and can fall behind.
+        // Where there is no such decoder, mpv decodes on the processor as before.
+        set("hwdec", ProcessInfo.processInfo.environment["FIRSTROW_HWDEC"] ?? "auto-copy-safe")
+        // (Copying back needs none of mpv's links between a decoder and OpenGL: they'd only
+        // be looked for, one by one, each time a renderer is made.)
+        set("gpu-hwdec-interop", "no")
+        // How much of a stream is held ahead of and behind where it's playing.
+        set("demuxer-max-bytes", "64MiB")
+        set("demuxer-max-back-bytes", "16MiB")
         // Frames are drawn at their own size and scaled by the compositor, like AVPlayerLayer,
         // so mpv's expensive scalers would only cost time.
         set("profile", "fast")
@@ -271,6 +281,8 @@ final class MPVCore {
             mpv_terminate_destroy(handle)
             // (mpv is gone, and with it the last thing that could call on this.)
             reference?.release()
+            // A film's frames and buffers are freed by now: the system gets them back.
+            fr_release_free_memory()
         }
     }
 

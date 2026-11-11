@@ -63,6 +63,7 @@ TrueType and OpenType files, collections (`.ttc`) and old Mac `.dfont` files all
 - The play/pause media key plays and pauses, and remotes that send Select and Back keys work too. A Siri Remote doesn't send keys outside Apple's own systems; on Linux a helper such as [siriremote](https://code.zanneth.com/zanneth/siriremote) can turn it into them.
 - Movies come from your Movies or Videos folder and music from your Music folder, plus any folders, iTunes library files and iPhoto libraries added in Settings > Media Folders (where photo folders are added too), and drives under `/media`, `/run/media` and `/mnt` (other drive letters on Windows).
 - `FIRSTROW_WINDOWED=1` or `--windowed` opens a window instead of filling the screen. `FIRSTROW_WINDOW_SIZE=1280x720` sets its size.
+- Movies are decoded by the graphics card where mpv counts its decoder as dependable, and by the processor otherwise. Should a driver's decoder misbehave, `FIRSTROW_HWDEC=no` keeps decoding on the processor (any value of mpv's `hwdec` option can be given).
 
 ## Spotify
 
