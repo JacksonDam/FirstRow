@@ -62,6 +62,21 @@ final class YouTubeCommentsLayer {
     private var lastOffset: CGFloat = 0
     /// The panel in canvas points, while it's out (for clicks and touches).
     private(set) var panelFrame: CGRect?
+    /// Where each comment that has been laid out shows on the canvas (the gap between two is
+    /// shared out between them), and how far apart their tops are.
+    private var commentFrames: [CGRect] = []
+    private var commentPitches: [CGFloat] = []
+
+    /// The comment at a point of the canvas, while the panel is out.
+    func comment(at point: CGPoint) -> Int? {
+        guard panelFrame != nil else { return nil }
+        return commentFrames.firstIndex { $0.contains(point) }
+    }
+
+    /// From a comment's top to the next one's, on the canvas.
+    func pitch(ofComment index: Int) -> CGFloat? {
+        commentPitches.indices.contains(index) ? commentPitches[index] : nil
+    }
 
     /// How wide the panel is on a canvas of this size.
     static func width(in size: CGSize) -> CGFloat {
@@ -98,6 +113,7 @@ final class YouTubeCommentsLayer {
         guard let content = shown else {
             panel.isHidden = true
             panelFrame = nil
+            commentFrames = []
             return
         }
         if state == nil, panel.opacity < 0.01 {
@@ -108,6 +124,7 @@ final class YouTubeCommentsLayer {
             lastFocus = nil
             panel.isHidden = true
             panelFrame = nil
+            commentFrames = []
             return
         }
         let isModern = ModernTheme.isActive
@@ -155,7 +172,9 @@ final class YouTubeCommentsLayer {
         // one's height is only known once its text is set); the rest wait their turn.
         let focus = min(max(0, content.focused), max(0, content.comments.count - 1))
         let prepared = min(content.comments.count, focus + 10)
+        let gap: CGFloat = 34
         var tops: [CGFloat] = []
+        var pitches: [CGFloat] = []
         var y: CGFloat = 0
         var live = Set<String>()
         for index in 0 ..< prepared {
@@ -194,18 +213,25 @@ final class YouTubeCommentsLayer {
                 block.height = parts.isEmpty ? textTop + textGraphic.size.height : footerTop + footerGraphic.size.height
             }
             tops.append(y)
+            pitches.append(block.height + gap)
             block.layer.frame = CGRect(x: inset, y: y, width: column, height: block.height)
             block.layer.setOpacity(index == focus ? 1 : 0.42, pass.animation(.easeInOut(duration: 0.2), when: lastFocus != nil && lastFocus != focus))
-            y += block.height + 34
+            y += block.height + gap
         }
         for (id, block) in blocks where !live.contains(id) {
             block.layer.removeFromSuperlayer()
             blocks[id] = nil
         }
         // The one picked out sits at the top of the list, until the list's end comes up.
-        let contentHeight = max(0, y - 34)
+        let contentHeight = max(0, y - gap)
         let wanted = tops.indices.contains(focus) ? tops[focus] : 0
         let offset = prepared == content.comments.count ? min(wanted, max(0, contentHeight - viewport.height)) : wanted
+        let shownViewport = viewport.offsetBy(dx: frame.minX, dy: frame.minY)
+        commentPitches = pitches
+        commentFrames = tops.indices.map { index in
+            CGRect(x: frame.minX, y: shownViewport.minY + tops[index] - offset - gap / 2, width: width, height: pitches[index])
+                .intersection(shownViewport)
+        }
         let slides = lastFocus != nil && lastFocus != focus && !wasHidden
         list.setFrame(CGRect(x: 0, y: -offset, width: width, height: max(contentHeight, 1)), slides ? .easeInOut(duration: 0.22) : (offset == lastOffset ? nil : pass.animation))
         lastFocus = focus

@@ -46,6 +46,9 @@ extension MenuView {
             case queueSelecting
             /// Pulling Now Playing's list out from the right edge, or pushing it back.
             case queuePull
+            /// On a YouTube video's comments (up and down goes through them, a tap picks one
+            /// out, a push to the right puts them away) or beside them (a tap puts them away).
+            case comments(onPanel: Bool)
             case ignored
         }
 
@@ -89,6 +92,10 @@ extension MenuView {
         /// finger's recent sideways positions, for how fast it let go.
         var pullStartReveal: CGFloat = 0
         var pullOriginX: CGFloat = 0
+        /// A video's comments: where the finger was when the comment now picked out was
+        /// reached, and whether it has moved at all.
+        var commentsAnchorY: CGFloat = 0
+        var commentsDidMove = false
         var xSamples: [(time: TimeInterval, x: CGFloat)] = []
         /// Frames at the screen's full rate while a finger is down or a list moves on its own.
         let clock = FrameClock()
@@ -280,6 +287,12 @@ extension MenuView {
                 pointer.hitTester?.highlightTouchControl(control)
                 return
             }
+            if let hit = youtubeCommentsHit(at: point) {
+                state.mode = .comments(onPanel: hit.isOnPanel)
+                state.commentsAnchorY = point.y
+                state.commentsDidMove = false
+                return
+            }
             // In from the right edge, Now Playing's list follows the thumb.
             if activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isNowPlayingQueueVisible, canShowNowPlayingQueue,
                let geometry = pointer.hitTester?.nowPlayingQueueGeometry, geometry.edgeZone.contains(point)
@@ -436,6 +449,9 @@ extension MenuView {
                 }
             case .scrolling:
                 if let level = state.level { scrollTouchList(level: level, by: point.y - state.scrollOriginY) }
+            case let .comments(onPanel):
+                if (dx * dx + dy * dy).squareRoot() > Self.touchSlop { state.commentsDidMove = true }
+                if onPanel, state.commentsDidMove { dragYouTubeComments(to: point) }
             case .swiping, .ignored:
                 break
             }
@@ -508,6 +524,18 @@ extension MenuView {
                 handleTouchSwipe(dx: dx, dy: dy, start: state.start)
             case .undecided:
                 handleTouchTap(at: point, target: state.startTarget)
+            case let .comments(onPanel):
+                if !state.commentsDidMove {
+                    // A tap: on a comment picks it out, beside the panel puts it away.
+                    if !onPanel {
+                        closeYouTubeComments()
+                    } else if let index = youtubeCommentsHit(at: point)?.index {
+                        showYouTubeComment(index, playsSound: true)
+                    }
+                } else if onPanel, dx > Self.touchSwipeDistance, abs(dx) > abs(dy) * 1.5 {
+                    // Pushed back to the right, where it came from.
+                    closeYouTubeComments()
+                }
             case .ignored:
                 break
             }
@@ -986,6 +1014,35 @@ extension MenuView {
             guard motion.isWorthMoving else { return }
             touch.queueMotion = motion
             startTouchClock()
+        }
+
+        /// A finger moving up the comments goes on to the next one once it has travelled the
+        /// height of the one picked out, and back to the one before the other way.
+        private func dragYouTubeComments(to point: CGPoint) {
+            guard let comments = youtubeComments, let hitTester = pointer.hitTester else { return }
+            let state = touch
+            // (Sideways is a push, not a scroll.)
+            guard abs(point.y - state.start.y) >= abs(point.x - state.start.x) else { return }
+            var focus = comments.focused
+            while true {
+                let travelled = state.commentsAnchorY - point.y
+                if travelled > 0, focus + 1 < comments.comments.count {
+                    let needed = hitTester.youtubeCommentTravel(focus)
+                    guard travelled >= needed else { break }
+                    focus += 1
+                    state.commentsAnchorY -= needed
+                } else if travelled < 0, focus > 0 {
+                    let needed = hitTester.youtubeCommentTravel(focus - 1)
+                    guard -travelled >= needed else { break }
+                    focus -= 1
+                    state.commentsAnchorY += needed
+                } else {
+                    // At an end: the finger starts afresh from here when it turns round.
+                    state.commentsAnchorY = point.y
+                    break
+                }
+            }
+            showYouTubeComment(focus)
         }
 
         private func handleMovieTouchTap(at point: CGPoint) {

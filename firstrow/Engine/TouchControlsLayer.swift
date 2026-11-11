@@ -184,7 +184,12 @@ final class TouchControlsLayer {
                     // Over the middle of the picture; standing upright, under the fold.
                     let canvas = FullscreenCanvas(screenSize: size, upright: menu.upright)
                     let spot = canvas.upright.map { canvas.window($0.movieButtonsCenter) }
-                    let middle = spot ?? CGPoint(x: size.width / 2, y: size.height / 2)
+                    var middle = spot ?? CGPoint(x: size.width / 2, y: size.height / 2)
+                    // A video's comments cover the right of the picture: the buttons keep to
+                    // the middle of what is left of it.
+                    if spot == nil, menu.youtubeComments != nil, menu.youtubeCommentsReveal > 0.5 {
+                        middle.x = (size.width - YouTubeCommentsLayer.width(in: canvas.size) * canvas.scale) / 2
+                    }
                     // Bent at the fold, the picture has the part above it to itself: Back goes
                     // to the top left of the part below, with the rest of the controls.
                     var back = back

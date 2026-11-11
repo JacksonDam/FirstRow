@@ -410,6 +410,24 @@ extension MenuView {
         }
     }
 
+    /// Picks out another comment (for a click, the wheel or a finger; the arrows have their
+    /// own way below).
+    func showYouTubeComment(_ index: Int, playsSound: Bool = false) {
+        guard var state = youtubeComments, youtubeCommentsReveal > 0, index != state.focused,
+              state.comments.indices.contains(index) else { return }
+        state.focused = index
+        youtubeComments = state
+        if playsSound { playSound(named: "SelectionChange") }
+        loadMoreYouTubeCommentsIfNeeded()
+    }
+
+    /// The comments' panel under a point of the window, while it's out: whether the point is
+    /// on it, and on which comment.
+    func youtubeCommentsHit(at windowPoint: CGPoint) -> (isOnPanel: Bool, index: Int?)? {
+        guard isMoviePlaybackVisible, youtubeComments != nil, youtubeCommentsReveal > 0 else { return nil }
+        return pointer.hitTester?.youtubeComment(at: windowPoint)
+    }
+
     /// Keys while the comments are open. Returns true when they took the key.
     func handleYouTubeCommentsInput(_ key: KeyCode) -> Bool {
         guard var state = youtubeComments, youtubeCommentsReveal > 0 else { return false }

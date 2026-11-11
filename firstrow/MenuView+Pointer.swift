@@ -51,6 +51,8 @@ final class PointerInputState {
     fileprivate var pressTarget: PointerTarget?
     /// The row of Now Playing's list a click started on.
     fileprivate var queuePressRow: Int?
+    /// The comment of a YouTube video the button went down on (-1 for their panel between two).
+    fileprivate var commentPress: Int?
     /// The on-screen button a click started on.
     fileprivate var pressedControl: TouchControl?
     var drag: Drag?
@@ -382,6 +384,16 @@ extension MenuView {
             }
             return
         }
+        // A video's comments take clicks on them; one beside them puts them away.
+        if let hit = youtubeCommentsHit(at: point) {
+            pointer.pressTarget = nil
+            if hit.isOnPanel {
+                pointer.commentPress = hit.index ?? -1
+            } else {
+                closeYouTubeComments()
+            }
+            return
+        }
         // Now Playing's list takes clicks on it; one beside it puts it away.
         if isNowPlayingQueueVisible, let geometry = pointer.hitTester?.nowPlayingQueueGeometry {
             pointer.pressTarget = nil
@@ -418,6 +430,13 @@ extension MenuView {
         }
         if pointer.drag != nil {
             finishProgressDrag(at: point)
+            return
+        }
+        if let pressedComment = pointer.commentPress {
+            pointer.commentPress = nil
+            if pressedComment >= 0, youtubeCommentsHit(at: point)?.index == pressedComment {
+                showYouTubeComment(pressedComment, playsSound: true)
+            }
             return
         }
         if let pressedRow = pointer.queuePressRow {
@@ -529,6 +548,13 @@ extension MenuView {
         }
         pointer.lastWheelDate = now
         if isMoviePlaybackVisible {
+            if let comments = youtubeComments, youtubeCommentsHit(at: point)?.isOnPanel == true {
+                // Over a video's comments the wheel goes through them, one a notch.
+                pointer.wheelAccumulator += precise ? -dy / 40 : -dy
+                let steps = wholeSteps(&pointer.wheelAccumulator)
+                if steps != 0 { showYouTubeComment(max(0, min(comments.comments.count - 1, comments.focused + steps))) }
+                return
+            }
             // Ten seconds a notch.
             pointer.wheelAccumulator += precise ? amount / 40 : amount
             let steps = wholeSteps(&pointer.wheelAccumulator)
