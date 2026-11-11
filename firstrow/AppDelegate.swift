@@ -15,7 +15,7 @@
         private var appController: FirstRowAppController?
         private var keyMonitor: Any?
         private var screenObservers: [NSObjectProtocol] = []
-        /// A nearly clear strip over the top of the window on a ProMotion screen (see `lockWindowToScreen`).
+        /// A nearly clear row of pixels over the top of the window on a ProMotion screen (see `lockWindowToScreen`).
         private var compositingStrip: NSWindow?
         private var isCommandKeyDown = false
         private var commandEscapeHotKeyRef: EventHotKeyRef?
@@ -208,12 +208,16 @@
                 compositingStrip = nil
                 return
             }
-            let frame = NSRect(x: screen.frame.minX, y: screen.frame.maxY - 24, width: screen.frame.width, height: 24)
+            // One row of the screen's pixels along its top edge, and as near to clear as a
+            // window's pixels go without being clear: at 24 points and 3% black it showed as a
+            // band over a bright picture (Now Playing's blurred cover).
+            let pixel = 1 / max(1, screen.backingScaleFactor)
+            var frame = NSRect(x: screen.frame.minX, y: screen.frame.maxY - pixel, width: screen.frame.width, height: pixel)
             let strip = compositingStrip ?? {
                 let strip = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
                 strip.isReleasedWhenClosed = false
                 strip.isOpaque = false
-                strip.backgroundColor = NSColor(white: 0, alpha: 0.03)
+                strip.backgroundColor = NSColor(white: 0, alpha: 0.01)
                 strip.hasShadow = false
                 strip.ignoresMouseEvents = true
                 strip.collectionBehavior = [.ignoresCycle, .fullScreenNone]
@@ -221,6 +225,11 @@
             }()
             compositingStrip = strip
             if !strip.frame.equalTo(frame) {
+                strip.setFrame(frame, display: false)
+            }
+            // (Should a window not be allowed to be so thin, a point of height does as well.)
+            if strip.frame.height < pixel * 0.9 {
+                frame = NSRect(x: screen.frame.minX, y: screen.frame.maxY - 1, width: screen.frame.width, height: 1)
                 strip.setFrame(frame, display: false)
             }
             // As a child window it stays just above First Row's window, so other apps come in front
