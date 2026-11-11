@@ -308,6 +308,18 @@ final class MenuView: ObservableObject {
     @Published var hasStartedStartupMusicLibraryPreload = false
     @Published var isStartupMusicLibraryPreloadComplete = false
     var isMusicEntryWaitingForStartupPreload = false
+    /// The library as it was when the menus last read it, to tell when there's something new
+    /// to read (see `checkMusicLibraryForChanges`).
+    var musicLibraryMark: MusicLibraryMark?
+    var musicLibraryCheckedAt = Date.distantPast
+    var isWatchingMusicLibrary = false
+    var isCheckingMusicLibrary = false
+    var musicLibraryNeedsAnotherCheck = false
+    var musicLibraryChangeObservers: [NSObjectProtocol] = []
+    #if os(iOS)
+        var isListeningForMusicLibraryNotices = false
+        var musicLibraryNoticeTask: Task<Void, Never>?
+    #endif
     @Published var startupMusicLibraryPreloadOverlayOpacity: Double = 0
     @Published var startupSoundWarmUpWorkItem: Task<Void, Never>?
 

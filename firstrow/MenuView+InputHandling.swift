@@ -215,6 +215,9 @@ extension MenuView {
                 requestMusicSystemPlayerSnapshotForRestoreIfNeeded(force: true)
             }
         #endif
+        if chosenRootItem.id == "music" {
+            checkMusicLibraryForChanges(.openedMusic)
+        }
         isEnteringSubmenu = true
         isIconAnimated = true
         submenuTitleOpacity = 0

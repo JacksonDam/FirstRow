@@ -387,6 +387,7 @@ extension MenuView {
 
     func finishStartupMusicLibraryPreload() {
         isStartupMusicLibraryPreloadComplete = true
+        watchMusicLibraryForChanges()
         if isMusicEntryWaitingForStartupPreload {
             isMusicEntryWaitingForStartupPreload = false
             if !isInSubmenu, !isEnteringSubmenu, activeFullscreenScene == nil,
@@ -2187,25 +2188,7 @@ extension MenuView {
                     userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
                 )
             }
-            let collections = MPMediaQuery.playlists().collections ?? []
-            let playlists: [MusicCategoryEntry] = collections.compactMap { collection in
-                let playlist = collection as? MPMediaPlaylist
-                let title = normalizedMusicLibraryText(playlist?.name, fallback: "Untitled Playlist")
-                let persistentID = playlist.map { "\($0.persistentID)" } ?? title.lowercased()
-                // (In the playlist's own order, not by title.)
-                PlaylistItems.remember(collection.items)
-                let songs = collection.items.compactMap { makeMusicLibrarySongEntry(from: $0, includeArtwork: false) }
-                guard !songs.isEmpty else { return nil }
-                return MusicCategoryEntry(
-                    id: "playlist::ios::\(persistentID)",
-                    title: title,
-                    songs: songs,
-                    coverSongs: musicPlaylistCoverSongs(from: songs),
-                )
-            }
-            return playlists.sorted {
-                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-            }
+            return mediaLibraryPlaylists()
         #elseif canImport(iTunesLibrary)
             let libraryPlaylists = (try? withITLibrary { library in
                 library.allPlaylists.compactMap { playlist -> MusicCategoryEntry? in
@@ -2241,6 +2224,31 @@ extension MenuView {
             return []
         #endif
     }
+
+    #if os(iOS)
+        /// The library's playlists, by name. (Can be read on any thread.)
+        nonisolated func mediaLibraryPlaylists() -> [MusicCategoryEntry] {
+            let collections = MPMediaQuery.playlists().collections ?? []
+            let playlists: [MusicCategoryEntry] = collections.compactMap { collection in
+                let playlist = collection as? MPMediaPlaylist
+                let title = normalizedMusicLibraryText(playlist?.name, fallback: "Untitled Playlist")
+                let persistentID = playlist.map { "\($0.persistentID)" } ?? title.lowercased()
+                // (In the playlist's own order, not by title.)
+                PlaylistItems.remember(collection.items)
+                let songs = collection.items.compactMap { makeMusicLibrarySongEntry(from: $0, includeArtwork: false) }
+                guard !songs.isEmpty else { return nil }
+                return MusicCategoryEntry(
+                    id: "playlist::ios::\(persistentID)",
+                    title: title,
+                    songs: songs,
+                    coverSongs: musicPlaylistCoverSongs(from: songs),
+                )
+            }
+            return playlists.sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+        }
+    #endif
 
     #if canImport(iTunesLibrary)
         nonisolated func iTunesXMLSongEntry(_ track: ITunesLibraryXML.Track) -> MusicLibrarySongEntry {

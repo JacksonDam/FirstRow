@@ -157,6 +157,7 @@
 		7B10B45FBA4D1B208B677F1E /* MenuView+YouTubePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6320E1FB3007B5B9EF912BC /* MenuView+YouTubePlayback.swift */; };
 		3F0DEFB1DE21AC18C9F17AE1 /* YouTubeVideoLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AC07F371B23AAFC1D079E72 /* YouTubeVideoLayers.swift */; };
 		132B0A19C006F55B1A82D322 /* MenuView+YouTubeSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111AAE0C9043BE54B0FD10F /* MenuView+YouTubeSearch.swift */; };
+		DC9A990E39B56F9CBF353FE1 /* MenuView+MusicLibraryChanges.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3BE0ABD7DAA7F18267E9DD /* MenuView+MusicLibraryChanges.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -329,6 +330,7 @@
 		B6320E1FB3007B5B9EF912BC /* MenuView+YouTubePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTubePlayback.swift"; sourceTree = "<group>"; };
 		2AC07F371B23AAFC1D079E72 /* YouTubeVideoLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeVideoLayers.swift; sourceTree = "<group>"; };
 		1111AAE0C9043BE54B0FD10F /* MenuView+YouTubeSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTubeSearch.swift"; sourceTree = "<group>"; };
+		BC3BE0ABD7DAA7F18267E9DD /* MenuView+MusicLibraryChanges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MusicLibraryChanges.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -414,6 +416,7 @@
 				E6F62CD15712C4CBFFE4EC47 /* LoudnessMeter.swift */,
 				E3A2902F124FA3519B6CAB98 /* ITunesLibraryXML.swift */,
 				7A73DE352F5776A20021C281 /* MenuView+MusicLibrary.swift */,
+				BC3BE0ABD7DAA7F18267E9DD /* MenuView+MusicLibraryChanges.swift */,
 				7A73DE362F5776A20021C281 /* MenuView+MusicPlayback.swift */,
 				7A73DE372F5776A20021C281 /* MusicMenuFeature.swift */,
 				DA5F5538C0D903316634E77F /* SpotifyBridgeScript.swift */,
@@ -903,6 +906,7 @@
 				7A73DE872F5776A20021C281 /* AppShell.swift in Sources */,
 				7A73DE882F5776A20021C281 /* PlaybackTimeFormatting.swift in Sources */,
 				7A73DE8B2F5776A20021C281 /* MenuView+MusicLibrary.swift in Sources */,
+				DC9A990E39B56F9CBF353FE1 /* MenuView+MusicLibraryChanges.swift in Sources */,
 				7A73DE8C2F5776A20021C281 /* MenuView+ScreenSaverNowPlaying.swift in Sources */,
 				7A73DE8D2F5776A20021C281 /* MenuModels.swift in Sources */,
 				7A73DE8F2F5776A20021C281 /* PlatformCompatibility.swift in Sources */,
