@@ -117,11 +117,19 @@ final class MenuListLayer {
         let selectionTextureLeadingAdjustment = usesLargeSelectionTextureSizing ? menu.photosSelectionTextureLeadingAdjustment : 0
         let selectionTextureTrailingAdjustment = usesLargeSelectionTextureSizing ? menu.photosSelectionTextureTrailingAdjustment : 0
         let selectionTextureHeightAdjustment = usesLargeSelectionTextureSizing ? menu.photosSelectionTextureHeightAdjustment : 0
-        let selectionVisualWidth = selectionWidth + (menu.selectionTextureVisualWidthDelta * c.selectionBoxWidthScale) + selectionTextureLeadingAdjustment + selectionTextureTrailingAdjustment
         let selectionVisualHeight = selectionHeight + (menu.selectionTextureVisualHeightDelta * c.selectionBoxHeightScale) + selectionTextureHeightAdjustment
+        // The bar's picture is scaled to its height, glow and all, so a taller bar's sides
+        // stand further in from its frame's. Over rows that are taller but no wider (a list
+        // of videos) the frame reaches that much further out, and the bar's sides stay at the
+        // rows' as an ordinary row's do, with the same room between them and what's in the row.
+        let widensWithHeight = c.selectionBoxHeightScale > 1.001 && c.selectionBoxWidthScale <= 1.001
+        let selectionVisualWidth = widensWithHeight
+            ? selectionWidth + menu.selectionTextureVisualWidthDelta * (selectionVisualHeight / (menu.selectionBoxHeight + menu.selectionTextureVisualHeightDelta))
+            : selectionWidth + (menu.selectionTextureVisualWidthDelta * c.selectionBoxWidthScale) + selectionTextureLeadingAdjustment + selectionTextureTrailingAdjustment
         let selectionXOffset = -((selectionWidth - menuWidth) * 0.5)
         let selectionYOffset = -((selectionHeight - menu.selectionBoxHeight) * 0.5)
-        let selectionVisualXOffset = selectionXOffset - ((selectionVisualWidth - selectionWidth) * 0.5) + ((selectionTextureTrailingAdjustment - selectionTextureLeadingAdjustment) * 0.5)
+        let selectionVisualXOffset = selectionXOffset - ((selectionVisualWidth - selectionWidth) * 0.5)
+            + (widensWithHeight ? 0 : (selectionTextureTrailingAdjustment - selectionTextureLeadingAdjustment) * 0.5)
         let selectionVisualYOffset = selectionYOffset - ((selectionVisualHeight - selectionHeight) * 0.5)
         let rowContentWidth = selectionWidth
         let rowContentXOffset = selectionXOffset
