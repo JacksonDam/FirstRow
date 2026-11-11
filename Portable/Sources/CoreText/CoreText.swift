@@ -29,8 +29,10 @@ final class FontFace: @unchecked Sendable {
     let descent: Float
     let lineGap: Float
 
+    /// A face of a font file, which stays mapped into memory while the face is there (not
+    /// read into it: see fr_fonts.c).
     convenience init?(path: String, index: Int) {
-        guard let handle = plutovg_font_face_load_from_file(path, Int32(index)) else { return nil }
+        guard let handle = fr_font_face_load_mapped(path, Int32(index)) else { return nil }
         self.init(handle: handle, path: path, index: index)
     }
 
@@ -85,11 +87,51 @@ final class FontFace: @unchecked Sendable {
     }
 }
 
+/// What a font file says of one of its faces: the names it can be chosen by. The face is
+/// loaded when it's first chosen. (Every face on the machine used to be loaded, and kept, to
+/// have its names: on a machine with many fonts that was most of the memory First Row used.)
+final class FontEntry {
+    let path: String
+    let index: Int
+    let fullName: String
+    let family: String
+    let style: String
+    let typographicFamily: String
+    let typographicStyle: String
+    let postScriptName: String
+    private var loaded: FontFace?
+
+    /// `keepsFace` for a face that can't be loaded again from its path and index alone (one
+    /// from inside a Mac .dfont file).
+    init(_ face: FontFace, keepsFace: Bool) {
+        path = face.path
+        index = face.index
+        fullName = face.fullName
+        family = face.family
+        style = face.style
+        typographicFamily = face.typographicFamily
+        typographicStyle = face.typographicStyle
+        postScriptName = face.postScriptName
+        loaded = keepsFace ? face : nil
+    }
+
+    /// The face itself (asked for with the registry's lock held).
+    var face: FontFace? {
+        if loaded == nil { loaded = FontFace(path: path, index: index) }
+        return loaded
+    }
+
+    var isBold: Bool {
+        let lower = style.lowercased()
+        return lower.contains("bold") || lower.contains("demi") || lower.contains("black") || lower.contains("heavy")
+    }
+}
+
 /// Finds fonts by name in the font folders of the machine and next to the app.
 public enum FontRegistry {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var facesByName: [String: FontFace] = [:]
-    nonisolated(unsafe) private static var scanned: [FontFace]?
+    nonisolated(unsafe) private static var scanned: [FontEntry]?
     nonisolated(unsafe) private static var fallbackChain: [FontFace]?
 
     /// Extra folders to search first, such as one the user drops a font into.
@@ -151,27 +193,38 @@ public enum FontRegistry {
         return dirs
     }
 
-    private static func allFaces() -> [FontFace] {
+    /// Starts finding the machine's fonts, on another thread. The first text drawn needs
+    /// them and waits if they aren't found yet: started as First Row starts, the search has
+    /// the time the window takes to open.
+    public static func findAhead() {
+        Thread.detachNewThread {
+            lock.lock()
+            _ = allFaces()
+            lock.unlock()
+        }
+    }
+
+    /// Every face of every font file found, by its names (called with the lock held).
+    private static func allFaces() -> [FontEntry] {
         if let scanned { return scanned }
-        var faces: [FontFace] = []
+        var faces: [FontEntry] = []
         var seen = Set<String>()
         func add(_ url: URL) {
             let ext = url.pathExtension.lowercased()
             guard ext == "ttf" || ext == "ttc" || ext == "otf" || ext == "otc" || ext == "dfont" else { return }
             let path = url.resolvingSymlinksInPath().path
-            guard seen.insert(path).inserted, let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe) else { return }
+            guard seen.insert(path).inserted else { return }
             if ext == "dfont" {
+                guard let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe) else { return }
                 for (index, font) in MacResourceFork.sfntResources(in: data).enumerated() {
-                    if let face = FontFace(data: font, path: path, index: index) { faces.append(face) }
+                    if let face = FontFace(data: font, path: path, index: index) { faces.append(FontEntry(face, keepsFace: true)) }
                 }
                 return
             }
-            let count = data.withUnsafeBytes { raw in
-                raw.baseAddress.map { Int(plutovg_font_data_face_count($0)) } ?? 0
-            }
-            for index in 0 ..< max(1, count) {
+            // (Each face is loaded for its names and let go of again: its file is unmapped.)
+            for index in 0 ..< max(1, Int(fr_font_file_face_count(path))) {
                 if let face = FontFace(path: path, index: index) {
-                    faces.append(face)
+                    faces.append(FontEntry(face, keepsFace: false))
                 }
             }
         }
@@ -251,7 +304,7 @@ public enum FontRegistry {
 
     private static let regularStyles: Set<String> = ["regular", "roman", "normal", "book", "plain", "standard", ""]
 
-    private static func exact(_ name: String, in faces: [FontFace]) -> FontFace? {
+    private static func exact(_ name: String, in faces: [FontEntry]) -> FontEntry? {
         let wanted = compact(name)
         if let face = faces.first(where: { compact($0.fullName) == wanted || compact($0.postScriptName) == wanted }) {
             return face
@@ -280,7 +333,7 @@ public enum FontRegistry {
     ]
 
     /// The likeliest plain upright sans-serif face when none of the known names is there.
-    private static func plainFace(in faces: [FontFace]) -> FontFace? {
+    private static func plainFace(in faces: [FontEntry]) -> FontEntry? {
         for name in lastResorts {
             if let face = exact(name, in: faces) { return face }
         }
@@ -305,25 +358,25 @@ public enum FontRegistry {
         }
         let faces = allFaces()
         var found: FontFace?
-        if let face = exact(original, in: faces) ?? exact(key, in: faces) {
+        if let face = (exact(original, in: faces) ?? exact(key, in: faces))?.face {
             found = face
         } else if key.contains("bold") {
             // Keep bold text in the same family as the regular text: its own bold if it has
             // one, otherwise the regular face thickened.
             let regularKey = key.replacingOccurrences(of: " bold", with: "")
             if let (regular, _) = resolve(regularKey, original: regularKey) {
-                found = faces.first { $0.family == regular.family && $0.isBold && !$0.style.lowercased().contains("italic") } ?? regular
+                found = faces.first { $0.family == regular.family && $0.isBold && !$0.style.lowercased().contains("italic") }?.face ?? regular
             }
         } else {
             for candidate in substitutes[key] ?? [] {
-                if let face = exact(candidate, in: faces) {
+                if let face = exact(candidate, in: faces)?.face {
                     found = face
                     break
                 }
             }
         }
         if found == nil {
-            found = plainFace(in: faces)
+            found = plainFace(in: faces)?.face
         }
         guard let face = found else { return nil }
         facesByName[key] = face
@@ -341,7 +394,7 @@ public enum FontRegistry {
         let faces = allFaces()
         var chain: [FontFace] = []
         for name in fallbackNames {
-            if let face = exact(name, in: faces), !chain.contains(where: { $0 === face }) {
+            if let face = exact(name, in: faces)?.face, !chain.contains(where: { $0 === face }) {
                 chain.append(face)
             }
         }

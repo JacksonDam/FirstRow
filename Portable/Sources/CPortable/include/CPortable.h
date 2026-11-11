@@ -17,6 +17,10 @@ int plutovg_font_face_units_per_em(plutovg_font_face_t* face);
 int plutovg_font_face_name(plutovg_font_face_t* face, int name_id, char* out, int capacity);
 int plutovg_font_data_face_count(const void* data);
 
+/* A face from a font file mapped into memory, and how many faces a file holds (fr_fonts.c). */
+plutovg_font_face_t* fr_font_face_load_mapped(const char* path, int index);
+int fr_font_file_face_count(const char* path);
+
 /* Pixel work that is too slow in unoptimised Swift. Buffers are premultiplied BGRA unless noted. */
 
 /* Gaussian blur of every channel, in place, approximated with three box passes. */

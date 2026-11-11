@@ -214,6 +214,12 @@ public enum PortableApplication {
         fr_tune_allocator()
         AssetCatalog.decodeAhead()
         AVPlayer.prepareFirstPlayer()
+        // Inter, which ships with First Row, stands in for the Apple system font of the modern
+        // look. Its folder is named here, before the fonts are looked for.
+        if let fonts = AppResources.url("Fonts") {
+            FontRegistry.extraDirectories.append(fonts)
+        }
+        FontRegistry.findAhead()
         let environment = ProcessInfo.processInfo.environment
         let headless = environment["SDL_VIDEO_DRIVER"] == "offscreen"
         isHeadless = headless
