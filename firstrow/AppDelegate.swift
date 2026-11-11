@@ -15,7 +15,7 @@
         private var appController: FirstRowAppController?
         private var keyMonitor: Any?
         private var screenObservers: [NSObjectProtocol] = []
-        /// A nearly clear row of pixels over the top of the window on a ProMotion screen (see `lockWindowToScreen`).
+        /// A nearly clear pixel over a top corner of the window on a ProMotion screen (see `lockWindowToScreen`).
         private var compositingStrip: NSWindow?
         private var isCommandKeyDown = false
         private var commandEscapeHotKeyRef: EventHotKeyRef?
@@ -189,9 +189,9 @@
             // A window covering the whole screen with nothing over it can go to the screen without
             // being composited. On a ProMotion screen that left First Row's frames unevenly timed
             // (stutters below 60 fps and stale frames), and it ran smoothly at 120 Hz only while the
-            // menu bar was pulled down over it. A nearly clear strip of window over the top edge
-            // does the same as the menu bar, and the window isn't marked opaque either. Tested on a
-            // ProMotion MacBook Pro.
+            // menu bar was pulled down over it. Another window over any of it does the same as the
+            // menu bar (a nearly clear strip along the top edge was what was tried on a ProMotion
+            // MacBook Pro; it's now a single pixel), and the window isn't marked opaque either.
             let variable = Self.refreshesAtVariableRate(screen)
             if window.isOpaque == variable {
                 window.isOpaque = !variable
@@ -208,11 +208,12 @@
                 compositingStrip = nil
                 return
             }
-            // One row of the screen's pixels along its top edge, and as near to clear as a
-            // window's pixels go without being clear: at 24 points and 3% black it showed as a
-            // band over a bright picture (Now Playing's blurred cover).
+            // A single pixel in the screen's top left corner (under the rounding of a MacBook's
+            // own), and as near to clear as a window's pixel goes without being clear: as a
+            // strip 24 points tall at 3% black it showed as a band over a bright picture (Now
+            // Playing's blurred cover).
             let pixel = 1 / max(1, screen.backingScaleFactor)
-            var frame = NSRect(x: screen.frame.minX, y: screen.frame.maxY - pixel, width: screen.frame.width, height: pixel)
+            var frame = NSRect(x: screen.frame.minX, y: screen.frame.maxY - pixel, width: pixel, height: pixel)
             let strip = compositingStrip ?? {
                 let strip = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
                 strip.isReleasedWhenClosed = false
@@ -227,9 +228,9 @@
             if !strip.frame.equalTo(frame) {
                 strip.setFrame(frame, display: false)
             }
-            // (Should a window not be allowed to be so thin, a point of height does as well.)
-            if strip.frame.height < pixel * 0.9 {
-                frame = NSRect(x: screen.frame.minX, y: screen.frame.maxY - 1, width: screen.frame.width, height: 1)
+            // (Should a window not be allowed to be so small, a point each way does as well.)
+            if strip.frame.height < pixel * 0.9 || strip.frame.width < pixel * 0.9 {
+                frame = NSRect(x: screen.frame.minX, y: screen.frame.maxY - 1, width: 1, height: 1)
                 strip.setFrame(frame, display: false)
             }
             // As a child window it stays just above First Row's window, so other apps come in front
