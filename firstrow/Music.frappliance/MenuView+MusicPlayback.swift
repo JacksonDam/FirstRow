@@ -1808,9 +1808,6 @@ extension MenuView {
         private func applyMusicKitPlaybackProgress(_ currentTime: TimeInterval) {
             let playbackStatus = ApplicationMusicPlayer.shared.state.playbackStatus
             let elapsed = max(0, currentTime.isFinite ? currentTime : 0)
-            if musicScrubDirection == 0 {
-                musicNowPlayingElapsedSeconds = elapsed
-            }
             if musicNowPlayingDurationSeconds <= 0,
                let activeMusicPlaybackSongID,
                let activeSong = musicSongsThirdMenuItems.first(where: { $0.id == activeMusicPlaybackSongID }),
@@ -1821,17 +1818,23 @@ extension MenuView {
                 musicNowPlayingDurationSeconds = duration
             }
             let duration = musicNowPlayingDurationSeconds
-            if duration > 0 {
-                let isAtOrPastEnd = elapsed >= (duration - 0.05)
-                let didStopAtEnd = playbackStatus == .stopped
-                if isAtOrPastEnd && didStopAtEnd && !musicKitDidHandleTrackEnd {
-                    musicKitDidHandleTrackEnd = true
-                    stopMusicScrubbing(showPauseGlyph: false)
-                    musicNowPlayingLeadingGlyphState = nil
-                    switchMusicNowPlayingTrack(direction: 1)
-                } else if !isAtOrPastEnd || playbackStatus == .playing {
-                    musicKitDidHandleTrackEnd = false
-                }
+            // At the end of its song the player stops and its time goes back to nought, so the
+            // end is judged by where the song had got to.
+            let hasStopped = playbackStatus == .stopped || playbackStatus == .paused
+            let wasNearEnd = duration > 0 && max(elapsed, musicNowPlayingElapsedSeconds) >= duration - 2
+            if hasStopped, wasNearEnd, musicScrubDirection == 0, musicNowPlayingLeadingGlyphState != .pause {
+                guard !musicKitDidHandleTrackEnd else { return }
+                musicKitDidHandleTrackEnd = true
+                stopMusicScrubbing(showPauseGlyph: false)
+                musicNowPlayingLeadingGlyphState = nil
+                switchMusicNowPlayingTrack(direction: 1)
+                return
+            }
+            if playbackStatus == .playing {
+                musicKitDidHandleTrackEnd = false
+            }
+            if musicScrubDirection == 0 {
+                musicNowPlayingElapsedSeconds = elapsed
             }
         }
         #endif
