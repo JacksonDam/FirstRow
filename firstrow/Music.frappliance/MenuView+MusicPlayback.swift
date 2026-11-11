@@ -379,9 +379,9 @@ extension MenuView {
         let playing: Bool
         let until: Date
 
-        init(playing: Bool) {
+        init(playing: Bool, holdingFor seconds: TimeInterval = 3) {
             self.playing = playing
-            until = Date().addingTimeInterval(3)
+            until = Date().addingTimeInterval(seconds)
         }
 
         /// Whether to show playing for `reported`, clearing `asked` once the player agrees (or
@@ -395,6 +395,21 @@ extension MenuView {
             return wanted.playing
         }
     }
+
+    #if os(macOS)
+        /// Play or Pause has been asked of the Music app: it shows at once, and stands until
+        /// Music reports the same (see `applyMusicSystemPlayerSnapshot`) or, if it never does,
+        /// for a few seconds: longer for Play, since a streamed song takes a while to get
+        /// going again.
+        func showMusicAppleScriptAsked(playing: Bool) {
+            musicAppleScriptIsPlaying = playing
+            musicAppleScriptAskedToPlay = AskedPlayState(playing: playing, holdingFor: playing ? 8 : 3)
+            musicNowPlayingLeadingGlyphState = playing ? nil : .pause
+            if !playing {
+                updateMusicAppleScriptProgressAnchor(elapsedSeconds: musicNowPlayingElapsedSeconds, isPlaying: false)
+            }
+        }
+    #endif
 
     /// A song has been started: it shows as playing while it gets going.
     private func noteMusicPlaybackStarting() {
@@ -630,6 +645,7 @@ extension MenuView {
             isCurrentMusicPlaybackManagedByFirstRow = true
             musicAppleScriptIsPlaying = false
             musicAppleScriptStartupDeadline = nil
+            musicAppleScriptAskedToPlay = nil
             updateMusicAppleScriptProgressAnchor(
                 elapsedSeconds: 0,
                 isPlaying: false,
@@ -1198,7 +1214,11 @@ extension MenuView {
             }
 
             let isGraceActive = (musicAppleScriptStartupDeadline.map { $0 > Date() } ?? false) && !snapshot.isPlaying
-            let effectiveIsPlaying = isGraceActive ? musicAppleScriptIsPlaying : snapshot.isPlaying
+            // What Play or Pause just asked for stands until Music reports the same: it goes
+            // on saying "paused" while it gets a streamed song going again (for seconds), and
+            // a report already on its way when Pause was pressed still says "playing".
+            let askedOrReported = AskedPlayState.settle(snapshot.isPlaying, &musicAppleScriptAskedToPlay)
+            let effectiveIsPlaying = isGraceActive ? musicAppleScriptIsPlaying : askedOrReported
             
             // Music's own Previous (the keyboard's previous key goes to Music, not First Row)
             // starts the song again more than a few seconds in: First Row goes to its previous
@@ -1219,9 +1239,10 @@ extension MenuView {
                 musicNowPlayingElapsedSeconds = snapshotElapsed
                 // Music reports "playing" while a song loads, so only count once the position moves.
                 let hasStartedMoving = snapshotElapsed > 0.05
+                // (The time only runs once Music itself says it's playing.)
                 updateMusicAppleScriptProgressAnchor(
                     elapsedSeconds: snapshotElapsed,
-                    isPlaying: (isGraceActive ? false : effectiveIsPlaying) && hasStartedMoving,
+                    isPlaying: (isGraceActive ? false : effectiveIsPlaying) && snapshot.isPlaying && hasStartedMoving,
                 )
                 musicNowPlayingLeadingGlyphState = effectiveIsPlaying ? nil : .pause
             }
@@ -1956,6 +1977,7 @@ extension MenuView {
             }
             musicAppleScriptIsPlaying = false
             musicAppleScriptStartupDeadline = nil
+            musicAppleScriptAskedToPlay = nil
             musicAppleScriptProgressAnchorDate = nil
             musicAppleScriptProgressAnchorElapsedSeconds = 0
             musicAppleScriptCurrentTrackPersistentIDHex = nil
@@ -2486,6 +2508,7 @@ extension MenuView {
             if musicAudioPlayer == nil, isCurrentMusicPlaybackUsingAppleScript, activeMusicPlaybackSongID != nil {
                 stopMusicScrubbing(showPauseGlyph: false)
                 let shouldPause = musicAppleScriptIsPlaying || startingUp
+                showMusicAppleScriptAsked(playing: !shouldPause)
                 Task(priority: .userInitiated) {
                     let didSucceed = await musicAppleScriptExecutor.run {
                         shouldPause
@@ -2496,6 +2519,10 @@ extension MenuView {
                         guard self.isCurrentMusicPlaybackUsingAppleScript else { return }
                         guard self.activeMusicPlaybackSongID != nil else { return }
                         guard didSucceed else {
+                            // Music didn't take it: back to what it was doing.
+                            self.musicAppleScriptAskedToPlay = nil
+                            self.musicAppleScriptIsPlaying = shouldPause
+                            self.musicNowPlayingLeadingGlyphState = shouldPause ? nil : .pause
                             self.updateMusicNowPlayingFlipTimerState()
                             return
                         }

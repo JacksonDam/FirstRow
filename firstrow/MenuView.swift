@@ -621,6 +621,8 @@ final class MenuView: ObservableObject {
     @Published var musicAppleScriptCurrentTrackPersistentIDHex: String?
     @Published var musicAppleScriptIsPlaying = false
     @Published var musicAppleScriptStartupDeadline: Date?
+    /// What Play or Pause last asked the Music app for, until it says so too.
+    var musicAppleScriptAskedToPlay: AskedPlayState?
     @Published var musicAppleScriptDidHandleTrackBoundary = false
     @Published var musicAppleScriptProgressAnchorElapsedSeconds: Double = 0
     @Published var musicAppleScriptProgressAnchorDate: Date?
