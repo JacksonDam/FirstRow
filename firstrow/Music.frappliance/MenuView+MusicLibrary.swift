@@ -1614,7 +1614,7 @@ extension MenuView {
     #endif
 
     #if os(tvOS)
-        func musicTopLevelCarouselAlbumKey(for song: Song) -> String {
+        nonisolated func musicTopLevelCarouselAlbumKey(for song: Song) -> String {
             normalizedMusicTopLevelCarouselAlbumKey(
                 albumTitle: song.albumTitle,
                 albumArtist: nil,
@@ -2426,18 +2426,23 @@ extension MenuView {
             var request = MusicLibraryRequest<Song>()
             request.limit = 5000
             let response = try await request.response()
-            var songs: [MusicLibrarySongEntry] = []
-            songs.reserveCapacity(response.items.count)
-            for song in response.items {
-                guard let entry = await makeMusicLibrarySongEntry(from: song, includeArtwork: includeArtwork) else {
-                    continue
+            let items = Array(response.items)
+            // Off the main thread: a song's details are read from the library as each is asked
+            // for, which for a few hundred songs held First Row up as it started.
+            return await Task.detached(priority: .userInitiated) {
+                var songs: [MusicLibrarySongEntry] = []
+                songs.reserveCapacity(items.count)
+                for song in items {
+                    guard let entry = await self.makeMusicLibrarySongEntry(from: song, includeArtwork: includeArtwork) else {
+                        continue
+                    }
+                    songs.append(entry)
                 }
-                songs.append(entry)
-            }
-            return shouldSort ? sortedMusicLibraryEntries(songs) : songs
+                return shouldSort ? self.sortedMusicLibraryEntries(songs) : songs
+            }.value
         }
 
-        func makeMusicLibrarySongEntry(from song: Song, includeArtwork: Bool = true) async -> MusicLibrarySongEntry? {
+        nonisolated func makeMusicLibrarySongEntry(from song: Song, includeArtwork: Bool = true) async -> MusicLibrarySongEntry? {
             guard song.playParameters != nil else { return nil }
             let previewURL = song.previewAssets?.first(where: { $0.hlsURL != nil || $0.url != nil })
             let playbackURL = previewURL?.hlsURL ?? previewURL?.url ?? song.url
