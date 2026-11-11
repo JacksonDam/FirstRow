@@ -6,7 +6,7 @@ import Foundation
 /// First Row's version, as Settings shows it and Jellyfin is told.
 enum FirstRowVersion {
     /// Kept the same as MARKETING_VERSION, for Linux and Windows, whose builds have no Info.plist.
-    static let number = "2.1.1"
+    static let number = "2.2.0"
 
     static var current: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? number
