@@ -421,14 +421,20 @@ final class FirstRowAppController {
             let remote = RemotePressCapturingView(frame: hostView.bounds)
             remote.onKeyDown = { [weak self, weak menu] key in
                 if self?.takesIntroPress() == true { return }
+                menu?.noteRemotePress()
                 if [.upArrow, .downArrow, .leftArrow, .rightArrow].contains(key) {
                     menu?.handleDirectionalPressBegan(key)
+                } else if key == .enter, menu?.remoteSelectBegan() == true {
+                    // (Now Playing: it acts when Select comes up, or when it has been held.)
+                } else if key == .space, menu?.takesPlayPause(fromRemotePress: true) == false {
+                    // (Already acted on, as the system's media command.)
                 } else {
                     menu?.handleKeyDown(key)
                 }
             }
             remote.onKeyUp = { [weak self, weak menu] key in
                 if self?.isPlayingIntro == true { return }
+                if key == .enter { menu?.remoteSelectEnded() }
                 menu?.handleDirectionalPressEnded(key)
             }
             remote.claimsFirstResponder = !isLaunchToggleWindowActive

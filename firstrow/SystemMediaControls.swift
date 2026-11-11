@@ -47,9 +47,17 @@
                     return handled ? .success : .noActionableNowPlayingItem
                 }
             }
-            handle(center.togglePlayPauseCommand) { menu, _ in menu.systemTogglePlayback() }
-            handle(center.playCommand) { menu, _ in menu.systemSetPlaying(true) }
-            handle(center.pauseCommand) { menu, _ in menu.systemSetPlaying(false) }
+            #if os(tvOS)
+                // The remote's Play/Pause button can come as a press and as one of these
+                // commands as well: whichever comes second is the same press (see `takesPlayPause`).
+                handle(center.togglePlayPauseCommand) { menu, _ in menu.takesPlayPause(fromRemotePress: false) ? menu.systemTogglePlayback() : true }
+                handle(center.playCommand) { menu, _ in menu.takesPlayPause(fromRemotePress: false) ? menu.systemSetPlaying(true) : true }
+                handle(center.pauseCommand) { menu, _ in menu.takesPlayPause(fromRemotePress: false) ? menu.systemSetPlaying(false) : true }
+            #else
+                handle(center.togglePlayPauseCommand) { menu, _ in menu.systemTogglePlayback() }
+                handle(center.playCommand) { menu, _ in menu.systemSetPlaying(true) }
+                handle(center.pauseCommand) { menu, _ in menu.systemSetPlaying(false) }
+            #endif
             handle(center.nextTrackCommand) { menu, _ in menu.systemChangeTrack(1) }
             handle(center.previousTrackCommand) { menu, _ in menu.systemChangeTrack(-1) }
             center.skipForwardCommand.preferredIntervals = [10]

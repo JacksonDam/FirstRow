@@ -15,6 +15,9 @@ import Foundation
         }
 
         var mode: Mode = .undecided
+        /// When a button of the remote was last pressed. A press during a touch, or just
+        /// before it ends, means the thumb slid as it pressed: not a swipe.
+        var lastPressAt = Date.distantPast
         /// How much of the swipe has been turned into steps (positive is down).
         var consumed: CGFloat = 0
         /// How far the swipe has gone past the end of the list.
@@ -30,6 +33,20 @@ import Foundation
         /// How far a swipe goes for each row (in the remote's touch points).
         private static let remoteSwipeStep: CGFloat = 150
         private static let remoteSwipeSlop: CGFloat = 24
+        /// How far a swipe has to go, across or up and down, to count as a press of an arrow.
+        /// (The surface is some 1900 points across and 1100 tall. A thumb settling on it, or
+        /// sliding as it clicks, moves a good deal more than the slop.)
+        private static let remoteSwipeAcross: CGFloat = 300
+        private static let remoteSwipeUpOrDown: CGFloat = 170
+
+        /// Notes a press of one of the remote's buttons (see `RemoteSwipeState.lastPressAt`).
+        func noteRemotePress() {
+            remoteSwipe.lastPressAt = Date()
+        }
+
+        private var remotePressedLately: Bool {
+            Date().timeIntervalSince(remoteSwipe.lastPressAt) < 0.7
+        }
         /// How far the selected row gives at most, in scene points.
         private static let remoteRubberBandReach: CGFloat = 26
 
@@ -65,7 +82,7 @@ import Foundation
                 guard max(abs(translation.x), abs(translation.y)) > Self.remoteSwipeSlop else { return }
                 swipe.mode = abs(translation.y) > abs(translation.x) && remoteSwipeSteppingList ? .stepping : .gesture
             }
-            guard swipe.mode == .stepping else { return }
+            guard swipe.mode == .stepping, !remotePressedLately else { return }
             // A row for each stretch of the swipe, past the first nudge.
             var travel = translation.y - swipe.consumed
             while abs(travel) >= Self.remoteSwipeStep {
@@ -97,8 +114,12 @@ import Foundation
             case .undecided:
                 return
             case .gesture:
-                // One press of the arrow the swipe points along.
+                // One press of the arrow the swipe points along: for a stroke of some length,
+                // mostly along that axis, with no button pressed meanwhile.
                 let horizontal = abs(translation.x) > abs(translation.y)
+                let along = horizontal ? abs(translation.x) : abs(translation.y)
+                let aside = horizontal ? abs(translation.y) : abs(translation.x)
+                guard along >= (horizontal ? Self.remoteSwipeAcross : Self.remoteSwipeUpOrDown), aside <= along * 0.6, !remotePressedLately else { return }
                 let key: KeyCode = horizontal ? (translation.x > 0 ? .rightArrow : .leftArrow) : (translation.y > 0 ? .downArrow : .upArrow)
                 handleKeyDown(key)
                 handleKeyUp(key)
@@ -128,6 +149,49 @@ import Foundation
                     }
                 }
             }
+        }
+
+        // MARK: - Play/Pause
+
+        /// Whether a play or pause that has just come in is to be acted on. The remote's
+        /// Play/Pause button can reach First Row as a press and as the system's media command
+        /// too. If it does, the first of the two acts, and the other, coming straight after
+        /// from the other side, is the same press: acted on as well, it would undo the first.
+        func takesPlayPause(fromRemotePress: Bool) -> Bool {
+            let now = Date()
+            if let last = lastPlayPause, last.fromRemotePress != fromRemotePress, now.timeIntervalSince(last.date) < 0.75 {
+                lastPlayPause = nil
+                return false
+            }
+            lastPlayPause = (now, fromRemotePress)
+            return true
+        }
+
+        // MARK: - Holding Select
+
+        /// Select going down on the remote. In Now Playing a click does what Select does
+        /// there, on its way up; held, it brings the song list out or puts it away, which the
+        /// remote's TV button does on a Mac and can't here, where that button is the system's.
+        /// Returns false anywhere else: Select acts as it goes down.
+        func remoteSelectBegan() -> Bool {
+            guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isFullscreenSceneTransitioning, !isTextEntryActive else { return false }
+            remoteSelectHold?.cancel()
+            remoteSelectIsDown = true
+            remoteSelectHold = Task { @MainActor in
+                try? await firstRowSleep(0.55)
+                guard !Task.isCancelled, self.remoteSelectIsDown else { return }
+                self.remoteSelectIsDown = false
+                self.handleRemoteTVButton()
+            }
+            return true
+        }
+
+        func remoteSelectEnded() {
+            remoteSelectHold?.cancel()
+            remoteSelectHold = nil
+            guard remoteSelectIsDown else { return }
+            remoteSelectIsDown = false
+            handleKeyDown(.enter)
         }
 
         /// The selected row's give for a push of `overshoot` past the end: a little at first,

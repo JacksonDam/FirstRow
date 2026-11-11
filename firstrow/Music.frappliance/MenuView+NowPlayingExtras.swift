@@ -50,8 +50,8 @@ import Foundation
 extension MenuView {
     // MARK: - The list over the right side
 
-    /// There's a pointer or fingers to reach the list with (everywhere but Apple TV, where the
-    /// arrows alone don't reach it).
+    /// There's a pointer or fingers to reach the list with (everywhere but Apple TV, whose
+    /// remote reaches it another way: see `hasSiriRemoteForNowPlaying`).
     var canPointAtNowPlaying: Bool {
         #if os(tvOS)
             false
@@ -64,10 +64,13 @@ extension MenuView {
         activeFullscreenScene?.key == musicNowPlayingFullscreenKey && !isFullscreenSceneTransitioning
     }
 
-    /// A Siri Remote is held, whose TV button brings the list out.
+    /// A Siri Remote is held, whose TV button brings the list out (on Apple TV, where that
+    /// button is the system's, holding the clickpad's centre does).
     var hasSiriRemoteForNowPlaying: Bool {
         #if os(macOS)
             SiriRemoteInput.shared.hasRemote
+        #elseif os(tvOS)
+            true
         #else
             false
         #endif

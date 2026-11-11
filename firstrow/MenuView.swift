@@ -408,6 +408,12 @@ final class MenuView: ObservableObject {
     @Published var remoteRubberBand: CGFloat = 0
     #if os(tvOS)
         let remoteSwipe = RemoteSwipeState()
+        /// Select held on the remote in Now Playing (see `remoteSelectBegan`).
+        var remoteSelectHold: Task<Void, Never>?
+        var remoteSelectIsDown = false
+        /// The last play or pause from the remote, and whether it came as a button press or
+        /// as the system's media command (see `takesPlayPause`).
+        var lastPlayPause: (date: Date, fromRemotePress: Bool)?
     #endif
 
     /// Now Playing's on-screen buttons, slid away while a song plays untouched.
