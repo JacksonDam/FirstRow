@@ -2204,6 +2204,11 @@ extension MenuView {
                         guard musicLibraryMediaKindMatches(item.mediaKind, requested: .songs) else { return nil }
                         return makeMusicLibrarySongEntry(
                             from: item,
+                            // A cover is a fetch from the library of its own: one for every song
+                            // of every playlist held First Row still for over a second with a
+                            // few hundred of them. It comes when the song is shown, as in Songs
+                            // (but a song that is only in a playlist has no other way to its).
+                            includeArtwork: musicLibraryItemIndexBySongID["\(item.persistentID)"] == nil,
                             sourcePlaylistPersistentIDHex: playlistPersistentIDHex,
                         )
                     }
