@@ -326,6 +326,7 @@ extension MenuView {
             scheduleMovieControlsAutoHide()
         }
         jellyfinMoviePlaybackDidActivate(url: url, startSeconds: clampedStart)
+        youtubeMoviePlaybackDidActivate(url: url)
     }
 
     func captureLastClosedMoviePlaybackPosition() {
@@ -358,6 +359,7 @@ extension MenuView {
         clearMovieControlsVisibilityInstantly()
         moviePlayer?.pause()
         jellyfinMoviePlaybackWillEnd()
+        youtubeMoviePlaybackWillEnd()
         let shouldCaptureResumePosition = captureResumePosition && !isCurrentMoviePlaybackEphemeralPreview
         if shouldCaptureResumePosition {
             captureLastClosedMoviePlaybackPosition()

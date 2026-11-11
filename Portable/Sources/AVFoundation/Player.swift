@@ -164,7 +164,9 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         guard pendingLoad, let item = currentItem else { return }
         // A file with pictures waits a moment for its player layer, which is usually attached
         // in the same pass that created the player.
-        let needsLayer = item.asset.info.hasVideo && core?.renderContext == nil
+        let url = item.asset.url
+        let pair = AVPlayer.pairedStreams(in: url)
+        let needsLayer = (item.asset.info.hasVideo || pair != nil) && core?.renderContext == nil
         if needsLayer, CACurrentMediaTime() - loadWaitStarted < 0.25 {
             scheduleLoad()
             return
@@ -176,14 +178,39 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         seekAskedAt = nil
         core.setFlagWithoutWaiting("pause", !playing)
         core.noteLoading()
-        let url = item.asset.url
+        var target = url.isFileURL ? url.path : url.absoluteString
+        if let pair {
+            // As mpv's own list of pieces to play together: each address with its length in
+            // bytes before it, since addresses hold the characters such a list is cut at.
+            func piece(_ address: String) -> String { "!no_clip;!no_chapters;%\(address.utf8.count)%\(address)" }
+            target = "edl://" + piece(pair.video) + (pair.audio.map { ";!new_stream;" + piece($0) } ?? "")
+        }
         var options: [String] = []
         if lastTime > 0 { options.append("start=\(lastTime)") }
         if options.isEmpty {
-            core.commandWithoutWaiting(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace"])
+            core.commandWithoutWaiting(["loadfile", target, "replace"])
         } else {
-            core.commandWithoutWaiting(["loadfile", url.isFileURL ? url.path : url.absoluteString, "replace", "-1", options.joined(separator: ",")])
+            core.commandWithoutWaiting(["loadfile", target, "replace", "-1", options.joined(separator: ",")])
         }
+    }
+
+    /// An address that stands for a picture and its sound kept at two addresses (as a
+    /// streamed video's often are), for a player item: mpv plays the two together.
+    public static func pairedStreamsURL(video: URL, audio: URL?) -> URL? {
+        var parts = URLComponents()
+        parts.scheme = pairedStreamsScheme
+        parts.host = "play"
+        parts.queryItems = [URLQueryItem(name: "video", value: video.absoluteString)] + (audio.map { [URLQueryItem(name: "audio", value: $0.absoluteString)] } ?? [])
+        return parts.url
+    }
+
+    private static let pairedStreamsScheme = "firstrow-streams"
+
+    static func pairedStreams(in url: URL) -> (video: String, audio: String?)? {
+        guard url.scheme == pairedStreamsScheme, let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              let video = items.first(where: { $0.name == "video" })?.value
+        else { return nil }
+        return (video, items.first { $0.name == "audio" }?.value)
     }
 
     private func handle(_ event: UnsafeMutablePointer<mpv_event>) {

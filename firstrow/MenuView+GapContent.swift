@@ -716,6 +716,9 @@ extension MenuView {
         case "sources":
             return jellyfinGapContentItems(icon: { icon(opacity: $0, animation: $1) }, pass: pass, memo: &memo)
 
+        case "youtube":
+            return youtubeGapContentItems(icon: { icon(opacity: $0, animation: $1) }, pass: pass, memo: &memo)
+
         default:
             return [GapItemSpec(key: "icon", kind: .icon(image: image, reflected: true))]
         }

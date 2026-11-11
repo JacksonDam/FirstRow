@@ -157,8 +157,12 @@
             )
         }
 
-        /// A movie's name as shown to the system: a Jellyfin item's name, or the file's name.
+        /// A movie's name as shown to the system: a Jellyfin item's or a YouTube video's name,
+        /// or the file's name.
         var currentMoviePlaybackDisplayTitle: String {
+            if let video = youtubeSession?.video, !video.title.isEmpty {
+                return video.title
+            }
             if let item = jellyfinVideoSession?.item, let name = item.name, !name.isEmpty {
                 if let series = item.seriesName, !series.isEmpty { return "\(series): \(name)" }
                 return name

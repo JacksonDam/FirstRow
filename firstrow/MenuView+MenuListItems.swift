@@ -56,6 +56,9 @@ extension MenuView {
         if activeRootItemID == "sources" {
             return sourcesSubmenuItems()
         }
+        if activeRootItemID == "youtube" {
+            return youtubeSubmenuItems()
+        }
         var items = MenuConfiguration.submenuItems(forRootID: activeRootItemID)
         if activeRootItemID == "photos" {
             // Folders chosen in Settings and iPhoto albums, after the Photos library's own items.
@@ -169,6 +172,8 @@ extension MenuView {
             shouldHideSpotifyMenuUntilLoaded
         case .jellyfin:
             shouldHideJellyfinMenuUntilLoaded
+        case .youtube:
+            shouldHideYouTubeMenuUntilLoaded
         default:
             false
         }
@@ -344,6 +349,8 @@ extension MenuView {
             return spotifyMenuListItems()
         case .jellyfin:
             return jellyfinMenuListItems()
+        case .youtube:
+            return youtubeMenuListItems()
         case .none:
             return []
         }

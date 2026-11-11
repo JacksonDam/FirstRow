@@ -494,6 +494,9 @@ extension MenuView {
         if activeRootItemID == "sources", triggerSourcesItem(item) {
             return
         }
+        if activeRootItemID == "youtube", triggerYouTubeSubmenuItem(item) {
+            return
+        }
         if activeRootItemID == "sources", item.id == "sources_this_device" {
             playSound(named: "Selection")
             returnToRootMenuViaBlackFade()
@@ -618,6 +621,8 @@ extension MenuView {
             triggerSpotifyMenuAction()
         case .jellyfin:
             triggerJellyfinMenuAction()
+        case .youtube:
+            triggerYouTubeMenuAction()
         case .none:
             return
         }

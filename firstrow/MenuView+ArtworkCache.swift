@@ -73,6 +73,14 @@ final class DecodedDisplayArtworkCache {
 enum DisplayArtworkSize {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var pixels: CGFloat = 900
+    nonisolated(unsafe) private static var scale: CGFloat = 1
+
+    /// How many pixels a scene point covers, as the renderer last said.
+    static var pixelsPerPoint: CGFloat {
+        lock.lock()
+        defer { lock.unlock() }
+        return scale
+    }
 
     /// The longest side to decode a cover at, in pixels.
     static var maxPixelSize: CGFloat {
@@ -88,6 +96,7 @@ enum DisplayArtworkSize {
         let size: CGFloat = [512, 640, 768].first { $0 >= needed } ?? 900
         lock.lock()
         pixels = size
+        scale = pixelsPerPoint
         lock.unlock()
     }
 }

@@ -150,6 +150,11 @@
 		79684B2CB68FD56A48AB1F53 /* Intro-Modern.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = E8A153E2E2E956A5FCD9BC6B /* Intro-Modern.mp4 */; };
 		E659FA44C855214707AA10AF /* Intro-Classic-4K.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 460060BBE98C478BAD600054 /* Intro-Classic-4K.mp4 */; platformFilters = (macos, ); };
 		6D103D2762BE77031BE16E07 /* Intro-Modern-4K.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = B0BC22BD2FBC6C0A89339CCB /* Intro-Modern-4K.mp4 */; platformFilters = (macos, ); };
+		DE486B6DA9238399538B8E7B /* YouTubeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48F504A2D2F2240F2C11C5B /* YouTubeClient.swift */; };
+		847455D88D8ACC56C3111C9D /* YouTubeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB8B47C5FAE5BC08BED67A39 /* YouTubeStore.swift */; };
+		5C7CF1F53DF02E31F27CF4EE /* YouTubeMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83F2E14663D0DF28031FBCFB /* YouTubeMenuFeature.swift */; };
+		9FA040FAA6D2D17B65D8B1B3 /* MenuView+YouTube.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC5C0A1AA510F70046FE7FB /* MenuView+YouTube.swift */; };
+		7B10B45FBA4D1B208B677F1E /* MenuView+YouTubePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6320E1FB3007B5B9EF912BC /* MenuView+YouTubePlayback.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -315,6 +320,11 @@
 		E8A153E2E2E956A5FCD9BC6B /* Intro-Modern.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Intro-Modern.mp4"; sourceTree = "<group>"; };
 		460060BBE98C478BAD600054 /* Intro-Classic-4K.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Intro-Classic-4K.mp4"; sourceTree = "<group>"; };
 		B0BC22BD2FBC6C0A89339CCB /* Intro-Modern-4K.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Intro-Modern-4K.mp4"; sourceTree = "<group>"; };
+		D48F504A2D2F2240F2C11C5B /* YouTubeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeClient.swift; sourceTree = "<group>"; };
+		EB8B47C5FAE5BC08BED67A39 /* YouTubeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeStore.swift; sourceTree = "<group>"; };
+		83F2E14663D0DF28031FBCFB /* YouTubeMenuFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeMenuFeature.swift; sourceTree = "<group>"; };
+		6DC5C0A1AA510F70046FE7FB /* MenuView+YouTube.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTube.swift"; sourceTree = "<group>"; };
+		B6320E1FB3007B5B9EF912BC /* MenuView+YouTubePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTubePlayback.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -485,6 +495,18 @@
 			path = Sounds;
 			sourceTree = "<group>";
 		};
+		319E5E1C176742B4454EEE8B /* YouTube.frappliance */ = {
+			isa = PBXGroup;
+			children = (
+				D48F504A2D2F2240F2C11C5B /* YouTubeClient.swift */,
+				EB8B47C5FAE5BC08BED67A39 /* YouTubeStore.swift */,
+				83F2E14663D0DF28031FBCFB /* YouTubeMenuFeature.swift */,
+				6DC5C0A1AA510F70046FE7FB /* MenuView+YouTube.swift */,
+				B6320E1FB3007B5B9EF912BC /* MenuView+YouTubePlayback.swift */,
+			);
+			path = YouTube.frappliance;
+			sourceTree = "<group>";
+		};
 		7A73DE652F5776A20021C281 /* TV.frappliance */ = {
 			isa = PBXGroup;
 			children = (
@@ -537,6 +559,7 @@
 				7A73DE5D2F5776A20021C281 /* ScreenSaverDefaultPhotos */,
 				7A73DE632F5776A20021C281 /* Sounds */,
 				7A73DE652F5776A20021C281 /* TV.frappliance */,
+				319E5E1C176742B4454EEE8B /* YouTube.frappliance */,
 				7A73DE672F5776A20021C281 /* Videos */,
 				63256DE5EB35CBA93F68DAD4 /* Videos4K */,
 				AA000001AAAAAAAAAAAA0001 /* AppDelegate.swift */,
@@ -840,6 +863,11 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				DE486B6DA9238399538B8E7B /* YouTubeClient.swift in Sources */,
+				847455D88D8ACC56C3111C9D /* YouTubeStore.swift in Sources */,
+				5C7CF1F53DF02E31F27CF4EE /* YouTubeMenuFeature.swift in Sources */,
+				9FA040FAA6D2D17B65D8B1B3 /* MenuView+YouTube.swift in Sources */,
+				7B10B45FBA4D1B208B677F1E /* MenuView+YouTubePlayback.swift in Sources */,
 				9100A1AFC638A6202FC7EFA0 /* TextEntryLayer.swift in Sources */,
 				34C08700935AD78AD8F7AA1B /* MenuView+TextEntry.swift in Sources */,
 				E23A15D2B8390FBD221D10A8 /* MenuView+Settings.swift in Sources */,

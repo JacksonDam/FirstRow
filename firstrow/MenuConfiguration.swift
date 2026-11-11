@@ -5,6 +5,7 @@ enum MenuConfiguration {
         MoviesMenuFeature(),
         TVShowsMenuFeature(),
         MusicMenuFeature(),
+        YouTubeMenuFeature(),
         PodcastsMenuFeature(),
         PhotosMenuFeature(),
         SettingsMenuFeature(),

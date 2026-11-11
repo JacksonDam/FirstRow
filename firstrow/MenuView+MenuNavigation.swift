@@ -23,6 +23,7 @@ extension MenuView {
         case screenSaverSettings
         case spotify
         case jellyfin
+        case youtube
     }
 }
 
@@ -59,6 +60,8 @@ extension MenuView {
             refreshPhotosForCurrentContext()
         case "sources":
             refreshJellyfinPreviewForCurrentContext()
+        case "youtube":
+            refreshYouTubePreviewForCurrentContext()
         default:
             break
         }
@@ -68,7 +71,7 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos, .spotify:
             true
-        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .screenSaverSettings, .jellyfin, .none:
+        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .screenSaverSettings, .jellyfin, .youtube, .none:
             false
         }
         if isExitingMusicThirdMenu {
@@ -192,6 +195,9 @@ extension MenuView {
         case .jellyfin:
             playSound(named: "Exit")
             navigateUpInJellyfinMenu()
+        case .youtube:
+            playSound(named: "Exit")
+            navigateUpInYouTubeMenu()
         case .moviesFolder:
             if isShowingContinueWatching {
                 playSound(named: "Exit")
@@ -311,6 +317,7 @@ extension MenuView {
     var modernMenuDepth: Int {
         var depth = (isInSubmenu ? 1 : 0) + (isInThirdMenu ? 1 : 0)
         depth += max(0, spotifyMenuPages.count - 1) + max(0, mediaFoldersPages.count - 1) + max(0, jellyfin.pages.count - 1)
+        depth += max(0, youtube.pages.count - 1)
         if isMusicSongsCategoryScoped { depth += 1 }
         if let current = thirdMenuCurrentURL, let root = thirdMenuRootURL {
             depth += max(0, current.standardizedFileURL.pathComponents.count - root.standardizedFileURL.pathComponents.count)

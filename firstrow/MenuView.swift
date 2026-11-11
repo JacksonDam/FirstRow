@@ -662,6 +662,9 @@ final class MenuView: ObservableObject {
     var jellyfinMusicSession: JellyfinPlaybackSession?
     var jellyfinProgressTimer: Timer?
     var isStartingJellyfinPlayback = false
+    @Published var youtube = YouTubeMenuState()
+    /// The YouTube video in the movie player, while one is.
+    @Published var youtubeSession: YouTubePlaybackSession?
     @Published var textEntry: TextEntryState?
     @Published var codeDisplay: CodeDisplayState?
     @Published var textEntryOpacity: Double = 0
