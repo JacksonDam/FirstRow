@@ -46,6 +46,9 @@ void fr_image_free(uint8_t* pixels);
 /* Writes straight RGBA as PNG. */
 int fr_png_write(const char* path, const uint8_t* rgba, int width, int height, int stride);
 
+/* Sets the C library's allocator up for First Row (fr_pixels.c). Call before any thread is started. */
+void fr_tune_allocator(void);
+
 /* Blocking TCP to 127.0.0.1, for talking to a browser's DevTools. Sockets are -1 on failure;
    receive returns 0 once the other end has closed. */
 int64_t fr_tcp_connect_loopback(int port);

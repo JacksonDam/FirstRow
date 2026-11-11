@@ -203,3 +203,20 @@ void fr_extract_mask(const uint8_t* pixels, int width, int height, int stride, i
         }
     }
 }
+
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
+/* glibc keeps a pool of freed memory for every thread that has allocated (up to eight a core), and once
+   a few large blocks have been freed it stops handing large blocks back to the system, keeping them in
+   those pools instead. First Row draws bitmaps of hundreds of kilobytes on several threads, so the pools
+   came to hold a couple of hundred megabytes of freed memory. This keeps the pools to four, and has
+   every block of 128 KB or more come straight from the system and go straight back when it's freed. */
+void fr_tune_allocator(void) {
+#if defined(__GLIBC__)
+    mallopt(M_ARENA_MAX, 4);
+    mallopt(M_MMAP_THRESHOLD, 128 * 1024);
+    mallopt(M_TRIM_THRESHOLD, 128 * 1024);
+#endif
+}
