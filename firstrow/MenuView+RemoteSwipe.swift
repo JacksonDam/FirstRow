@@ -38,6 +38,9 @@ import Foundation
         /// sliding as it clicks, moves a good deal more than the slop.)
         private static let remoteSwipeAcross: CGFloat = 300
         private static let remoteSwipeUpOrDown: CGFloat = 170
+        /// How quickly a flick dies away once the finger lifts (its speed falls to a third in
+        /// this long, in seconds).
+        private static let remoteFlickDecay: Double = 0.25
 
         /// Notes a press of one of the remote's buttons (see `RemoteSwipeState.lastPressAt`).
         func noteRemotePress() {
@@ -128,15 +131,27 @@ import Foundation
                 if remoteRubberBand != 0 {
                     setRemoteRubberBand(0, animation: .smooth(duration: 0.38))
                 }
-                // A quick flick carries on a few more rows, slowing as it goes.
+                // A quick flick carries on a few more rows, slowing as it goes: the rows the
+                // swipe's speed would cover as it died away (over a quarter of a second), left
+                // off once they'd come slower than seven a second. So it's over in half a
+                // second however fast the flick, and never crawls to its last row (a fast one
+                // took nearly three seconds to come to rest, its last rows half a second apart).
                 let speed = abs(velocity.y)
                 guard speed > 700 else { return }
                 let direction = velocity.y > 0 ? 1 : -1
-                let rows = min(12, Int(speed / 650))
+                let reach = Double(speed) * Self.remoteFlickDecay / Double(Self.remoteSwipeStep)
+                var times: [Double] = []
+                while Double(times.count + 1) < reach, times.count < 14 {
+                    let time = -Self.remoteFlickDecay * log(1 - Double(times.count + 1) / reach)
+                    guard time - (times.last ?? 0) <= 0.14 else { break }
+                    times.append(time)
+                }
+                guard !times.isEmpty else { return }
                 swipe.momentum = Task { @MainActor [weak self] in
-                    var interval = 0.06
-                    for _ in 0 ..< rows {
-                        try? await firstRowSleep(interval)
+                    var elapsed = 0.0
+                    for time in times {
+                        try? await firstRowSleep(time - elapsed)
+                        elapsed = time
                         guard let self, !Task.isCancelled, self.remoteSwipeSteppingList else { return }
                         guard self.stepRemoteSwipe(direction: direction) else {
                             // Ran into the end: the selected row gives, and settles back.
@@ -145,7 +160,6 @@ import Foundation
                             self.setRemoteRubberBand(0, animation: .smooth(duration: 0.4))
                             return
                         }
-                        interval *= 1.22
                     }
                 }
             }
