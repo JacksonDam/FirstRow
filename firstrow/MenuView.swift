@@ -671,6 +671,8 @@ final class MenuView: ObservableObject {
     @Published var youtubeComments: YouTubeCommentsState?
     /// How far that panel is out (0 away, 1 out).
     @Published var youtubeCommentsReveal: CGFloat = 0
+    /// A change of picture size waiting to be acted on (where the player has to start again for it).
+    var youtubeStreamReloadTask: Task<Void, Never>?
     @Published var textEntry: TextEntryState?
     @Published var codeDisplay: CodeDisplayState?
     @Published var textEntryOpacity: Double = 0

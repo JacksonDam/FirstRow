@@ -275,8 +275,16 @@ actor YouTubeClient {
 
     /// The language lists and counts are worded in, and the country they're chosen for.
     private static var language: String {
-        let tag = Locale.preferredLanguages.first ?? "en-US"
-        return tag.isEmpty || tag == "C" || tag == "POSIX" ? "en-US" : tag.replacingOccurrences(of: "_", with: "-")
+        // The system's first language as "en" or "en-GB". Anything else it may say ("C",
+        // "en_001", "en_US.UTF-8") is put into that shape or passed over: YouTube refuses a
+        // request whose language it doesn't know.
+        let tag = (Locale.preferredLanguages.first ?? "").split(whereSeparator: { ".@".contains($0) }).first.map(String.init) ?? ""
+        let parts = tag.split(whereSeparator: { "-_".contains($0) }).map(String.init)
+        guard let language = parts.first?.lowercased(), (2 ... 3).contains(language.count), language.allSatisfy({ $0.isASCII && $0.isLetter }) else { return "en-US" }
+        if let region = parts.dropFirst().last, region.count == 2, region.allSatisfy({ $0.isASCII && $0.isLetter }) {
+            return language + "-" + region.uppercased()
+        }
+        return language
     }
 
     private static var country: String {

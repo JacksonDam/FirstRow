@@ -142,6 +142,8 @@ extension MenuView {
     func youtubeMoviePlaybackWillEnd() {
         guard youtubeSession != nil else { return }
         youtubeSession = nil
+        youtubeStreamReloadTask?.cancel()
+        youtubeStreamReloadTask = nil
         youtubeComments = nil
         youtubeCommentsReveal = 0
         // The history has this video at its top now.
@@ -309,7 +311,14 @@ extension MenuView {
     func setYouTubeMaximumHeight(_ height: Int?) {
         YouTubeStore.shared.setMaximumHeight(height)
         #if FIRSTROW_PORTABLE
-            reloadYouTubeStream()
+            // Once the choice has rested a moment: stepping through the sizes to reach one
+            // would otherwise start, and drop, the playing of each on the way.
+            youtubeStreamReloadTask?.cancel()
+            youtubeStreamReloadTask = Task { @MainActor in
+                try? await firstRowSleep(0.6)
+                guard !Task.isCancelled else { return }
+                self.reloadYouTubeStream()
+            }
         #else
             applyYouTubeMaximumHeight()
         #endif
