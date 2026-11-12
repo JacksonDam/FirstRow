@@ -2918,6 +2918,7 @@ extension MenuView {
                 trackIndex: 0,
                 trackCount: shuffledSongs.count,
                 playbackQueue: shuffledSongs,
+                queueOrigin: self.shownMusicListOrigin,
             )
             self.refreshMusicPreviewForCurrentContext()
         }
@@ -2956,6 +2957,11 @@ extension MenuView {
             trackCount: shuffledSongs.count,
             usingExistingBlackout: usingExistingBlackout,
             playbackQueue: shuffledSongs,
+            // (Every song in the library, unless the songs last on screen were shuffled
+            // again and those were from somewhere else.)
+            queueOrigin: shuffledSongs.contains(where: { $0.spotify != nil || $0.jellyfin != nil })
+                ? nil
+                : MusicQueueOrigin(category: nil, isShuffled: true),
         )
     }
 
@@ -3349,7 +3355,7 @@ extension MenuView {
         var coverSongs: [MusicLibrarySongEntry] = []
     }
 
-    enum MusicCategoryKind: String {
+    enum MusicCategoryKind: String, Codable {
         case albums
         case artists
         case genres

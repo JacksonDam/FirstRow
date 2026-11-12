@@ -581,9 +581,15 @@ extension MenuView {
             guard let songIndex = musicSongIndex(forThirdMenuSelectionIndex: selectedThirdIndex) else { return }
             let song = musicSongsThirdMenuItems[songIndex]
             if activeMusicPlaybackSongID == song.id, hasActiveMusicPlaybackSession() {
-                musicNowPlayingTrackPositionText = musicSongsThirdMenuItems.isEmpty
-                    ? ""
-                    : "\(songIndex + 1) of \(musicSongsThirdMenuItems.count)"
+                // Where it is in the list being played: that list is not always the one on
+                // screen (the song may have been started from another).
+                if let row = activeMusicPlaybackQueue.firstIndex(where: { $0.id == song.id }) {
+                    musicNowPlayingTrackPositionText = "\(row + 1) of \(activeMusicPlaybackQueue.count)"
+                } else {
+                    musicNowPlayingTrackPositionText = musicSongsThirdMenuItems.isEmpty
+                        ? ""
+                        : "\(songIndex + 1) of \(musicSongsThirdMenuItems.count)"
+                }
                 musicNowPlayingShowsShuffleGlyph = isMusicSongsShuffleMode
                 clearMusicSongSwitchTransitionState()
                 presentFullscreenScene(key: musicNowPlayingFullscreenKey)
@@ -593,6 +599,7 @@ extension MenuView {
                     trackIndex: songIndex,
                     trackCount: musicSongsThirdMenuItems.count,
                     playbackQueue: musicSongsThirdMenuItems,
+                    queueOrigin: shownMusicListOrigin,
                 )
             }
         case .photosDateAlbums:

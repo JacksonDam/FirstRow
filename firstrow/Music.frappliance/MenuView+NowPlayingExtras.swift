@@ -14,6 +14,8 @@ import Foundation
         var songIDs: [String]
         var title: String
         var isShuffled: Bool
+        /// Where in the library the list came from (not in a list kept by an older version).
+        var origin: MusicQueueOrigin?
     }
 
     enum MusicQueueStore {
@@ -127,15 +129,24 @@ extension MenuView {
             // Song to song the list is the same one, and isn't written again.
             if let savedMusicQueue, savedMusicQueue.songIDs == songIDs { return }
             restoredMusicQueueTitle = nil
-            let saved = SavedMusicQueue(songIDs: songIDs, title: nowPlayingQueueTitle, isShuffled: isMusicSongsShuffleMode)
+            let saved = SavedMusicQueue(songIDs: songIDs, title: nowPlayingQueueTitle, isShuffled: isMusicSongsShuffleMode, origin: activeMusicQueueOrigin)
             savedMusicQueue = saved
             didReadSavedMusicQueue = true
             MusicQueueStore.save(saved)
         }
 
+        /// The list kept for the next launch, when the list being played has changed with
+        /// the library: the same list, by the same name.
+        func rememberMusicQueueChanged(from songIDsBefore: [String], to queue: [MusicLibrarySongEntry]) {
+            guard var saved = savedMusicQueue, saved.songIDs == songIDsBefore else { return }
+            saved.songIDs = queue.map(\.id)
+            savedMusicQueue = saved
+            MusicQueueStore.save(saved)
+        }
+
         /// The list the Music app's song was last played from here, rebuilt from the library: nil
         /// when the song isn't in the list that was kept, or the library isn't in yet.
-        func recoveredMusicQueue(containing songID: String) -> (songs: [MusicLibrarySongEntry], title: String, isShuffled: Bool)? {
+        func recoveredMusicQueue(containing songID: String) -> (songs: [MusicLibrarySongEntry], title: String, isShuffled: Bool, origin: MusicQueueOrigin?)? {
             if !didReadSavedMusicQueue {
                 didReadSavedMusicQueue = true
                 savedMusicQueue = MusicQueueStore.load()
@@ -149,7 +160,7 @@ extension MenuView {
             // Songs that have left the library since are left out.
             let songs = saved.songIDs.compactMap { songsByID[$0] }
             guard songs.count > 1, songs.contains(where: { $0.id == songID }) else { return nil }
-            return (songs, saved.title, saved.isShuffled)
+            return (songs, saved.title, saved.isShuffled, saved.origin)
         }
 
         /// A song found playing in the Music app goes back in the list it was played from: the
@@ -160,6 +171,8 @@ extension MenuView {
                   let recovered = recoveredMusicQueue(containing: songID),
                   let index = recovered.songs.firstIndex(where: { $0.id == songID }) else { return }
             activeMusicPlaybackQueue = recovered.songs
+            activeMusicQueueOrigin = recovered.origin
+            musicQueueDepartedSongID = nil
             restoredMusicQueueTitle = recovered.title
             musicNowPlayingTrackPositionText = "\(index + 1) of \(recovered.songs.count)"
             musicNowPlayingShowsShuffleGlyph = recovered.isShuffled
@@ -210,6 +223,13 @@ extension MenuView {
             nowPlayingQueueHoverIndex = target
             scrollNowPlayingQueue(holdingRowOnFourth: target)
         }
+    }
+
+    /// The list has changed under Now Playing (the library has): the row picked out stays
+    /// with its song, where that is now, and the list is not left scrolled past its new end.
+    func nowPlayingQueueChangedLength(pickedOut row: Int?) {
+        if nowPlayingQueueHoverIndex != nil { nowPlayingQueueHoverIndex = row }
+        if nowPlayingQueueScroll > nowPlayingQueueScrollLimit { nowPlayingQueueScroll = nowPlayingQueueScrollLimit }
     }
 
     /// Scrolls the list so row `index` sits where the menus keep their selection (the fourth

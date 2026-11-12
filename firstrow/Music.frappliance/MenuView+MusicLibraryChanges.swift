@@ -28,11 +28,28 @@ struct MusicLibraryMark: Equatable {
     var files: Int?
 }
 
+/// Where in the library a list of songs being played came from: what it is made from again
+/// when the library changes.
+struct MusicQueueOrigin: Codable, Equatable {
+    struct Category: Codable, Equatable {
+        var kind: MenuView.MusicCategoryKind
+        /// The entry's id in its menu (`MusicCategoryEntry.id`).
+        var id: String
+    }
+
+    /// The playlist, album, artist, genre or composer whose songs they are, or nil: every
+    /// song in the library.
+    var category: Category?
+    /// Played in a shuffled order, which is kept as the list changes.
+    var isShuffled: Bool
+}
+
 /// The music library is read once, as First Row starts. A song bought or a playlist edited
 /// afterwards (in Music, on this device or another) is picked up here, so nothing waits for
 /// First Row to be opened again: the library is looked at when First Row comes back to the
 /// front, when Music is opened from the main menu and, on iPhone and iPad, when the system
-/// says it has changed, and read again only if it has.
+/// says it has changed, and read again only if it has. The lists in the menus follow it,
+/// and so does the list being played.
 extension MenuView {
     enum MusicLibraryCheckReason {
         case cameToFront
@@ -132,7 +149,6 @@ extension MenuView {
             // thread) and compared with what the menus have.
             let mark = found
             let songsMayHaveChanged = true
-            let playlistsMayHaveChanged = false
         #else
             guard let known = musicLibraryMark else {
                 musicLibraryMark = found
@@ -148,7 +164,6 @@ extension MenuView {
             #endif
             guard mark != known else { return }
             let songsMayHaveChanged = mark.songs != known.songs || mark.files != known.files
-            let playlistsMayHaveChanged = true
         #endif
         #if os(macOS)
             // The Mac reads its library on the main thread, which holds everything on screen
@@ -179,9 +194,26 @@ extension MenuView {
             }
         }
         musicLibraryMark = mark
-        if newSongs != nil || playlistsMayHaveChanged {
-            await remakeShownMusicList(newSongs: newSongs, oldSongs: oldSongs)
+        // The playlists as they now are, read once for whichever has need of them: the list
+        // being played, the list on screen.
+        var playlists: [MusicCategoryEntry]?
+        if activeMusicQueueOrigin?.category?.kind == .playlists || (isShowingMusicLibraryList && activeMusicCategoryKind == .playlists) {
+            playlists = await libraryPlaylistsNow()
         }
+        remakePlayingMusicList(newSongs: newSongs, playlists: playlists)
+        remakeShownMusicList(newSongs: newSongs, oldSongs: oldSongs, playlists: playlists)
+    }
+
+    private func libraryPlaylistsNow() async -> [MusicCategoryEntry] {
+        #if os(iOS)
+            // (Off the main thread: the library can say it has changed as often as a song
+            // is played.)
+            await Task.detached(priority: .userInitiated) { self.mediaLibraryPlaylists() }.value
+        #elseif os(tvOS)
+            await (try? fetchMusicKitPlaylists()) ?? []
+        #else
+            (try? fetchMusicLibraryPlaylists()) ?? []
+        #endif
     }
 
     /// A list of the library's music is on screen (Songs, Playlists and the rest, or the
@@ -195,22 +227,8 @@ extension MenuView {
     /// The list of the library's music that is on screen is made again from the library as
     /// it now is, the row that was chosen staying chosen. (The others are made from it when
     /// they're next opened.)
-    private func remakeShownMusicList(newSongs: [MusicLibrarySongEntry]?, oldSongs: [MusicLibrarySongEntry]) async {
+    private func remakeShownMusicList(newSongs: [MusicLibrarySongEntry]?, oldSongs: [MusicLibrarySongEntry], playlists: [MusicCategoryEntry]?) {
         guard isShowingMusicLibraryList else { return }
-        var playlists: [MusicCategoryEntry] = []
-        if activeMusicCategoryKind == .playlists {
-            #if os(iOS)
-                // (Off the main thread: the library can say it has changed as often as a song
-                // is played.)
-                playlists = await Task.detached(priority: .userInitiated) { self.mediaLibraryPlaylists() }.value
-                guard isShowingMusicLibraryList else { return }
-            #elseif os(tvOS)
-                playlists = await (try? fetchMusicKitPlaylists()) ?? []
-                guard isShowingMusicLibraryList else { return }
-            #else
-                playlists = (try? fetchMusicLibraryPlaylists()) ?? []
-            #endif
-        }
         guard let kind = activeMusicCategoryKind else {
             // Songs: every song there is.
             guard thirdMenuMode == .musicSongs, !isMusicSongsCategoryScoped, let newSongs,
@@ -223,7 +241,7 @@ extension MenuView {
         guard thirdMenuMode == .musicCategories || (thirdMenuMode == .musicSongs && isMusicSongsCategoryScoped) else { return }
         let categories: [MusicCategoryEntry]
         if kind == .playlists {
-            categories = playlists
+            categories = playlists ?? []
         } else if let newSongs {
             categories = buildMusicCategoryEntries(from: newSongs, kind: kind)
         } else {
@@ -239,12 +257,138 @@ extension MenuView {
             // (The one being looked at has gone: its songs stay until it's left.)
             guard let newIndex else { return }
             lastSelectedMusicCategoryIndex = newIndex
-            guard !Self.areSameSongs(categories[newIndex].songs, musicSongsThirdMenuItems) else { return }
+            // (Shuffled, the songs on screen are in the order they're being played in, and
+            // have followed with the list being played.)
+            guard !isMusicSongsShuffleMode, !Self.areSameSongs(categories[newIndex].songs, musicSongsThirdMenuItems) else { return }
             showMusicSongsKeepingChosenRow(categories[newIndex].songs)
         } else {
             selectedThirdIndex = newIndex ?? min(selectedThirdIndex, categories.count - 1)
         }
         refreshMusicPreviewForCurrentContext()
+    }
+
+    // MARK: - The list being played
+
+    /// Where in the library the songs on screen came from, when they are a list of the
+    /// library's: all of its songs, or those of one playlist, album and so on.
+    var shownMusicListOrigin: MusicQueueOrigin? {
+        guard thirdMenuMode == .musicSongs, activeMusicLibraryMediaType == .songs, spotifySongsReturnPages == nil,
+              !musicSongsThirdMenuItems.contains(where: { $0.spotify != nil || $0.jellyfin != nil }) else { return nil }
+        if isMusicSongsCategoryScoped {
+            guard let kind = activeMusicCategoryKind, musicCategoryThirdMenuItems.indices.contains(lastSelectedMusicCategoryIndex) else { return nil }
+            let id = musicCategoryThirdMenuItems[lastSelectedMusicCategoryIndex].id
+            return MusicQueueOrigin(category: .init(kind: kind, id: id), isShuffled: isMusicSongsShuffleMode)
+        }
+        guard activeMusicCategoryKind == nil else { return nil }
+        return MusicQueueOrigin(category: nil, isShuffled: isMusicSongsShuffleMode)
+    }
+
+    /// A song is about to start from `queue`, at `trackIndex`. When that is the list already
+    /// being played going on to another of its songs, it is still from where in the library
+    /// it was; and a song that left the list while it played, which kept its row until now,
+    /// is taken out as the other starts (`songIDsBefore` is the list with it still in).
+    func musicQueueGoingOn(to song: MusicLibrarySongEntry, in queue: [MusicLibrarySongEntry]?, at trackIndex: Int)
+        -> (queue: [MusicLibrarySongEntry]?, trackIndex: Int, origin: MusicQueueOrigin?, departedSongID: String?, songIDsBefore: [String]?)
+    {
+        guard var queue, !queue.isEmpty, queue.count == activeMusicPlaybackQueue.count,
+              zip(queue, activeMusicPlaybackQueue).allSatisfy({ $0.id == $1.id })
+        else { return (queue, trackIndex, nil, nil, nil) }
+        let origin = activeMusicQueueOrigin
+        guard let departed = musicQueueDepartedSongID, departed != song.id,
+              let row = queue.firstIndex(where: { $0.id == departed })
+        else { return (queue, trackIndex, origin, musicQueueDepartedSongID, nil) }
+        let before = queue.map(\.id)
+        queue.remove(at: row)
+        return (queue, row < trackIndex ? trackIndex - 1 : trackIndex, origin, nil, before)
+    }
+
+    /// The list being played is made again from where it came from in the library, as that
+    /// now is: a song added to the playlist is in it, one taken off is out of it, and the
+    /// songs are in the playlist's new order, so that what plays next is what now follows
+    /// the song playing. Now Playing's "3 of 12" and the list beside it follow.
+    ///
+    /// The song playing is left to play. If it is no longer in the list (taken off the
+    /// playlist, or out of the library altogether) it keeps its row, after the song it
+    /// followed, until it is over: the next song is then the one that came after it, and it
+    /// is gone from the list (`musicQueueGoingOn`).
+    private func remakePlayingMusicList(newSongs: [MusicLibrarySongEntry]?, playlists: [MusicCategoryEntry]?) {
+        guard let origin = activeMusicQueueOrigin, let playingID = activeMusicPlaybackSongID,
+              !isPodcastAudioNowPlaying, !isCurrentMusicPlaybackUsingSpotify else { return }
+        let old = activeMusicPlaybackQueue
+        guard let playingRow = old.firstIndex(where: { $0.id == playingID }) else { return }
+        let fresh: [MusicLibrarySongEntry]
+        if let category = origin.category {
+            let entries: [MusicCategoryEntry]
+            if category.kind == .playlists {
+                guard let playlists else { return }
+                entries = playlists
+            } else if let newSongs {
+                entries = buildMusicCategoryEntries(from: newSongs, kind: category.kind)
+            } else {
+                return
+            }
+            if let entry = entries.first(where: { $0.id == category.id }) {
+                fresh = entry.songs
+            } else if category.kind == .playlists {
+                // (The playlist itself gone, or not to be read just now. Its songs are
+                // still songs: the list stays as it was.)
+                return
+            } else {
+                // No song of the album or artist is left in the library.
+                fresh = []
+            }
+        } else {
+            guard let newSongs else { return }
+            fresh = newSongs
+        }
+        var queue: [MusicLibrarySongEntry]
+        if origin.isShuffled {
+            // The order they're being played in is kept: the songs that have gone go from
+            // it, and the new ones are dealt into what is still to come.
+            var freshByID: [String: MusicLibrarySongEntry] = [:]
+            for song in fresh where freshByID[song.id] == nil { freshByID[song.id] = song }
+            var known = Set<String>()
+            queue = old.compactMap { song in
+                known.insert(song.id)
+                return freshByID[song.id] ?? (song.id == playingID ? song : nil)
+            }
+            let after = (queue.firstIndex(where: { $0.id == playingID }) ?? -1) + 1
+            for song in fresh where known.insert(song.id).inserted {
+                queue.insert(song, at: Int.random(in: after ... queue.count))
+            }
+        } else {
+            queue = fresh
+            if !queue.contains(where: { $0.id == playingID }) {
+                // After the nearest song before it that is still in the list.
+                var rows: [String: Int] = [:]
+                for (row, song) in queue.enumerated() where rows[song.id] == nil { rows[song.id] = row }
+                let row = old[..<playingRow].reversed().lazy.compactMap { rows[$0.id] }.first.map { $0 + 1 } ?? 0
+                queue.insert(old[playingRow], at: row)
+            }
+        }
+        let departed = fresh.contains(where: { $0.id == playingID }) ? nil : playingID
+        guard departed != musicQueueDepartedSongID || !Self.areSameSongs(queue, old) else { return }
+
+        // (A shuffled list is also the one on screen where it was shuffled from: that
+        // follows too, without the song that has left.)
+        let shown = old.filter { $0.id != musicQueueDepartedSongID }
+        let isAlsoOnScreen = origin.isShuffled && isShowingMusicLibraryList && shownMusicListOrigin == origin
+            && musicSongsThirdMenuItems.count == shown.count && zip(musicSongsThirdMenuItems, shown).allSatisfy { $0.id == $1.id }
+        let pickedOutID = nowPlayingQueueHoverIndex.flatMap { old.indices.contains($0) ? old[$0].id : nil }
+        activeMusicPlaybackQueue = queue
+        musicQueueDepartedSongID = departed
+        if let row = queue.firstIndex(where: { $0.id == playingID }) {
+            musicNowPlayingTrackPositionText = "\(row + 1) of \(queue.count)"
+            prefetchMusicArtworkAroundTrackIndex(row, activeSongID: playingID)
+        }
+        #if os(macOS)
+            rememberMusicQueueChanged(from: old.map(\.id), to: queue)
+        #endif
+        if isAlsoOnScreen {
+            showMusicSongsKeepingChosenRow(queue.filter { $0.id != departed })
+            refreshMusicPreviewForCurrentContext()
+        }
+        nowPlayingQueueChangedLength(pickedOut: pickedOutID.flatMap { id in queue.firstIndex { $0.id == id } })
     }
 
     private func showMusicSongsKeepingChosenRow(_ songs: [MusicLibrarySongEntry]) {

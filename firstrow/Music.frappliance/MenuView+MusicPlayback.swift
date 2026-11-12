@@ -164,6 +164,7 @@ extension MenuView {
         trackCount: Int,
         presentsFullscreen: Bool = true,
         playbackQueue: [MusicLibrarySongEntry]? = nil,
+        queueOrigin: MusicQueueOrigin? = nil,
     ) {
         if let mediaURL = song.url?.standardizedFileURL,
            activeMusicLibraryMediaType == .musicVideos,
@@ -178,6 +179,7 @@ extension MenuView {
             trackCount: trackCount,
             presentsFullscreen: presentsFullscreen,
             playbackQueue: playbackQueue,
+            queueOrigin: queueOrigin,
         )
     }
 
@@ -423,11 +425,16 @@ extension MenuView {
         resetTransitionState: Bool = true,
         usingExistingBlackout: Bool = false,
         playbackQueue: [MusicLibrarySongEntry]? = nil,
+        queueOrigin: MusicQueueOrigin? = nil,
     ) {
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
         if resetTransitionState {
             clearMusicSongSwitchTransitionState()
         }
+        // (Looked at before the session is stopped, which lets go of the list.)
+        let goingOn = musicQueueGoingOn(to: song, in: playbackQueue, at: trackIndex)
+        let playbackQueue = goingOn.queue
+        let trackIndex = goingOn.trackIndex
         #if os(macOS)
             let willUseAppleScriptPlayback = song.spotify == nil && (song.prefersSystemMusicPlayerPlayback || song.url == nil)
         #endif
@@ -458,8 +465,16 @@ extension MenuView {
         }
         if let playbackQueue {
             activeMusicPlaybackQueue = playbackQueue
+            // Whoever starts a list says where in the library it's from; the list going on to
+            // its next song is from where it was.
+            activeMusicQueueOrigin = queueOrigin ?? goingOn.origin
+            musicQueueDepartedSongID = goingOn.departedSongID
             #if os(macOS)
-                rememberMusicQueueForNextLaunch(playbackQueue)
+                if let songIDsBefore = goingOn.songIDsBefore {
+                    rememberMusicQueueChanged(from: songIDsBefore, to: playbackQueue)
+                } else {
+                    rememberMusicQueueForNextLaunch(playbackQueue)
+                }
             #endif
         }
         isCurrentMusicPlaybackManagedByFirstRow = true
@@ -1260,6 +1275,8 @@ extension MenuView {
             isCurrentMusicPlaybackManagedByFirstRow = false
             hasPendingExternalMusicRestore = false
             activeMusicPlaybackQueue = []
+            activeMusicQueueOrigin = nil
+            musicQueueDepartedSongID = nil
             activeMusicPlaybackSongID = persistentIDDecimalString
             musicAppleScriptCurrentTrackPersistentIDHex = snapshot.persistentIDHex
             musicAppleScriptIsPlaying = snapshot.isPlaying
@@ -2113,6 +2130,8 @@ extension MenuView {
         }
         removeCurrentMusicPlaybackTemporaryFileIfNeeded()
         activeMusicPlaybackQueue = []
+        activeMusicQueueOrigin = nil
+        musicQueueDepartedSongID = nil
         activeMusicPlaybackSongID = nil
         clearActivePodcastAudioPlaybackContext()
         invalidateMusicNowPlayingFlipTimer()
@@ -2435,7 +2454,14 @@ extension MenuView {
         musicSongTransitionIncomingProgress = 0
         isMusicSongTransitioning = true
         if thirdMenuMode != .spotify {
-            selectedThirdIndex = thirdMenuSelectionIndex(forMusicSongIndex: targetIndex)
+            // (The menu's list is without the song that has left the list being played.)
+            var menuRow = targetIndex
+            if let departed = musicQueueDepartedSongID, departed != targetSong.id,
+               let row = playbackQueue.firstIndex(where: { $0.id == departed }), row < targetIndex
+            {
+                menuRow -= 1
+            }
+            selectedThirdIndex = thirdMenuSelectionIndex(forMusicSongIndex: menuRow)
         }
         startMusicPlayback(
             from: targetSong,

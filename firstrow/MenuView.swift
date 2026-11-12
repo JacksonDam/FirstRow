@@ -579,6 +579,12 @@ final class MenuView: ObservableObject {
     @Published var hasPendingExternalMusicRestore = false
     @Published var isMusicSongsShuffleMode = false
     @Published var activeMusicPlaybackQueue: [MusicLibrarySongEntry] = []
+    /// Where in the library the list being played came from, for it to follow the library when
+    /// that changes. Nil for a list that isn't one of the library's.
+    var activeMusicQueueOrigin: MusicQueueOrigin?
+    /// The song playing, when it has left its list since it started (taken off the playlist,
+    /// or out of the library): it keeps its row in the list until it is over.
+    var musicQueueDepartedSongID: String?
     #if os(macOS)
         /// The list kept for the next launch, so it's only written when it changes; and whether
         /// the one from the last launch has been read yet.
