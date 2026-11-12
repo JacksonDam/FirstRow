@@ -158,6 +158,7 @@ final class MoviePlaybackLayers {
         canvas.apply(to: captions.layer)
         captions.update(
             text: showsPlayer ? menu.movieCaptionText : nil,
+            subtitles: showsPlayer && menu.youtubeCaptionText == nil ? menu.movieCaptions : [],
             raised: showsControls && controlsOpacity > 0.5,
             width: controlsSize.width,
             size: controlsSize,

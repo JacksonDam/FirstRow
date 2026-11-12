@@ -7,40 +7,74 @@ import QuartzCore
     import FirstRowPortable
 #endif
 
-/// A YouTube video's caption line, over the foot of the picture.
+/// The line of words over the foot of the picture: a YouTube video's captions, and a movie's
+/// subtitles where First Row draws them (some of which ask for the top of the picture instead).
 @MainActor
 final class YouTubeCaptionLayer {
     let layer = SceneLayer()
     private let line = SceneLayer()
+    /// Subtitles that ask to be at the top of the picture.
+    private let topLine = SceneLayer()
+    /// What was last drawn of subtitles whose words have styles of their own, at the foot and
+    /// at the top: they are drawn afresh only when they change.
+    private var styledFoot: (key: String, graphic: RenderedGraphic)?
+    private var styledTop: (key: String, graphic: RenderedGraphic)?
 
     init() {
         layer.addSublayer(line)
+        layer.addSublayer(topLine)
         line.isHidden = true
+        topLine.isHidden = true
     }
 
     /// `raised` while the transport bar is up, so the line clears it; `width` is how much of
-    /// the picture's width is clear of the panel beside it.
-    func update(text: String?, raised: Bool, width: CGFloat, size: CGSize, scale: CGFloat, pass _: RenderPass) {
-        guard let text, !text.isEmpty else {
-            line.isHidden = true
-            return
+    /// the picture's width is clear of the panel beside it. `subtitles` are a movie's own, when
+    /// they say more than `text` does: words in styles of their own, or a place at the top.
+    func update(text: String?, subtitles: [MovieCaption] = [], raised: Bool, width: CGFloat, size: CGSize, scale: CGFloat, pass _: RenderPass) {
+        let fontName = ModernTheme.isActive ? ModernTheme.mediumFontName : firstRowBoldFontName
+        let shadows = [
+            TextShadow(color: RGBA(white: 0, alpha: 0.95), radius: 2.5),
+            TextShadow(color: RGBA(white: 0, alpha: 0.85), radius: 6, offset: CGSize(width: 0, height: 2)),
+        ]
+        var foot: RenderedGraphic?
+        var top: RenderedGraphic?
+        #if !FIRSTROW_PORTABLE
+            let written = subtitles.filter { $0.text?.isEmpty == false || !$0.runs.isEmpty }
+            // (7, 8 and 9 are the top of the picture, as on a number pad.)
+            let atTop = written.filter { (7 ... 9).contains($0.alignment ?? 2) }
+            let atFoot = written.filter { !(7 ... 9).contains($0.alignment ?? 2) }
+            if !atTop.isEmpty || StyledCaptions.areStyled(atFoot) {
+                func drawn(_ captions: [MovieCaption], kept: inout (key: String, graphic: RenderedGraphic)?) -> RenderedGraphic? {
+                    guard !captions.isEmpty else {
+                        kept = nil
+                        return nil
+                    }
+                    let key = "\(StyledCaptions.key(captions))|\(fontName)|\(width)|\(scale)"
+                    if let kept, kept.key == key { return kept.graphic }
+                    let graphic = StyledCaptions.render(captions, fontName: fontName, size: 44, wrapWidth: width * 0.78, lineSpacing: 4, shadows: shadows, scale: scale)
+                    kept = (key, graphic)
+                    return graphic
+                }
+                foot = drawn(atFoot, kept: &styledFoot)
+                top = drawn(atTop, kept: &styledTop)
+            } else if let text, !text.isEmpty {
+                foot = TextRenderer.render(TextSpec(text: text, fontName: fontName, size: 44, color: .white, wrapWidth: width * 0.78, alignment: .center, lineSpacing: 4, shadows: shadows), scale: scale)
+            }
+        #else
+            _ = subtitles
+            if let text, !text.isEmpty {
+                foot = TextRenderer.render(TextSpec(text: text, fontName: fontName, size: 44, color: .white, wrapWidth: width * 0.78, alignment: .center, lineSpacing: 4, shadows: shadows), scale: scale)
+            }
+        #endif
+        line.isHidden = foot == nil
+        if let foot {
+            let footY = size.height - (raised ? 196 : 76)
+            line.show(foot, at: CGPoint(x: ((width - foot.size.width) / 2).rounded(), y: (footY - foot.size.height).rounded()))
         }
-        let graphic = TextRenderer.render(TextSpec(
-            text: text,
-            fontName: ModernTheme.isActive ? ModernTheme.mediumFontName : firstRowBoldFontName,
-            size: 44,
-            color: .white,
-            wrapWidth: width * 0.78,
-            alignment: .center,
-            lineSpacing: 4,
-            shadows: [
-                TextShadow(color: RGBA(white: 0, alpha: 0.95), radius: 2.5),
-                TextShadow(color: RGBA(white: 0, alpha: 0.85), radius: 6, offset: CGSize(width: 0, height: 2)),
-            ],
-        ), scale: scale)
-        line.isHidden = false
-        let foot = size.height - (raised ? 196 : 76)
-        line.show(graphic, at: CGPoint(x: ((width - graphic.size.width) / 2).rounded(), y: (foot - graphic.size.height).rounded()))
+        topLine.isHidden = top == nil
+        if let top {
+            topLine.show(top, at: CGPoint(x: ((width - top.size.width) / 2).rounded(), y: 64))
+        }
     }
 }
 

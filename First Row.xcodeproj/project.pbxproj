@@ -173,6 +173,7 @@
 		C8DC1B742FC767B2F9A5A60A /* DVDMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945E7651110F113F0EDCE57D /* DVDMenuFeature.swift */; };
 		09A2D4E653934072F1A420CD /* CloudFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = E74E90D0E8F673C0AC295077 /* CloudFolders.swift */; };
 		AE83F8AF391066481FA86CC7 /* MenuView+MovieRemoval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47604F81F255F7F6BAD15CC8 /* MenuView+MovieRemoval.swift */; };
+		F9B4C5DA6511BA63BFEE6615 /* StyledCaptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A117B00373B8E9679D6537B3 /* StyledCaptions.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -361,6 +362,7 @@
 		945E7651110F113F0EDCE57D /* DVDMenuFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVDMenuFeature.swift; sourceTree = "<group>"; };
 		E74E90D0E8F673C0AC295077 /* CloudFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudFolders.swift; sourceTree = "<group>"; };
 		47604F81F255F7F6BAD15CC8 /* MenuView+MovieRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MovieRemoval.swift"; sourceTree = "<group>"; };
+		A117B00373B8E9679D6537B3 /* StyledCaptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyledCaptions.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -711,6 +713,7 @@
 				7D3DC886D39FA9BA6319FA7E /* RootCarouselLayer.swift */,
 				23DE04BBBBB68BB54DCB30D6 /* CoverCarouselLayer.swift */,
 				B5FD4A1D9F2FA9ED06D30B1E /* LayerKit.swift */,
+				A117B00373B8E9679D6537B3 /* StyledCaptions.swift */,
 			);
 			path = Engine;
 			sourceTree = "<group>";
@@ -940,6 +943,7 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				F9B4C5DA6511BA63BFEE6615 /* StyledCaptions.swift in Sources */,
 				AE83F8AF391066481FA86CC7 /* MenuView+MovieRemoval.swift in Sources */,
 				09A2D4E653934072F1A420CD /* CloudFolders.swift in Sources */,
 				C8DC1B742FC767B2F9A5A60A /* DVDMenuFeature.swift in Sources */,
