@@ -106,9 +106,19 @@ final class ModernKeyTile {
         isFocused = nil
     }
 
+    /// Where a tile's owner puts lettering of its own (`lettering` nil): what shows on the
+    /// tile at rest, and what shows on it white. The tile fades one over the other, and both
+    /// are the tile's size.
+    var restingLettering: SceneLayer { light }
+    var focusedLettering: SceneLayer { dark }
+
     /// `lettering` draws the key's label, dark for the white tile or light. `animated` is
-    /// false as the keyboard comes on, so nothing grows as it appears.
-    func update(frame: CGRect, cornerRadius: CGFloat, fill: CGColor?, focusFill: CGColor, focused: Bool, animated: Bool, lettering: (_ dark: Bool) -> RenderedGraphic) {
+    /// false as the keyboard comes on, so nothing grows as it appears. A tile with no fill
+    /// at rest (a row of a panel) casts no shadow then: `restingShadow` false.
+    func update(
+        frame: CGRect, cornerRadius: CGFloat, fill: CGColor?, focusFill: CGColor, focused: Bool, animated: Bool,
+        restingShadow: Bool = true, lettering: ((_ dark: Bool) -> RenderedGraphic)?,
+    ) {
         let was = isFocused
         isFocused = focused
         let changed = was != nil && was != focused
@@ -133,7 +143,7 @@ final class ModernKeyTile {
         // The size eases; the colour changes at once, or fades on the way out.
         if was != focused {
             tile.set("backgroundColor", to: focused ? focusFill : (fill ?? CGColor(gray: 1, alpha: 0)), unchanged: false, animation: unfocus)
-            shadowCaster.set("shadowOpacity", to: Float(focused ? 0.75 : 0.6), unchanged: false, animation: unfocus ?? growth)
+            shadowCaster.set("shadowOpacity", to: Float(focused ? 0.75 : (restingShadow ? 0.6 : 0)), unchanged: false, animation: unfocus ?? growth)
         } else if !focused {
             tile.backgroundColor = fill
         }
@@ -147,16 +157,22 @@ final class ModernKeyTile {
         grown = CATransform3DTranslate(grown, -rest.midX, -rest.midY, 0)
         content.setTransform(focused ? grown : CATransform3DIdentity, growth)
 
-        func show(_ target: SceneLayer, _ graphic: RenderedGraphic) {
+        func show(_ target: SceneLayer, dark isDark: Bool) {
+            guard let lettering else {
+                // (Its owner's own lettering is inside.)
+                target.place(rest)
+                return
+            }
+            let graphic = lettering(isDark)
             target.show(graphic, at: CGPoint(x: (rest.midX - graphic.size.width * 0.5).rounded(), y: (rest.midY - graphic.size.height * 0.5).rounded()))
         }
         if focused {
-            show(dark, lettering(true))
+            show(dark, dark: true)
             light.isHidden = true
             dark.isHidden = false
             if was != focused { dark.setOpacity(1, nil) }
         } else {
-            show(light, lettering(false))
+            show(light, dark: false)
             light.isHidden = false
             if let unfocus {
                 // The dark lettering, as last drawn, fades out over the light fading in.

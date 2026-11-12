@@ -457,9 +457,27 @@ final class MovieOptionsLayer {
     private var buttonIcons: [MenuView.MovieOptionRow.Kind: SceneLayer] = [:]
     private var buttonsKey = ""
     private let panel = SceneLayer()
-    private let modernFocus = SceneLayer()
     private let classicFocus = SelectionBoxLayer()
-    private var rows: [(title: SceneLayer, value: SceneLayer)] = []
+    /// A row: its name and its value, on a tile that in the modern look turns white and grows
+    /// a little under the one picked out, as the menus' rows do, with the lettering for that
+    /// drawn a second time, dark.
+    @MainActor
+    private final class Row {
+        let tile = ModernKeyTile()
+        let title = SceneLayer()
+        let value = SceneLayer()
+        let focusedTitle = SceneLayer()
+        let focusedValue = SceneLayer()
+
+        init() {
+            tile.restingLettering.addSublayer(title)
+            tile.restingLettering.addSublayer(value)
+            tile.focusedLettering.addSublayer(focusedTitle)
+            tile.focusedLettering.addSublayer(focusedValue)
+        }
+    }
+
+    private var rows: [Row] = []
     private var lastFocus: Int?
     /// What the panel last showed, kept while it goes back into its buttons.
     private var shownState: MenuView.MovieOptionsState?
@@ -480,8 +498,6 @@ final class MovieOptionsLayer {
         buttons.opacity = 0
         layer.addSublayer(panel)
         panel.addSublayer(classicFocus.layer)
-        modernFocus.backgroundColor = ModernTheme.focusFill.cgColor
-        panel.addSublayer(modernFocus)
         panel.opacity = 0
         panel.isHidden = true
     }
@@ -677,12 +693,8 @@ final class MovieOptionsLayer {
         let moved = lastFocus != nil && lastFocus != focus
         lastFocus = focus
         let focusFrame = CGRect(x: inset, y: inset + CGFloat(focus) * rowHeight + 4, width: width - inset * 2, height: rowHeight - 8)
-        modernFocus.isHidden = !isModern
         classicFocus.layer.isHidden = isModern
-        if isModern {
-            modernFocus.setFrame(focusFrame, nil)
-            modernFocus.cornerRadius = focusFrame.height / 2
-        } else {
+        if !isModern {
             // The glow texture reaches past the row as the menus' does, scaled to this row's height.
             let spill = focusFrame.height / 75
             classicFocus.update(frame: focusFrame.insetBy(dx: -40 * spill, dy: -29 * spill), selectionBoxHeight: focusFrame.height, animation: opening || !moved ? nil : .easeInOut(duration: 0.2))
@@ -690,36 +702,45 @@ final class MovieOptionsLayer {
 
         var values: [CGRect] = []
         while rows.count < content.rows.count {
-            let pair = (SceneLayer(), SceneLayer())
-            panel.addSublayer(pair.0)
-            panel.addSublayer(pair.1)
-            rows.append(pair)
+            let row = Row()
+            panel.addSublayer(row.tile.layer)
+            rows.append(row)
         }
-        for (index, pair) in rows.enumerated() {
+        let titleFont = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
+        let valueFont = isModern ? ModernTheme.regularFontName : firstRowRegularFontName
+        for (index, layers) in rows.enumerated() {
             guard content.rows.indices.contains(index) else {
-                pair.title.isHidden = true
-                pair.value.isHidden = true
+                layers.tile.layer.isHidden = true
                 continue
             }
-            pair.title.isHidden = false
-            pair.value.isHidden = false
             let row = content.rows[index]
             let focused = index == focus && isModern
-            let primary = focused ? ModernTheme.focusedText : RGBA(white: 1, alpha: 0.94)
-            let secondary = focused ? ModernTheme.focusedSecondaryText : RGBA(white: 1, alpha: 0.6)
-            let titleFont = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
-            let valueFont = isModern ? ModernTheme.regularFontName : firstRowRegularFontName
-            let top = inset + CGFloat(index) * rowHeight
-            let titleGraphic = TextRenderer.render(TextSpec(text: row.title, fontName: titleFont, size: 32, color: primary), scale: scale)
-            pair.title.show(titleGraphic, at: CGPoint(x: inset + 30, y: top + (rowHeight - titleGraphic.size.height) / 2))
+            // The row's tile: nothing to see at rest (or in the classic look, which has its
+            // own bar); under the modern look's focus it turns white, with the menus' shadow,
+            // and grows a little as the focus arrives, easing. Not as the panel opens.
+            let tileFrame = CGRect(x: inset, y: inset + CGFloat(index) * rowHeight + 4, width: width - inset * 2, height: rowHeight - 8)
+            layers.tile.update(
+                frame: tileFrame, cornerRadius: tileFrame.height / 2, fill: nil, focusFill: ModernTheme.focusFill.cgColor,
+                focused: focused, animated: isOpen && !opening, restingShadow: false, lettering: nil,
+            )
             let value = row.values.indices.contains(row.selected) ? row.values[row.selected] : ""
             let canGoBack = row.selected > 0
             let canGoOn = row.selected + 1 < row.values.count || row.opensMore
             let text = (canGoBack ? "‹  " : "   ") + value + (canGoOn ? "  ›" : "   ")
-            let valueGraphic = TextRenderer.render(TextSpec(text: text, fontName: valueFont, size: 30, color: secondary, maxWidth: width * 0.6, minimumScaleFactor: 0.7), scale: scale)
-            let valueOrigin = CGPoint(x: width - inset - 26 - valueGraphic.size.width, y: top + (rowHeight - valueGraphic.size.height) / 2)
-            pair.value.show(valueGraphic, at: valueOrigin)
-            values.append(CGRect(origin: valueOrigin, size: valueGraphic.size).offsetBy(dx: frame.minX, dy: frame.minY))
+            /// Draws the row's lettering (dark for the white tile) and says where its value is, in the tile.
+            func letter(_ titleLayer: SceneLayer, _ valueLayer: SceneLayer, dark: Bool) -> CGRect {
+                let primary = dark ? ModernTheme.focusedText : RGBA(white: 1, alpha: 0.94)
+                let secondary = dark ? ModernTheme.focusedSecondaryText : RGBA(white: 1, alpha: 0.6)
+                let titleGraphic = TextRenderer.render(TextSpec(text: row.title, fontName: titleFont, size: 32, color: primary), scale: scale)
+                titleLayer.show(titleGraphic, at: CGPoint(x: 30, y: (tileFrame.height - titleGraphic.size.height) / 2))
+                let valueGraphic = TextRenderer.render(TextSpec(text: text, fontName: valueFont, size: 30, color: secondary, maxWidth: width * 0.6, minimumScaleFactor: 0.7), scale: scale)
+                let valueOrigin = CGPoint(x: tileFrame.width - 26 - valueGraphic.size.width, y: (tileFrame.height - valueGraphic.size.height) / 2)
+                valueLayer.show(valueGraphic, at: valueOrigin)
+                return CGRect(origin: valueOrigin, size: valueGraphic.size)
+            }
+            let valueFrame = letter(layers.title, layers.value, dark: false)
+            if focused { _ = letter(layers.focusedTitle, layers.focusedValue, dark: true) }
+            values.append(valueFrame.offsetBy(dx: tileFrame.minX + frame.minX, dy: tileFrame.minY + frame.minY))
         }
         valueFrames = isOpen ? values : []
     }

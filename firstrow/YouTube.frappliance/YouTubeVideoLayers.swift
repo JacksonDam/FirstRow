@@ -101,21 +101,37 @@ final class YouTubePanelLayer {
         size.width - frame(in: size).minX
     }
 
-    private final class Block {
-        let layer = SceneLayer()
+    /// A row's lettering and picture, as drawn for one of its two states.
+    @MainActor
+    private final class Words {
         let picture = SceneLayer()
         let heading = SceneLayer()
         let aside = SceneLayer()
         let mark = SceneLayer()
         let body = SceneLayer()
         let footer = SceneLayer()
-        var row: YouTubePanelRow?
         var key = ""
+
+        init(in holder: SceneLayer) {
+            for sublayer in [picture, heading, aside, mark, body, footer] { holder.addSublayer(sublayer) }
+            picture.masksToBounds = true
+        }
+    }
+
+    /// A row: on a tile that in the modern look turns white and grows a little under the one
+    /// picked out, as the menus' rows do, with its lettering drawn a second time, dark, for that.
+    @MainActor
+    private final class Block {
+        let tile = ModernKeyTile()
+        let resting: Words
+        let focused: Words
+        var row: YouTubePanelRow?
         var height: CGFloat = 0
+        var layer: SceneLayer { tile.layer }
 
         init() {
-            for sublayer in [picture, heading, aside, mark, body, footer] { layer.addSublayer(sublayer) }
-            picture.masksToBounds = true
+            resting = Words(in: tile.restingLettering)
+            focused = Words(in: tile.focusedLettering)
         }
     }
 
@@ -254,7 +270,10 @@ final class YouTubePanelLayer {
         count.isHidden = total.isEmpty
         count.show(countGraphic, at: CGPoint(x: inset + titleGraphic.size.width + 18, y: titleTop + titleGraphic.size.height - countGraphic.size.height - 4))
 
-        let top = titleTop + titleGraphic.size.height + (isModern ? 22 : 30)
+        // (Room above the first row inside what's shown of the list: the modern look's tile
+        // under the row picked out grows a little past the row, and casts a shadow.)
+        let headroom: CGFloat = isModern ? 14 : 0
+        let top = titleTop + titleGraphic.size.height + (isModern ? 22 : 30) - headroom
         let viewport = CGRect(x: 0, y: top, width: width, height: frame.height - top - (isModern ? 22 : 40))
         clip.place(viewport)
 
@@ -265,7 +284,7 @@ final class YouTubePanelLayer {
         let gap: CGFloat = isModern ? 4 : 34
         var tops: [CGFloat] = []
         var pitches: [CGFloat] = []
-        var y: CGFloat = 0
+        var y: CGFloat = headroom
         var live = Set<String>()
         let kindChanged = lastKind != nil && lastKind != content.kind
         var prepared = 0
@@ -284,23 +303,34 @@ final class YouTubePanelLayer {
                 list.addSublayer(block.layer)
             }
             let picture = row.pictureURL.flatMap { menu.youtube.panelPictures[$0] }
-            look.isFocused = index == focus
-            let key = "\(column)|\(scale)|\(isModern)|\(look.isOnWhite)|\(picture != nil)"
-            if block.key != key || block.row != row {
-                block.key = key
-                block.row = row
-                set(block, to: row, picture: picture, look: look)
+            let key = "\(column)|\(scale)|\(isModern)|\(picture != nil)"
+            let isNewRow = block.row != row
+            block.row = row
+            look.isFocused = false
+            if isNewRow || block.resting.key != key {
+                block.resting.key = key
+                block.height = set(block.resting, to: row, picture: picture, look: look)
+            }
+            // The one picked out stands on white in the modern look, its lettering dark.
+            let onWhite = isModern && index == focus
+            if onWhite, isNewRow || block.focused.key != key {
+                look.isFocused = true
+                block.focused.key = key
+                _ = set(block.focused, to: row, picture: picture, look: look)
             }
             tops.append(y)
             pitches.append(block.height + gap)
-            block.layer.frame = CGRect(x: inset - look.pad.width, y: y, width: column + look.pad.width * 2, height: block.height)
+            // Its tile: nothing to see at rest; white under the modern look's focus, with the
+            // menus' shadow, growing a little as the focus arrives (not as the panel comes out,
+            // or changes what it shows).
+            block.tile.update(
+                frame: CGRect(x: inset - look.pad.width, y: y, width: column + look.pad.width * 2, height: block.height),
+                cornerRadius: min(28, block.height / 2), fill: nil, focusFill: ModernTheme.focusFill.cgColor,
+                focused: onWhite, animated: lastFocus != nil && !wasHidden && !kindChanged && !isNewRow, restingShadow: false, lettering: nil,
+            )
             if isModern {
-                // The one picked out stands on white; focus jumps to it, as in the menus.
-                block.layer.backgroundColor = look.isOnWhite ? ModernTheme.focusFill.cgColor : nil
-                block.layer.cornerRadius = min(28, block.height / 2)
                 block.layer.opacity = 1
             } else {
-                block.layer.backgroundColor = nil
                 block.layer.setOpacity(index == focus ? 1 : 0.42, pass.animation(.easeInOut(duration: 0.2), when: lastFocus != nil && lastFocus != focus && !kindChanged))
             }
             y += block.height + gap
@@ -316,11 +346,11 @@ final class YouTubePanelLayer {
         message.isHidden = note.isEmpty
         if !note.isEmpty {
             let graphic = TextRenderer.render(TextSpec(text: note, fontName: look.regular, size: 30, color: RGBA(white: 1, alpha: 0.6), wrapWidth: column), scale: scale)
-            message.show(graphic, at: CGPoint(x: inset, y: top + (content.rows.isEmpty ? 8 : contentHeight + max(gap, 20))))
+            message.show(graphic, at: CGPoint(x: inset, y: top + (content.rows.isEmpty ? headroom + 8 : contentHeight + max(gap, 20))))
         }
 
         // The one picked out sits at the top of the list, until the list's end comes up.
-        let wanted = tops.indices.contains(focus) ? tops[focus] : 0
+        let wanted = tops.indices.contains(focus) ? tops[focus] - headroom : 0
         let offset = prepared == content.rows.count ? min(wanted, max(0, contentHeight - viewport.height)) : wanted
         let shownViewport = viewport.offsetBy(dx: frame.minX, dy: frame.minY)
         rowPitches = pitches
@@ -340,7 +370,8 @@ final class YouTubePanelLayer {
     private static let modernCornerRadius: CGFloat = 34
 
     /// Sets a row's words (and its picture, tick or arrow) in its block, and the block's height.
-    private func set(_ block: Block, to row: YouTubePanelRow, picture: NSImage?, look: Look) {
+    /// Draws a row's lettering for one of its states and gives the row's height.
+    private func set(_ block: Words, to row: YouTubePanelRow, picture: NSImage?, look: Look) -> CGFloat {
         let scale = look.scale
         let column = look.column
         let pad = look.pad
@@ -412,7 +443,7 @@ final class YouTubePanelLayer {
             block.footer.show(footerGraphic, at: CGPoint(x: pad.width + left, y: pad.height + footerTop))
             height = footerTop + footerGraphic.size.height
         }
-        block.height = max(height, row.pictureURL == nil ? 0 : pictureSide) + pad.height * 2
+        return max(height, row.pictureURL == nil ? 0 : pictureSide) + pad.height * 2
     }
 }
 
