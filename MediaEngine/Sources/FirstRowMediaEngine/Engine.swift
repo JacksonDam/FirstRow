@@ -65,7 +65,31 @@ public final class Engine: NSObject, MediaEngineProviding {
         }
     }
 
-    func ask(_ question: String, details _: [String: Any], then answer: @escaping ([String: Any]) -> Void) {
-        answer([MediaEngineKey.error: "The engine doesn't know \"\(question)\"."])
+    func ask(_ question: String, details: [String: Any], then answer: @escaping ([String: Any]) -> Void) {
+        let server = (details[MediaEngineKey.server] as? String) ?? ""
+        let user = details[MediaEngineKey.user] as? String
+        let password = details[MediaEngineKey.password] as? String
+        switch question {
+        case MediaEngineQuestion.sharedFolders:
+            // The folders a computer or network drive shares.
+            Task.detached(priority: .userInitiated) {
+                let found = await SharedFolders.answer {
+                    [MediaEngineKey.names: try await SharedFolders.shares(server: server, user: user, password: password)]
+                }
+                await MainActor.run { answer(found) }
+            }
+        case MediaEngineQuestion.sharedFolderContents:
+            // What a folder on one of them holds.
+            let share = (details[MediaEngineKey.share] as? String) ?? ""
+            let path = (details[MediaEngineKey.path] as? String) ?? ""
+            Task.detached(priority: .userInitiated) {
+                let found = await SharedFolders.answer {
+                    [MediaEngineKey.entries: try await SharedFolders.contents(server: server, share: share, path: path, user: user, password: password)]
+                }
+                await MainActor.run { answer(found) }
+            }
+        default:
+            answer([MediaEngineKey.error: "The engine doesn't know \"\(question)\"."])
+        }
     }
 }

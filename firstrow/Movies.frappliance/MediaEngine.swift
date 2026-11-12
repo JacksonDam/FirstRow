@@ -75,6 +75,15 @@
             }
         }
 
+        /// Asks the engine something by name (see `MediaEngineQuestion`). Without an engine the
+        /// answer is an error.
+        static func ask(_ question: String, _ details: [String: Any]) async -> [String: Any] {
+            guard let engine = shared else { return [MediaEngineKey.error: "This needs \(systemNeeded) or later."] }
+            return await withCheckedContinuation { continuation in
+                engine.ask(question, details: details) { continuation.resume(returning: $0) }
+            }
+        }
+
         /// A frame of a movie, from so many seconds in.
         static func picture(of url: URL, atSeconds seconds: Double, longestSide: Double = 1100) async -> CGImage? {
             guard let engine = shared else { return nil }

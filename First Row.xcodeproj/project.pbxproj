@@ -169,6 +169,7 @@
 		B7E2D9E20DC5B32438A816FA /* MenuView+Servers.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F75EC1599611B051B08EF4 /* MenuView+Servers.swift */; };
 		B9D07896CFBA9D3C0A02846E /* PlexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FF5C8DCD4C9E57874DAE06 /* PlexClient.swift */; };
 		68CD57C17D82EB1BEACA7FEC /* KodiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C660D02F691119E87EEF6B /* KodiClient.swift */; };
+		7AFD1C1DBCEA445EDB5520BB /* SharedFolderClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2538E71F7337842045E520F /* SharedFolderClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -353,6 +354,7 @@
 		B4F75EC1599611B051B08EF4 /* MenuView+Servers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Servers.swift"; sourceTree = "<group>"; };
 		D4FF5C8DCD4C9E57874DAE06 /* PlexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlexClient.swift; sourceTree = "<group>"; };
 		11C660D02F691119E87EEF6B /* KodiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KodiClient.swift; sourceTree = "<group>"; };
+		F2538E71F7337842045E520F /* SharedFolderClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedFolderClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -416,6 +418,7 @@
 				B4F75EC1599611B051B08EF4 /* MenuView+Servers.swift */,
 				D4FF5C8DCD4C9E57874DAE06 /* PlexClient.swift */,
 				11C660D02F691119E87EEF6B /* KodiClient.swift */,
+				F2538E71F7337842045E520F /* SharedFolderClient.swift */,
 			);
 			path = FRSources.frappliance;
 			sourceTree = "<group>";
@@ -928,6 +931,7 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				7AFD1C1DBCEA445EDB5520BB /* SharedFolderClient.swift in Sources */,
 				68CD57C17D82EB1BEACA7FEC /* KodiClient.swift in Sources */,
 				B9D07896CFBA9D3C0A02846E /* PlexClient.swift in Sources */,
 				B7E2D9E20DC5B32438A816FA /* MenuView+Servers.swift in Sources */,

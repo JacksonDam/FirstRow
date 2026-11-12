@@ -62,7 +62,7 @@ enum MediaServerClients {
         case .plex: PlexClient(record: record)
         case .kodi: KodiClient(record: record)
         case .upnp: UPnPClient(record: record)
-        case .sharedFolder: nil
+        case .sharedFolder: SharedFolderClient(record: record)
         }
     }
 
@@ -77,12 +77,14 @@ enum MediaServerClients {
         case .plex: try await PlexClient.find(at: typed, caller: .current)
         case .kodi: try await KodiClient.find(at: typed, user: user, password: password)
         case .upnp: try await UPnPClient.find(at: typed)
-        case .sharedFolder: throw MediaServerError.notAServer(kind)
+        case .sharedFolder: try await SharedFolderClient.find(at: typed, user: user, password: password)
         }
     }
 
     /// The kinds that can be added here.
-    static var kinds: [MediaServerKind] { [.plex, .kodi, .upnp] }
+    static var kinds: [MediaServerKind] {
+        SharedFolderClient.isAvailable ? [.plex, .kodi, .upnp, .sharedFolder] : [.plex, .kodi, .upnp]
+    }
 }
 
 /// Sources: the media servers and shared folders other than Jellyfin's and Emby's, and

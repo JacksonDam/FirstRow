@@ -71,6 +71,29 @@
         static let error = "error"
         static let seconds = "seconds"
         static let longestSide = "longestSide"
+
+        // Looking in shared folders.
+        /// The computer or network drive: its name or address, with ":port" if it's an unusual one.
+        static let server = "server"
+        static let share = "share"
+        /// A folder's place in its share, with "/" between the names.
+        static let path = "path"
+        /// The answer's list of names (of shares).
+        static let names = "names"
+        /// The answer's list of what a folder holds: each with `name`, `isFolder` and `size`.
+        static let entries = "entries"
+        static let isFolder = "isFolder"
+        static let size = "size"
+        /// True in an answer that failed because a name and password are wanted.
+        static let needsSignIn = "needsSignIn"
+    }
+
+    /// What can be asked of the engine by name (see `MediaEngineProviding.ask`).
+    enum MediaEngineQuestion {
+        /// The folders a computer shares: `server`, and `user` and `password` if it wants them.
+        static let sharedFolders = "sharedFolders"
+        /// What a shared folder holds: `server`, `share`, `path`, and `user` and `password`.
+        static let sharedFolderContents = "sharedFolderContents"
     }
 
     /// The engine playing a movie.
@@ -149,7 +172,7 @@
     }
 
     enum MediaEngineInterface {
-        static let version = 1
+        static let version = 2
         /// The framework's class that is the engine.
         static let providerClassName = "FirstRowMediaEngine"
         static let frameworkName = "FirstRowMediaEngine"

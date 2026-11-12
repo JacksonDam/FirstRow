@@ -174,15 +174,9 @@ final class EnginePlayer: NSObject, MediaEnginePlaying {
         if let headers = request[MediaEngineKey.headers] as? [String: String], !headers.isEmpty {
             options.httpHeaders = headers
         }
-        if let files = request[MediaEngineKey.subtitleFiles] as? [[String: Any]] {
-            options.externalSubtitles = files.compactMap { file in
-                guard let url = file[MediaEngineKey.url] as? URL else { return nil }
-                return ExternalSubtitleTrack(
-                    url: url,
-                    name: file[MediaEngineKey.name] as? String,
-                    language: file[MediaEngineKey.language] as? String,
-                )
-            }
+        let subtitleFiles: [(url: URL, name: String?, language: String?)] = ((request[MediaEngineKey.subtitleFiles] as? [[String: Any]]) ?? []).compactMap { file in
+            guard let url = file[MediaEngineKey.url] as? URL else { return nil }
+            return (url, file[MediaEngineKey.name] as? String, file[MediaEngineKey.language] as? String)
         }
         let user = request[MediaEngineKey.user] as? String
         let password = request[MediaEngineKey.password] as? String
@@ -190,6 +184,17 @@ final class EnginePlayer: NSObject, MediaEnginePlaying {
         noteChange()
         opening = Task { [weak self] in
             do {
+                // (A subtitle file on a shared folder is fetched whole first: such files are small.)
+                var tracks: [ExternalSubtitleTrack] = []
+                for file in subtitleFiles {
+                    var place: URL? = file.url
+                    if file.url.scheme?.lowercased() == "smb" {
+                        place = await SharedFolders.copy(of: file.url, user: user, password: password)
+                    }
+                    if let place { tracks.append(ExternalSubtitleTrack(url: place, name: file.name, language: file.language)) }
+                }
+                var options = options
+                options.externalSubtitles = tracks
                 let source = try await MediaSources.source(for: url, user: user, password: password)
                 guard let self, self.session == session, !Task.isCancelled else { return }
                 _ = try await self.engine.load(source: source, startPosition: start > 0.05 ? start : nil, options: options)
