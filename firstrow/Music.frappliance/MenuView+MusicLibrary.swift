@@ -2138,7 +2138,22 @@ extension MenuView {
                 let mediaItems: [MPMediaItem]
                 switch mediaType {
                 case .songs:
-                    mediaItems = MPMediaQuery.songs().items ?? []
+                    var items = MPMediaQuery.songs().items ?? []
+                    // A song that's in a playlist and nowhere else is a song too: the
+                    // system's list of the library's songs leaves those out.
+                    var known = Set(items.map(\.persistentID))
+                    var alike = Set(items.map { "\(($0.title ?? "").lowercased())|\(($0.artist ?? "").lowercased())|\(($0.albumTitle ?? "").lowercased())|\(Int($0.playbackDuration.rounded()))" })
+                    for collection in MPMediaQuery.playlists().collections ?? [] {
+                        let only = collection.items.filter { item in
+                            item.mediaType.contains(.music) && !item.mediaType.contains(.anyVideo) && known.insert(item.persistentID).inserted
+                                && alike.insert("\((item.title ?? "").lowercased())|\((item.artist ?? "").lowercased())|\((item.albumTitle ?? "").lowercased())|\(Int(item.playbackDuration.rounded()))").inserted
+                        }
+                        guard !only.isEmpty else { continue }
+                        // (Kept to hand: the library can't be asked for these by number.)
+                        PlaylistItems.remember(only)
+                        items += only
+                    }
+                    mediaItems = items
                 case .musicVideos:
                     let query = MPMediaQuery.songs()
                     let predicate = MPMediaPropertyPredicate(
@@ -2177,6 +2192,12 @@ extension MenuView {
         #else
             return []
         #endif
+    }
+
+    /// What tells one song from another where two of the library's entries may be the same
+    /// song: its name, who it's by, the album and its length to the second.
+    nonisolated static func musicSongLikeness(_ song: MusicLibrarySongEntry) -> String {
+        "\(song.title.lowercased())|\(song.artist.lowercased())|\(song.album.lowercased())|\(Int(song.durationSeconds.rounded()))"
     }
 
     func fetchMusicLibraryPlaylists() throws -> [MusicCategoryEntry] {
@@ -2472,6 +2493,15 @@ extension MenuView {
                         continue
                     }
                     songs.append(entry)
+                }
+                // A song that's in a playlist and nowhere else is a song too: the system's
+                // list of the library's songs leaves those out.
+                var known = Set(songs.map(\.id))
+                var alike = Set(songs.map(Self.musicSongLikeness))
+                for playlist in await (try? self.fetchMusicKitPlaylists()) ?? [] {
+                    for song in playlist.songs where known.insert(song.id).inserted && alike.insert(Self.musicSongLikeness(song)).inserted {
+                        songs.append(song)
+                    }
                 }
                 return shouldSort ? self.sortedMusicLibraryEntries(songs) : songs
             }.value
