@@ -14,6 +14,13 @@ enum MovieTrackKind {
     case audio
 }
 
+/// A file of subtitles kept beside a movie.
+struct MovieSubtitleFile: Equatable {
+    let url: URL
+    var language: String?
+    var name: String?
+}
+
 /// A chapter of a movie: its name and where it starts, in seconds.
 struct MovieChapter: Equatable {
     let title: String

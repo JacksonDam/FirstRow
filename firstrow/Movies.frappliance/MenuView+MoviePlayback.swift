@@ -22,6 +22,14 @@ extension MenuView {
         guard !isMovieTransitioning else { return }
         resetScreenSaverIdleTimer()
         let normalizedURL = url.standardizedFileURL
+        #if !FIRSTROW_PORTABLE
+            if MediaEngine.plays(normalizedURL), !standaloneAudioFileExtensions.contains(normalizedURL.pathExtension.lowercased()) {
+                // (A kind of file the system's player knows nothing of: there is nothing to
+                // ask it about this one.)
+                beginMoviePlayback(for: normalizedURL)
+                return
+            }
+        #endif
         if shouldTreatAsAudioOnlyPlayback(url: normalizedURL) {
             clearActivePodcastAudioPlaybackContext()
             startAudioOnlyPlayback(
@@ -825,7 +833,7 @@ extension MenuView {
             if let item = YouTubePlaylistLoader.shared.playerItem(for: url) {
                 return AVPlayer(playerItem: item)
             }
-            if MediaEngine.plays(url), let player = EngineMoviePlayer(url: url, startSeconds: startSeconds) {
+            if MediaEngine.plays(url), let player = EngineMoviePlayer(url: url, startSeconds: startSeconds, subtitleFiles: Self.subtitleFiles(beside: url)) {
                 player.onCaptions = { [weak self, weak player] captions in
                     guard let self, let player, self.moviePlayer === player else { return }
                     self.movieCaptions = captions
@@ -842,6 +850,36 @@ extension MenuView {
             }
             return AVPlayer(url: url)
         #endif
+    }
+
+    /// The kinds of subtitle file that are kept beside a movie.
+    static let subtitleFileExtensions: Set<String> = ["srt", "ass", "ssa", "vtt", "sub", "idx", "sup", "smi", "sami", "mpl", "txt", "tmp", "ttml", "dfxp"]
+
+    /// The subtitle files kept beside a movie: those in its folder whose names start with
+    /// the movie's ("Film.srt", "Film.en.srt", "Film.forced.ass"). What comes between the
+    /// movie's name and the kind of file is taken for the language where it looks like one.
+    nonisolated static func subtitleFiles(beside movie: URL) -> [MovieSubtitleFile] {
+        guard movie.isFileURL else { return [] }
+        let folder = movie.deletingLastPathComponent()
+        let name = movie.deletingPathExtension().lastPathComponent.lowercased()
+        guard !name.isEmpty, let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
+        var found: [MovieSubtitleFile] = []
+        for file in files.sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }) {
+            let kind = file.pathExtension.lowercased()
+            guard subtitleFileExtensions.contains(kind), file.standardizedFileURL != movie.standardizedFileURL else { continue }
+            let other = file.deletingPathExtension().lastPathComponent.lowercased()
+            guard other == name || other.hasPrefix(name + ".") else { continue }
+            // (A VobSub's .sub goes with its .idx, which names it: the .sub alone is not a track.)
+            if kind == "sub", files.contains(where: { $0.pathExtension.lowercased() == "idx" && $0.deletingPathExtension().lastPathComponent.lowercased() == other }) {
+                continue
+            }
+            let words = other.dropFirst(name.count).split(separator: ".").map(String.init)
+            let language = words.first { ($0.count == 2 || $0.count == 3) && $0.allSatisfy(\.isLetter) }
+            let rest = words.filter { $0 != language }
+            // (With no language to go by, the kind of file tells one from another.)
+            found.append(MovieSubtitleFile(url: file, language: language, name: rest.isEmpty ? (language == nil ? kind.uppercased() : nil) : rest.joined(separator: " ").capitalized))
+        }
+        return found
     }
 
     /// The movie's player has given up on it: back to the menus, and a screen that says so.

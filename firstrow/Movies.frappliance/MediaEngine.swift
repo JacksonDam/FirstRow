@@ -42,11 +42,30 @@
             if scheme == "smb" { return true }
             guard url.isFileURL || scheme == "http" || scheme == "https" else { return false }
             let kind = url.pathExtension.lowercased()
-            if url.isFileURL, kind.isEmpty {
+            if url.isFileURL, kind.isEmpty || kind == "dvdmedia" {
                 var isFolder: ObjCBool = false
                 return FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder) && isFolder.boolValue
             }
             return !kind.isEmpty && !systemPlayerExtensions.contains(kind)
+        }
+
+        /// What a file is, as the engine reads it (see `MediaEngineKey`): nothing where there
+        /// is no engine.
+        static func describe(_ url: URL) async -> [String: Any] {
+            guard let engine = shared else { return [:] }
+            return await withCheckedContinuation { continuation in
+                engine.describe(url) { continuation.resume(returning: $0) }
+            }
+        }
+
+        /// A frame of a movie, from so many seconds in.
+        static func picture(of url: URL, atSeconds seconds: Double, longestSide: Double = 1100) async -> CGImage? {
+            guard let engine = shared else { return nil }
+            return await withCheckedContinuation { continuation in
+                engine.picture(of: url, details: [MediaEngineKey.seconds: seconds, MediaEngineKey.longestSide: longestSide]) {
+                    continuation.resume(returning: $0)
+                }
+            }
         }
     }
 
@@ -73,7 +92,7 @@
         var onChange: (() -> Void)?
 
         /// Opens `url` with the engine, or returns nil where there is no engine.
-        init?(url: URL, startSeconds: Double = 0, headers: [String: String] = [:], subtitleFiles: [URL] = [], paused: Bool = false) {
+        init?(url: URL, startSeconds: Double = 0, headers: [String: String] = [:], subtitleFiles: [MovieSubtitleFile] = [], paused: Bool = false) {
             guard let made = MediaEngine.shared?.player() else { return nil }
             engine = (made as? MediaEnginePlaying) ?? unsafeBitCast(made, to: MediaEnginePlaying.self)
             Self.turn += 1
@@ -82,7 +101,12 @@
             var request: [String: Any] = [MediaEngineKey.url: url, MediaEngineKey.start: max(0, startSeconds), MediaEngineKey.paused: paused]
             if !headers.isEmpty { request[MediaEngineKey.headers] = headers }
             if !subtitleFiles.isEmpty {
-                request[MediaEngineKey.subtitleFiles] = subtitleFiles.map { [MediaEngineKey.url: $0] }
+                request[MediaEngineKey.subtitleFiles] = subtitleFiles.map { file -> [String: Any] in
+                    var entry: [String: Any] = [MediaEngineKey.url: file.url]
+                    if let language = file.language { entry[MediaEngineKey.language] = language }
+                    if let name = file.name { entry[MediaEngineKey.name] = name }
+                    return entry
+                }
             }
             engine.onChange = { [weak self] in self?.engineChanged() }
             engine.open(request)

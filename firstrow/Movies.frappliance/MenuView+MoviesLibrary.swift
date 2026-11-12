@@ -325,7 +325,7 @@ extension MenuView {
     }
 
     var supportedMovieFileExtensions: Set<String> {
-        [
+        var kinds: Set<String> = [
             "mov",
             "mp4",
             "m4v",
@@ -338,6 +338,41 @@ extension MenuView {
             "wmv",
             "webm",
         ]
+        if Self.playsEveryKindOfMovie {
+            kinds.formUnion(Self.furtherMovieFileExtensions)
+        }
+        return kinds
+    }
+
+    /// The kinds of movie file beyond the system's own that First Row plays where it has
+    /// something to play them with: its engine on the Mac, iPhone, iPad and Apple TV, mpv on
+    /// Linux and Windows.
+    static let furtherMovieFileExtensions: Set<String> = [
+        "3gp", "3g2", "asf", "divx", "dvr-ms", "evo", "f4v", "flv", "img", "iso", "m1v", "m2t", "m2v", "mk3d", "mpe", "mpv",
+        "mts", "mxf", "ogm", "ogv", "rm", "rmvb", "tp", "trp", "vob", "wtv",
+    ]
+
+    static var playsEveryKindOfMovie: Bool {
+        #if FIRSTROW_PORTABLE
+            true
+        #else
+            MediaEngine.isAvailable
+        #endif
+    }
+
+    /// Whether a folder is a disc kept as its files: a DVD's (it holds VIDEO_TS, or is a
+    /// .dvdmedia package) or a Blu-ray's (it holds BDMV). Such a folder is a movie to play,
+    /// not a folder to look in.
+    nonisolated static func isDiscFolder(_ url: URL) -> Bool {
+        if url.pathExtension.lowercased() == "dvdmedia" { return true }
+        let fileManager = FileManager.default
+        for name in ["VIDEO_TS", "BDMV", "video_ts", "bdmv"] {
+            var isFolder: ObjCBool = false
+            if fileManager.fileExists(atPath: url.appendingPathComponent(name).path, isDirectory: &isFolder), isFolder.boolValue {
+                return true
+            }
+        }
+        return false
     }
 
     var moviesFolderSubmenuPreviewLoadLimit: Int {
@@ -398,6 +433,17 @@ extension MenuView {
             let values = try? url.resourceValues(forKeys: resourceKeys)
             let isDirectory = values?.isDirectory ?? false
             if isDirectory {
+                if Self.playsEveryKindOfMovie, Self.isDiscFolder(url) {
+                    movieEntries.append(
+                        MoviesFolderEntry(
+                            id: url.standardizedFileURL.path,
+                            title: url.pathExtension.lowercased() == "dvdmedia" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent,
+                            url: url,
+                            isDirectory: false,
+                        ),
+                    )
+                    continue
+                }
                 directoryEntries.append(
                     MoviesFolderEntry(
                         id: url.standardizedFileURL.path,
@@ -484,6 +530,25 @@ extension MenuView {
     /// A movie's menu picture: its embedded cover art, or else a frame from the video.
     nonisolated func generateMoviePreviewImage(for url: URL) async -> NSImage? {
         let standardizedURL = url.standardizedFileURL
+        #if !FIRSTROW_PORTABLE
+            if await MediaEngine.plays(standardizedURL) {
+                // (A kind of file the system knows nothing of: the engine reads it.)
+                let found = await MediaEngine.describe(standardizedURL)
+                if let artworkData = found[MediaEngineKey.artwork] as? Data,
+                   let artwork = cachedDecodedDisplayArtworkImage(
+                       from: artworkData,
+                       sourceKey: "movie_artwork::\(standardizedURL.path)",
+                       maxPixelSize: 1100,
+                   )
+                {
+                    return artwork
+                }
+                let length = (found[MediaEngineKey.duration] as? Double) ?? 0
+                let seconds = length > 0 ? min(60, length * 0.25) : 10
+                guard let frame = await MediaEngine.picture(of: standardizedURL, atSeconds: seconds) else { return nil }
+                return NSImage(cgImage: frame, size: NSSize(width: frame.width, height: frame.height))
+            }
+        #endif
         if let artworkData = await loadEmbeddedArtworkData(from: standardizedURL),
            let artwork = cachedDecodedDisplayArtworkImage(
                from: artworkData,
@@ -501,6 +566,12 @@ extension MenuView {
         if shouldSkipMovieThumbnailGeneration(for: standardizedURL) {
             return nil
         }
+        #if !FIRSTROW_PORTABLE
+            if await MediaEngine.plays(standardizedURL) {
+                guard let frame = await MediaEngine.picture(of: standardizedURL, atSeconds: max(0, preferredSeconds ?? 10)) else { return nil }
+                return NSImage(cgImage: frame, size: NSSize(width: frame.width, height: frame.height))
+            }
+        #endif
         let asset = AVURLAsset(url: standardizedURL)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
