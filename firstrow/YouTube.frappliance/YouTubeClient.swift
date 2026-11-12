@@ -191,8 +191,19 @@ struct YouTubeStreamVariant: Equatable, Sendable {
     var codec: String
     var bandwidth: Int
     var url: URL
+    /// Its sound: the video's own, and each of the video's sounds by name (`YouTubeAudioTrack.id`).
     var audioURL: URL?
+    var audioURLs: [String: URL] = [:]
     var isHighDynamicRange: Bool
+}
+
+/// One of the sounds a video comes with: its own, the picture described over it, a dubbing.
+struct YouTubeAudioTrack: Equatable, Sendable {
+    var id: String
+    /// As YouTube names it: "English - original".
+    var name: String
+    /// The sound the video was made with.
+    var isOriginal: Bool
 }
 
 /// The lists the YouTube menu offers.
@@ -841,13 +852,56 @@ actor YouTubeClient {
         return (before + (first + rest).flatMap(\.lines) + after).joined(separator: "\n")
     }
 
+    /// What a line of a playlist that names a sound says of it: which of the video's sounds
+    /// it is, and whether that's the one the video was made with.
+    private static func audioTrack(_ fields: [String: String]) -> YouTubeAudioTrack? {
+        guard fields["TYPE"] == "AUDIO" else { return nil }
+        let name = fields["NAME"] ?? ""
+        // (YouTube's own note of what the sound is, packed and in base64: "original",
+        // "descriptive", "dubbed". Its name says so too, in the language asked in.)
+        var packed = (fields["YT-EXT-XTAGS"] ?? "").replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while packed.count % 4 != 0 { packed += "=" }
+        let note = Data(base64Encoded: packed).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        let isOriginal = note.contains("original") || (note.isEmpty && name.lowercased().contains("original"))
+        return YouTubeAudioTrack(id: fields["YT-EXT-AUDIO-CONTENT-ID"] ?? name, name: name.isEmpty ? "Audio" : name, isOriginal: isOriginal)
+    }
+
+    /// The sounds a video comes with, the one it was made with first. (One, for most.)
+    static func audioTracks(inPlaylist text: String) -> [YouTubeAudioTrack] {
+        var tracks: [YouTubeAudioTrack] = []
+        for line in text.split(whereSeparator: \.isNewline) where line.hasPrefix("#EXT-X-MEDIA:") {
+            guard let track = audioTrack(playlistFields(line)), !tracks.contains(where: { $0.id == track.id }) else { continue }
+            tracks.append(track)
+        }
+        return tracks.filter(\.isOriginal) + tracks.filter { !$0.isOriginal }
+    }
+
+    /// The sound a video plays with when none has been chosen: the one it was made with (a
+    /// player left to choose took the first named, which can be the picture described).
+    static func usualAudioTrack(inPlaylist text: String) -> YouTubeAudioTrack? {
+        audioTracks(inPlaylist: text).first
+    }
+
+    /// A video's playlist naming one of its sounds only, so a player has no other to take.
+    static func playlist(_ text: String, keepingAudio id: String) -> String {
+        text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).filter { line in
+            guard line.hasPrefix("#EXT-X-MEDIA:"), let track = audioTrack(playlistFields(line)) else { return true }
+            return track.id == id
+        }.joined(separator: "\n")
+    }
+
     static func variants(inPlaylist text: String) -> [YouTubeStreamVariant] {
         let attributes = playlistFields
         let lines = text.split(whereSeparator: \.isNewline)
+        // Each group's sounds by name, and the one that's played with none chosen.
+        let usual = usualAudioTrack(inPlaylist: text)?.id
         var audio: [String: URL] = [:]
+        var named: [String: [String: URL]] = [:]
         for line in lines where line.hasPrefix("#EXT-X-MEDIA:") {
             let fields = attributes(line)
-            if fields["TYPE"] == "AUDIO", let group = fields["GROUP-ID"], let url = fields["URI"].flatMap({ URL(string: $0) }) { audio[group] = url }
+            guard let track = audioTrack(fields), let group = fields["GROUP-ID"], let url = fields["URI"].flatMap({ URL(string: $0) }) else { continue }
+            named[group, default: [:]][track.id] = url
+            if track.id == usual || audio[group] == nil { audio[group] = url }
         }
         var variants: [YouTubeStreamVariant] = []
         for (index, line) in lines.enumerated() where line.hasPrefix("#EXT-X-STREAM-INF:") {
@@ -861,6 +915,7 @@ actor YouTubeClient {
                 bandwidth: Int(fields["BANDWIDTH"] ?? "") ?? 0,
                 url: url,
                 audioURL: fields["AUDIO"].flatMap { audio[$0] },
+                audioURLs: fields["AUDIO"].flatMap { named[$0] } ?? [:],
                 isHighDynamicRange: (fields["VIDEO-RANGE"] ?? "SDR") != "SDR",
             ))
         }

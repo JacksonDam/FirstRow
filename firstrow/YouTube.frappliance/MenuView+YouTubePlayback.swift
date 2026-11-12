@@ -21,6 +21,10 @@ struct YouTubePlaybackSession {
     /// that names them.
     var variants: [YouTubeStreamVariant] = []
     var manifestText: String?
+    /// The sounds the video comes with (the one it was made with first), and the one chosen
+    /// in the options; none chosen plays the first.
+    var audioTracks: [YouTubeAudioTrack] = []
+    var audioTrackID: String?
     var hasStarted = false
     /// The caption track that's on (an index into the video's tracks) and its lines.
     var captionTrack: Int?
@@ -115,9 +119,9 @@ extension MenuView {
             defer { self.youtube.isStartingPlayback = false }
             do {
                 let playback = try await YouTubeClient.shared.playback(of: video.id)
-                let (url, variants, manifestText, startHeight) = try await self.youtubePlayerURL(for: playback, videoID: video.id, maximumHeight: YouTubeStore.shared.maximumHeight)
+                let (url, variants, manifestText, startHeight, audioTracks) = try await self.youtubePlayerURL(for: playback, videoID: video.id, maximumHeight: YouTubeStore.shared.maximumHeight)
                 guard self.thirdMenuMode == .youtube, !self.isMovieTransitioning, !self.isMoviePlaybackVisible else { return }
-                self.youtubeSession = YouTubePlaybackSession(video: video, playback: playback, url: url, variants: variants, manifestText: manifestText, startHeight: startHeight)
+                self.youtubeSession = YouTubePlaybackSession(video: video, playback: playback, url: url, variants: variants, manifestText: manifestText, audioTracks: audioTracks, startHeight: startHeight)
                 // (Nothing to resume: what YouTube hands out to play is good for a few hours.)
                 self.lastClosedMovieURL = nil
                 self.lastClosedMovieTimestamp = 0
@@ -140,29 +144,38 @@ extension MenuView {
     /// What the movie player plays a video from, the sizes its picture comes in (with the
     /// playlist that names them) when they had to be looked up, and the size it starts at
     /// when that was First Row's choice and may change as it plays.
-    private func youtubePlayerURL(for playback: YouTubePlayback, videoID: String, maximumHeight: Int?) async throws -> (URL, [YouTubeStreamVariant], String?, Int?) {
+    private func youtubePlayerURL(for playback: YouTubePlayback, videoID: String, maximumHeight: Int?) async throws -> (URL, [YouTubeStreamVariant], String?, Int?, [YouTubeAudioTrack]) {
         #if FIRSTROW_PORTABLE
             // mpv is given one size of the picture and its sound, by their own addresses: left
-            // to read the whole playlist, it opens all seventeen sizes before it starts.
-            let variants = (try? await YouTubeClient.shared.variants(of: playback.manifestURL)) ?? []
+            // to read the whole playlist, it opens all seventeen sizes before it starts. (The
+            // sound is the one the video was made with, until another is chosen.)
+            let manifest = try? await YouTubeClient.shared.manifest(of: playback.manifestURL)
+            let variants = manifest?.variants ?? []
+            let audioTracks = manifest.map { YouTubeClient.audioTracks(inPlaylist: $0.text) } ?? []
             let limit = maximumHeight ?? Self.youtubeHeightSuitingTheScreen
             if !playback.isLive, let chosen = Self.youtubeVariant(in: variants, maximumHeight: limit),
                let url = AVPlayer.pairedStreamsURL(video: chosen.url, audio: chosen.audioURL)
             {
-                return (url, variants, nil, nil)
+                return (url, variants, nil, nil, audioTracks)
             }
-            return (playback.manifestURL, variants, nil, nil)
+            return (playback.manifestURL, variants, nil, nil, [])
         #else
             _ = YouTubeDecoders.prepared
             // A size that was asked for is played as that size. With none asked for the
             // player has every size, the one to start at first: the largest that suits the
             // screen, or the size videos have lately held.
-            if !playback.isLive, let manifest = try? await YouTubeClient.shared.manifest(of: playback.manifestURL),
-               let address = Self.youtubeAddress(forHeight: maximumHeight, videoID: videoID, manifestText: manifest.text, variants: manifest.variants)
-            {
-                return (address.url, manifest.variants, manifest.text, address.startHeight)
+            if !playback.isLive, let manifest = try? await YouTubeClient.shared.manifest(of: playback.manifestURL) {
+                // (Of a video's sounds the player is given the one it was made with: left to
+                // choose, it took the first named, which can be the picture described.)
+                let audioTracks = YouTubeClient.audioTracks(inPlaylist: manifest.text)
+                if let address = Self.youtubeAddress(
+                    forHeight: maximumHeight, videoID: videoID, manifestText: manifest.text, variants: manifest.variants,
+                    audio: audioTracks.count > 1 ? audioTracks[0].id : nil,
+                ) {
+                    return (address.url, manifest.variants, manifest.text, address.startHeight, audioTracks)
+                }
             }
-            return (playback.manifestURL, [], nil, nil)
+            return (playback.manifestURL, [], nil, nil, [])
         #endif
     }
 
@@ -175,20 +188,23 @@ extension MenuView {
         /// The address the system's player is given for a video: for one size of its picture
         /// (the largest the video has that is no taller than `limit`), or with no limit for
         /// every size, starting at `startHeight`.
-        private static func youtubeAddress(forHeight limit: Int?, videoID: String, manifestText: String, variants: [YouTubeStreamVariant]) -> (url: URL, startHeight: Int?)? {
+        private static func youtubeAddress(forHeight limit: Int?, videoID: String, manifestText: String, variants: [YouTubeStreamVariant], audio: String?) -> (url: URL, startHeight: Int?)? {
             let heights = youtubePictureHeights(in: variants)
             guard let smallest = heights.min() else { return nil }
+            // With one of the video's sounds only, where it has several (`audio` names it).
+            let manifestText = audio.map { YouTubeClient.playlist(manifestText, keepingAudio: $0) } ?? manifestText
+            let sound = audio.map { "-" + $0.filter { $0.isLetter || $0.isNumber } } ?? ""
             if let limit {
                 guard let height = heights.filter({ $0 <= max(limit, smallest) }).max(),
                       let playlist = YouTubeClient.playlist(manifestText, keepingHeight: height),
-                      let url = YouTubePlaylistLoader.shared.address(for: playlist, videoID: videoID, name: String(height)) else { return nil }
+                      let url = YouTubePlaylistLoader.shared.address(for: playlist, videoID: videoID, name: String(height) + sound) else { return nil }
                 return (url, nil)
             }
             let suited = youtubeHeightSuitingTheScreen
             let wanted = min(suited, YouTubeStore.shared.startingHeight ?? suited)
             let start = heights.filter { $0 <= wanted }.max() ?? smallest
             guard let playlist = YouTubeClient.playlist(manifestText, startingAtHeight: start),
-                  let url = YouTubePlaylistLoader.shared.address(for: playlist, videoID: videoID, name: "from-\(start)") else { return nil }
+                  let url = YouTubePlaylistLoader.shared.address(for: playlist, videoID: videoID, name: "from-\(start)" + sound) else { return nil }
             return (url, start)
         }
     #endif
@@ -265,6 +281,7 @@ extension MenuView {
         var kinds: [MovieOptionRow.Kind] = []
         if !session.playback.captions.isEmpty { kinds.append(.subtitles) }
         if !youtubeOfferedHeights(session).isEmpty { kinds.append(.quality) }
+        if session.audioTracks.count > 1 { kinds.append(.audio) }
         kinds.append(.speed)
         kinds.append(.info)
         kinds.append(.comments)
@@ -291,6 +308,11 @@ extension MenuView {
             state.pictureHeights = [nil] + heights
             let chosen = YouTubeStore.shared.maximumHeight.flatMap { limit in heights.firstIndex { $0 <= limit } }
             rows.append(MovieOptionRow(kind: .quality, title: "Quality", values: ["Auto"] + heights.map { "\($0)p" }, selected: chosen.map { $0 + 1 } ?? 0))
+        }
+        // The video's sounds, where it has more than its own: the picture described, a dubbing.
+        if session.audioTracks.count > 1 {
+            let chosen = session.audioTracks.firstIndex { $0.id == session.audioTrackID } ?? 0
+            rows.append(MovieOptionRow(kind: .audio, title: "Audio", values: session.audioTracks.map(\.name), selected: chosen))
         }
         rows += state.rows.filter { $0.kind == .speed }
         rows.append(MovieOptionRow(kind: .info, title: "Info", values: ["View"], selected: 0, opensMore: true))
@@ -321,6 +343,7 @@ extension MenuView {
                 update {
                     $0.variants = manifest.variants
                     $0.manifestText = manifest.text
+                    $0.audioTracks = YouTubeClient.audioTracks(inPlaylist: manifest.text)
                 }
             }
         }
@@ -389,15 +412,31 @@ extension MenuView {
         }
     }
 
-    /// Has the player stop and play on from where it was at the size of picture now asked
-    /// for. (Left to change size as it went, it would first play out what it had already
-    /// fetched at the old one.)
+    /// Plays the video with another of its sounds (a row of the options' Audio), from where it is.
+    func setYouTubeAudioTrack(_ index: Int) {
+        guard var session = youtubeSession, session.audioTracks.indices.contains(index) else { return }
+        let id = session.audioTracks[index].id
+        guard id != (session.audioTrackID ?? session.audioTracks[0].id) else { return }
+        session.audioTrackID = id
+        youtubeSession = session
+        // (Once the choice has rested a moment, as with the picture's size.)
+        youtubeStreamReloadTask?.cancel()
+        youtubeStreamReloadTask = Task { @MainActor in
+            try? await firstRowSleep(0.6)
+            guard !Task.isCancelled else { return }
+            await self.reloadYouTubeStream()
+        }
+    }
+
+    /// Has the player stop and play on from where it was at the size of picture, and with
+    /// the sound, now asked for. (Left to change size as it went, it would first play out
+    /// what it had already fetched at the old one.)
     private func reloadYouTubeStream() async {
         guard var session = youtubeSession, let player = moviePlayer, !session.playback.isLive else { return }
         #if FIRSTROW_PORTABLE
             let limit = YouTubeStore.shared.maximumHeight ?? Self.youtubeHeightSuitingTheScreen
             guard let chosen = Self.youtubeVariant(in: session.variants, maximumHeight: limit),
-                  let url = AVPlayer.pairedStreamsURL(video: chosen.url, audio: chosen.audioURL), url != session.url
+                  let url = AVPlayer.pairedStreamsURL(video: chosen.url, audio: session.audioTrackID.flatMap { chosen.audioURLs[$0] } ?? chosen.audioURL), url != session.url
             else { return }
             let item = AVPlayerItem(url: url)
         #else
@@ -408,11 +447,15 @@ extension MenuView {
                       var current = youtubeSession, current.video.id == videoID, moviePlayer === player, !Task.isCancelled else { return }
                 current.variants = manifest.variants
                 current.manifestText = manifest.text
+                current.audioTracks = YouTubeClient.audioTracks(inPlaylist: manifest.text)
                 youtubeSession = current
                 session = current
             }
             guard let text = session.manifestText,
-                  let address = Self.youtubeAddress(forHeight: YouTubeStore.shared.maximumHeight, videoID: session.video.id, manifestText: text, variants: session.variants)
+                  let address = Self.youtubeAddress(
+                      forHeight: YouTubeStore.shared.maximumHeight, videoID: session.video.id, manifestText: text, variants: session.variants,
+                      audio: session.audioTracks.count > 1 ? (session.audioTrackID ?? session.audioTracks[0].id) : nil,
+                  )
             else { return }
             let url = address.url
             guard url != session.url else { return }

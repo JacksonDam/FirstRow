@@ -325,6 +325,11 @@ extension MenuView {
                 }
             #endif
         case .audio:
+            // (A YouTube video's sounds are streams of their own: it plays on with another.)
+            if youtubeSession != nil {
+                setYouTubeAudioTrack(row.selected)
+                return
+            }
             #if FIRSTROW_PORTABLE
                 if state.audioIDs.indices.contains(row.selected) {
                     player.selectTrack(ofType: "audio", id: state.audioIDs[row.selected])
