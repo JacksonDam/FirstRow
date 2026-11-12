@@ -506,7 +506,13 @@ final class YouTubePanelLayer {
             block.picture.frame = CGRect(x: pad.width, y: pad.height, width: pictureSide, height: pictureSide)
             block.picture.cornerRadius = pictureSide / 2
             block.picture.backgroundColor = CGColor(gray: look.isOnWhite ? 0 : 1, alpha: 0.12)
+            // (A picture that comes after its row has been showing fades in.)
+            let arrives = picture != nil && block.picture.contents == nil && block.heading.contents != nil
             block.picture.contents = LayerImageCache.cgImage(for: picture)
+            if arrives {
+                block.picture.opacity = 0
+                block.picture.setOpacity(1, .easeOut(duration: 0.35))
+            }
             block.picture.contentsGravity = .resizeAspectFill
         }
         // At the right end: an arrow where pressing leads on.
