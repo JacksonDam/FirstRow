@@ -763,6 +763,7 @@ enum SymbolRenderer {
     private static func olderName(_ name: String) -> String? {
         switch name {
         case "gauge.with.dots.needle.67percent": "speedometer"
+        case "opticaldisc.fill": "opticaldisc"
         default: nil
         }
     }
@@ -1073,6 +1074,15 @@ enum SymbolFallback {
                 context.addPath(CGPath(roundedRect: CGRect(x: 4, y: 28, width: 112, height: 46), cornerWidth: 12, cornerHeight: 12, transform: nil))
                 context.addEllipse(in: CGRect(x: 92, y: 45, width: 11, height: 11))
                 context.addPath(CGPath(roundedRect: CGRect(x: 18, y: 48, width: 40, height: 6), cornerWidth: 3, cornerHeight: 3, transform: nil))
+                context.fillPath(using: .evenOdd)
+            }
+        case "opticaldisc.fill", "opticaldisc":
+            // A disc: its playing surface, the clear ring inside that, and the hole.
+            return Shape(referenceSize: 100, box: CGSize(width: 100, height: 100)) { context in
+                context.addEllipse(in: CGRect(x: 4, y: 4, width: 92, height: 92))
+                context.addEllipse(in: CGRect(x: 30, y: 30, width: 40, height: 40))
+                context.addEllipse(in: CGRect(x: 35, y: 35, width: 30, height: 30))
+                context.addEllipse(in: CGRect(x: 43, y: 43, width: 14, height: 14))
                 context.fillPath(using: .evenOdd)
             }
         case "play.rectangle.fill":

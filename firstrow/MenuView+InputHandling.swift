@@ -696,6 +696,10 @@ extension MenuView {
     }
 
     func triggerRootAction(_ item: RootMenuItemConfig) {
+        if item.id == "dvd" {
+            playDisc()
+            return
+        }
         playSound(named: "Selection")
         MenuConfiguration.performRootAction(for: item)
     }

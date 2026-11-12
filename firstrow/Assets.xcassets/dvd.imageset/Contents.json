@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "dvd.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

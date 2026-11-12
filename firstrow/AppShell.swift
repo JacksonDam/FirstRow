@@ -288,6 +288,9 @@ final class FirstRowAppController {
             renderer.layout(containerSize: containerSize, backingScale: backingScale)
         }
         installMenuInput(menu)
+        // DVD heads the main menu while there is a disc to play.
+        DiscWatch.shared.onChange = { [weak menu] in menu?.discDidChange() }
+        DiscWatch.shared.start()
         // After Get Started the first-launch screens fade to black and the intro plays.
         menu.onOnboardingFinished = { [weak self] in
             guard let self, IntroMovie.url != nil else { return false }

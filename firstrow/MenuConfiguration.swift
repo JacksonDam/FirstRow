@@ -2,6 +2,7 @@ import Foundation
 
 enum MenuConfiguration {
     private static let catalog = MenuCatalog(features: [
+        DVDMenuFeature(),
         MoviesMenuFeature(),
         TVShowsMenuFeature(),
         MusicMenuFeature(),

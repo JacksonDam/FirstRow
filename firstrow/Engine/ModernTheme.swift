@@ -113,11 +113,12 @@ enum ModernTheme {
         case "photos": "photo.fill"
         case "settings": "gearshape.fill"
         case "sources": "externaldrive.fill"
+        case "dvd": "opticaldisc.fill"
         default: "play.rectangle.fill"
         }
     }
 
-    private static let cardGlyphNames = ["film.fill", "tv.fill", "music.note", "mic.fill", "photo.fill", "gearshape.fill", "externaldrive.fill", "play.rectangle.fill"]
+    private static let cardGlyphNames = ["film.fill", "tv.fill", "music.note", "mic.fill", "photo.fill", "gearshape.fill", "externaldrive.fill", "play.rectangle.fill", "opticaldisc.fill"]
     private static var preparedCardGlyphs: (pointSize: CGFloat, scale: CGFloat)?
 
     /// Has every section's card symbol drawn off the main thread, ready for when the card

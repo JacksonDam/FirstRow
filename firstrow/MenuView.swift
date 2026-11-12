@@ -51,7 +51,14 @@ final class MenuView: ObservableObject {
     var menuItems = MenuView.shownRootItems()
 
     static func shownRootItems() -> [RootMenuItemConfig] {
-        MenuConfiguration.rootItems.filter { $0.id != "youtube" || AppSettings.showsYouTube }
+        // (YouTube where it's turned on; DVD, at the head, while there is a disc.)
+        MenuConfiguration.rootItems.filter { item in
+            switch item.id {
+            case "youtube": AppSettings.showsYouTube
+            case "dvd": DiscWatch.shared.disc != nil
+            default: true
+            }
+        }
     }
 
     // MARK: - Layout constants

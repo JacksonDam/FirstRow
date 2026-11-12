@@ -170,6 +170,7 @@
 		B9D07896CFBA9D3C0A02846E /* PlexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FF5C8DCD4C9E57874DAE06 /* PlexClient.swift */; };
 		68CD57C17D82EB1BEACA7FEC /* KodiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C660D02F691119E87EEF6B /* KodiClient.swift */; };
 		7AFD1C1DBCEA445EDB5520BB /* SharedFolderClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2538E71F7337842045E520F /* SharedFolderClient.swift */; };
+		C8DC1B742FC767B2F9A5A60A /* DVDMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945E7651110F113F0EDCE57D /* DVDMenuFeature.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -355,6 +356,7 @@
 		D4FF5C8DCD4C9E57874DAE06 /* PlexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlexClient.swift; sourceTree = "<group>"; };
 		11C660D02F691119E87EEF6B /* KodiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KodiClient.swift; sourceTree = "<group>"; };
 		F2538E71F7337842045E520F /* SharedFolderClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedFolderClient.swift; sourceTree = "<group>"; };
+		945E7651110F113F0EDCE57D /* DVDMenuFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVDMenuFeature.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -438,6 +440,7 @@
 				55724F632D44548F8F73C8E5 /* MoviePlayer.swift */,
 				C76549830E72836B9B4A63D9 /* MediaEngine.swift */,
 				21DA85435FF7D0551D607B25 /* MediaEngineInterface.swift */,
+				945E7651110F113F0EDCE57D /* DVDMenuFeature.swift */,
 			);
 			path = Movies.frappliance;
 			sourceTree = "<group>";
@@ -931,6 +934,7 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				C8DC1B742FC767B2F9A5A60A /* DVDMenuFeature.swift in Sources */,
 				7AFD1C1DBCEA445EDB5520BB /* SharedFolderClient.swift in Sources */,
 				68CD57C17D82EB1BEACA7FEC /* KodiClient.swift in Sources */,
 				B9D07896CFBA9D3C0A02846E /* PlexClient.swift in Sources */,
