@@ -38,7 +38,7 @@ final class ITunesLibraryXML: @unchecked Sendable {
     /// The chosen library's songs and playlists, or nil when there is none or it can't be read.
     func contents() -> Contents? {
         guard let url = MediaSources.shared.library(.iTunesXML) else { return nil }
-        let modificationDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        let modificationDate = Self.modificationDate(of: url)
         lock.lock()
         if cachedURL == url, cachedModificationDate == modificationDate, let cachedContents {
             lock.unlock()
@@ -52,6 +52,13 @@ final class ITunesLibraryXML: @unchecked Sendable {
         cachedContents = parsed
         lock.unlock()
         return parsed
+    }
+
+    /// When the library file was last written. (Asked of the file each time: the address is
+    /// one that is kept, and what an address is asked about its file it can go on answering
+    /// from memory, which left a library rewritten while First Row ran looking unchanged.)
+    static func modificationDate(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 
     static func parse(_ url: URL) -> Contents? {

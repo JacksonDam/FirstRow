@@ -294,6 +294,11 @@ extension MenuView {
                     files.combine(values?.contentModificationDate)
                 }
             }
+            // The library file that has been chosen, whose playlists are nowhere else.
+            if let libraryFile = MediaSources.shared.library(.iTunesXML) {
+                files.combine(libraryFile.path)
+                files.combine(ITunesLibraryXML.modificationDate(of: libraryFile))
+            }
             mark.files = files.finalize()
         #endif
         return mark
