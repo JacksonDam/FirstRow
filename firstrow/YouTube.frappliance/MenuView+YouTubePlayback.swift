@@ -110,7 +110,9 @@ extension MenuView {
     /// The sizes offered for a video's picture, in lines.
     static let youtubeHeights = [2160, 1440, 1080, 720, 480, 360, 240, 144]
 
-    func playYouTubeVideo(_ video: YouTubeVideo) {
+    /// `seconds` is where it starts from (a video gone back to). `then` is told whether it
+    /// came up, once it's over the menus (or once it's known that it won't be).
+    func playYouTubeVideo(_ video: YouTubeVideo, from seconds: Double = 0, then: (@MainActor (Bool) -> Void)? = nil) {
         guard !isMovieTransitioning, !isMoviePlaybackVisible, !youtube.isStartingPlayback else { return }
         youtube.isStartingPlayback = true
         playSound(named: "Selection")
@@ -120,15 +122,27 @@ extension MenuView {
             do {
                 let playback = try await YouTubeClient.shared.playback(of: video.id)
                 let (url, variants, manifestText, startHeight, audioTracks) = try await self.youtubePlayerURL(for: playback, videoID: video.id, maximumHeight: YouTubeStore.shared.maximumHeight)
-                guard self.thirdMenuMode == .youtube, !self.isMovieTransitioning, !self.isMoviePlaybackVisible else { return }
+                guard self.thirdMenuMode == .youtube, !self.isMovieTransitioning, !self.isMoviePlaybackVisible else {
+                    then?(false)
+                    return
+                }
                 self.youtubeSession = YouTubePlaybackSession(video: video, playback: playback, url: url, variants: variants, manifestText: manifestText, audioTracks: audioTracks, startHeight: startHeight)
                 // (Nothing to resume: what YouTube hands out to play is good for a few hours.)
                 self.lastClosedMovieURL = nil
                 self.lastClosedMovieTimestamp = 0
                 self.removeCurrentMoviePlaybackTemporaryFileIfNeeded()
                 self.isCurrentMoviePlaybackEphemeralPreview = true
-                self.startMoviePlaybackWithStandardTransition(from: url)
+                self.startMoviePlaybackWithStandardTransition(from: url, startSeconds: playback.isLive ? 0 : seconds)
+                if let then {
+                    Task { @MainActor in
+                        for _ in 0 ..< 100 where self.isMovieTransitioning {
+                            try? await firstRowSleep(0.05)
+                        }
+                        then(self.isMoviePlaybackVisible)
+                    }
+                }
             } catch {
+                then?(false)
                 guard self.thirdMenuMode == .youtube, !self.isMoviePlaybackVisible else { return }
                 self.playSound(named: "Limit")
                 var reason = error.localizedDescription

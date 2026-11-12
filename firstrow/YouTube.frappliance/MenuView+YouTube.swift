@@ -54,6 +54,15 @@ struct YouTubePageState {
     var searchPad: YouTubeSearchPad?
     /// A page of playlists: the playlists.
     var playlists: [YouTubePlaylist] = []
+    /// A page come to from a video that was playing (its channel's): the video, and where it
+    /// had got to. Back on this page goes back to the video there.
+    var resumes: YouTubeResumePoint?
+}
+
+/// A video left part way through, to go back to.
+struct YouTubeResumePoint {
+    var video: YouTubeVideo
+    var seconds: Double
 }
 
 /// The YouTube pages' state, kept together so the menu holds one value for all of it.
@@ -73,6 +82,9 @@ struct YouTubeMenuState {
     var detailsOrder: [String] = []
     var detailsRequestID = 0
     var isStartingPlayback = false
+    /// A video's channel is taking its place in the menus under the video, which leaves for
+    /// it once its page has loaded.
+    var isOpeningChannel = false
     /// Typed text has been asked for (Linux and Windows send it only then).
     var asksForTypedText = false
     /// The menu's carousel: the pictures of each list's first videos (by the list's row),
@@ -418,36 +430,74 @@ extension MenuView {
 
     func pushYouTubePage(_ page: YouTubeMenuPage) {
         transitionMenuForFolderSwap(revealWhen: { !self.shouldHideYouTubeMenuUntilLoaded }) {
-            self.rememberYouTubeSelection()
-            self.youtube.pages.append(YouTubePageState(page: page))
-            self.youtube.error = nil
-            self.youtube.status = nil
-            self.selectedThirdIndex = 0
-            self.headerText = self.truncatedHeaderTitle(page.title, fallback: "YouTube")
-            self.clearYouTubePreview()
-            self.loadCurrentYouTubePage()
+            self.placeYouTubePage(page)
         }
     }
 
+    /// Puts a page on top of the others and starts loading it, with none of the menus' own
+    /// change from one page to the next: inside that change, or for a page that takes its
+    /// place while a video covers the menus (`resuming` the video, when Back is to go back to
+    /// it).
+    func placeYouTubePage(_ page: YouTubeMenuPage, resuming point: YouTubeResumePoint? = nil) {
+        rememberYouTubeSelection()
+        var state = YouTubePageState(page: page)
+        state.resumes = point
+        youtube.pages.append(state)
+        youtube.error = nil
+        youtube.status = nil
+        selectedThirdIndex = 0
+        headerText = truncatedHeaderTitle(page.title, fallback: "YouTube")
+        clearYouTubePreview()
+        loadCurrentYouTubePage()
+    }
+
     func navigateUpInYouTubeMenu() {
+        // A channel's page come to from a video goes back to the video, where it was left
+        // (and not to the list the video was chosen from, which the video closes to).
+        if let point = currentYouTubePage?.resumes {
+            resumeYouTubeVideo(point)
+            return
+        }
         youtube.requestID &+= 1
         guard youtube.pages.count > 1 else {
             exitYouTubeToItsMenu()
             return
         }
         transitionMenuForFolderSwap(revealWhen: { !self.shouldHideYouTubeMenuUntilLoaded }) {
-            self.youtube.pages.removeLast()
-            self.youtube.error = nil
-            self.youtube.status = nil
-            guard let page = self.currentYouTubePage else { return }
-            self.headerText = self.truncatedHeaderTitle(page.page.title, fallback: "YouTube")
-            self.clearYouTubePreview()
-            if page.isLoaded {
-                self.selectYouTubeRememberedRow()
-                self.refreshDetailPreviewForCurrentContext()
+            self.takeOffTopYouTubePage()
+        }
+    }
+
+    /// The top page goes, and the one under it is the current one again, as it was left.
+    private func takeOffTopYouTubePage() {
+        youtube.pages.removeLast()
+        youtube.error = nil
+        youtube.status = nil
+        guard let page = currentYouTubePage else { return }
+        headerText = truncatedHeaderTitle(page.page.title, fallback: "YouTube")
+        clearYouTubePreview()
+        if page.isLoaded {
+            selectYouTubeRememberedRow()
+            refreshDetailPreviewForCurrentContext()
+        } else {
+            selectedThirdIndex = 0
+            loadCurrentYouTubePage()
+        }
+    }
+
+    /// Plays the video a page was come to from again, from where it had got to. Once it's over
+    /// the menus the page goes from under it, so it closes to the list it was chosen from.
+    private func resumeYouTubeVideo(_ point: YouTubeResumePoint) {
+        guard !youtube.isStartingPlayback, !youtube.isOpeningChannel, !isMovieTransitioning, !isMoviePlaybackVisible else { return }
+        let depth = youtube.pages.count
+        playYouTubeVideo(point.video, from: point.seconds) { [weak self] started in
+            guard let self, self.youtube.pages.count == depth, self.currentYouTubePage?.resumes?.video.id == point.video.id else { return }
+            if started, depth > 1 {
+                self.youtube.requestID &+= 1
+                self.takeOffTopYouTubePage()
             } else {
-                self.selectedThirdIndex = 0
-                self.loadCurrentYouTubePage()
+                // (It can't be played again: Back leaves the page as it does any other.)
+                self.youtube.pages[depth - 1].resumes = nil
             }
         }
     }

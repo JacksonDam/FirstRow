@@ -107,7 +107,7 @@ extension MenuView {
         }
     }
 
-    func startMoviePlaybackWithStandardTransition(from url: URL) {
+    func startMoviePlaybackWithStandardTransition(from url: URL, startSeconds: Double = 0) {
         clearMoviePlaybackControlState()
         isMovieTransitioning = true
         let isModern = ModernTheme.isActive
@@ -129,7 +129,7 @@ extension MenuView {
                     movieSceneOpacity = 0
                 }
             }
-            activateMoviePlayback(from: url, startSeconds: 0, showsPlayGlyphOnStart: false)
+            activateMoviePlayback(from: url, startSeconds: startSeconds, showsPlayGlyphOnStart: false)
             withTransaction(instant) {
                 movieTransitionOverlayOpacity = 0
             }

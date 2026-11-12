@@ -526,25 +526,45 @@ extension MenuView {
     /// A description as rows to move through: its paragraphs, a long one cut into pieces of a
     /// few lines at the ends of sentences or lines.
 
-    /// Leaves the video for its channel's page: the channel's videos, in the menus.
+    /// Leaves the video for its channel's page: the channel's videos, in the menus. The page
+    /// takes its place under the video and loads there, and the video leaves for it once it
+    /// has. (Left at once, the video closed to the list it was chosen from, which then gave
+    /// way to the channel's.) Back on the channel's page goes back to the video, where it
+    /// was left.
     private func openYouTubeChannelFromPanel(id: String, name: String) {
-        guard thirdMenuMode == .youtube, !isMovieTransitioning else {
+        guard thirdMenuMode == .youtube, !isMovieTransitioning, !youtube.isOpeningChannel else {
             playLimitSoundOnceForCurrentHold()
             return
         }
-        youtubePanel = nil
-        youtubePanelReveal = 0
-        spreadYouTubePanel(to: 0, nil)
         playSound(named: "Selection")
-        stopMoviePlaybackAndReturnToMenu()
+        func leaveVideo() {
+            youtubePanel = nil
+            youtubePanelReveal = 0
+            spreadYouTubePanel(to: 0, nil)
+            stopMoviePlaybackAndReturnToMenu()
+        }
+        // (One of the channel's own videos, chosen from its page: the page is under it already.)
+        if case .list(.channel(id, _)) = currentYouTubePage?.page {
+            leaveVideo()
+            return
+        }
+        var point: YouTubeResumePoint?
+        if let session = youtubeSession {
+            var seconds = moviePlaybackCurrentSeconds
+            if let shown = moviePlayer?.currentTime().seconds, shown.isFinite { seconds = max(seconds, shown) }
+            point = YouTubeResumePoint(video: session.video, seconds: session.playback.isLive || !seconds.isFinite ? 0 : seconds)
+        }
+        youtube.isOpeningChannel = true
+        placeYouTubePage(.list(.channel(id: id, name: name)), resuming: point)
+        let depth = youtube.pages.count
         Task { @MainActor in
-            // (Once the movie has gone from over the menus.)
-            for _ in 0 ..< 80 where self.isMoviePlaybackVisible || self.isMovieTransitioning {
+            // (For a few seconds at most: a page that hasn't come by then shows as it comes.)
+            for _ in 0 ..< 80 where self.isMoviePlaybackVisible && self.youtube.pages.count == depth && self.currentYouTubePage?.isLoaded == false {
                 try? await firstRowSleep(0.05)
             }
-            guard self.thirdMenuMode == .youtube, !self.isMoviePlaybackVisible, !self.isMenuFolderSwapTransitioning else { return }
-            if case .list(.channel(id, _)) = self.currentYouTubePage?.page { return }
-            self.pushYouTubePage(.list(.channel(id: id, name: name)))
+            self.youtube.isOpeningChannel = false
+            guard self.isMoviePlaybackVisible, !self.isMovieTransitioning else { return }
+            leaveVideo()
         }
     }
 
