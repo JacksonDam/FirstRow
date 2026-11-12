@@ -296,12 +296,8 @@ extension MenuView {
         if hasActiveMusicPlaybackSession() {
             stopMusicPlaybackSession(clearDisplayState: false)
         }
-        #if FIRSTROW_PORTABLE
-            let player = AVPlayer(url: url)
-        #else
-            // (A YouTube video at a size that was asked for has a playlist of First Row's making.)
-            let player = YouTubePlaylistLoader.shared.playerItem(for: url).map { AVPlayer(playerItem: $0) } ?? AVPlayer(url: url)
-        #endif
+        let clampedStart = max(0, startSeconds.isFinite ? startSeconds : 0)
+        let player = makeMoviePlayer(for: url, startSeconds: clampedStart)
         player.isMuted = FirstRowHarness.isActive
         configureMoviePlaybackObservation(for: player)
         currentMoviePlaybackURL = url.standardizedFileURL
@@ -312,19 +308,17 @@ extension MenuView {
         probeMovieOptionKinds(player)
         isMoviePlaybackVisible = true
         pendingMovieControlsRevealOnDurationReady = false
-        let clampedStart = max(0, startSeconds.isFinite ? startSeconds : 0)
-        if clampedStart > 0.001 {
-            moviePlaybackCurrentSeconds = clampedStart
-            player.seek(
-                to: CMTime(seconds: clampedStart, preferredTimescale: 600),
-                toleranceBefore: .zero,
-                toleranceAfter: .zero,
-            ) { _ in
+        if clampedStart > 0.001 { moviePlaybackCurrentSeconds = clampedStart }
+        if player is AVPlayer {
+            if clampedStart > 0.001 {
+                player.seek(toSeconds: clampedStart, exactly: true) { _ in
+                    player.play()
+                }
+            } else {
                 player.play()
             }
-        } else {
-            player.play()
         }
+        // (The engine starts a movie where it's asked to as it opens it, and plays.)
         movieControlsGlyphState = .play
         if showsPlayGlyphOnStart {
             showMovieControlsInstantly()
@@ -341,7 +335,7 @@ extension MenuView {
             return
         }
         var closedAt = moviePlaybackCurrentSeconds
-        if let playerSeconds = moviePlayer?.currentTime().seconds, playerSeconds.isFinite {
+        if let playerSeconds = moviePlayer?.positionSeconds {
             closedAt = max(closedAt, playerSeconds)
         }
         if closedAt.isFinite, closedAt > 0.05 {
@@ -516,7 +510,7 @@ extension MenuView {
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         movieControlsGlyphState = .play
         player.play()
-        if movieSpeed != 1 { applyMovieSpeed(player) }
+        if movieSpeed != 1 { player.setSpeed(movieSpeed) }
         if movieOptions == nil { hideMovieControlsWithFade() }
     }
 
@@ -614,11 +608,7 @@ extension MenuView {
         let unclampedTime = moviePlaybackCurrentSeconds + (Double(movieScrubDirection) * velocity * delta)
         let targetSeconds = max(0, min(maxTime > 0 ? maxTime : unclampedTime, unclampedTime))
         moviePlaybackCurrentSeconds = max(0, targetSeconds)
-        player.seek(
-            to: CMTime(seconds: moviePlaybackCurrentSeconds, preferredTimescale: 600),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero,
-        )
+        player.seek(toSeconds: moviePlaybackCurrentSeconds, exactly: true)
     }
 
     func stopMovieScrubbing(revertToPause: Bool, scheduleAutoHide: Bool) {
@@ -719,39 +709,30 @@ extension MenuView {
         movieControlsHideWorkItem = nil
     }
 
-    func configureMoviePlaybackObservation(for player: AVPlayer) {
+    func configureMoviePlaybackObservation(for player: any MoviePlayer) {
         removeMoviePlaybackObservation()
         movieOptions = nil
         movieSpeed = 1
         observedMoviePlayer = player
-        moviePlaybackCurrentSeconds = max(0, player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0)
+        moviePlaybackCurrentSeconds = player.positionSeconds
         moviePlaybackDurationSeconds = resolvedMovieDurationSeconds(for: player)
-        if let currentItem = player.currentItem {
-            moviePlaybackDidEndObserver = NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: currentItem,
-                queue: .main,
-            ) { _ in
-                MainActor.assumeIsolatedIfPossible {
-                    guard self.observedMoviePlayer === player else { return }
-                    guard self.isMoviePlaybackVisible else { return }
-                    guard !self.isMovieTransitioning else { return }
-                    let resolvedDuration = self.resolvedMovieDurationSeconds(for: player)
-                    self.moviePlaybackDurationSeconds = max(self.moviePlaybackDurationSeconds, resolvedDuration)
-                    self.moviePlaybackCurrentSeconds = self.moviePlaybackDurationSeconds
-                    // Watched to the end: nothing left to resume.
-                    if let url = self.currentMoviePlaybackURL {
-                        MovieResumeStore.remove(url)
-                        self.refreshContinueWatchingIfShown()
-                    }
-                    if self.jellyfinPlayNextEpisodeAtEnd() { return }
-                    self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
-                }
+        moviePlaybackDidEndObserver = player.observeEnd { [weak player] in
+            guard let player, self.observedMoviePlayer === player else { return }
+            guard self.isMoviePlaybackVisible else { return }
+            guard !self.isMovieTransitioning else { return }
+            let resolvedDuration = self.resolvedMovieDurationSeconds(for: player)
+            self.moviePlaybackDurationSeconds = max(self.moviePlaybackDurationSeconds, resolvedDuration)
+            self.moviePlaybackCurrentSeconds = self.moviePlaybackDurationSeconds
+            // Watched to the end: nothing left to resume.
+            if let url = self.currentMoviePlaybackURL {
+                MovieResumeStore.remove(url)
+                self.refreshContinueWatchingIfShown()
             }
+            if self.jellyfinPlayNextEpisodeAtEnd() { return }
+            self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
         }
-        let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
-        movieTimeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
-            let currentSeconds = max(0, time.seconds.isFinite ? time.seconds : 0)
+        movieTimeObserverToken = player.observeTime(every: 1.0 / 30.0) { [weak player] currentSeconds in
+            guard let player else { return }
             if self.movieScrubDirection == 0 {
                 self.moviePlaybackCurrentSeconds = currentSeconds
             }
@@ -782,7 +763,7 @@ extension MenuView {
     /// Has the pinwheel show while the player is waiting for more of the movie than it has:
     /// once it has waited a third of a second, so the short waits that every start and every
     /// jump to another place have don't flash it.
-    private func watchMovieBuffering(of player: AVPlayer) {
+    private func watchMovieBuffering(of player: any MoviePlayer) {
         movieBufferingWatchTask?.cancel()
         if showsMovieBufferingPinwheel { showsMovieBufferingPinwheel = false }
         movieBufferingWatchTask = Task { @MainActor [weak self] in
@@ -791,7 +772,7 @@ extension MenuView {
                 try? await firstRowSleep(0.1)
                 guard let self, !Task.isCancelled, self.observedMoviePlayer === player else { return }
                 let now = CACurrentMediaTime()
-                if self.isMoviePlaybackVisible, player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                if self.isMoviePlaybackVisible, player.isWaitingToPlay {
                     waitingSince = waitingSince ?? now
                 } else {
                     waitingSince = nil
@@ -807,23 +788,76 @@ extension MenuView {
         movieBufferingWatchTask = nil
         if showsMovieBufferingPinwheel { showsMovieBufferingPinwheel = false }
         if let token = movieTimeObserverToken, let observedMoviePlayer {
-            observedMoviePlayer.removeTimeObserver(token)
+            observedMoviePlayer.stopObservingTime(token)
         }
         movieTimeObserverToken = nil
-        if let moviePlaybackDidEndObserver {
-            NotificationCenter.default.removeObserver(moviePlaybackDidEndObserver)
+        if let moviePlaybackDidEndObserver, let observedMoviePlayer {
+            observedMoviePlayer.stopObservingEnd(moviePlaybackDidEndObserver)
         }
         moviePlaybackDidEndObserver = nil
         observedMoviePlayer = nil
     }
 
-    func resolvedMovieDurationSeconds(for player: AVPlayer) -> Double {
-        guard let currentItem = player.currentItem else { return 0 }
-        let itemDuration = currentItem.duration.seconds
-        if itemDuration.isFinite, itemDuration > 0 {
-            return itemDuration
+    func resolvedMovieDurationSeconds(for player: any MoviePlayer) -> Double {
+        player.lengthSeconds
+    }
+
+    /// The words to show under the picture: a YouTube video's captions, or the subtitles the
+    /// movie's player has First Row draw.
+    var movieCaptionText: String? {
+        if let text = youtubeCaptionText { return text }
+        let lines = movieCaptions.compactMap(\.text).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// The movie's player when it is the system's own (on Linux and Windows, the one there is).
+    var movieSystemPlayer: AVPlayer? {
+        moviePlayer as? AVPlayer
+    }
+
+    /// What will play a movie: the system's player for what it can open, First Row's own
+    /// engine for the rest, where there is one.
+    func makeMoviePlayer(for url: URL, startSeconds: Double) -> any MoviePlayer {
+        #if FIRSTROW_PORTABLE
+            return AVPlayer(url: url)
+        #else
+            // (A YouTube video at a size that was asked for has a playlist of First Row's making.)
+            if let item = YouTubePlaylistLoader.shared.playerItem(for: url) {
+                return AVPlayer(playerItem: item)
+            }
+            if MediaEngine.plays(url), let player = EngineMoviePlayer(url: url, startSeconds: startSeconds) {
+                player.onCaptions = { [weak self, weak player] captions in
+                    guard let self, let player, self.moviePlayer === player else { return }
+                    self.movieCaptions = captions
+                }
+                player.onFailure = { [weak self, weak player] _ in
+                    guard let self, let player, self.moviePlayer === player else { return }
+                    self.movieCouldNotBePlayed()
+                }
+                player.onChange = { [weak self, weak player] in
+                    guard let self, let player, self.moviePlayer === player, self.movieOptions == nil else { return }
+                    self.probeMovieOptionKinds(player)
+                }
+                return player
+            }
+            return AVPlayer(url: url)
+        #endif
+    }
+
+    /// The movie's player has given up on it: back to the menus, and a screen that says so.
+    func movieCouldNotBePlayed() {
+        guard isMoviePlaybackVisible, !isMovieTransitioning else { return }
+        playSound(named: "Limit")
+        stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
+        Task { @MainActor in
+            // (Once the menus are back.)
+            try? await firstRowSleep(movieExitFreezeHoldDuration + movieExitFadeDuration + 0.4)
+            guard !self.isMoviePlaybackVisible else { return }
+            self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
+                "header": "This video can't be played.",
+                "subcaption": "First Row couldn't open it.",
+            ])
         }
-        return 0
     }
 
     func clearMoviePlaybackControlState() {
@@ -838,5 +872,6 @@ extension MenuView {
         moviePlaybackCurrentSeconds = 0
         moviePlaybackDurationSeconds = 0
         pendingMovieControlsRevealOnDurationReady = false
+        if !movieCaptions.isEmpty { movieCaptions = [] }
     }
 }

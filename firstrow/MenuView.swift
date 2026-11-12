@@ -330,7 +330,10 @@ final class MenuView: ObservableObject {
 
     // MARK: - Movie playback state
 
-    @Published var moviePlayer: AVPlayer?
+    @Published var moviePlayer: (any MoviePlayer)?
+    /// The subtitles the movie's player has First Row draw (its own engine's: the system's
+    /// player draws its own).
+    @Published var movieCaptions: [MovieCaption] = []
     @Published var currentMoviePlaybackURL: URL?
     @Published var currentMoviePlaybackTemporaryFileURL: URL?
     @Published var isCurrentMoviePlaybackEphemeralPreview = false
@@ -365,8 +368,8 @@ final class MenuView: ObservableObject {
     @Published var moviePlaybackDurationSeconds: Double = 0
     @Published var pendingMovieControlsRevealOnDurationReady = false
     @Published var movieTimeObserverToken: Any?
-    @Published var moviePlaybackDidEndObserver: NSObjectProtocol?
-    @Published var observedMoviePlayer: AVPlayer?
+    @Published var moviePlaybackDidEndObserver: Any?
+    @Published var observedMoviePlayer: (any MoviePlayer)?
     @Published var movieScrubDirection: Int = 0
     @Published var movieScrubStartDate: Date?
     @Published var movieLastScrubInputDate: Date?

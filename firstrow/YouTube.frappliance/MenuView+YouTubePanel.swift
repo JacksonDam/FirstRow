@@ -551,7 +551,7 @@ extension MenuView {
         var point: YouTubeResumePoint?
         if let session = youtubeSession {
             var seconds = moviePlaybackCurrentSeconds
-            if let shown = moviePlayer?.currentTime().seconds, shown.isFinite { seconds = max(seconds, shown) }
+            if let shown = moviePlayer?.positionSeconds { seconds = max(seconds, shown) }
             point = YouTubeResumePoint(video: session.video, seconds: session.playback.isLive || !seconds.isFinite ? 0 : seconds)
         }
         youtube.isOpeningChannel = true

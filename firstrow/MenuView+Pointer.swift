@@ -803,8 +803,7 @@ extension MenuView {
         guard duration.isFinite, duration > 0 else { return }
         let seconds = max(0, min(duration, fraction * duration))
         moviePlaybackCurrentSeconds = seconds
-        let tolerance = exact ? CMTime.zero : CMTime(seconds: 0.1, preferredTimescale: 600)
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance)
+        player.seek(toSeconds: seconds, exactly: exact)
     }
 
     func skipMovie(bySeconds delta: Double) {
@@ -815,7 +814,7 @@ extension MenuView {
         showMovieControlsInstantly()
         let seconds = max(0, min(duration - 0.5, moviePlaybackCurrentSeconds + delta))
         moviePlaybackCurrentSeconds = seconds
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(toSeconds: seconds, exactly: true)
         scheduleMovieControlsAutoHide()
     }
 

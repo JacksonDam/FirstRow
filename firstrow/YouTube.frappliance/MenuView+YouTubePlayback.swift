@@ -256,7 +256,7 @@ extension MenuView {
         #if !FIRSTROW_PORTABLE
             // Captions are First Row's to draw (see `selectYouTubeCaptions`): the player isn't
             // to turn the playlist's own on as well.
-            moviePlayer?.appliesMediaSelectionCriteriaAutomatically = false
+            movieSystemPlayer?.appliesMediaSelectionCriteriaAutomatically = false
             watchYouTubePictureSize()
         #endif
         loadYouTubeVideoExtras()
@@ -449,7 +449,7 @@ extension MenuView {
     /// the sound, now asked for. (Left to change size as it went, it would first play out
     /// what it had already fetched at the old one.)
     private func reloadYouTubeStream() async {
-        guard var session = youtubeSession, let player = moviePlayer, !session.playback.isLive else { return }
+        guard var session = youtubeSession, let player = movieSystemPlayer, !session.playback.isLive else { return }
         #if FIRSTROW_PORTABLE
             let limit = YouTubeStore.shared.maximumHeight ?? Self.youtubeHeightSuitingTheScreen
             guard let chosen = Self.youtubeVariant(in: session.variants, maximumHeight: limit),
@@ -504,7 +504,7 @@ extension MenuView {
         }
         if wasPlaying {
             player.play()
-            if movieSpeed != 1 { applyMovieSpeed(player) }
+            if movieSpeed != 1 { player.setSpeed(movieSpeed) }
         }
     }
 }
@@ -532,7 +532,7 @@ struct YouTubeSizeWatch {
             youtubeSizeWatchTask = Task { @MainActor in
                 while !Task.isCancelled {
                     try? await firstRowSleep(Self.youtubeSizeWatchInterval)
-                    guard !Task.isCancelled, let session = self.youtubeSession, let player = self.moviePlayer else { return }
+                    guard !Task.isCancelled, let session = self.youtubeSession, let player = self.movieSystemPlayer else { return }
                     self.noteYouTubePictureSize(session: session, player: player)
                 }
             }

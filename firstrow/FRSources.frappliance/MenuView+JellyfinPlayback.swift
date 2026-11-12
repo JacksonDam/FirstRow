@@ -99,7 +99,7 @@ extension MenuView {
         stopJellyfinProgressTimerIfIdle()
         guard session.hasStarted, let client = jellyfinClient(for: session) else { return }
         var position = moviePlaybackCurrentSeconds
-        if let seconds = moviePlayer?.currentTime().seconds, seconds.isFinite { position = max(position, seconds) }
+        if let seconds = moviePlayer?.positionSeconds { position = max(position, seconds) }
         if atEnd { position = max(position, session.item.durationSeconds) }
         let itemID = session.item.id
         let stream = session.stream

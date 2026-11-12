@@ -18,18 +18,20 @@ cp ../firstrow/Movies.frappliance/MediaEngineInterface.swift Sources/FirstRowMed
 
 for system in "$@"; do
     case "$system" in
-        macos) destination="generic/platform=macOS"; sdk=macosx; products=Release ;;
-        ios) destination="generic/platform=iOS"; sdk=iphoneos; products=Release-iphoneos ;;
-        ios-simulator) destination="generic/platform=iOS Simulator"; sdk=iphonesimulator; products=Release-iphonesimulator ;;
-        tvos) destination="generic/platform=tvOS"; sdk=appletvos; products=Release-appletvos ;;
-        tvos-simulator) destination="generic/platform=tvOS Simulator"; sdk=appletvsimulator; products=Release-appletvsimulator ;;
+        macos) destination="generic/platform=macOS"; sdk=macosx; products=Release; archs="arm64 x86_64" ;;
+        ios) destination="generic/platform=iOS"; sdk=iphoneos; products=Release-iphoneos; archs=arm64 ;;
+        ios-simulator) destination="generic/platform=iOS Simulator"; sdk=iphonesimulator; products=Release-iphonesimulator; archs=arm64 ;;
+        tvos) destination="generic/platform=tvOS"; sdk=appletvos; products=Release-appletvos; archs=arm64 ;;
+        tvos-simulator) destination="generic/platform=tvOS Simulator"; sdk=appletvsimulator; products=Release-appletvsimulator; archs=arm64 ;;
         *) echo "build.sh: unknown system \"$system\"" >&2; exit 2 ;;
     esac
     echo "Building the media engine for $system..."
+    mkdir -p "$here/.build"
     derived="$here/.build/xcode-$sdk"
     xcodebuild -scheme FirstRowMediaEngine -destination "$destination" -configuration Release \
         -derivedDataPath "$derived" -skipPackagePluginValidation \
-        SKIP_INSTALL=NO DEBUG_INFORMATION_FORMAT=dwarf build > "$here/.build/build-$sdk.log" 2>&1 || {
+        SKIP_INSTALL=NO DEBUG_INFORMATION_FORMAT=dwarf ARCHS="$archs" ONLY_ACTIVE_ARCH=NO \
+        build > "$here/.build/build-$sdk.log" 2>&1 || {
         tail -40 "$here/.build/build-$sdk.log" >&2
         echo "build.sh: the build for $system failed (the whole log is in MediaEngine/.build/build-$sdk.log)" >&2
         exit 1
@@ -54,6 +56,7 @@ for system in "$@"; do
             cp -R "$bundle" "$out/FirstRowMediaEngine.framework/"
         fi
     done
+    chmod -R u+w "$out"
     # The terms the engine's parts come under travel with it.
     if [ -d "$out/FirstRowMediaEngine.framework/Versions/A" ]; then
         licenses="$out/FirstRowMediaEngine.framework/Versions/A/Resources/Licenses"

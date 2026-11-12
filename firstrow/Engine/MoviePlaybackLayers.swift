@@ -23,7 +23,12 @@ final class MoviePlaybackLayers {
     let controls = MovieControlsLayer()
     let modernControls = ModernMovieControlsLayer()
     let options = MovieOptionsLayer()
-    /// A YouTube video's captions and the panel beside its picture (see `YouTubeVideoLayers`).
+    /// The picture of a movie First Row's own engine is playing: the engine's own layer, put
+    /// where the system player's would be.
+    private var enginePicture: CALayer?
+    /// A movie's subtitles and a YouTube video's captions, where First Row draws them, and
+    /// the panel beside a video's picture (see `YouTubeVideoLayers`).
+    let subtitlePictures = MovieSubtitlePicturesLayer()
     let captions = YouTubeCaptionLayer()
     let panel = YouTubePanelLayer()
     /// The pinwheel that turns over the picture while the player waits for more of the movie.
@@ -59,7 +64,7 @@ final class MoviePlaybackLayers {
             pinwheel.layer.shadowRadius = 5
             pinwheel.layer.shadowOffset = .zero
         #endif
-        for sublayer in [backdrop, playerLayer, captions.layer, waiting, controls.layer, modernControls.layer, panel.layer, options.layer] {
+        for sublayer in [backdrop, playerLayer, subtitlePictures.layer, captions.layer, waiting, controls.layer, modernControls.layer, panel.layer, options.layer] {
             group.addSublayer(sublayer)
         }
         #if os(iOS)
@@ -74,13 +79,21 @@ final class MoviePlaybackLayers {
         group.setTransform(MenuSceneRenderer.scale(depth, about: CGPoint(x: bounds.midX, y: bounds.midY)), pass.animation)
         group.setOpacity(ModernTheme.isActive ? menu.movieSceneOpacity : 1, pass.animation)
         let showsPlayer = menu.isMoviePlaybackVisible && menu.moviePlayer != nil
-        if playerLayer.player !== menu.moviePlayer, showsPlayer || menu.moviePlayer == nil {
-            playerLayer.player = menu.moviePlayer
+        let systemPlayer = menu.moviePlayer as? AVPlayer
+        if playerLayer.player !== systemPlayer, showsPlayer || menu.moviePlayer == nil {
+            playerLayer.player = systemPlayer
         }
-        playerLayer.isHidden = !showsPlayer
+        playerLayer.isHidden = !showsPlayer || systemPlayer == nil
         if !showsPlayer, playerLayer.player != nil, !menu.isMoviePlaybackVisible {
             playerLayer.player = nil
         }
+        #if FIRSTROW_PORTABLE
+            let pictureShape: CGSize? = nil
+        #else
+            let engine = showsPlayer ? menu.moviePlayer as? EngineMoviePlayer : nil
+            showEnginePicture(engine?.pictureLayer)
+            let pictureShape = engine?.pictureSize
+        #endif
         backdrop.isHidden = !showsPlayer
         backdrop.place(bounds)
         // On the full-screen canvas, so the controls keep their proportions at any resolution.
@@ -88,7 +101,11 @@ final class MoviePlaybackLayers {
         // the controls the screen below it, where they stay up. Flat, it's one tall screen.
         let canvas = FullscreenCanvas(screenSize: bounds.size, upright: menu.upright)
         let isBent = canvas.upright?.isBent == true
-        placePicture(canvas.upright.map { $0.isBent ? canvas.window($0.moviePicture) : bounds } ?? bounds)
+        let pictureBox = canvas.upright.map { $0.isBent ? canvas.window($0.moviePicture) : bounds } ?? bounds
+        placePicture(pictureBox, shape: pictureShape)
+        // Subtitles that are pictures (a disc's, a broadcast's) go where they were made to go
+        // on the movie's picture.
+        subtitlePictures.update(showsPlayer ? menu.movieCaptions : [], picture: Self.fitted(pictureShape, in: pictureBox))
         #if os(iOS)
             // (All of the screen under the fold, to its bottom edge: none of it in the fold.)
             var underTheFold: CGRect?
@@ -97,7 +114,7 @@ final class MoviePlaybackLayers {
                 underTheFold = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top)
             }
             reflection.update(
-                player: showsPlayer ? menu.moviePlayer : nil,
+                player: showsPlayer ? systemPlayer : nil,
                 under: underTheFold,
                 pixelsWide: min(bounds.width, bounds.height) * scale,
                 staysReady: UprightStance.screenFolds,
@@ -117,7 +134,7 @@ final class MoviePlaybackLayers {
         var barIsOverPicture = !isBent
         #if !FIRSTROW_PORTABLE
             if barIsOverPicture, canvas.upright != nil {
-                let video = playerLayer.videoRect
+                let video = enginePicture == nil ? playerLayer.videoRect : Self.fitted(pictureShape, in: pictureBox)
                 barIsOverPicture = video.height > 1 && video.maxY > bounds.height - ModernMovieControlsLayer.fadeHeight * canvas.scale
             }
         #endif
@@ -127,7 +144,7 @@ final class MoviePlaybackLayers {
         let isModern = ModernTheme.isActive
         canvas.apply(to: captions.layer)
         captions.update(
-            text: showsPlayer ? menu.youtubeCaptionText : nil,
+            text: showsPlayer ? menu.movieCaptionText : nil,
             raised: showsControls && controlsOpacity > 0.5,
             width: controlsSize.width,
             size: controlsSize,
@@ -244,20 +261,50 @@ final class MoviePlaybackLayers {
         }
     #endif
 
+    /// Puts the engine's layer for the picture among the movie's, or takes it out.
+    private func showEnginePicture(_ layer: CALayer?) {
+        guard layer !== enginePicture else { return }
+        if let old = enginePicture, old.superlayer === group { old.removeFromSuperlayer() }
+        enginePicture = layer
+        guard let layer else { return }
+        withoutLayerActions {
+            layer.transform = CATransform3DIdentity
+            layer.frame = playerLayer.frame
+        }
+        group.insertSublayer(layer, above: playerLayer)
+    }
+
+    /// Where a picture of a shape shows in a box it's fitted into (the box itself, for a
+    /// shape that isn't known).
+    static func fitted(_ shape: CGSize?, in box: CGRect) -> CGRect {
+        guard let shape, shape.width > 0, shape.height > 0, box.width > 0, box.height > 0 else { return box }
+        let scale = min(box.width / shape.width, box.height / shape.height)
+        let size = CGSize(width: shape.width * scale, height: shape.height * scale)
+        return CGRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height)
+    }
+
     /// Gives the picture its box. As the layout glides, the picture travels from where it was
     /// to where it fits now, keeping its shape: by a transform, since a video's layer takes a
-    /// new size at once.
-    private func placePicture(_ box: CGRect) {
-        let before = playerLayer.frame
+    /// new size at once. (`shape` is the picture's, for the engine's layer, which doesn't say
+    /// where in itself the picture is.)
+    private func placePicture(_ box: CGRect, shape engineShape: CGSize?) {
+        let picture: CALayer = enginePicture ?? playerLayer
+        let before = picture.frame
         guard before != box else { return }
         #if FIRSTROW_PORTABLE
             // Nothing glides there: its windows have one layout.
             playerLayer.frame = box
         #else
-            let video = playerLayer.videoRect
-            let shown = playerLayer.presentation()?.transform ?? CATransform3DIdentity
-            playerLayer.frame = box
-            guard LayoutGlide.isActive, !playerLayer.isHidden, before.width > 0, before.height > 0, box.width > 0, box.height > 0 else { return }
+            let video = enginePicture == nil ? playerLayer.videoRect : Self.fitted(engineShape, in: CGRect(origin: .zero, size: before.size))
+            let shown = picture.presentation()?.transform ?? CATransform3DIdentity
+            withoutLayerActions {
+                playerLayer.frame = box
+                if let enginePicture {
+                    enginePicture.bounds = CGRect(origin: .zero, size: box.size)
+                    enginePicture.position = CGPoint(x: box.midX, y: box.midY)
+                }
+            }
+            guard LayoutGlide.isActive, !picture.isHidden, before.width > 0, before.height > 0, box.width > 0, box.height > 0 else { return }
             // The picture's shape: the video's once it's known, the old box's until then.
             let shape = video.width > 1 && video.height > 1 ? video.size : before.size
             func fitted(in box: CGRect) -> CGFloat {
@@ -271,8 +318,58 @@ final class MoviePlaybackLayers {
                 CATransform3DMakeTranslation(before.midX + shown.m41 - box.midX, before.midY + shown.m42 - box.midY, 0),
                 ratio, ratio, 1,
             )
-            LayoutGlide.bring(playerLayer, "transform", from: NSValue(caTransform3D: from))
+            LayoutGlide.bring(picture, "transform", from: NSValue(caTransform3D: from))
         #endif
+    }
+}
+
+/// A movie's subtitles that come as pictures (a DVD's, a Blu-ray's, a broadcast's), each put
+/// where it was made to go on the movie's picture.
+@MainActor
+final class MovieSubtitlePicturesLayer {
+    let layer = SceneLayer()
+    private var pictures: [SceneLayer] = []
+
+    /// `picture` is where the movie's picture shows, in the layer's own space.
+    func update(_ captions: [MovieCaption], picture: CGRect) {
+        let shown = captions.filter { $0.image != nil }
+        guard !shown.isEmpty else {
+            if !layer.isHidden { layer.isHidden = true }
+            return
+        }
+        layer.isHidden = false
+        while pictures.count < shown.count {
+            let made = SceneLayer()
+            made.contentsGravity = .resize
+            layer.addSublayer(made)
+            pictures.append(made)
+        }
+        for (index, sublayer) in pictures.enumerated() {
+            guard index < shown.count, let image = shown[index].image else {
+                sublayer.isHidden = true
+                sublayer.contents = nil
+                continue
+            }
+            let caption = shown[index]
+            // The canvas the subtitle was made on lies over the picture, as wide as it is and
+            // about its middle (on a film cut down from its disc's shape the canvas is taller).
+            var canvas = picture
+            if caption.canvas.width > 0, caption.canvas.height > 0 {
+                let height = picture.width * caption.canvas.height / caption.canvas.width
+                canvas = CGRect(x: picture.minX, y: picture.midY - height / 2, width: picture.width, height: height)
+            }
+            let box = CGRect(
+                x: canvas.minX + caption.frame.minX * canvas.width,
+                y: canvas.minY + caption.frame.minY * canvas.height,
+                width: caption.frame.width * canvas.width,
+                height: caption.frame.height * canvas.height,
+            )
+            withoutLayerActions {
+                sublayer.isHidden = false
+                sublayer.contents = image
+                sublayer.place(box)
+            }
+        }
     }
 }
 

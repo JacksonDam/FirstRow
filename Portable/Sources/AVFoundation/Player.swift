@@ -313,6 +313,16 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         core?.setPropertyWithoutWaiting(property, id.map(String.init) ?? "no")
     }
 
+    /// The file's chapters: what each is called (nothing, for one with no name) and where it
+    /// starts, in seconds.
+    public func chapterList() -> [(title: String, start: Double)] {
+        guard let core, let count = core.int("chapter-list/count"), count > 0 else { return [] }
+        return (0 ..< count).compactMap { index in
+            guard let start = core.double("chapter-list/\(index)/time") else { return nil }
+            return (core.string("chapter-list/\(index)/title") ?? "", max(0, start))
+        }
+    }
+
     public func pause() {
         MPVCore.debug("pause()")
         // (Where it has got to, read while it still counts as playing.)

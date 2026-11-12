@@ -1,8 +1,9 @@
 import AVFoundation
 import Foundation
 
-/// The panel ↓ opens during a movie (or its buttons above the bar): subtitles, audio track and
-/// playback speed, and for a YouTube video the size of its picture, what it is and its comments.
+/// The panel ↓ opens during a movie (or its buttons above the bar): subtitles, audio track,
+/// chapter and playback speed, and for a YouTube video the size of its picture, what it is and
+/// its comments.
 /// Up and down move between rows, left and right (or Select) change the value, Menu or ↑ from
 /// the top closes it, back into its buttons.
 extension MenuView {
@@ -10,6 +11,7 @@ extension MenuView {
         enum Kind: Hashable {
             case subtitles
             case audio
+            case chapters
             case quality
             case speed
             case info
@@ -35,15 +37,11 @@ extension MenuView {
         /// (nil for whatever suits), in the order of their rows' values.
         var captionTracks: [Int?] = []
         var pictureHeights: [Int?] = []
-        #if FIRSTROW_PORTABLE
-            var subtitleIDs: [Int?] = []
-            var audioIDs: [Int] = []
-        #else
-            var legibleGroup: AVMediaSelectionGroup?
-            var legibleOptions: [AVMediaSelectionOption?] = []
-            var audibleGroup: AVMediaSelectionGroup?
-            var audibleOptions: [AVMediaSelectionOption] = []
-        #endif
+        /// The file's own subtitle tracks (nil for none) and audio tracks, by their ids, and
+        /// where its chapters start, each in the order of its row's values.
+        var subtitleIDs: [Int?] = []
+        var audioIDs: [Int] = []
+        var chapterStarts: [Double] = []
     }
 
     static let movieSpeeds: [Double] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -106,34 +104,26 @@ extension MenuView {
         if kinds != movieOptionKinds { movieOptionKinds = kinds }
     }
 
-    /// Finds what the movie offers (subtitles, more than one audio track) for its buttons.
-    func probeMovieOptionKinds(_ player: AVPlayer) {
+    /// Finds what the movie offers (subtitles, more than one audio track, chapters) for its
+    /// buttons.
+    func probeMovieOptionKinds(_ player: any MoviePlayer) {
         if youtubeSession != nil {
             let kinds = youtubeOptionKinds()
             if kinds != movieOptionKinds { movieOptionKinds = kinds }
             return
         }
-        #if FIRSTROW_PORTABLE
+        Task { @MainActor in
+            let subtitles = await player.tracks(.subtitles)
+            let audio = await player.tracks(.audio)
+            let chapters = await player.chapters()
+            guard self.moviePlayer === player else { return }
             var kinds: [MovieOptionRow.Kind] = []
-            if !player.tracks(ofType: "sub").isEmpty { kinds.append(.subtitles) }
-            if player.tracks(ofType: "audio").count > 1 { kinds.append(.audio) }
+            if !subtitles.isEmpty { kinds.append(.subtitles) }
+            if audio.count > 1 { kinds.append(.audio) }
+            if chapters.count > 1 { kinds.append(.chapters) }
             kinds.append(.speed)
-            if kinds != movieOptionKinds { movieOptionKinds = kinds }
-        #else
-            guard let item = player.currentItem else { return }
-            Task { @MainActor in
-                let legible = await Self.mediaSelectionGroup(item.asset, .legible)
-                let audible = await Self.mediaSelectionGroup(item.asset, .audible)
-                guard self.moviePlayer === player else { return }
-                var kinds: [MovieOptionRow.Kind] = []
-                if let legible, legible.options.contains(where: { !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) }) {
-                    kinds.append(.subtitles)
-                }
-                if let audible, audible.options.count > 1 { kinds.append(.audio) }
-                kinds.append(.speed)
-                if kinds != self.movieOptionKinds { self.movieOptionKinds = kinds }
-            }
-        #endif
+            if kinds != self.movieOptionKinds { self.movieOptionKinds = kinds }
+        }
     }
 
     private func speedRow() -> MovieOptionRow {
@@ -141,85 +131,47 @@ extension MenuView {
         return MovieOptionRow(kind: .speed, title: "Speed", values: Self.movieSpeeds.map(Self.speedTitle), selected: index)
     }
 
-    /// Fills in the subtitle and audio rows from the file's tracks, and says when it has.
-    private func loadMovieTrackRows(_ player: AVPlayer, then done: @escaping () -> Void) {
+    /// Fills in the subtitle, audio and chapter rows from the file, and says when it has.
+    private func loadMovieTrackRows(_ player: any MoviePlayer, then done: @escaping () -> Void) {
         if youtubeSession != nil {
             loadYouTubeOptionRows()
             done()
             return
         }
-        #if FIRSTROW_PORTABLE
-            let subtitles = player.tracks(ofType: "sub")
-            let audio = player.tracks(ofType: "audio")
-            guard var state = movieOptions else {
+        Task { @MainActor in
+            let subtitles = await player.tracks(.subtitles)
+            let audio = await player.tracks(.audio)
+            let chapters = await player.chapters()
+            guard var state = self.movieOptions, self.moviePlayer === player else {
                 done()
                 return
             }
             var rows: [MovieOptionRow] = []
             if !subtitles.isEmpty {
                 state.subtitleIDs = [nil] + subtitles.map(\.id)
-                let selected = subtitles.firstIndex(where: \.isSelected).map { $0 + 1 } ?? 0
+                let selected = subtitles.firstIndex(where: \.isChosen).map { $0 + 1 } ?? 0
                 rows.append(MovieOptionRow(kind: .subtitles, title: "Subtitles", values: ["Off"] + subtitles.map(\.title), selected: selected))
             }
             if audio.count > 1 {
                 state.audioIDs = audio.map(\.id)
-                rows.append(MovieOptionRow(kind: .audio, title: "Audio", values: audio.map(\.title), selected: audio.firstIndex(where: \.isSelected) ?? 0))
+                rows.append(MovieOptionRow(kind: .audio, title: "Audio", values: audio.map(\.title), selected: audio.firstIndex(where: \.isChosen) ?? 0))
             }
-            state.rows = rows + state.rows
-            if let preferred = state.preferredKind, let index = state.rows.firstIndex(where: { $0.kind == preferred }) {
-                state.focusedRow = index
+            if chapters.count > 1 {
+                state.chapterStarts = chapters.map(\.start)
+                // (The chapter the movie is in: the last to have started.)
+                let now = self.moviePlaybackCurrentSeconds + 0.25
+                let current = chapters.lastIndex { $0.start <= now } ?? 0
+                rows.append(MovieOptionRow(kind: .chapters, title: "Chapter", values: chapters.map(\.title), selected: current))
             }
-            movieOptions = state
-            noteMovieOptionKinds(state.rows)
+            let focusedKind = state.preferredKind ?? (state.rows.indices.contains(state.focusedRow) ? state.rows[state.focusedRow].kind : .speed)
+            state.rows = rows + state.rows.filter { $0.kind == .speed }
+            state.focusedRow = state.hasMoved ? (state.rows.firstIndex { $0.kind == focusedKind } ?? 0) : 0
+            state.preferredKind = nil
+            self.movieOptions = state
+            self.noteMovieOptionKinds(state.rows)
             done()
-        #else
-            guard let item = player.currentItem else {
-                done()
-                return
-            }
-            Task { @MainActor in
-                let legible = await Self.mediaSelectionGroup(item.asset, .legible)
-                let audible = await Self.mediaSelectionGroup(item.asset, .audible)
-                guard var state = self.movieOptions, self.moviePlayer === player else {
-                    done()
-                    return
-                }
-                var rows: [MovieOptionRow] = []
-                if let legible {
-                    let options = legible.options.filter { !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) }
-                    if !options.isEmpty {
-                        let current = item.currentMediaSelection.selectedMediaOption(in: legible)
-                        state.legibleGroup = legible
-                        state.legibleOptions = [nil] + options
-                        let selected = current.flatMap { options.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
-                        rows.append(MovieOptionRow(kind: .subtitles, title: "Subtitles", values: ["Off"] + options.map(\.displayName), selected: selected))
-                    }
-                }
-                if let audible, audible.options.count > 1 {
-                    let current = item.currentMediaSelection.selectedMediaOption(in: audible)
-                    state.audibleGroup = audible
-                    state.audibleOptions = audible.options
-                    rows.append(MovieOptionRow(kind: .audio, title: "Audio", values: audible.options.map(\.displayName), selected: current.flatMap { audible.options.firstIndex(of: $0) } ?? 0))
-                }
-                let focusedKind = state.preferredKind ?? (state.rows.indices.contains(state.focusedRow) ? state.rows[state.focusedRow].kind : .speed)
-                state.rows = rows + state.rows.filter { $0.kind == .speed }
-                state.focusedRow = state.hasMoved ? (state.rows.firstIndex { $0.kind == focusedKind } ?? 0) : 0
-                state.preferredKind = nil
-                self.movieOptions = state
-                self.noteMovieOptionKinds(state.rows)
-                done()
-            }
-        #endif
-    }
-
-    #if !FIRSTROW_PORTABLE
-        private static func mediaSelectionGroup(_ asset: AVAsset, _ characteristic: AVMediaCharacteristic) async -> AVMediaSelectionGroup? {
-            if #available(macOS 12.0, iOS 15.0, tvOS 15.0, *) {
-                return try? await asset.loadMediaSelectionGroup(for: characteristic)
-            }
-            return asset.mediaSelectionGroup(forMediaCharacteristic: characteristic)
         }
-    #endif
+    }
 
     // MARK: - Input
 
@@ -301,7 +253,7 @@ extension MenuView {
         switch row.kind {
         case .speed:
             movieSpeed = Self.movieSpeeds[row.selected]
-            applyMovieSpeed(player)
+            player.setSpeed(movieSpeed)
         case .quality:
             if state.pictureHeights.indices.contains(row.selected) {
                 setYouTubeMaximumHeight(state.pictureHeights[row.selected])
@@ -315,44 +267,28 @@ extension MenuView {
                 }
                 return
             }
-            #if FIRSTROW_PORTABLE
-                if state.subtitleIDs.indices.contains(row.selected) {
-                    player.selectTrack(ofType: "sub", id: state.subtitleIDs[row.selected])
-                }
-            #else
-                if let group = state.legibleGroup, state.legibleOptions.indices.contains(row.selected) {
-                    player.currentItem?.select(state.legibleOptions[row.selected], in: group)
-                }
-            #endif
+            if state.subtitleIDs.indices.contains(row.selected) {
+                let id = state.subtitleIDs[row.selected]
+                if id == nil, !movieCaptions.isEmpty { movieCaptions = [] }
+                Task { @MainActor in await player.chooseTrack(.subtitles, id: id) }
+            }
         case .audio:
             // (A YouTube video's sounds are streams of their own: it plays on with another.)
             if youtubeSession != nil {
                 setYouTubeAudioTrack(row.selected)
                 return
             }
-            #if FIRSTROW_PORTABLE
-                if state.audioIDs.indices.contains(row.selected) {
-                    player.selectTrack(ofType: "audio", id: state.audioIDs[row.selected])
-                }
-            #else
-                if let group = state.audibleGroup, state.audibleOptions.indices.contains(row.selected) {
-                    player.currentItem?.select(state.audibleOptions[row.selected], in: group)
-                }
-            #endif
+            if state.audioIDs.indices.contains(row.selected) {
+                let id = state.audioIDs[row.selected]
+                Task { @MainActor in await player.chooseTrack(.audio, id: id) }
+            }
+        case .chapters:
+            if state.chapterStarts.indices.contains(row.selected) {
+                let seconds = state.chapterStarts[row.selected]
+                stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
+                moviePlaybackCurrentSeconds = seconds
+                player.seek(toSeconds: seconds, exactly: true)
+            }
         }
-    }
-
-    /// Plays at the chosen speed, now and whenever playback resumes.
-    func applyMovieSpeed(_ player: AVPlayer) {
-        #if FIRSTROW_PORTABLE
-            player.playbackSpeed = movieSpeed
-        #else
-            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
-                player.defaultRate = Float(movieSpeed)
-            }
-            if player.rate > 0.01 {
-                player.rate = Float(movieSpeed)
-            }
-        #endif
     }
 }

@@ -222,7 +222,7 @@
             if isMoviePlaybackVisible, let player = moviePlayer {
                 let target = max(0, min(seconds, max(0, moviePlaybackDurationSeconds - 0.5)))
                 moviePlaybackCurrentSeconds = target
-                player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                player.seek(toSeconds: target, exactly: true)
                 return true
             }
             guard hasActiveMusicPlaybackSession() else { return false }

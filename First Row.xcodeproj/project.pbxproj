@@ -160,6 +160,9 @@
 		DC9A990E39B56F9CBF353FE1 /* MenuView+MusicLibraryChanges.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3BE0ABD7DAA7F18267E9DD /* MenuView+MusicLibraryChanges.swift */; };
 		276AB5F128776A1E6039F2D7 /* MenuView+YouTubePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAA292CDB257AD3B58E08B7E /* MenuView+YouTubePanel.swift */; };
 		201773A98B6E3D9C50F59A92 /* MovieReflectionLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DAEA77734BD8CB21C2E27A /* MovieReflectionLayer.swift */; };
+		482F0E433248CAB3F9D3362E /* MoviePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55724F632D44548F8F73C8E5 /* MoviePlayer.swift */; };
+		F686C9DBC3016B88B2E7223A /* MediaEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C76549830E72836B9B4A63D9 /* MediaEngine.swift */; };
+		5B20FA43592B82778E5DF93E /* MediaEngineInterface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DA85435FF7D0551D607B25 /* MediaEngineInterface.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -335,6 +338,9 @@
 		BC3BE0ABD7DAA7F18267E9DD /* MenuView+MusicLibraryChanges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MusicLibraryChanges.swift"; sourceTree = "<group>"; };
 		CAA292CDB257AD3B58E08B7E /* MenuView+YouTubePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTubePanel.swift"; sourceTree = "<group>"; };
 		50DAEA77734BD8CB21C2E27A /* MovieReflectionLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieReflectionLayer.swift; sourceTree = "<group>"; };
+		55724F632D44548F8F73C8E5 /* MoviePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviePlayer.swift; sourceTree = "<group>"; };
+		C76549830E72836B9B4A63D9 /* MediaEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaEngine.swift; sourceTree = "<group>"; };
+		21DA85435FF7D0551D607B25 /* MediaEngineInterface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaEngineInterface.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -408,6 +414,9 @@
 				7A73DE302F5776A20021C281 /* MenuView+MoviesLibrary.swift */,
 				7A73DE312F5776A20021C281 /* MoviePlaybackControlsView.swift */,
 				7A73DE332F5776A20021C281 /* MoviesMenuFeature.swift */,
+				55724F632D44548F8F73C8E5 /* MoviePlayer.swift */,
+				C76549830E72836B9B4A63D9 /* MediaEngine.swift */,
+				21DA85435FF7D0551D607B25 /* MediaEngineInterface.swift */,
 			);
 			path = Movies.frappliance;
 			sourceTree = "<group>";
@@ -686,6 +695,7 @@
 				7AE49B3D2D1491FC0022CD0D /* Sources */,
 				7AE49B3E2D1491FC0022CD0D /* Frameworks */,
 				7AE49B3F2D1491FC0022CD0D /* Resources */,
+				F1A57E0A24E0D1A2B3C4D5E6 /* Embed the media engine */,
 			);
 			buildRules = (
 			);
@@ -850,6 +860,28 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		F1A57E0A24E0D1A2B3C4D5E6 /* Embed the media engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed the media engine";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Copies First Row's media engine into the app, if it has been built for this system\n# (see MediaEngine/README.md). Without it First Row plays what the system's player can.\nengine=\"$SRCROOT/MediaEngine/build/$PLATFORM_NAME\"\nif [ ! -d \"$engine/FirstRowMediaEngine.framework\" ]; then\n    echo \"note: no media engine has been built for $PLATFORM_NAME (MediaEngine/build.sh): this copy of First Row plays only what the system's player can\"\n    exit 0\nfi\nframeworks=\"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH\"\nmkdir -p \"$frameworks\"\nfor framework in \"$engine\"/*.framework; do\n    name=$(basename \"$framework\")\n    rm -rf \"$frameworks/$name\"\n    ditto \"$framework\" \"$frameworks/$name\"\n    chmod -R u+w \"$frameworks/$name\"\n    if [ \"$CODE_SIGNING_ALLOWED\" = \"YES\" ] && [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n        codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --timestamp=none \"$frameworks/$name\"\n    fi\ndone\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		7AE49B3D2D1491FC0022CD0D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -878,6 +910,9 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				5B20FA43592B82778E5DF93E /* MediaEngineInterface.swift in Sources */,
+				F686C9DBC3016B88B2E7223A /* MediaEngine.swift in Sources */,
+				482F0E433248CAB3F9D3362E /* MoviePlayer.swift in Sources */,
 				276AB5F128776A1E6039F2D7 /* MenuView+YouTubePanel.swift in Sources */,
 				132B0A19C006F55B1A82D322 /* MenuView+YouTubeSearch.swift in Sources */,
 				3F0DEFB1DE21AC18C9F17AE1 /* YouTubeVideoLayers.swift in Sources */,
@@ -1155,6 +1190,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				"GENERATE_INFOPLIST_FILE[sdk=iphoneos*]" = NO;
@@ -1230,6 +1266,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				"GENERATE_INFOPLIST_FILE[sdk=iphoneos*]" = NO;

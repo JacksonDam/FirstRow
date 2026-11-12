@@ -509,6 +509,7 @@ final class MovieOptionsLayer {
         switch kind {
         case .subtitles: "captions.bubble"
         case .audio: "waveform"
+        case .chapters: "list.bullet"
         case .quality: "4k.tv"
         case .speed: "gauge.with.dots.needle.67percent"
         case .info: "info.circle"
