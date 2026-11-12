@@ -611,6 +611,10 @@ final class MovieResumePromptLayer {
     /// The modern look's two options: the menus' own rows, so focus moves between them as it
     /// does in a menu.
     private let modernRows = [ModernMenuRowLayer(), ModernMenuRowLayer()]
+    /// The modern look's two answers to the delete question: capsules as wide as their
+    /// words want, with the words in their middle.
+    private let answerCapsules = [SceneLayer(), SceneLayer()]
+    private let answerLabels = [SceneLayer(), SceneLayer()]
     /// The two options' rows in scene points, top first.
     private(set) var optionFrames: [CGRect] = []
 
@@ -632,6 +636,8 @@ final class MovieResumePromptLayer {
         options.addSublayer(selection.layer)
         for label in labels { options.addSublayer(label) }
         for row in modernRows { options.addSublayer(row.layer) }
+        for capsule in answerCapsules { options.addSublayer(capsule) }
+        for label in answerLabels { options.addSublayer(label) }
     }
 
     func update(menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat) {
@@ -657,6 +663,7 @@ final class MovieResumePromptLayer {
         for row in modernRows { row.layer.isHidden = !isModern }
         question.isHidden = menu.movieRemoval == nil
         note.isHidden = menu.movieRemoval?.note == nil
+        for sublayer in answerCapsules + answerLabels { sublayer.isHidden = menu.movieRemoval == nil || !isModern }
         if let removal = menu.movieRemoval {
             dim.backgroundColor = CGColor(gray: 0, alpha: isModern ? 0.6 : 0.5)
             updateRemoval(removal, menu: menu, pass: pass, sceneSize: sceneSize, scale: scale, appearing: appearing, isModern: isModern)
@@ -701,14 +708,20 @@ final class MovieResumePromptLayer {
     }
 
     /// Whether to delete a movie: the question and what will happen to the movie, and under
-    /// them the two answers side by side, the one picked out drawn as a menu's row is.
+    /// them the two answers side by side. Each answer is a button no wider than its word
+    /// wants, with the word in its middle, and the one picked out is drawn as the look draws a
+    /// menu's row that is picked out.
     private func updateRemoval(_ removal: MovieRemoval, menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat, appearing: Bool, isModern: Bool) {
         let middle = Self.middle(menu, sceneSize)
-        let gap: CGFloat = 44
-        let buttonWidth = min(400, (sceneSize.width - 160 - gap) * 0.5)
+        let titles = removal.answers
+        let fontName = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
+        let answerSize: CGFloat = isModern ? ModernTheme.rowTitleSize : 45
+        // (The two are one width: that of the longer word, with the same room either side.)
+        let wordWidth = titles.map { FontMetrics.width($0, fontName: fontName, size: answerSize) }.max() ?? 0
+        let gap: CGFloat = isModern ? 28 : 36
+        let buttonWidth = min(ceil(wordWidth) + (isModern ? 96 : 84), (sceneSize.width - 160 - gap) * 0.5)
         let buttonHeight = menu.selectionBoxHeight
         let blockWidth = buttonWidth * 2 + gap
-        let fontName = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
         let shadows = [TextShadow(color: RGBA(white: 0, alpha: 0.8), radius: 6, offset: CGSize(width: 0, height: 2))]
         let wrapWidth = min(sceneSize.width - 200, 1400)
         let asked = TextRenderer.render(TextSpec(text: removal.question, fontName: fontName, size: 56, wrapWidth: wrapWidth, alignment: .center, lineSpacing: 6, shadows: shadows), scale: scale)
@@ -729,32 +742,23 @@ final class MovieResumePromptLayer {
         let selected = min(1, max(0, menu.movieResumePromptSelectedIndex))
         let moved = lastSelectedIndex != nil && lastSelectedIndex != selected
         lastSelectedIndex = selected
-        let titles = removal.answers
         if isModern {
-            ModernMenuRowLayer.focusAnimation = .smooth(duration: ModernTheme.focusDuration)
+            for row in modernRows { row.layer.isHidden = true }
+            let change = appearing ? nil : pass.animation(.smooth(duration: ModernTheme.focusDuration), when: moved)
+            let capsuleHeight = buttonHeight - ModernTheme.rowCapsuleInset
             for index in 0 ..< 2 {
-                let row = modernRows[index]
-                row.layer.frame = CGRect(x: CGFloat(index) * (buttonWidth + gap), y: 0, width: buttonWidth, height: buttonHeight)
-                let item = MenuListItemConfig(
-                    id: "movie-removal-\(index)", title: titles[index], leadsToMenu: false,
-                    leadingImageAssetName: nil, leadingImage: nil, trailingText: nil, trailingSymbolName: nil,
-                    showsTopDivider: false, showsBlueDot: false, showsLightRowBackground: false, alignsTextToDividerStart: false,
-                )
-                row.update(MenuRowLayer.Spec(
-                    item: item,
-                    isSelected: index == selected,
-                    isSettled: true,
-                    rowWidth: buttonWidth,
-                    rowHeight: buttonHeight,
-                    leadingCompensation: 0,
-                    showsPlaybackSpeaker: false,
-                    arrowAppearance: menu.menuArrowAppearance,
-                    isPhotosRoot: false,
-                    isPhotosThirdMenu: false,
-                    dynamicLeadingImage: nil,
-                    scale: scale,
-                    theme: .modern,
-                ), menu: menu)
+                let isPicked = index == selected
+                let rest = CGRect(x: CGFloat(index) * (buttonWidth + gap), y: (buttonHeight - capsuleHeight) * 0.5, width: buttonWidth, height: capsuleHeight)
+                let frame = isPicked ? rest.insetBy(dx: -ModernTheme.focusGrowth.width, dy: -ModernTheme.focusGrowth.height) : rest
+                let capsule = answerCapsules[index]
+                capsule.setFrame(frame, change)
+                capsule.cornerRadius = frame.height * 0.5
+                capsule.backgroundColor = (isPicked ? ModernTheme.focusFill : ModernTheme.rowFill).cgColor
+                let graphic = TextRenderer.render(TextSpec(text: titles[index], fontName: fontName, size: answerSize, color: isPicked ? ModernTheme.focusedText : ModernTheme.text), scale: scale)
+                answerLabels[index].show(graphic, at: CGPoint(
+                    x: (rest.midX - graphic.size.width * 0.5).rounded(),
+                    y: (rest.midY - graphic.size.height * 0.5).rounded(),
+                ))
             }
             return
         }
@@ -770,7 +774,7 @@ final class MovieResumePromptLayer {
             selectionBoxHeight: menu.selectionBoxHeight, animation: slide,
         )
         for index in 0 ..< 2 {
-            let graphic = TextRenderer.render(TextSpec(text: titles[index], fontName: firstRowBoldFontName, size: 45, maxWidth: buttonWidth - 40, minimumScaleFactor: 0.72), scale: scale)
+            let graphic = TextRenderer.render(TextSpec(text: titles[index], fontName: fontName, size: answerSize), scale: scale)
             labels[index].show(graphic, at: CGPoint(
                 x: (CGFloat(index) * (buttonWidth + gap) + (buttonWidth - graphic.size.width) * 0.5).rounded(),
                 y: ((buttonHeight - graphic.size.height) * 0.5).rounded(),
