@@ -35,8 +35,6 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
         ]
         #if os(macOS) || FIRSTROW_PORTABLE
             submenuItems.append(.init(id: "settings_media_folders", title: "Media Folders", trailingText: "..."))
-        #elseif os(iOS)
-            submenuItems.append(.init(id: "settings_add_movies", title: "Add Movies from Files", trailingText: "..."))
         #endif
     }
 }

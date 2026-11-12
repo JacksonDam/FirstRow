@@ -237,6 +237,9 @@ final class MenuView: ObservableObject {
     /// Bumped whenever the chosen folders or libraries change, to redraw lists that show them.
     @Published var mediaSourcesRevision = 0
     var isChoosingMediaSource = false
+    /// The movies First Row keeps of its own on iPhone and iPad (brought in from Files), as
+    /// last looked for. Empty everywhere else.
+    var ownMovieFiles: [URL] = []
     /// The folders that Dropbox, Google Drive and the like keep on this computer, as last found.
     var cloudFolders: [CloudFolders.Folder] = []
 
@@ -778,8 +781,10 @@ final class MenuView: ObservableObject {
 
     #if os(iOS)
         @Published var isMoviesFolderPickerPresented = false
-        /// Settings > Add Movies from Files has asked for the Files picker.
+        /// Movies > Add Movies from Files has asked for the Files picker.
         @Published var isMovieFilesPickerPresented = false
+        /// Whether First Row keeps any movies of its own: the Movies menu offers to remove them if so.
+        @Published var hasOwnMovies = false
         @Published var hasPromptedMoviesFolderPickerThisSession = false
         /// Movies Folder opens once the folder picker it asked with has been answered.
         var entersMoviesFolderAfterPicking = false

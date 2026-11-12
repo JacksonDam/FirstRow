@@ -7,7 +7,6 @@ extension MenuView {
     static let settingsSoundEffectsItemID = "settings_soundeffects"
     static let settingsIntroMovieItemID = "settings_intromovie"
     static let settingsYouTubeItemID = "settings_youtube"
-    static let settingsAddMoviesItemID = "settings_add_movies"
     private static let screenSaverPreviewItemID = "screensaver_preview"
     private static let screenSaverChoicePrefix = "screensaver_after_"
 
@@ -43,12 +42,6 @@ extension MenuView {
         case Self.settingsYouTubeItemID:
             setShowsYouTube(!AppSettings.showsYouTube)
             playSound(named: "Selection")
-        #if os(iOS)
-            case Self.settingsAddMoviesItemID:
-                // The Files picker comes up over the menu (see `AppShell`).
-                playSound(named: "Selection")
-                isMovieFilesPickerPresented = true
-        #endif
         default:
             return false
         }

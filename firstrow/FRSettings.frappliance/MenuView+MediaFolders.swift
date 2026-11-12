@@ -13,6 +13,9 @@ extension MenuView {
         case folders(MediaSources.FolderKind)
         case folder(MediaSources.FolderKind, index: Int)
         case library(MediaSources.LibraryKind)
+        /// Movies > Remove Movies on iPhone and iPad: the movies First Row keeps of its own.
+        case ownMovies
+        case ownMovie(URL)
     }
 
     struct MediaFoldersPageState: Equatable {
@@ -84,6 +87,12 @@ extension MenuView {
             return items
         case .folder:
             return [plainMenuListItem(id: "media_remove_folder", title: "Remove from First Row")]
+        case .ownMovies:
+            return ownMovieFiles.enumerated().map { index, file in
+                plainMenuListItem(id: "own_movie_\(index)", title: file.deletingPathExtension().lastPathComponent, leadsToMenu: true)
+            }
+        case .ownMovie:
+            return [plainMenuListItem(id: "own_movie_remove", title: "Remove from First Row")]
         case let .library(kind):
             if sources.library(kind) != nil {
                 return [
@@ -107,22 +116,26 @@ extension MenuView {
                 : "\(kind.title) Folder", fallback: "\(kind.title) Folder")
         case let .library(kind):
             kind.title
+        case .ownMovies:
+            "Remove Movies"
+        case let .ownMovie(file):
+            truncatedHeaderTitle(file.deletingPathExtension().lastPathComponent, fallback: "Movie")
         }
     }
 
     // MARK: - Moving between pages
 
-    func enterMediaFoldersMenu() {
+    func enterMediaFoldersMenu(startingAt first: MediaFoldersPage = .overview) {
         transitionMenuForFolderSwap {
             self.thirdMenuMode = .mediaFolders
             self.isInThirdMenu = true
-            self.mediaFoldersPages = [MediaFoldersPageState(page: .overview, selectedIndex: 0)]
+            self.mediaFoldersPages = [MediaFoldersPageState(page: first, selectedIndex: 0)]
             self.selectedThirdIndex = 0
-            self.headerText = self.mediaFoldersHeaderTitle(for: .overview)
+            self.headerText = self.mediaFoldersHeaderTitle(for: first)
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1
         }
-        lookForCloudFolders()
+        if first == .overview { lookForCloudFolders() }
     }
 
     /// Finds the folders that Dropbox, Google Drive and the like keep here, to offer them.
@@ -199,6 +212,19 @@ extension MenuView {
         case let .folder(kind, index):
             MediaSources.shared.removeFolder(at: index, kind: kind)
             mediaSourcesRevision &+= 1
+            navigateUpInMediaFolders()
+        case .ownMovies:
+            guard ownMovieFiles.indices.contains(selectedThirdIndex) else { return }
+            pushMediaFoldersPage(.ownMovie(ownMovieFiles[selectedThirdIndex]))
+        case let .ownMovie(file):
+            #if os(iOS)
+                removeOwnMovie(file)
+            #endif
+            if ownMovieFiles.isEmpty {
+                // (Nothing left to remove: back to the Movies menu, whose row for this has gone.)
+                mediaFoldersPages = Array(mediaFoldersPages.prefix(1))
+            }
+            _ = file
             navigateUpInMediaFolders()
         case let .library(kind):
             if item.id == "media_clear_library" {

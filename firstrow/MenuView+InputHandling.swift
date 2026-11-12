@@ -153,6 +153,13 @@ extension MenuView {
             handlePodcastsRootMenuSelection(chosenRootItem)
             return
         }
+        #if os(iOS)
+            if chosenRootItem.id == "movies" {
+                // (What the chosen folder holds comes in first, so that the menu knows what is here.)
+                importMoviesFromBookmarkedFolderIfNeeded()
+                lookForOwnMovies()
+            }
+        #endif
         beginSubmenuTransition(for: chosenRootItem)
     }
 
@@ -398,6 +405,19 @@ extension MenuView {
             enterMoviesFolderMenu()
             return
         }
+        #if os(iOS)
+            if activeRootItemID == "movies", item.id == Self.addMoviesItemID {
+                // The Files picker comes up over the menu (see `AppShell`).
+                playSound(named: "Selection")
+                isMovieFilesPickerPresented = true
+                return
+            }
+            if activeRootItemID == "movies", item.id == Self.removeMoviesItemID {
+                playSound(named: "Selection")
+                enterRemoveMoviesMenu()
+                return
+            }
+        #endif
         if activeRootItemID == "movies", item.id == "movies_itunes_top" {
             playSound(named: "Selection")
             enterITunesTopMenu(.movies, title: item.title)
