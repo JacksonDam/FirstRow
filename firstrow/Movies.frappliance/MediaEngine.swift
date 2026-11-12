@@ -31,6 +31,23 @@
 
         static var isAvailable: Bool { shared != nil }
 
+        /// Whether this system could run the engine, if this copy of First Row carried it.
+        static var isSystemNewEnough: Bool {
+            if #available(macOS 15.0, iOS 18.0, tvOS 18.0, *) { return true }
+            return false
+        }
+
+        /// The oldest system the engine runs on, by name.
+        static var systemNeeded: String {
+            #if os(macOS)
+                "macOS 15"
+            #elseif os(tvOS)
+                "tvOS 18"
+            #else
+                "iOS 18"
+            #endif
+        }
+
         /// The kinds of file the system's own player opens. Everything else is the engine's.
         static let systemPlayerExtensions: Set<String> = ["mp4", "m4v", "mov", "m3u8", "m3u", "mp3", "m4a", "aac", "wav", "aif", "aiff", "caf"]
 
@@ -80,14 +97,13 @@
         private var clock: Timer?
         private var timeObservers: [UUID: (every: Double, last: CFTimeInterval, lastTime: Double, block: @MainActor (Double) -> Void)] = [:]
         private var endObservers: [UUID: @MainActor () -> Void] = [:]
+        private var failureObservers: [UUID: @MainActor () -> Void] = [:]
         private var hasToldOfEnd = false
         private var hasToldOfFailure = false
         private var captionsRevision = -1
 
         /// Called when the subtitles to show have changed.
         var onCaptions: (([MovieCaption]) -> Void)?
-        /// Called once if the engine can't play the movie, with why.
-        var onFailure: ((String) -> Void)?
         /// Called when what the movie offers may have changed: its tracks, its chapters.
         var onChange: (() -> Void)?
 
@@ -207,6 +223,19 @@
             if let id = observer as? UUID { endObservers.removeValue(forKey: id) }
         }
 
+        func observeFailure(_ block: @escaping @MainActor () -> Void) -> Any? {
+            let id = UUID()
+            failureObservers[id] = block
+            return id
+        }
+
+        func stopObservingFailure(_ observer: Any) {
+            if let id = observer as? UUID { failureObservers.removeValue(forKey: id) }
+        }
+
+        /// Why the engine couldn't play the movie, in its own words.
+        var failure: String? { isMine ? engine.failure : nil }
+
         func tracks(_ kind: MovieTrackKind) async -> [MovieTrack] {
             guard isMine else { return [] }
             let found = kind == .subtitles ? engine.subtitleTracks : engine.audioTracks
@@ -256,7 +285,7 @@
             case "failed":
                 guard !hasToldOfFailure else { return }
                 hasToldOfFailure = true
-                onFailure?(engine.failure ?? "")
+                for block in failureObservers.values { block() }
             default:
                 break
             }

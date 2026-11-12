@@ -369,6 +369,7 @@ final class MenuView: ObservableObject {
     @Published var pendingMovieControlsRevealOnDurationReady = false
     @Published var movieTimeObserverToken: Any?
     @Published var moviePlaybackDidEndObserver: Any?
+    var moviePlaybackFailureObserver: Any?
     @Published var observedMoviePlayer: (any MoviePlayer)?
     @Published var movieScrubDirection: Int = 0
     @Published var movieScrubStartDate: Date?

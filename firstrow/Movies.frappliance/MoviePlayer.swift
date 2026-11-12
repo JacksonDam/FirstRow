@@ -76,6 +76,9 @@ protocol MoviePlayer: AnyObject {
     /// Says when the movie has played to its end.
     func observeEnd(_ block: @escaping @MainActor () -> Void) -> Any?
     func stopObservingEnd(_ observer: Any)
+    /// Says if the movie can't be played: it wouldn't open, or it broke off.
+    func observeFailure(_ block: @escaping @MainActor () -> Void) -> Any?
+    func stopObservingFailure(_ observer: Any)
 
     func tracks(_ kind: MovieTrackKind) async -> [MovieTrack]
     /// Chooses a track by its id; subtitles are turned off with nil.
@@ -188,6 +191,19 @@ extension MoviePlayer {
             NotificationCenter.default.removeObserver(observer)
         }
 
+        func observeFailure(_ block: @escaping @MainActor () -> Void) -> Any? {
+            NotificationCenter.default.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolatedIfPossible {
+                    guard let self, let item = note.object as? AVPlayerItem, item === self.currentItem else { return }
+                    block()
+                }
+            }
+        }
+
+        func stopObservingFailure(_ observer: Any) {
+            NotificationCenter.default.removeObserver(observer)
+        }
+
         func tracks(_ kind: MovieTrackKind) async -> [MovieTrack] {
             tracks(ofType: kind == .subtitles ? "sub" : "audio").map { MovieTrack(id: $0.id, title: $0.title, isChosen: $0.isSelected) }
         }
@@ -201,6 +217,12 @@ extension MoviePlayer {
         }
     }
 #else
+    /// What watches the system's player for a movie it can't play.
+    private final class SystemPlayerFailureWatch {
+        var breakingOff: NSObjectProtocol?
+        var status: NSKeyValueObservation?
+    }
+
     extension AVPlayer: MoviePlayer {
         var isWaitingToPlay: Bool { timeControlStatus == .waitingToPlayAtSpecifiedRate }
 
@@ -260,6 +282,30 @@ extension MoviePlayer {
 
         func stopObservingEnd(_ observer: Any) {
             NotificationCenter.default.removeObserver(observer)
+        }
+
+        func observeFailure(_ block: @escaping @MainActor () -> Void) -> Any? {
+            let watch = SystemPlayerFailureWatch()
+            watch.breakingOff = NotificationCenter.default.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolatedIfPossible {
+                    guard let self, let item = note.object as? AVPlayerItem, item === self.currentItem else { return }
+                    block()
+                }
+            }
+            // (An item that won't open says so by its status, with no notice.)
+            watch.status = observe(\.currentItem?.status, options: [.initial, .new]) { player, _ in
+                guard player.currentItem?.status == .failed else { return }
+                MainActor.assumeIsolatedIfPossible { block() }
+            }
+            return watch
+        }
+
+        func stopObservingFailure(_ observer: Any) {
+            guard let watch = observer as? SystemPlayerFailureWatch else { return }
+            if let breakingOff = watch.breakingOff { NotificationCenter.default.removeObserver(breakingOff) }
+            watch.status?.invalidate()
+            watch.breakingOff = nil
+            watch.status = nil
         }
 
         /// The file's choices of subtitles or of sound, and the one in use.

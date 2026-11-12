@@ -739,6 +739,10 @@ extension MenuView {
             if self.jellyfinPlayNextEpisodeAtEnd() { return }
             self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
         }
+        moviePlaybackFailureObserver = player.observeFailure { [weak player] in
+            guard let player, self.observedMoviePlayer === player else { return }
+            self.movieCouldNotBePlayed()
+        }
         movieTimeObserverToken = player.observeTime(every: 1.0 / 30.0) { [weak player] currentSeconds in
             guard let player else { return }
             if self.movieScrubDirection == 0 {
@@ -803,6 +807,10 @@ extension MenuView {
             observedMoviePlayer.stopObservingEnd(moviePlaybackDidEndObserver)
         }
         moviePlaybackDidEndObserver = nil
+        if let moviePlaybackFailureObserver, let observedMoviePlayer {
+            observedMoviePlayer.stopObservingFailure(moviePlaybackFailureObserver)
+        }
+        moviePlaybackFailureObserver = nil
         observedMoviePlayer = nil
     }
 
@@ -837,10 +845,6 @@ extension MenuView {
                 player.onCaptions = { [weak self, weak player] captions in
                     guard let self, let player, self.moviePlayer === player else { return }
                     self.movieCaptions = captions
-                }
-                player.onFailure = { [weak self, weak player] _ in
-                    guard let self, let player, self.moviePlayer === player else { return }
-                    self.movieCouldNotBePlayed()
                 }
                 player.onChange = { [weak self, weak player] in
                     guard let self, let player, self.moviePlayer === player, self.movieOptions == nil else { return }
@@ -884,18 +888,39 @@ extension MenuView {
 
     /// The movie's player has given up on it: back to the menus, and a screen that says so.
     func movieCouldNotBePlayed() {
-        guard isMoviePlaybackVisible, !isMovieTransitioning else { return }
-        playSound(named: "Limit")
-        stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
+        let url = currentMoviePlaybackURL
         Task { @MainActor in
+            // (A movie that fails as it's coming in is put away once it's in.)
+            for _ in 0 ..< 40 where self.isMovieTransitioning {
+                try? await firstRowSleep(0.1)
+            }
+            guard self.isMoviePlaybackVisible, !self.isMovieTransitioning else { return }
+            self.playSound(named: "Limit")
+            self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
             // (Once the menus are back.)
-            try? await firstRowSleep(movieExitFreezeHoldDuration + movieExitFadeDuration + 0.4)
-            guard !self.isMoviePlaybackVisible else { return }
+            for _ in 0 ..< 60 where self.isMovieTransitioning || self.isMoviePlaybackVisible {
+                try? await firstRowSleep(0.1)
+            }
+            guard !self.isMoviePlaybackVisible, self.activeFullscreenScene == nil else { return }
             self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
                 "header": "This video can't be played.",
-                "subcaption": "First Row couldn't open it.",
+                "subcaption": Self.whyMovieCouldNotBePlayed(url),
             ])
         }
+    }
+
+    /// Why, for the screen that says a movie couldn't be played.
+    static func whyMovieCouldNotBePlayed(_ url: URL?) -> String {
+        #if !FIRSTROW_PORTABLE
+            let kind = url?.pathExtension.lowercased() ?? ""
+            if !MediaEngine.isAvailable, !kind.isEmpty, !MediaEngine.systemPlayerExtensions.contains(kind) {
+                // (A kind of file the system's own player doesn't open, and nothing else here to open it.)
+                return MediaEngine.isSystemNewEnough
+                    ? "This copy of First Row has no player for this kind of file."
+                    : "This kind of file needs \(MediaEngine.systemNeeded) or later."
+            }
+        #endif
+        return "First Row couldn't open it."
     }
 
     func clearMoviePlaybackControlState() {
