@@ -367,13 +367,20 @@ final class YouTubePanelLayer {
             message.show(graphic, at: CGPoint(x: inset, y: top + (content.rows.isEmpty ? headroom + 8 : contentHeight + max(gap, 20))))
         }
 
-        // The one picked out sits at the top of the list, until the list's end comes up.
-        // (One with more to it than the panel shows moves up under it by as much as it has
-        // been asked to.)
+        // The one picked out keeps to about the fourth row down, as the selection does in
+        // the menus' long lists: the three before it show above it, as far as there is room
+        // for them and for all of it, and the list's ends come up as they're reached. (One
+        // with more to it than the panel shows moves up under it by as much as it has been
+        // asked to.)
         rowHeights = heights
         shownHeight = viewport.height
         let scrolled = min(max(0, content.scrolled), room(ofRow: focus).overflow)
-        let wanted = tops.indices.contains(focus) ? tops[focus] - headroom + scrolled : 0
+        var wanted: CGFloat = 0
+        if tops.indices.contains(focus) {
+            let lead = max(0, focus - menu.stickySelectionRowIndex)
+            let showsItsEnd = tops[focus] + heights[focus] + headroom - viewport.height
+            wanted = min(tops[focus] - headroom, max(tops[lead] - headroom, showsItsEnd)) + scrolled
+        }
         let offset = prepared == content.rows.count ? min(wanted, max(0, contentHeight - viewport.height)) : wanted
         let shownViewport = viewport.offsetBy(dx: frame.minX, dy: frame.minY)
         rowPitches = pitches
