@@ -412,7 +412,11 @@ final class MenuListLayer {
 
     /// Tells lists apart, so a pinned scroll only applies to the list it was pinned in.
     static func identity(of items: [MenuListItemConfig]) -> String {
-        "\(items.count)|\(items.first?.id ?? "")|\(items.last?.id ?? "")"
+        // (A list that grows at its end is the list it was: scrolled, it stays where it is as
+        // its rows are added. Told apart by its rows, it was a new list each time, and went
+        // back to its selected row.)
+        if let key = items.first?.listKey { return key }
+        return "\(items.count)|\(items.first?.id ?? "")|\(items.last?.id ?? "")"
     }
 
     /// Where the middle of the selection is, from the list's left edge.

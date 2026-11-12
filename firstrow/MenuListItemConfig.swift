@@ -29,8 +29,12 @@ struct MenuListItemConfig: Identifiable, Equatable {
     let alignsTextToDividerStart: Bool
     /// Set for a video's row (its picture is the leading image).
     var media: MenuRowMedia?
+    /// On the first row of a list that grows at its end as it's gone down: what the list is
+    /// known by, which stays what it was as rows are added (see `MenuListLayer.identity`).
+    var listKey: String?
     static func == (lhs: MenuListItemConfig, rhs: MenuListItemConfig) -> Bool {
         lhs.id == rhs.id &&
+            lhs.listKey == rhs.listKey &&
             lhs.media == rhs.media &&
             lhs.title == rhs.title &&
             lhs.leadsToMenu == rhs.leadsToMenu &&

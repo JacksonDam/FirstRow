@@ -263,6 +263,11 @@ extension MenuView {
             )
             items.append(item)
         }
+        // More of a list's videos come as it's gone down: it's known by where it is and what it
+        // starts with, so it's the same list with them as without.
+        if !items.isEmpty, !(state.videos.isEmpty && state.playlists.isEmpty) {
+            items[0].listKey = "youtube|\(youtube.pages.count)|\(state.videos.first?.id ?? "")|\(state.playlists.first?.id ?? "")"
+        }
         return items
     }
 

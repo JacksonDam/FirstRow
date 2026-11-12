@@ -800,6 +800,10 @@ extension MenuView {
                     touch.motion = nil
                     return wantsMore
                 }
+                // (A list that has grown at its end since it was let go has a new far end.)
+                if abs(scroll.minScrollOffset - motion.lower) > 0.5 {
+                    motion = TouchListMotion(level: motion.level, identity: motion.identity, offset: motion.offset, velocity: motion.velocity, lower: scroll.minScrollOffset, upper: 0, scenePerPoint: motion.scenePerPoint)
+                }
                 let moving = motion.advance(seconds)
                 setTouchScroll(scroll, offset: motion.offset)
                 touch.motion = moving ? motion : nil
@@ -825,8 +829,10 @@ extension MenuView {
 
         /// Moves a long list with the finger, `dy` window points from where the drag started.
         /// Past either end it keeps following, but less and less, as a scroll view does.
-        private func scrollTouchList(level _: MenuListLevel, by dy: CGFloat) {
-            guard let scroll = touch.scrollState else { return }
+        private func scrollTouchList(level: MenuListLevel, by dy: CGFloat) {
+            guard var scroll = touch.scrollState else { return }
+            // (A list that has grown at its end since the finger came down has a new far end.)
+            if let now = pointer.hitTester?.menuListScrollState(level), now.identity == scroll.identity { scroll = now }
             let scale = max(0.0001, scroll.rowPitchInWindow / max(1, scroll.rowPitch))
             var offset = touch.scrollStart + dy / scale
             if offset > 0 {
