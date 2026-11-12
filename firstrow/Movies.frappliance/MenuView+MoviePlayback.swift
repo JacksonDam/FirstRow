@@ -333,6 +333,7 @@ extension MenuView {
             scheduleMovieControlsAutoHide()
         }
         jellyfinMoviePlaybackDidActivate(url: url, startSeconds: clampedStart)
+        serverMoviePlaybackDidActivate(url: url, startSeconds: clampedStart)
         youtubeMoviePlaybackDidActivate(url: url)
     }
 
@@ -366,6 +367,7 @@ extension MenuView {
         clearMovieControlsVisibilityInstantly()
         moviePlayer?.pause()
         jellyfinMoviePlaybackWillEnd()
+        serverMoviePlaybackWillEnd()
         youtubeMoviePlaybackWillEnd()
         let shouldCaptureResumePosition = captureResumePosition && !isCurrentMoviePlaybackEphemeralPreview
         if shouldCaptureResumePosition {
@@ -841,7 +843,20 @@ extension MenuView {
             if let item = YouTubePlaylistLoader.shared.playerItem(for: url) {
                 return AVPlayer(playerItem: item)
             }
-            if MediaEngine.plays(url), let player = EngineMoviePlayer(url: url, startSeconds: startSeconds, subtitleFiles: Self.subtitleFiles(beside: url)) {
+            // A movie on a server is the engine's wherever there is one (what such an address
+            // ends in says little), but for a stream the server has cut up for the system's player.
+            let onServer = serverVideo(at: url)
+            let isForEngine = onServer != nil
+                ? MediaEngine.isAvailable && !["m3u8", "m3u"].contains(url.pathExtension.lowercased())
+                : MediaEngine.plays(url)
+            if isForEngine, let player = EngineMoviePlayer(
+                url: url,
+                startSeconds: startSeconds,
+                headers: onServer?.headers ?? [:],
+                subtitleFiles: onServer?.subtitleFiles ?? Self.subtitleFiles(beside: url),
+                user: onServer?.user,
+                password: onServer?.password,
+            ) {
                 player.onCaptions = { [weak self, weak player] captions in
                     guard let self, let player, self.moviePlayer === player else { return }
                     self.movieCaptions = captions
@@ -851,6 +866,9 @@ extension MenuView {
                     self.probeMovieOptionKinds(player)
                 }
                 return player
+            }
+            if let headers = onServer?.headers, !headers.isEmpty {
+                return AVPlayer(playerItem: AVPlayerItem(asset: AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])))
             }
             return AVPlayer(url: url)
         #endif

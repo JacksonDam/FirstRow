@@ -704,6 +704,11 @@ final class MenuView: ObservableObject {
     var jellyfinMusicSession: JellyfinPlaybackSession?
     var jellyfinProgressTimer: Timer?
     var isStartingJellyfinPlayback = false
+    /// The other servers' pages, and the movie playing from one.
+    @Published var servers = ServerMenuState()
+    var serverVideoSession: ServerPlaybackSession?
+    var serverProgressTimer: Timer?
+    var isStartingServerPlayback = false
     @Published var youtube = YouTubeMenuState()
     /// The YouTube video in the movie player, while one is.
     @Published var youtubeSession: YouTubePlaybackSession?

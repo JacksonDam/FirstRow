@@ -8,7 +8,8 @@ import Foundation
     import UIKit
 #endif
 
-// Talking to Jellyfin servers: the saved sign-ins, the HTTP API and the items it returns.
+// Talking to Jellyfin servers, and to Emby servers, which Jellyfin grew out of and which answer
+// nearly all the same calls: the saved sign-ins, the HTTP API and the items it returns.
 
 /// A server and the account First Row signed in to it with.
 struct JellyfinServerRecord: Codable, Equatable, Sendable {
@@ -28,6 +29,8 @@ struct JellyfinServerInfo: Equatable, Sendable {
     var id: String
     var name: String
     var url: String
+    /// An Emby server, which has no Quick Connect.
+    var isEmby = false
 }
 
 enum JellyfinError: LocalizedError {
@@ -41,7 +44,7 @@ enum JellyfinError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unreachable: "Can't Reach the Server"
-        case .notJellyfin: "Not a Jellyfin Server"
+        case .notJellyfin: "Not a Jellyfin or Emby Server"
         case let .badResponse(code): code == 401 ? "Signed Out by the Server" : "Server Error (\(code))"
         case .signInFailed: "Wrong User Name or Password"
         case .quickConnectDisabled: "Quick Connect Is Turned Off"
@@ -264,10 +267,17 @@ struct JellyfinPublicInfo: Decodable, Sendable {
     var serverName: String?
     var id: String?
     var version: String?
+    /// "Jellyfin Server" from a Jellyfin server. An Emby server says nothing here.
+    var productName: String?
     enum CodingKeys: String, CodingKey {
         case serverName = "ServerName"
         case id = "Id"
         case version = "Version"
+        case productName = "ProductName"
+    }
+
+    var isEmby: Bool {
+        !(productName ?? "").lowercased().contains("jellyfin")
     }
 }
 
@@ -590,9 +600,10 @@ struct JellyfinClient: Sendable {
     /// Asks the server how to play a video here: straight from the file when this platform's
     /// player can, or converted on the fly when it can't.
     func videoStream(for item: JellyfinItem, startSeconds: Double = 0) async throws -> JellyfinStream {
+        let playsEverything = await Self.playsEveryKindOfFile()
         let body: [String: Any] = [
             "UserId": userID ?? "",
-            "DeviceProfile": Self.deviceProfile,
+            "DeviceProfile": Self.deviceProfile(playsEverything: playsEverything),
             "MaxStreamingBitrate": 120_000_000,
             "StartTimeTicks": Int64(startSeconds * 10_000_000),
             "EnableDirectPlay": true,
@@ -607,11 +618,10 @@ struct JellyfinClient: Sendable {
         let session = info.playSessionID ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
         if source.supportsDirectPlay == true || source.supportsDirectStream == true {
             let containers = (source.container ?? "").split(separator: ",").map { String($0) }
-            #if FIRSTROW_PORTABLE
-                let ext = containers.first.map { ".\($0)" } ?? ""
-            #else
-                let ext = containers.contains("mp4") ? ".mp4" : containers.contains("mov") ? ".mov" : containers.first.map { ".\($0)" } ?? ""
-            #endif
+            // (What the address ends in is what tells the players apart, where there are two.)
+            let ext = playsEverything
+                ? containers.first.map { ".\($0)" } ?? ""
+                : containers.contains("mp4") ? ".mp4" : containers.contains("mov") ? ".mov" : containers.first.map { ".\($0)" } ?? ""
             let streamURL = mediaURL("/Videos/\(item.id)/stream\(ext)", [
                 ("static", "true"), ("mediaSourceId", source.id), ("deviceId", deviceID), ("playSessionId", session),
             ])
@@ -686,17 +696,31 @@ struct JellyfinClient: Sendable {
         return body
     }
 
-    /// What this platform's player can play without the server converting it.
-    static var deviceProfile: [String: Any] {
+    /// Whether First Row here plays any kind of file itself: through mpv on Linux and Windows,
+    /// through its own engine on the Mac, iPhone, iPad and Apple TV where there is one.
+    static func playsEveryKindOfFile() async -> Bool {
         #if FIRSTROW_PORTABLE
-            // mpv plays nearly anything, so the files are sent as they are.
-            let directPlay: [[String: Any]] = [["Type": "Video"], ["Type": "Audio"]]
+            true
         #else
-            let directPlay: [[String: Any]] = [
-                ["Type": "Video", "Container": "mp4,m4v,mov", "VideoCodec": "h264,hevc", "AudioCodec": "aac,ac3,eac3,mp3,alac,flac"],
-                ["Type": "Audio", "Container": "mp3,aac,m4a,m4b,flac,alac,wav"],
-            ]
+            await MainActor.run { MediaEngine.isAvailable }
         #endif
+    }
+
+    /// What First Row can play here without the server converting it.
+    static func deviceProfile(playsEverything: Bool) -> [String: Any] {
+        // (With a player for every kind of file, movies are sent as they are; songs still go
+        // to the system's player on the Mac, iPhone, iPad and Apple TV.)
+        var directPlay: [[String: Any]] = [
+            ["Type": "Video", "Container": "mp4,m4v,mov", "VideoCodec": "h264,hevc", "AudioCodec": "aac,ac3,eac3,mp3,alac,flac"],
+            ["Type": "Audio", "Container": "mp3,aac,m4a,m4b,flac,alac,wav"],
+        ]
+        if playsEverything {
+            #if FIRSTROW_PORTABLE
+                directPlay = [["Type": "Video"], ["Type": "Audio"]]
+            #else
+                directPlay[0] = ["Type": "Video"]
+            #endif
+        }
         return [
             "Name": "First Row",
             "MaxStreamingBitrate": 120_000_000,

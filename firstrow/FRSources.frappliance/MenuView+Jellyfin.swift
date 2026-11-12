@@ -106,9 +106,10 @@ extension MenuView {
         activeRootItemID == "sources" && thirdMenuMode == .musicSongs && jellyfin.songsReturnPages != nil
     }
 
-    /// Where song lists and their previews work: Music, and Jellyfin's song lists under Sources.
+    /// Where song lists and their previews work: Music, and the song lists of Jellyfin and
+    /// the other servers under Sources.
     var isMusicLibraryContext: Bool {
-        activeRootItemID == "music" || isShowingJellyfinSongs
+        activeRootItemID == "music" || isShowingJellyfinSongs || isShowingServerSongs
     }
 
     // MARK: - The Sources menu
@@ -123,17 +124,34 @@ extension MenuView {
                 showsTopDivider: index == 0,
             ))
         }
+        // (The other kinds of server and the shared folders, after Jellyfin's and Emby's.)
+        let others = serverSubmenuItems(startsGroup: JellyfinStore.shared.servers.isEmpty)
+        items += others
         items.append(SubmenuItemConfig(
-            id: Self.jellyfinAddServerItemID,
-            title: "Add Jellyfin Server",
+            id: Self.addServerItemID,
+            title: "Add Server",
             trailingText: "...",
-            showsTopDivider: JellyfinStore.shared.servers.isEmpty,
+            showsTopDivider: JellyfinStore.shared.servers.isEmpty && others.isEmpty,
         ))
         return items
     }
 
+    /// Opens Jellyfin's pages on a server found elsewhere, and goes on to signing in to it.
+    func enterJellyfin(connectingTo info: JellyfinServerInfo) {
+        enterJellyfin(pages: [JellyfinPageState(page: .addServer)])
+        Task { @MainActor in
+            // (Once the page is up.)
+            for _ in 0 ..< 60 where self.isMenuFolderSwapTransitioning {
+                try? await firstRowSleep(0.05)
+            }
+            guard self.thirdMenuMode == .jellyfin, self.currentJellyfinPage?.page == .addServer else { return }
+            self.connectToJellyfinServer(typedOrFound: info.url, knownInfo: info)
+        }
+    }
+
     /// Handles the Jellyfin rows of Sources. Returns false for rows handled elsewhere.
     func triggerSourcesItem(_ item: SubmenuItemConfig) -> Bool {
+        if triggerServerSourcesItem(item) { return true }
         if item.id == Self.jellyfinAddServerItemID {
             playSound(named: "Selection")
             enterJellyfin(pages: [JellyfinPageState(page: .addServer)])
@@ -173,8 +191,10 @@ extension MenuView {
                 items.append(plainMenuListItem(id: "jellyfin_search_again", title: jellyfin.discovered.isEmpty ? "No Servers Found: Look Again" : "Look Again", showsTopDivider: !jellyfin.discovered.isEmpty))
             }
             items.append(plainMenuListItem(id: "jellyfin_enter_address", title: "Enter Address", trailingText: "...", showsTopDivider: jellyfin.isDiscovering && !jellyfin.discovered.isEmpty))
-        case .signIn:
-            items.append(plainMenuListItem(id: "jellyfin_quick_connect", title: "Quick Connect", trailingText: "..."))
+        case let .signIn(info):
+            if !info.isEmby {
+                items.append(plainMenuListItem(id: "jellyfin_quick_connect", title: "Quick Connect", trailingText: "..."))
+            }
             items.append(plainMenuListItem(id: "jellyfin_password", title: "User Name and Password", trailingText: "..."))
         case .home:
             guard state.isLoaded else { return items }
@@ -739,7 +759,7 @@ extension MenuView {
     private func askForJellyfinAddress() {
         requestTextEntry(
             title: "Server Address",
-            prompt: "Type the Jellyfin server's address, like 192.168.1.20 or jellyfin.example.com.",
+            prompt: "Type the Jellyfin or Emby server's address, like 192.168.1.20 or media.example.com.",
         ) { [weak self] text in
             guard let self, let text, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
             self.connectToJellyfinServer(typedOrFound: text, knownInfo: nil)
@@ -759,7 +779,7 @@ extension MenuView {
                 if let info = try? await client.publicInfo(), let id = info.id {
                     var urlText = url.absoluteString
                     while urlText.hasSuffix("/") { urlText.removeLast() }
-                    found = JellyfinServerInfo(id: id, name: info.serverName ?? knownInfo?.name ?? url.host ?? "Jellyfin", url: urlText)
+                    found = JellyfinServerInfo(id: id, name: info.serverName ?? knownInfo?.name ?? url.host ?? "Server", url: urlText, isEmby: info.isEmby)
                     break
                 }
             }
@@ -908,6 +928,10 @@ extension MenuView {
     }
 
     func refreshJellyfinPreviewForCurrentContext() {
+        if thirdMenuMode == .server || isShowingServerSongs {
+            refreshServerPreviewForCurrentContext()
+            return
+        }
         if isShowingJellyfinSongs {
             refreshMusicPreviewForCurrentContext()
             return
@@ -929,6 +953,9 @@ extension MenuView {
     }
 
     func jellyfinGapContentItems(icon: (Double, Animation?) -> GapItemSpec, pass: RenderPass, memo: inout GapContentMemo) -> [GapItemSpec] {
+        if thirdMenuMode == .server {
+            return serverGapContentItems(icon: icon, pass: pass, memo: &memo)
+        }
         let item = selectedJellyfinItem
         let image = (item?.id == jellyfin.previewItemID) ? jellyfin.previewImage : nil
         let key = image == nil ? "none" : (item?.id ?? "none")

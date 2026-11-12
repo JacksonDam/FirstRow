@@ -108,7 +108,7 @@
         var onChange: (() -> Void)?
 
         /// Opens `url` with the engine, or returns nil where there is no engine.
-        init?(url: URL, startSeconds: Double = 0, headers: [String: String] = [:], subtitleFiles: [MovieSubtitleFile] = [], paused: Bool = false) {
+        init?(url: URL, startSeconds: Double = 0, headers: [String: String] = [:], subtitleFiles: [MovieSubtitleFile] = [], user: String? = nil, password: String? = nil, paused: Bool = false) {
             guard let made = MediaEngine.shared?.player() else { return nil }
             engine = (made as? MediaEnginePlaying) ?? unsafeBitCast(made, to: MediaEnginePlaying.self)
             Self.turn += 1
@@ -116,6 +116,8 @@
             wantsToPlay = !paused
             var request: [String: Any] = [MediaEngineKey.url: url, MediaEngineKey.start: max(0, startSeconds), MediaEngineKey.paused: paused]
             if !headers.isEmpty { request[MediaEngineKey.headers] = headers }
+            if let user { request[MediaEngineKey.user] = user }
+            if let password { request[MediaEngineKey.password] = password }
             if !subtitleFiles.isEmpty {
                 request[MediaEngineKey.subtitleFiles] = subtitleFiles.map { file -> [String: Any] in
                     var entry: [String: Any] = [MediaEngineKey.url: file.url]

@@ -172,6 +172,8 @@ extension MenuView {
             shouldHideSpotifyMenuUntilLoaded
         case .jellyfin:
             shouldHideJellyfinMenuUntilLoaded
+        case .server:
+            shouldHideServerMenuUntilLoaded
         case .youtube:
             shouldHideYouTubeMenuUntilLoaded
         default:
@@ -349,6 +351,8 @@ extension MenuView {
             return spotifyMenuListItems()
         case .jellyfin:
             return jellyfinMenuListItems()
+        case .server:
+            return serverMenuListItems()
         case .youtube:
             return youtubeMenuListItems()
         case .none:

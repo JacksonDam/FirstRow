@@ -454,8 +454,8 @@ extension MenuView {
         }
         let fadeAlways = pass.transaction.disablesAnimations ? nil : Animation.easeInOut(duration: 0.22)
 
-        // Jellyfin's song lists under Sources show what Music's do.
-        switch isShowingJellyfinSongs ? "music" : rootID {
+        // A server's song lists under Sources show what Music's do.
+        switch isShowingJellyfinSongs || isShowingServerSongs ? "music" : rootID {
         case "movies":
             let descriptor = movieGapPreviewDescriptor
             let selectedMovie = resolveITunesTopMoviePreviewTarget()

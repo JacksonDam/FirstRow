@@ -151,6 +151,7 @@ struct GapContentMemo {
     var hidesPhotosRootIcon: Bool?
     var hidesPodcastsRootIcon: Bool?
     var jellyfinPreviewKey: String?
+    var serverPreviewKey: String?
     var youtubePreviewKey: String?
 }
 

@@ -163,6 +163,10 @@
 		482F0E433248CAB3F9D3362E /* MoviePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55724F632D44548F8F73C8E5 /* MoviePlayer.swift */; };
 		F686C9DBC3016B88B2E7223A /* MediaEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C76549830E72836B9B4A63D9 /* MediaEngine.swift */; };
 		5B20FA43592B82778E5DF93E /* MediaEngineInterface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DA85435FF7D0551D607B25 /* MediaEngineInterface.swift */; };
+		4EBD572D0F800AE8D3B01DAE /* LocalNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = D603EC347784483FCA54B2F1 /* LocalNetwork.swift */; };
+		214C9077252F9135ECA720A9 /* MediaServers.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC4763107F3FDB6F3C64B12 /* MediaServers.swift */; };
+		4C2349CDB2FEA6A98BACE0DE /* UPnPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC53AA885E20044F1701E33 /* UPnPClient.swift */; };
+		B7E2D9E20DC5B32438A816FA /* MenuView+Servers.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F75EC1599611B051B08EF4 /* MenuView+Servers.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -341,6 +345,10 @@
 		55724F632D44548F8F73C8E5 /* MoviePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoviePlayer.swift; sourceTree = "<group>"; };
 		C76549830E72836B9B4A63D9 /* MediaEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaEngine.swift; sourceTree = "<group>"; };
 		21DA85435FF7D0551D607B25 /* MediaEngineInterface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaEngineInterface.swift; sourceTree = "<group>"; };
+		D603EC347784483FCA54B2F1 /* LocalNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNetwork.swift; sourceTree = "<group>"; };
+		CAC4763107F3FDB6F3C64B12 /* MediaServers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaServers.swift; sourceTree = "<group>"; };
+		ABC53AA885E20044F1701E33 /* UPnPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UPnPClient.swift; sourceTree = "<group>"; };
+		B4F75EC1599611B051B08EF4 /* MenuView+Servers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Servers.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -398,6 +406,10 @@
 				BF882D5A5C8E6D47EE6E2847 /* JellyfinClient.swift */,
 				F6A3C5C46415705C3597FD27 /* MediaSources.swift */,
 				7A73DE2A2F5776A20021C281 /* SourcesMenuFeature.swift */,
+				D603EC347784483FCA54B2F1 /* LocalNetwork.swift */,
+				CAC4763107F3FDB6F3C64B12 /* MediaServers.swift */,
+				ABC53AA885E20044F1701E33 /* UPnPClient.swift */,
+				B4F75EC1599611B051B08EF4 /* MenuView+Servers.swift */,
 			);
 			path = FRSources.frappliance;
 			sourceTree = "<group>";
@@ -910,6 +922,10 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				B7E2D9E20DC5B32438A816FA /* MenuView+Servers.swift in Sources */,
+				4C2349CDB2FEA6A98BACE0DE /* UPnPClient.swift in Sources */,
+				214C9077252F9135ECA720A9 /* MediaServers.swift in Sources */,
+				4EBD572D0F800AE8D3B01DAE /* LocalNetwork.swift in Sources */,
 				5B20FA43592B82778E5DF93E /* MediaEngineInterface.swift in Sources */,
 				F686C9DBC3016B88B2E7223A /* MediaEngine.swift in Sources */,
 				482F0E433248CAB3F9D3362E /* MoviePlayer.swift in Sources */,

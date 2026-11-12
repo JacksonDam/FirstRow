@@ -23,6 +23,8 @@ extension MenuView {
         case screenSaverSettings
         case spotify
         case jellyfin
+        /// A media server other than Jellyfin's kind, or a shared folder (see `MediaServers.swift`).
+        case server
         case youtube
     }
 }
@@ -71,7 +73,7 @@ extension MenuView {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
         case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos, .spotify:
             true
-        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .screenSaverSettings, .jellyfin, .youtube, .none:
+        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .screenSaverSettings, .jellyfin, .server, .youtube, .none:
             false
         }
         if isExitingMusicThirdMenu {
@@ -149,6 +151,11 @@ extension MenuView {
             returnFromJellyfinSongs()
             return
         }
+        if thirdMenuMode == .musicSongs, servers.songsReturnPages != nil {
+            playSound(named: "Exit")
+            returnFromServerSongs()
+            return
+        }
         if thirdMenuMode == .musicSongs, isMusicSongsCategoryScoped {
             playSound(named: "Exit")
             transitionMenuForFolderSwap {
@@ -195,6 +202,9 @@ extension MenuView {
         case .jellyfin:
             playSound(named: "Exit")
             navigateUpInJellyfinMenu()
+        case .server:
+            playSound(named: "Exit")
+            navigateUpInServerMenu()
         case .youtube:
             playSound(named: "Exit")
             navigateUpInYouTubeMenu()

@@ -632,6 +632,8 @@ extension MenuView {
             triggerSpotifyMenuAction()
         case .jellyfin:
             triggerJellyfinMenuAction()
+        case .server:
+            triggerServerMenuAction()
         case .youtube:
             triggerYouTubeMenuAction()
         case .none:
