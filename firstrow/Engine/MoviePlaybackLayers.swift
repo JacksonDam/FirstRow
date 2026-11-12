@@ -1,4 +1,7 @@
 import AVFoundation
+#if os(iOS)
+    import AVKit
+#endif
 import CoreImage
 import QuartzCore
 #if os(macOS)
@@ -26,6 +29,13 @@ final class MoviePlaybackLayers {
     #if !FIRSTROW_PORTABLE
         /// Bent at the fold: the picture again, dimly, under it (see `MovieReflectionLayer`).
         private let reflection = MovieReflectionLayer()
+    #endif
+    #if os(iOS)
+        /// A YouTube video goes on playing in the system's picture in picture when First Row
+        /// is left while it plays, and comes back to its place here when First Row is opened
+        /// again.
+        private var pictureInPicture: AVPictureInPictureController?
+        private var returnsFromPictureInPicture: NSObjectProtocol?
     #endif
 
     init() {
@@ -73,6 +83,9 @@ final class MoviePlaybackLayers {
                 underTheFold = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top)
             }
             reflection.update(player: showsPlayer ? menu.moviePlayer : nil, frame: underTheFold)
+        #endif
+        #if os(iOS)
+            keepPictureInPicture(for: showsPlayer && menu.youtubeSession != nil)
         #endif
         var controlsSize = canvas.size
         if let upright = canvas.upright, isBent { controlsSize.height = upright.movieControlsFloor }
@@ -148,6 +161,31 @@ final class MoviePlaybackLayers {
         )
         controls.layer.setOpacity(controlsOpacity, pass.animation)
     }
+
+    #if os(iOS)
+        /// Has the system's picture in picture ready while a YouTube video plays: it takes the
+        /// picture up by itself as First Row goes to the background.
+        private func keepPictureInPicture(for isWanted: Bool) {
+            guard isWanted else {
+                if let controller = pictureInPicture {
+                    if controller.isPictureInPictureActive { controller.stopPictureInPicture() }
+                    pictureInPicture = nil
+                }
+                return
+            }
+            guard pictureInPicture == nil, AVPictureInPictureController.isPictureInPictureSupported() else { return }
+            let controller = AVPictureInPictureController(playerLayer: playerLayer)
+            controller?.canStartPictureInPictureAutomaticallyFromInline = true
+            pictureInPicture = controller
+            guard returnsFromPictureInPicture == nil else { return }
+            returnsFromPictureInPicture = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolatedIfPossible {
+                    guard let controller = self?.pictureInPicture, controller.isPictureInPictureActive else { return }
+                    controller.stopPictureInPicture()
+                }
+            }
+        }
+    #endif
 
     /// Gives the picture its box. As the layout glides, the picture travels from where it was
     /// to where it fits now, keeping its shape: by a transform, since a video's layer takes a
