@@ -317,7 +317,15 @@ final class YouTubePanelLayer {
         // (Room above the first row inside what's shown of the list: the modern look's tile
         // under the row picked out grows a little past the row, and casts a shadow.)
         headroom = isModern ? 14 : 0
-        let top = titleTop + titleGraphic.size.height + (isModern ? 22 : 30) - headroom
+        var top = titleTop + titleGraphic.size.height + (isModern ? 22 : 30) - headroom
+        if state != nil, menu.youtubePanelHasBack {
+            // In a comment's replies Back stands at the head of the panel, taller than the
+            // title beside it: the replies start, and pass out of sight as they move up, well
+            // clear of its foot. (Whether or not Back is showing just now, so that nothing
+            // shifts as it comes and goes.)
+            let backFoot = titleTop + titleGraphic.size.height / 2 + backSide / 2
+            top = max(top, (backFoot + 22 / max(canvasScale, 0.0001)).rounded() - headroom)
+        }
         let viewport = CGRect(x: 0, y: top, width: width, height: frame.height - top - (isModern ? 22 : 40))
         clip.place(viewport)
 

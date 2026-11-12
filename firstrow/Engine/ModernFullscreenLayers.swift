@@ -415,11 +415,14 @@ final class ModernMovieControlsLayer {
 
     /// `overPicture`: the bar lies over the movie, which is darkened under it (not when the bar
     /// has black, or a part of the screen to itself, under it).
-    func update(glyphState: MoviePlaybackGlyphState, currentTime seconds: Double, duration totalSeconds: Double, isLoading: Bool, loadingProgress: Double, size: CGSize, scale: CGFloat, overPicture: Bool = true) {
+    /// `fullWidth`: how wide the screen is, when `size` is narrower than it (a video's panel
+    /// has the rest). The darkening under the bar keeps to the whole width, so that the picture
+    /// behind the panel is darkened with the rest and no bright strip is left there.
+    func update(glyphState: MoviePlaybackGlyphState, currentTime seconds: Double, duration totalSeconds: Double, isLoading: Bool, loadingProgress: Double, size: CGSize, scale: CGFloat, overPicture: Bool = true, fullWidth: CGFloat? = nil) {
         let margin = max(90, size.width * 0.065)
         let barHeight: CGFloat = 10
         let barY = size.height - 132
-        scrim.frame = CGRect(x: 0, y: size.height - Self.fadeHeight, width: size.width, height: Self.fadeHeight)
+        scrim.frame = CGRect(x: 0, y: size.height - Self.fadeHeight, width: max(size.width, fullWidth ?? 0), height: Self.fadeHeight)
         scrim.isHidden = !overPicture
         barFrame = CGRect(x: margin, y: barY, width: size.width - margin * 2, height: barHeight)
         track.frame = barFrame

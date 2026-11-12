@@ -232,6 +232,7 @@ final class MoviePlaybackLayers {
                 size: controlsSize,
                 scale: canvas.pixelScale(backingScale: scale),
                 overPicture: barIsOverPicture,
+                fullWidth: panelSize.width,
             )
             modernControls.layer.setOpacity(controlsOpacity, pass.animation)
             return
