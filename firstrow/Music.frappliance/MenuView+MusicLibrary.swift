@@ -2505,15 +2505,89 @@ extension MenuView {
 
         func loadMusicKitArtworkImage(_ artwork: Artwork?) async -> NSImage? {
             guard let artwork else { return nil }
-            let side = max(300, min(800, min(artwork.maximumWidth, artwork.maximumHeight)))
+            // (The library's own artwork doesn't say how large it comes, and was asked for at
+            // the smallest size used here: 300 pixels across, on a screen of 3840.)
+            let largest = min(artwork.maximumWidth, artwork.maximumHeight)
+            let side = largest > 0 ? max(300, min(800, largest)) : 800
             guard let artworkURL = artwork.url(width: side, height: side) else { return nil }
-            // Read off the main thread: the artwork can be a download.
-            guard let data = await Task.detached(operation: { try? Data(contentsOf: artworkURL) }).value else { return nil }
+            // The selected row's cover before its neighbours', which are asked for more quietly.
+            let isForSelectedRow = Task.currentPriority >= .userInitiated
+            guard let data = await LibraryCoverReader.shared.data(from: artworkURL, forSelectedRow: isForSelectedRow) else { return nil }
             return cachedDecodedDisplayArtworkImage(
                 from: data,
                 sourceKey: artworkURL.absoluteString,
                 maxPixelSize: CGFloat(side),
             )
+        }
+
+        /// Reads the library's covers on threads of its own, three at a time: first the one
+        /// for the row that's selected now, then the ones for the rows near it, then the ones
+        /// for rows that were selected and have been left, the latest asked for first.
+        ///
+        /// A read waits on the system, which may have to fetch the picture. Each used to wait
+        /// on one of Swift's own few threads, and a list swiped down at speed asked for a
+        /// cover for every row it passed: with every one of those threads waiting, nothing
+        /// else due on them ran, and the row the list came to rest on had its cover after
+        /// all the rows passed had theirs (a quarter of a minute later, with slow reads).
+        final class LibraryCoverReader: @unchecked Sendable {
+            static let shared = LibraryCoverReader()
+
+            private typealias Request = (url: URL, answer: CheckedContinuation<Data?, Never>)
+            private let threads = DispatchQueue(label: "firstrow.covers", qos: .userInitiated, attributes: .concurrent)
+            private let lock = NSLock()
+            private var selected: Request?
+            private var nearby: [Request] = []
+            private var left: [Request] = []
+            private var reading = 0
+            private let readsAtOnce = 3
+            private let longestLine = 24
+
+            /// The picture's data. Nil if it can't be read, or if it was let go: with more
+            /// waiting than a line holds, the ones that have waited longest give way.
+            func data(from url: URL, forSelectedRow: Bool) async -> Data? {
+                await withCheckedContinuation { answer in
+                    var letGo: [Request] = []
+                    lock.lock()
+                    if forSelectedRow {
+                        if let before = selected { left.append(before) }
+                        selected = (url, answer)
+                    } else {
+                        nearby.append((url, answer))
+                    }
+                    while nearby.count > longestLine { letGo.append(nearby.removeFirst()) }
+                    while left.count > longestLine { letGo.append(left.removeFirst()) }
+                    lock.unlock()
+                    for request in letGo { request.answer.resume(returning: nil) }
+                    readNext()
+                }
+            }
+
+            private func readNext() {
+                lock.lock()
+                guard reading < readsAtOnce else {
+                    lock.unlock()
+                    return
+                }
+                let request: Request
+                if let first = selected {
+                    request = first
+                    selected = nil
+                } else if let next = nearby.popLast() ?? left.popLast() {
+                    request = next
+                } else {
+                    lock.unlock()
+                    return
+                }
+                reading += 1
+                lock.unlock()
+                threads.async {
+                    request.answer.resume(returning: try? Data(contentsOf: request.url))
+                    self.lock.lock()
+                    self.reading -= 1
+                    self.lock.unlock()
+                    self.readNext()
+                }
+            }
         }
     #endif
 
