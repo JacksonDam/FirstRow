@@ -14,6 +14,16 @@ extension MenuView {
             false
         #endif
     }
+
+    /// A finger is down, or a video's panel's rows are still moving from its flick: they may
+    /// be a little past an end for the moment.
+    var isYouTubePanelUnderFinger: Bool {
+        #if os(iOS)
+            touch.isFingerDown || touch.panelMotion != nil
+        #else
+            false
+        #endif
+    }
 }
 
 #if os(iOS)

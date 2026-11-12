@@ -559,12 +559,27 @@
                     glass.setFrameSize(frame.size)
                     glass.cornerRadius = cornerRadius
                     withoutLayerActions { layerHost.frame = CGRect(origin: .zero, size: frame.size) }
+                    host.frame = CGRect(origin: .zero, size: frame.size)
                 #else
-                    glass.bounds = CGRect(origin: .zero, size: frame.size)
-                    glass.center = CGPoint(x: frame.midX, y: frame.midY)
-                    glass.cornerConfiguration = .uniformCorners(radius: .fixed(cornerRadius))
+                    let place = {
+                        self.glass.bounds = CGRect(origin: .zero, size: frame.size)
+                        self.glass.center = CGPoint(x: frame.midX, y: frame.midY)
+                        self.glass.cornerConfiguration = .uniformCorners(radius: .fixed(cornerRadius))
+                        self.host.frame = CGRect(origin: .zero, size: frame.size)
+                    }
+                    if isShown, shown, let timing = LayoutGlide.current {
+                        // The whole layout is on its way to a new shape (a screen bending at
+                        // its fold): the sheet goes to its new place and size with the rest.
+                        let animator = UIViewPropertyAnimator(duration: timing.duration, timingParameters: Self.viewTiming(timing))
+                        animator.addAnimations {
+                            place()
+                            self.glass.layoutIfNeeded()
+                        }
+                        animator.startAnimation()
+                    } else {
+                        place()
+                    }
                 #endif
-                host.frame = CGRect(origin: .zero, size: frame.size)
             }
             let appearing = shown && !isShown
             #if os(macOS)
@@ -580,6 +595,23 @@
         func hide() {
             setShown(false, animation: nil)
         }
+
+        #if !os(macOS)
+            /// A layout glide's timing, for a view's own animation to keep in step with it.
+            private static func viewTiming(_ timing: GlideTiming) -> UITimingCurveProvider {
+                if let spring = timing.spring {
+                    return UISpringTimingParameters(mass: spring.mass, stiffness: spring.stiffness, damping: spring.damping, initialVelocity: .zero)
+                }
+                var first: [Float] = [0, 0]
+                var second: [Float] = [0, 0]
+                timing.function.getControlPoint(at: 1, values: &first)
+                timing.function.getControlPoint(at: 2, values: &second)
+                return UICubicTimingParameters(
+                    controlPoint1: CGPoint(x: CGFloat(first[0]), y: CGFloat(first[1])),
+                    controlPoint2: CGPoint(x: CGFloat(second[0]), y: CGFloat(second[1])),
+                )
+            }
+        #endif
 
         private func setShown(_ shown: Bool, animation: Animation?) {
             guard shown != isShown else { return }

@@ -121,7 +121,10 @@ final class MoviePlaybackLayers {
             pass: pass,
         )
         canvas.apply(to: panel.layer)
-        panel.update(menu: menu, size: panelSize, scale: canvas.pixelScale(backingScale: scale), canvasScale: canvas.scale, pass: pass)
+        // (Bent at the fold, the panel has the screen under the fold, as the controls do: the
+        // picture over it is left whole.)
+        let panelTop = canvas.upright.map { $0.isBent ? $0.lowerPane.minY : 0 } ?? 0
+        panel.update(menu: menu, size: panelSize, top: panelTop, scale: canvas.pixelScale(backingScale: scale), canvasScale: canvas.scale, pass: pass)
         controls.layer.isHidden = !showsControls || isModern
         modernControls.layer.isHidden = !showsControls || !isModern
         // The options' buttons sit above the right end of the bar, and the panel grows out of them.

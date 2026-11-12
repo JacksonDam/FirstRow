@@ -108,15 +108,16 @@ final class YouTubePanelLayer {
         return (max(0, headroom * 2 + rowHeights[index] - shownHeight), max(120, (shownHeight * 0.5).rounded()))
     }
 
-    /// Where the panel goes on a canvas of this size.
-    static func frame(in size: CGSize) -> CGRect {
+    /// Where the panel goes on a canvas of this size: all the way up its right side, or from
+    /// `top` down (on a screen bent at its fold, the part under the fold, with the controls).
+    static func frame(in size: CGSize, top: CGFloat = 0) -> CGRect {
         if ModernTheme.isActive {
             let margin: CGFloat = 36
             let width = min(820, (size.width * 0.43).rounded())
-            return CGRect(x: size.width - margin - width, y: margin, width: width, height: size.height - margin * 2)
+            return CGRect(x: size.width - margin - width, y: top + margin, width: width, height: max(1, size.height - top - margin * 2))
         }
         let width = min(840, (size.width * 0.44).rounded())
-        return CGRect(x: size.width - width, y: 0, width: width, height: size.height)
+        return CGRect(x: size.width - width, y: top, width: width, height: max(1, size.height - top))
     }
 
     /// How much of the canvas's width the panel takes, from the right edge.
@@ -208,8 +209,9 @@ final class YouTubePanelLayer {
         #endif
     }
 
-    /// `canvasScale` is window points per canvas point (for the system's glass).
-    func update(menu: MenuView, size: CGSize, scale: CGFloat, canvasScale: CGFloat, pass: RenderPass) {
+    /// `canvasScale` is window points per canvas point (for the system's glass). `top` is
+    /// where the panel starts from, down the canvas (see `frame(in:top:)`).
+    func update(menu: MenuView, size: CGSize, top panelTop: CGFloat = 0, scale: CGFloat, canvasScale: CGFloat, pass: RenderPass) {
         let state = menu.isMoviePlaybackVisible ? menu.youtubePanel : nil
         if let state { shown = state }
         let reveal = state == nil ? 0 : menu.youtubePanelReveal
@@ -237,7 +239,7 @@ final class YouTubePanelLayer {
             return
         }
         let isModern = ModernTheme.isActive
-        let frame = Self.frame(in: size)
+        let frame = Self.frame(in: size, top: panelTop)
         let width = frame.width
         let wasHidden = panel.isHidden
         panel.isHidden = false
@@ -425,8 +427,10 @@ final class YouTubePanelLayer {
         let isWhole = prepared == content.rows.count
         let limit = max(0, contentHeight - viewport.height)
         // Where a finger has left the rows (it may hold them a little past an end), or where
-        // the row picked out has them.
-        let offset = content.freeScroll ?? (isWhole ? min(wanted, limit) : wanted)
+        // the row picked out has them. (Left at their end in a panel that has since grown
+        // taller, a screen opened out flat again, they keep to the end it has now.)
+        var offset = content.freeScroll ?? (isWhole ? min(wanted, limit) : wanted)
+        if isWhole, content.freeScroll != nil, !menu.isYouTubePanelUnderFinger { offset = min(offset, limit) }
         scrollOffset = offset
         scrollLimit = isWhole ? limit : .greatestFiniteMagnitude
         let shownViewport = viewport.offsetBy(dx: frame.minX, dy: frame.minY)
