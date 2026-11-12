@@ -2589,6 +2589,54 @@ extension MenuView {
                 }
             }
         }
+
+        /// The library's playlists as the system gives them, by name, each with its songs in
+        /// its own order. (On tvOS there is no other way to them.)
+        func fetchMusicKitPlaylists() async throws -> [MusicCategoryEntry] {
+            guard MusicAuthorization.currentStatus == .authorized else {
+                throw NSError(
+                    domain: "firstRowMusicLibrary",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
+                )
+            }
+            guard #available(tvOS 16.0, *) else { return [] }
+            var request = MusicLibraryRequest<Playlist>()
+            request.limit = 1000
+            let playlists = try await Array(request.response().items)
+            // (Off the main thread, as the songs are: each track's details are read as asked for.)
+            return await Task.detached(priority: .userInitiated) {
+                var entries: [MusicCategoryEntry] = []
+                for playlist in playlists {
+                    guard let first = try? await playlist.with([.tracks]).tracks else { continue }
+                    var tracks = Array(first)
+                    var batch = first
+                    while batch.hasNextBatch, let next = try? await batch.nextBatch() {
+                        tracks += Array(next)
+                        batch = next
+                    }
+                    var songs: [MusicLibrarySongEntry] = []
+                    songs.reserveCapacity(tracks.count)
+                    for track in tracks {
+                        // (A playlist's music videos are left out, as Songs leaves them out.)
+                        guard case let .song(song) = track,
+                              let entry = await self.makeMusicLibrarySongEntry(from: song, includeArtwork: false)
+                        else { continue }
+                        songs.append(entry)
+                    }
+                    guard !songs.isEmpty else { continue }
+                    entries.append(MusicCategoryEntry(
+                        id: "playlist::tvos::\(playlist.id.rawValue)",
+                        title: self.normalizedMusicLibraryText(playlist.name, fallback: "Untitled Playlist"),
+                        songs: songs,
+                        coverSongs: self.musicPlaylistCoverSongs(from: songs),
+                    ))
+                }
+                return entries.sorted {
+                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                }
+            }.value
+        }
     #endif
 
     func requestMusicLibraryAuthorization(completion: @escaping (Bool) -> Void) {
@@ -2753,7 +2801,11 @@ extension MenuView {
                 do {
                     let categories: [MusicCategoryEntry]
                     if kind == .playlists {
-                        categories = try self.fetchMusicLibraryPlaylists()
+                        #if os(tvOS)
+                            categories = try await self.fetchMusicKitPlaylists()
+                        #else
+                            categories = try self.fetchMusicLibraryPlaylists()
+                        #endif
                     } else {
                         let songs: [MusicLibrarySongEntry]
                         #if canImport(iTunesLibrary)

@@ -204,6 +204,9 @@ extension MenuView {
                 // is played.)
                 playlists = await Task.detached(priority: .userInitiated) { self.mediaLibraryPlaylists() }.value
                 guard isShowingMusicLibraryList else { return }
+            #elseif os(tvOS)
+                playlists = await (try? fetchMusicKitPlaylists()) ?? []
+                guard isShowingMusicLibraryList else { return }
             #else
                 playlists = (try? fetchMusicLibraryPlaylists()) ?? []
             #endif
