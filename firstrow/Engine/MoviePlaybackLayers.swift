@@ -23,6 +23,10 @@ final class MoviePlaybackLayers {
     /// A YouTube video's captions and the panel beside its picture (see `YouTubeVideoLayers`).
     let captions = YouTubeCaptionLayer()
     let panel = YouTubePanelLayer()
+    #if !FIRSTROW_PORTABLE
+        /// Bent at the fold: the picture again, dimly, under it (see `MovieReflectionLayer`).
+        private let reflection = MovieReflectionLayer()
+    #endif
 
     init() {
         playerLayer.videoGravity = .resizeAspect
@@ -35,6 +39,9 @@ final class MoviePlaybackLayers {
         for sublayer in [backdrop, playerLayer, captions.layer, controls.layer, modernControls.layer, panel.layer, options.layer] {
             group.addSublayer(sublayer)
         }
+        #if !FIRSTROW_PORTABLE
+            group.insertSublayer(reflection.layer, above: playerLayer)
+        #endif
     }
 
     func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat) {
@@ -58,6 +65,15 @@ final class MoviePlaybackLayers {
         let canvas = FullscreenCanvas(screenSize: bounds.size, upright: menu.upright)
         let isBent = canvas.upright?.isBent == true
         placePicture(canvas.upright.map { $0.isBent ? canvas.window($0.moviePicture) : bounds } ?? bounds)
+        #if !FIRSTROW_PORTABLE
+            // (All of the screen under the fold, to its bottom edge.)
+            var underTheFold: CGRect?
+            if let upright = canvas.upright, isBent {
+                let top = canvas.window(upright.lowerPane).minY
+                underTheFold = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top)
+            }
+            reflection.update(player: showsPlayer ? menu.moviePlayer : nil, frame: underTheFold)
+        #endif
         var controlsSize = canvas.size
         if let upright = canvas.upright, isBent { controlsSize.height = upright.movieControlsFloor }
         // A video's panel takes the right of the screen: the controls keep to what it leaves

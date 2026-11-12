@@ -159,6 +159,7 @@
 		132B0A19C006F55B1A82D322 /* MenuView+YouTubeSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111AAE0C9043BE54B0FD10F /* MenuView+YouTubeSearch.swift */; };
 		DC9A990E39B56F9CBF353FE1 /* MenuView+MusicLibraryChanges.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3BE0ABD7DAA7F18267E9DD /* MenuView+MusicLibraryChanges.swift */; };
 		276AB5F128776A1E6039F2D7 /* MenuView+YouTubePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAA292CDB257AD3B58E08B7E /* MenuView+YouTubePanel.swift */; };
+		201773A98B6E3D9C50F59A92 /* MovieReflectionLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DAEA77734BD8CB21C2E27A /* MovieReflectionLayer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -333,6 +334,7 @@
 		1111AAE0C9043BE54B0FD10F /* MenuView+YouTubeSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTubeSearch.swift"; sourceTree = "<group>"; };
 		BC3BE0ABD7DAA7F18267E9DD /* MenuView+MusicLibraryChanges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+MusicLibraryChanges.swift"; sourceTree = "<group>"; };
 		CAA292CDB257AD3B58E08B7E /* MenuView+YouTubePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+YouTubePanel.swift"; sourceTree = "<group>"; };
+		50DAEA77734BD8CB21C2E27A /* MovieReflectionLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieReflectionLayer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -658,6 +660,7 @@
 				0E9E40ACF710D67D04BA3E9A /* PointerHitTesting.swift */,
 				1CC4268D716ADD0D5CD68B44 /* TextEntryLayer.swift */,
 				E44528C2E0BAA59065CDCC87 /* MoviePlaybackLayers.swift */,
+				50DAEA77734BD8CB21C2E27A /* MovieReflectionLayer.swift */,
 				7C2B85D63C210DF7938822F2 /* FullscreenLayers.swift */,
 				FEF55A9E3A2B28D43783747D /* MetadataPreviewLayer.swift */,
 				987FDC8A84B3E72291AE9278 /* GapContentLayer.swift */,
@@ -891,6 +894,7 @@
 				9B478C5FFEAECEAE013838B4 /* FirstRowMain.swift in Sources */,
 				17E42F7C552D8439E00D62BC /* MenuView+SceneLayout.swift in Sources */,
 				099F29735E0A9D3747686E80 /* MoviePlaybackLayers.swift in Sources */,
+				201773A98B6E3D9C50F59A92 /* MovieReflectionLayer.swift in Sources */,
 				B285348CC20B149D02295024 /* FullscreenLayers.swift in Sources */,
 				214EED8E4D76FFB11365899B /* MetadataPreviewLayer.swift in Sources */,
 				97532928893E494402E18755 /* GapContentLayer.swift in Sources */,
