@@ -860,7 +860,7 @@ extension MenuView {
             handleKeyUp(key)
         }
         switch control {
-        case .back:
+        case .back, .panelBack:
             press(.escape)
         case .playPause, .previous, .next:
             // The buttons show the state themselves, so the glyph under the bar stays away.

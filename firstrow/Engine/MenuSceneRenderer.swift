@@ -453,6 +453,7 @@ final class MenuSceneRenderer: TransactionRendering {
             movieOptionsPanel: playback.options.panelFrame.map {
                 CGRect(x: $0.minX * canvasScale, y: $0.minY * canvasScale, width: $0.width * canvasScale, height: $0.height * canvasScale)
             },
+            videoPanelBack: playback.panel.backPlace.map { CGPoint(x: $0.x * canvasScale, y: $0.y * canvasScale) },
         )
         for (overlay, opacity) in [
             (folderSwapOverlay, menu.menuFolderSwapOverlayOpacity),
@@ -931,12 +932,14 @@ extension MenuSceneRenderer {
         return (true, playback.panel.row(at: point))
     }
 
-    func youtubePanelRowTravel(_ index: Int) -> CGFloat {
-        let pitch = playback.panel.pitch(ofRow: index) ?? 220
-        // (Past the end of a row longer than the panel, a little further moves on.)
-        let overflow = playback.panel.room(ofRow: index).overflow
-        let needed = overflow > 0 ? overflow + min(pitch - overflow, 160) : pitch
-        return needed * max(fullscreenCanvas.scale, 0.0001)
+    var youtubePanelScroll: YouTubePanelScroll? {
+        guard playback.panel.panelFrame != nil else { return nil }
+        return YouTubePanelScroll(
+            offset: playback.panel.scrollOffset,
+            limit: playback.panel.scrollLimit,
+            canvasPerPoint: 1 / max(fullscreenCanvas.scale, 0.0001),
+            shownRows: playback.panel.shownRows,
+        )
     }
 
     var youtubePanelScale: CGFloat {

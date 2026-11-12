@@ -10,6 +10,9 @@ import QuartzCore
 /// The buttons put on screen for the pointer and fingers, so nothing needs a gesture to find.
 enum TouchControl: Equatable {
     case back
+    /// Back at the head of a video's panel, out of a comment's replies. A button of its own,
+    /// so that Back goes from the corner as this one comes, and the other way round.
+    case panelBack
     case playPause
     case previous
     case next
@@ -149,7 +152,7 @@ final class TouchControlsLayer {
     /// Where Now Playing's buttons start down from, when they're under its progress bar.
     private var transportTop: CGFloat?
 
-    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil, nowPlayingScale detailsScale: CGFloat? = nil, nowPlayingSlide slide: CGFloat? = nil, movieOptionsPanel: CGRect? = nil) {
+    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil, nowPlayingScale detailsScale: CGFloat? = nil, nowPlayingSlide slide: CGFloat? = nil, movieOptionsPanel: CGRect? = nil, videoPanelBack: CGPoint? = nil) {
         if let bar { nowPlayingBar = bar }
         if let detailsScale { nowPlayingScale = detailsScale }
         if let slide { nowPlayingSlide = slide }
@@ -210,6 +213,12 @@ final class TouchControlsLayer {
                             wanted = [back]
                         }
                     }
+                }
+                // In a comment's replies Back is at the head of the panel (there whether or
+                // not the movie's controls are up: the panel is).
+                if let place = videoPanelBack {
+                    wanted.removeAll { $0.control == .back }
+                    wanted.append(Wanted(control: .panelBack, frame: CGRect(x: place.x - 23, y: place.y - 23, width: 46, height: 46), symbol: "chevron.left", pointSize: 19))
                 }
             } else if isNowPlaying {
                 let play: CGFloat = 64

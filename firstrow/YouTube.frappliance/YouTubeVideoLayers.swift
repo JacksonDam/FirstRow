@@ -53,6 +53,8 @@ final class YouTubeCaptionLayer {
 final class YouTubePanelLayer {
     let layer = SceneLayer()
     private let panel = SceneLayer()
+    /// The title and the count beside it: they move over together, for Back.
+    private let header = SceneLayer()
     private let title = SceneLayer()
     private let count = SceneLayer()
     private let message = SceneLayer()
@@ -79,16 +81,24 @@ final class YouTubePanelLayer {
     private var shownHeight: CGFloat = 0
     private var headroom: CGFloat = 0
     private var lastScrolled: CGFloat = 0
+    private var lastWasFree = false
+    private var lastBackRoom: CGFloat = 0
+    /// The rows the panel had the last time it was drawn: one that wasn't among them has
+    /// just come (the comments have loaded, or more of them), and fades in.
+    private var knownRows: Set<String> = []
+    /// How far up the rows are moved, from their top, and how far they can be: further than
+    /// can be told while there are rows still to lay out.
+    private(set) var scrollOffset: CGFloat = 0
+    private(set) var scrollLimit: CGFloat = 0
+    /// The rows that show, at least in part.
+    private(set) var shownRows: ClosedRange<Int>?
+    /// The middle of Back's place at the head of the panel, on the canvas, while it has one.
+    private(set) var backPlace: CGPoint?
 
     /// The row at a point of the canvas, while the panel is out.
     func row(at point: CGPoint) -> Int? {
         guard panelFrame != nil else { return nil }
         return rowFrames.firstIndex { $0.contains(point) }
-    }
-
-    /// From a row's top to the next one's, on the canvas.
-    func pitch(ofRow index: Int) -> CGFloat? {
-        rowPitches.indices.contains(index) ? rowPitches[index] : nil
     }
 
     /// How much more of a row there is than shows at once (none for most), and how far a
@@ -173,7 +183,9 @@ final class YouTubePanelLayer {
         layer.addSublayer(panel)
         panel.isHidden = true
         panel.masksToBounds = true
-        for sublayer in [title, count, message, clip] { panel.addSublayer(sublayer) }
+        for sublayer in [header, message, clip] { panel.addSublayer(sublayer) }
+        header.addSublayer(title)
+        header.addSublayer(count)
         clip.masksToBounds = true
         clip.addSublayer(list)
     }
@@ -205,6 +217,7 @@ final class YouTubePanelLayer {
             panel.isHidden = true
             panelFrame = nil
             rowFrames = []
+            backPlace = nil
             putGlassAway()
             return
         }
@@ -213,11 +226,13 @@ final class YouTubePanelLayer {
             shown = nil
             for block in blocks.values { block.layer.removeFromSuperlayer() }
             blocks = [:]
+            knownRows = []
             lastFocus = nil
             lastKind = nil
             panel.isHidden = true
             panelFrame = nil
             rowFrames = []
+            backPlace = nil
             putGlassAway()
             return
         }
@@ -277,13 +292,25 @@ final class YouTubePanelLayer {
         let column = width - inset * 2
         var look = Look(column: column, pad: isModern ? CGSize(width: 24, height: 16) : .zero, isModern: isModern, isFocused: false, scale: scale)
         let titleTop: CGFloat = isModern ? 38 : 54
-        let titleGraphic = TextRenderer.render(TextSpec(text: content.title, fontName: look.bold, size: 44, maxWidth: column), scale: scale)
+        let kindChanged = lastKind != nil && lastKind != content.kind
+        // Back, when it has its place here (in a comment's replies, while the on-screen
+        // buttons show): a finger-sized button at the head of the panel, the title after it.
+        let hasBack = state != nil && menu.youtubePanelHasBack && menu.showsOnScreenControls && menu.showsPointingHints
+        let backSide = 46 / max(canvasScale, 0.0001)
+        let backRoom = hasBack ? (backSide + 14 / max(canvasScale, 0.0001)).rounded() : 0
+        let titleGraphic = TextRenderer.render(TextSpec(text: content.title, fontName: look.bold, size: 44, maxWidth: column - backRoom), scale: scale)
         title.show(titleGraphic, at: CGPoint(x: inset, y: titleTop))
         // "5,240" beside the title.
         let total = content.countText ?? ""
         let countGraphic = TextRenderer.render(TextSpec(text: total, fontName: look.regular, size: 30, color: RGBA(white: 1, alpha: 0.55)), scale: scale)
         count.isHidden = total.isEmpty
         count.show(countGraphic, at: CGPoint(x: inset + titleGraphic.size.width + 18, y: titleTop + titleGraphic.size.height - countGraphic.size.height - 4))
+        // (They move over as Back comes and goes on its own, as when the pointer brings the
+        // buttons back; with the panel's contents, they're in place at once.)
+        let headerMoves = backRoom != lastBackRoom && !wasHidden && !kindChanged
+        header.setTransform(CATransform3DMakeTranslation(backRoom, 0, 0), headerMoves ? .smooth(duration: 0.3) : nil)
+        lastBackRoom = backRoom
+        backPlace = hasBack && isOut ? CGPoint(x: frame.minX + inset + backSide / 2, y: frame.minY + titleTop + titleGraphic.size.height / 2) : nil
 
         // (Room above the first row inside what's shown of the list: the modern look's tile
         // under the row picked out grows a little past the row, and casts a shadow.)
@@ -292,9 +319,11 @@ final class YouTubePanelLayer {
         let viewport = CGRect(x: 0, y: top, width: width, height: frame.height - top - (isModern ? 22 : 40))
         clip.place(viewport)
 
-        // The rows from the top to a little past the one picked out are laid out (each one's
-        // height is only known once its words are set); the rest wait their turn.
+        // The rows from the top to a screenful past what shows are laid out (each one's height
+        // is only known once its words are set); the rest wait their turn.
         let focus = min(max(0, content.focused), max(0, content.rows.count - 1))
+        // Fingers in charge with none on a row: no row shows as picked out, as in the menus.
+        let showsFocus = !menu.touchHidesSelection
         // (The modern look's rows have their boxes' room around them already.)
         let gap: CGFloat = isModern ? 4 : 34
         var tops: [CGFloat] = []
@@ -302,21 +331,26 @@ final class YouTubePanelLayer {
         var heights: [CGFloat] = []
         var y: CGFloat = headroom
         var live = Set<String>()
-        let kindChanged = lastKind != nil && lastKind != content.kind
         var prepared = 0
+        // (The rows that weren't there the last time fade in: the comments as they load.)
+        let fadesNewRows = !wasHidden && !kindChanged && isOut
         for index in content.rows.indices {
-            // Enough to fill the panel under the one picked out, and a few more.
-            if index > focus + 4, y > tops[focus] + viewport.height + 200 { break }
+            // Enough to fill the panel under the one picked out (or under where a finger
+            // has left the rows), and as much again: a wheel or a flick goes through a
+            // screenful in a frame or two, and rows laid out as they arrived came in late.
+            if index > focus + 4, y > max(tops[focus], content.freeScroll ?? 0) + viewport.height * 2 + 200 { break }
             prepared = index + 1
             let row = content.rows[index]
             live.insert(row.id)
             let block: Block
+            var isNewBlock = false
             if let known = blocks[row.id] {
                 block = known
             } else {
                 block = Block()
                 blocks[row.id] = block
                 list.addSublayer(block.layer)
+                isNewBlock = true
             }
             let picture = row.pictureURL.flatMap { menu.youtube.panelPictures[$0] }
             let key = "\(column)|\(scale)|\(isModern)|\(picture != nil)"
@@ -328,7 +362,7 @@ final class YouTubePanelLayer {
                 block.height = set(block.resting, to: row, picture: picture, look: look)
             }
             // The one picked out stands on white in the modern look, its lettering dark.
-            let onWhite = isModern && index == focus
+            let onWhite = isModern && index == focus && showsFocus
             if onWhite, isNewRow || block.focused.key != key {
                 look.isFocused = true
                 block.focused.key = key
@@ -345,13 +379,20 @@ final class YouTubePanelLayer {
                 cornerRadius: min(28, block.height / 2), fill: nil, focusFill: ModernTheme.focusFill.cgColor,
                 focused: onWhite, animated: lastFocus != nil && !wasHidden && !kindChanged && !isNewRow, restingShadow: false, lettering: nil,
             )
-            if isModern {
-                block.layer.opacity = 1
+            // (The classic look dims the rows that aren't picked out.)
+            let opacity: Double = isModern || index == focus || !showsFocus ? 1 : 0.42
+            if isNewBlock, fadesNewRows, !knownRows.contains(row.id) {
+                block.layer.opacity = 0
+                block.layer.setOpacity(opacity, .easeOut(duration: 0.35))
+            } else if isNewBlock {
+                block.layer.opacity = Float(opacity)
             } else {
-                block.layer.setOpacity(index == focus ? 1 : 0.42, pass.animation(.easeInOut(duration: 0.2), when: lastFocus != nil && lastFocus != focus && !kindChanged))
+                // (One still fading in is left to: its opacity is where it is going already.)
+                block.layer.setOpacity(opacity, pass.animation(.easeInOut(duration: 0.2), when: lastFocus != nil && !kindChanged))
             }
             y += block.height + gap
         }
+        knownRows = Set(content.rows.map(\.id))
         for (id, block) in blocks where !live.contains(id) {
             block.layer.removeFromSuperlayer()
             blocks[id] = nil
@@ -381,17 +422,28 @@ final class YouTubePanelLayer {
             let showsItsEnd = tops[focus] + heights[focus] + headroom - viewport.height
             wanted = min(tops[focus] - headroom, max(tops[lead] - headroom, showsItsEnd)) + scrolled
         }
-        let offset = prepared == content.rows.count ? min(wanted, max(0, contentHeight - viewport.height)) : wanted
+        let isWhole = prepared == content.rows.count
+        let limit = max(0, contentHeight - viewport.height)
+        // Where a finger has left the rows (it may hold them a little past an end), or where
+        // the row picked out has them.
+        let offset = content.freeScroll ?? (isWhole ? min(wanted, limit) : wanted)
+        scrollOffset = offset
+        scrollLimit = isWhole ? limit : .greatestFiniteMagnitude
         let shownViewport = viewport.offsetBy(dx: frame.minX, dy: frame.minY)
         rowPitches = pitches
         rowFrames = tops.indices.map { index in
             CGRect(x: frame.minX, y: shownViewport.minY + tops[index] - offset - gap / 2, width: width, height: pitches[index])
                 .intersection(shownViewport)
         }
-        let slides = lastFocus != nil && (lastFocus != focus || lastScrolled != scrolled) && !wasHidden && !kindChanged
+        let showing = rowFrames.indices.filter { rowFrames[$0].height > min(40, pitches[$0] / 2) }
+        shownRows = showing.first.flatMap { first in showing.last.map { first ... $0 } }
+        let isFree = content.freeScroll != nil
+        // The rows slide as the row picked out changes; under a finger they go with it.
+        let slides = !isFree && lastFocus != nil && (lastFocus != focus || lastScrolled != scrolled || lastWasFree) && !wasHidden && !kindChanged
         lastScrolled = scrolled
+        lastWasFree = isFree
         let slide: Animation = isModern ? .smooth(duration: 0.34) : .easeInOut(duration: 0.22)
-        list.setFrame(CGRect(x: 0, y: -offset, width: width, height: max(contentHeight, 1)), slides ? slide : (offset == lastOffset || kindChanged ? nil : pass.animation))
+        list.setFrame(CGRect(x: 0, y: -offset, width: width, height: max(contentHeight, 1)), slides ? slide : (isFree || offset == lastOffset || kindChanged ? nil : pass.animation))
         lastFocus = focus
         lastOffset = offset
         lastKind = content.kind

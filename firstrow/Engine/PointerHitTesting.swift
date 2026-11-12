@@ -31,6 +31,18 @@ enum PointerButton {
     case back
 }
 
+/// A YouTube video's panel as fingers move its rows.
+struct YouTubePanelScroll {
+    /// How far up the rows are moved, from their top, and how far they can be (further than
+    /// can be told, while rows are still to be laid out), in the panel's own points.
+    var offset: CGFloat
+    var limit: CGFloat
+    /// The panel's own points to a window point.
+    var canvasPerPoint: CGFloat
+    /// The rows that show, at least in part.
+    var shownRows: ClosedRange<Int>?
+}
+
 /// Which of the menu lists a row is in.
 enum MenuListLevel: Hashable {
     case root
@@ -90,8 +102,8 @@ protocol PointerHitTesting: AnyObject {
     /// A YouTube video's panel, while it's out: whether `windowPoint` is on it and, if it's on
     /// one of its rows, which.
     func youtubePanelRow(at windowPoint: CGPoint) -> (isOnPanel: Bool, index: Int?)?
-    /// How far a finger travels, in window points, to move on from row `index` to the next.
-    func youtubePanelRowTravel(_ index: Int) -> CGFloat
+    /// Where that panel's rows are, for a finger to move them.
+    var youtubePanelScroll: YouTubePanelScroll? { get }
     /// How much more of row `index` there is than the panel shows at once, and how far a step
     /// moves it (both in the panel's own points).
     func youtubePanelRoom(ofRow index: Int) -> (overflow: CGFloat, page: CGFloat)

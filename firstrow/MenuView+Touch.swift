@@ -46,9 +46,15 @@ extension MenuView {
             case queueSelecting
             /// Pulling Now Playing's list out from the right edge, or pushing it back.
             case queuePull
-            /// On a YouTube video's panel (up and down goes through its rows, a tap presses
-            /// one, a push to the right puts it away) or beside it (a tap puts it away).
+            /// On a YouTube video's panel, not yet a scroll, a slide or a push (a tap presses
+            /// the row under it), or beside it (a tap puts the panel away).
             case panel(onPanel: Bool)
+            /// Dragging that panel's rows.
+            case panelScrolling
+            /// Sliding the selection over that panel's rows; lifting presses the one under it.
+            case panelSelecting
+            /// Pushing that panel back to the right, where it came from.
+            case panelPush
             case ignored
         }
 
@@ -92,10 +98,14 @@ extension MenuView {
         /// finger's recent sideways positions, for how fast it let go.
         var pullStartReveal: CGFloat = 0
         var pullOriginX: CGFloat = 0
-        /// A video's panel: where the finger was when the row now picked out was reached,
-        /// and whether it has moved at all.
-        var panelAnchorY: CGFloat = 0
-        var panelDidMove = false
+        /// A video's panel: where its rows and the finger were when a drag began, whether the
+        /// finger landed on rows still moving, the rows moving on their own after a flick, and
+        /// the row under a sliding finger (walked to a row a frame).
+        var panelStartScroll: CGFloat = 0
+        var panelOriginY: CGFloat = 0
+        var panelWasMoving = false
+        var panelMotion: TouchListMotion?
+        var panelSelectionTarget: Int?
         var xSamples: [(time: TimeInterval, x: CGFloat)] = []
         /// Frames at the screen's full rate while a finger is down or a list moves on its own.
         let clock = FrameClock()
@@ -287,12 +297,29 @@ extension MenuView {
                 pointer.hitTester?.highlightTouchControl(control)
                 return
             }
+            let panelWasMoving = state.panelMotion.map { abs($0.velocity) > 20 * $0.scenePerPoint } ?? false
+            state.panelMotion = nil
             if let hit = youtubePanelHit(at: point) {
                 state.mode = .panel(onPanel: hit.isOnPanel)
-                // (Where the finger would have been with the row picked out at its top.)
-                let room = pointer.hitTester?.youtubePanelRoom(ofRow: youtubePanel?.focused ?? 0)
-                state.panelAnchorY = point.y + min(youtubePanel?.scrolled ?? 0, room?.overflow ?? 0) * (pointer.hitTester?.youtubePanelScale ?? 1)
-                state.panelDidMove = false
+                state.panelWasMoving = panelWasMoving
+                state.panelSelectionTarget = nil
+                guard hit.isOnPanel, !panelWasMoving, hit.index != nil, let scroll = pointer.hitTester?.youtubePanelScroll else { return }
+                if scroll.limit <= 0 {
+                    // Nothing to scroll: the finger slides the selection straight away.
+                    state.mode = .panelSelecting
+                    showPanelTouchSelection(at: point)
+                    return
+                }
+                // As in the menus: a moment for the highlight, a little longer for sliding,
+                // and a drag before then scrolls.
+                state.holdTask = Task { @MainActor [weak self] in
+                    try? await firstRowSleep(Self.touchHighlightDelay)
+                    guard let self, !Task.isCancelled, self.touch.mode == .panel(onPanel: true) else { return }
+                    self.showPanelTouchSelection(at: self.touch.last)
+                    try? await firstRowSleep(Self.touchHoldDelay - Self.touchHighlightDelay)
+                    guard !Task.isCancelled, self.touch.mode == .panel(onPanel: true) else { return }
+                    self.touch.mode = .panelSelecting
+                }
                 return
             }
             // In from the right edge, Now Playing's list follows the thumb.
@@ -452,9 +479,29 @@ extension MenuView {
             case .scrolling:
                 if let level = state.level { scrollTouchList(level: level, by: point.y - state.scrollOriginY) }
             case let .panel(onPanel):
-                if (dx * dx + dy * dy).squareRoot() > Self.touchSlop { state.panelDidMove = true }
-                if onPanel, state.panelDidMove { dragYouTubePanel(to: point) }
-            case .swiping, .ignored:
+                guard onPanel, (dx * dx + dy * dy).squareRoot() > Self.touchSlop else { return }
+                state.holdTask?.cancel()
+                endPanelTouchSelection()
+                if abs(dx) > abs(dy) {
+                    state.mode = .panelPush
+                    return
+                }
+                guard let scroll = pointer.hitTester?.youtubePanelScroll else { return }
+                state.mode = .panelScrolling
+                state.panelOriginY = point.y
+                // (Caught past an end, the drag carries on from where the pull had it.)
+                var start = scroll.offset
+                if start < 0 {
+                    start = -Self.unband(-start)
+                } else if start > scroll.limit {
+                    start = scroll.limit + Self.unband(start - scroll.limit)
+                }
+                state.panelStartScroll = start
+            case .panelScrolling:
+                scrollYouTubePanel(by: point.y - state.panelOriginY)
+            case .panelSelecting:
+                slidePanelTouchSelection(to: point)
+            case .swiping, .panelPush, .ignored:
                 break
             }
         }
@@ -527,18 +574,26 @@ extension MenuView {
             case .undecided:
                 handleTouchTap(at: point, target: state.startTarget)
             case let .panel(onPanel):
-                if !state.panelDidMove {
-                    // A tap: on a row presses it, beside the panel puts it away.
-                    if !onPanel {
-                        closeYouTubePanel()
-                    } else if let index = youtubePanelHit(at: point)?.index {
-                        pressYouTubePanelRow(index)
-                    }
-                } else if onPanel, dx > Self.touchSwipeDistance, abs(dx) > abs(dy) * 1.5 {
-                    // Pushed back to the right, where it came from (a comment's replies give
-                    // way to the comments first).
-                    _ = handleYouTubePanelInput(.escape)
+                // A tap: on a row presses it (unless the finger only stopped the rows
+                // moving), beside the panel puts it away.
+                if !onPanel {
+                    if (dx * dx + dy * dy).squareRoot() <= Self.touchSlop { closeYouTubePanel() }
+                } else if !state.panelWasMoving, let index = youtubePanelHit(at: point)?.index {
+                    chooseYouTubePanelRow(index)
                 }
+                endPanelTouchSelection()
+            case .panelScrolling:
+                state.samples.append((time, point.y))
+                releaseYouTubePanel(velocity: releaseVelocity(at: time))
+            case .panelSelecting:
+                // Lifting over a row presses it; anywhere else lets it go.
+                state.panelSelectionTarget = nil
+                if let index = youtubePanelHit(at: point)?.index { chooseYouTubePanelRow(index) }
+                endPanelTouchSelection()
+            case .panelPush:
+                // Pushed back to the right, where it came from (a comment's replies give way
+                // to the comments first).
+                if dx > Self.touchSwipeDistance, abs(dx) > abs(dy) * 1.5 { _ = handleYouTubePanelInput(.escape) }
             case .ignored:
                 break
             }
@@ -565,6 +620,10 @@ extension MenuView {
             if state.mode == .queue || state.mode == .queueSelecting {
                 endQueueTouchSelection()
             }
+            if state.mode == .panelScrolling {
+                releaseYouTubePanel(velocity: 0)
+            }
+            state.panelSelectionTarget = nil
             state.mode = .ignored
             endTouchSelection()
         }
@@ -688,6 +747,22 @@ extension MenuView {
             var wantsMore = touch.isFingerDown
             if stepTouchSelection() { wantsMore = true }
             if stepQueueTouchSelection() { wantsMore = true }
+            if stepPanelTouchSelection() { wantsMore = true }
+            if var motion = touch.panelMotion {
+                if isYouTubePanelOut, let scroll = pointer.hitTester?.youtubePanelScroll {
+                    // (Its far end is only known once the last of its rows is laid out, and
+                    // moves off as more of them come.)
+                    if abs(-scroll.limit - motion.lower) > 0.5 {
+                        motion = TouchListMotion(level: .third, identity: "video-panel", offset: motion.offset, velocity: motion.velocity, lower: -scroll.limit, upper: 0, scenePerPoint: motion.scenePerPoint)
+                    }
+                    let moving = motion.advance(seconds)
+                    setYouTubePanelFreeScroll(-motion.offset)
+                    touch.panelMotion = moving ? motion : nil
+                    if moving { wantsMore = true }
+                } else {
+                    touch.panelMotion = nil
+                }
+            }
             if var motion = touch.queueMotion {
                 if isNowPlayingQueueVisible {
                     let moving = motion.advance(seconds)
@@ -1019,39 +1094,77 @@ extension MenuView {
             startTouchClock()
         }
 
-        /// A finger moving up the panel goes on to the next row once it has travelled the
-        /// height of the one picked out, and back to the one before the other way.
-        private func dragYouTubePanel(to point: CGPoint) {
-            guard let panel = youtubePanel, let hitTester = pointer.hitTester else { return }
-            let state = touch
-            // (Sideways is a push, not a scroll.)
-            guard abs(point.y - state.start.y) >= abs(point.x - state.start.x) else { return }
-            var focus = panel.focused
-            while true {
-                let travelled = state.panelAnchorY - point.y
-                if travelled > 0, focus + 1 < panel.rows.count {
-                    let needed = hitTester.youtubePanelRowTravel(focus)
-                    guard travelled >= needed else { break }
-                    focus += 1
-                    state.panelAnchorY -= needed
-                } else if travelled < 0, focus > 0 {
-                    let needed = hitTester.youtubePanelRowTravel(focus - 1)
-                    guard -travelled >= needed else { break }
-                    focus -= 1
-                    state.panelAnchorY += needed
-                } else {
-                    // At an end: the finger starts afresh from here when it turns round.
-                    state.panelAnchorY = point.y
-                    break
-                }
+        // MARK: - A video's panel
+
+        /// Drags the panel's rows, `dy` window points from where the drag started, past their
+        /// ends less and less, as the menus' lists go.
+        private func scrollYouTubePanel(by dy: CGFloat) {
+            guard let geometry = pointer.hitTester?.youtubePanelScroll else { return }
+            var scroll = touch.panelStartScroll - dy * geometry.canvasPerPoint
+            if scroll < 0 {
+                scroll = -Self.band(-scroll)
+            } else if scroll > geometry.limit {
+                scroll = geometry.limit + Self.band(scroll - geometry.limit)
             }
-            showYouTubePanelRow(focus)
-            // A row with more to it than the panel shows follows the finger meanwhile.
-            let room = hitTester.youtubePanelRoom(ofRow: focus)
-            if room.overflow > 0 || panel.scrolled > 0 {
-                let travelled = max(0, state.panelAnchorY - point.y) / max(hitTester.youtubePanelScale, 0.0001)
-                setYouTubePanelScrolled(min(room.overflow, travelled))
+            setYouTubePanelFreeScroll(scroll)
+        }
+
+        /// Lets the panel's rows go, coasting or springing back as the menus' lists do.
+        private func releaseYouTubePanel(velocity: CGFloat) {
+            guard let geometry = pointer.hitTester?.youtubePanelScroll else { return }
+            let motion = TouchListMotion(
+                level: .third,
+                identity: "video-panel",
+                offset: -geometry.offset,
+                velocity: velocity * geometry.canvasPerPoint,
+                lower: -geometry.limit,
+                upper: 0,
+                scenePerPoint: geometry.canvasPerPoint,
+            )
+            guard motion.isWorthMoving else { return }
+            touch.panelMotion = motion
+            startTouchClock()
+        }
+
+        /// Picks out the panel's row under the finger.
+        private func showPanelTouchSelection(at point: CGPoint) {
+            guard let index = youtubePanelHit(at: point)?.index else { return }
+            touch.panelSelectionTarget = nil
+            pickOutYouTubePanelRow(index)
+            if !isTouchSelecting { isTouchSelecting = true }
+        }
+
+        /// The selection follows the finger through the panel's rows, a row a frame.
+        private func slidePanelTouchSelection(to point: CGPoint) {
+            guard let index = youtubePanelHit(at: point)?.index else { return }
+            if !isTouchSelecting {
+                showPanelTouchSelection(at: point)
+                return
             }
+            touch.panelSelectionTarget = index != youtubePanel?.focused ? index : nil
+            startTouchClock()
+        }
+
+        /// Moves the panel's selection one row nearer the finger's. Returns whether rows remain.
+        private func stepPanelTouchSelection() -> Bool {
+            guard let target = touch.panelSelectionTarget else { return false }
+            guard isYouTubePanelOut, let current = youtubePanel?.focused, current != target else {
+                touch.panelSelectionTarget = nil
+                return false
+            }
+            let next = current + (target > current ? 1 : -1)
+            pickOutYouTubePanelRow(next)
+            guard next != target else {
+                touch.panelSelectionTarget = nil
+                return false
+            }
+            return true
+        }
+
+        /// The finger left the panel without pressing a row: nothing stays picked out.
+        private func endPanelTouchSelection() {
+            touch.panelSelectionTarget = nil
+            if isTouchSelecting { isTouchSelecting = false }
         }
 
         private func handleMovieTouchTap(at point: CGPoint) {

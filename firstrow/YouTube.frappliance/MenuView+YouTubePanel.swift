@@ -61,6 +61,7 @@ struct YouTubePanelState {
         var focused: Int
         var countText: String?
         var continuation: String?
+        var freeScroll: CGFloat?
     }
 
     var videoID: String
@@ -74,6 +75,9 @@ struct YouTubePanelState {
     /// How far the row picked out has been moved up, when there's more of it than the panel
     /// shows at once (a long description, a long comment).
     var scrolled: CGFloat = 0
+    /// How far up a finger has moved the rows, from their top, in the panel's own points. The
+    /// rows stay where it leaves them; nil, they follow the row picked out.
+    var freeScroll: CGFloat?
     var isLoading = true
     var isLoadingMore = false
     /// Shown in place of rows when there are none.
@@ -181,6 +185,19 @@ extension MenuView {
     @discardableResult
     func moveYouTubePanel(by direction: Int, playsSound: Bool = true) -> Bool {
         guard var state = youtubePanel, isYouTubePanelOut, direction != 0 else { return false }
+        if state.freeScroll != nil {
+            // Fingers left the rows somewhere of their own. The rows follow the one picked
+            // out again; if that one is out of sight, the arrows start from the first that
+            // shows instead.
+            state.freeScroll = nil
+            state.scrolled = 0
+            if let shown = pointer.hitTester?.youtubePanelScroll?.shownRows, !shown.contains(state.focused), state.rows.indices.contains(shown.lowerBound) {
+                state.focused = shown.lowerBound
+                youtubePanel = state
+                if playsSound { playSound(named: "SelectionChange") }
+                return true
+            }
+        }
         func room(_ index: Int) -> (overflow: CGFloat, page: CGFloat) {
             pointer.hitTester?.youtubePanelRoom(ofRow: index) ?? (0, 400)
         }
@@ -212,15 +229,42 @@ extension MenuView {
         return true
     }
 
-    /// Moves the row picked out up under the panel by this much (a finger does, on a long one).
-    func setYouTubePanelScrolled(_ scrolled: CGFloat) {
-        guard var state = youtubePanel, isYouTubePanelOut, abs(state.scrolled - scrolled) > 0.5 else { return }
-        state.scrolled = scrolled
+    /// Moves the rows up by this much from their top (a finger does, or its flick), and
+    /// fetches more of them as their end nears.
+    func setYouTubePanelFreeScroll(_ scroll: CGFloat) {
+        guard var state = youtubePanel, isYouTubePanelOut else { return }
+        if let limit = pointer.hitTester?.youtubePanelScroll?.limit, limit - scroll < 900 {
+            loadMoreYouTubePanelRowsIfNeeded(nearingTheEnd: true)
+            state = youtubePanel ?? state
+        }
+        guard state.freeScroll.map({ abs($0 - scroll) > 0.05 }) ?? true else { return }
+        state.freeScroll = scroll
         youtubePanel = state
+    }
+
+    /// Picks out a row where it is, without moving the rows (a finger on it does).
+    func pickOutYouTubePanelRow(_ index: Int, playsSound: Bool = true) {
+        guard var state = youtubePanel, isYouTubePanelOut, state.rows.indices.contains(index) else { return }
+        if state.freeScroll == nil { state.freeScroll = pointer.hitTester?.youtubePanelScroll?.offset ?? 0 }
+        guard index != state.focused || youtubePanel?.freeScroll == nil else { return }
+        let changed = index != state.focused
+        state.focused = index
+        state.scrolled = 0
+        youtubePanel = state
+        if changed, playsSound { playSound(named: "SelectionChange") }
+    }
+
+    /// A finger let go on a row: one that does something does it.
+    func chooseYouTubePanelRow(_ index: Int) {
+        guard let state = youtubePanel, isYouTubePanelOut, state.rows.indices.contains(index) else { return }
+        pickOutYouTubePanelRow(index, playsSound: false)
+        if state.rows[index].isPressable { pressFocusedYouTubePanelRow() }
     }
 
     func showYouTubePanelRow(_ index: Int, playsSound: Bool = false) {
         guard var state = youtubePanel, isYouTubePanelOut, index != state.focused, state.rows.indices.contains(index) else { return }
+        // (Picked out where it is, as a click on it would have it: the rows stay put.)
+        if state.freeScroll == nil { state.freeScroll = pointer.hitTester?.youtubePanelScroll?.offset }
         state.focused = index
         state.scrolled = 0
         youtubePanel = state
@@ -340,10 +384,11 @@ extension MenuView {
         }
     }
 
-    /// Fetches more comments, or more replies, as the row picked out nears the last one.
-    private func loadMoreYouTubePanelRowsIfNeeded() {
+    /// Fetches more comments, or more replies, as the row picked out nears the last one (or
+    /// a finger has moved the rows near their end).
+    private func loadMoreYouTubePanelRowsIfNeeded(nearingTheEnd: Bool = false) {
         guard let state = youtubePanel, state.kind == .comments || state.kind == .replies, !state.isLoadingMore,
-              let token = state.continuation, state.focused >= state.rows.count - 6, state.rows.count < 400
+              let token = state.continuation, nearingTheEnd || state.focused >= state.rows.count - 10, state.rows.count < 400
         else { return }
         youtubePanel?.isLoadingMore = true
         let (videoID, kind) = (state.videoID, state.kind)
@@ -368,8 +413,10 @@ extension MenuView {
     private func openYouTubeReplies(to comment: YouTubeComment) {
         guard var state = youtubePanel, state.kind == .comments, let token = comment.repliesToken else { return }
         playSound(named: "Selection")
-        state.commentsBeneath = .init(rows: state.rows, focused: state.focused, countText: state.countText, continuation: state.continuation)
+        state.commentsBeneath = .init(rows: state.rows, focused: state.focused, countText: state.countText, continuation: state.continuation, freeScroll: state.freeScroll)
         state.kind = .replies
+        state.freeScroll = nil
+        state.scrolled = 0
         state.rows = [Self.youtubeCommentRow(comment, id: "parent", leadsToReplies: false)]
         state.focused = 0
         state.countText = comment.replyCountText.isEmpty ? nil : comment.replyCountText
@@ -402,6 +449,8 @@ extension MenuView {
         state.kind = .comments
         state.rows = comments.rows
         state.focused = min(comments.focused, max(0, comments.rows.count - 1))
+        state.freeScroll = comments.freeScroll
+        state.scrolled = 0
         state.countText = comments.countText
         state.continuation = comments.continuation
         state.commentsBeneath = nil
