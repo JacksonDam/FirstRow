@@ -3,10 +3,10 @@
     import CoreImage
     import QuartzCore
 
-    /// Bent at the fold, the part of the screen under a movie's picture shows the picture again
-    /// behind the movie's controls: upside down, out of focus and dim, as a table top shows
-    /// what stands on it. The picture is read from the player some thirty times a second, at a
-    /// small size (out of focus, it needs no more), and only while this shows.
+    /// Bent at the fold, the screen under a movie's picture shows the picture again, from its
+    /// foot down behind the movie's controls: upside down, out of focus and dim, as a table
+    /// top shows what stands on it. The picture is read from the player some thirty times a
+    /// second, at a small size (out of focus, it needs no more), and only while this shows.
     @MainActor
     final class MovieReflectionLayer {
         let layer = SceneLayer()
@@ -25,10 +25,10 @@
             layer.opacity = 0
             layer.isHidden = true
             picture.contentsGravity = .resizeAspectFill
-            // Upside down: the foot of the picture is what is nearest the fold.
+            // Upside down: the foot of the picture meets its own foot.
             picture.transform = CATransform3DMakeScale(1, -1, 1)
             layer.addSublayer(picture)
-            // Dim, and dimmer further from the fold, where the controls are.
+            // Dim, and dimmer further from the picture, where the controls are.
             shade.colors = [CGColor(gray: 0, alpha: 0.3), CGColor(gray: 0, alpha: 0.6), CGColor(gray: 0, alpha: 0.85)]
             shade.locations = [0, 0.55, 1]
             shade.startPoint = CGPoint(x: 0.5, y: 0)
@@ -37,7 +37,7 @@
         }
 
         /// `frame` is where it shows, in the window's points: nil when there is nothing to
-        /// show it under (the screen isn't bent, or no movie is playing).
+        /// show (the screen isn't bent, or no movie is playing).
         func update(player: AVPlayer?, frame: CGRect?) {
             guard let frame, frame.width > 1, frame.height > 1, let item = player?.currentItem else {
                 putAway()
