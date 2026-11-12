@@ -681,9 +681,12 @@ open class CALayer: NSObject, CAMediaTiming {
     }
 
     func change(_ key: String, _ old: CGPath?, _ new: CGPath?, animatable _: Bool, apply: (inout LayerState) -> Void) {
+        // The same shape in a new path object changes nothing on screen. (They are compared
+        // before the new one takes the old one's place: the layer may be all that was
+        // holding the old one, and it is gone the moment it is let go of.)
+        let same = old === new || old == new
         apply(&modelState)
-        // The same shape in a new path object changes nothing on screen.
-        if old !== new, old != new { markChanged() }
+        if !same { markChanged() }
         _ = key
     }
 
