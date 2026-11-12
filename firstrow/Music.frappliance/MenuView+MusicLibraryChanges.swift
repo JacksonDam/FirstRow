@@ -47,13 +47,14 @@ struct MusicQueueOrigin: Codable, Equatable {
 /// The music library is read once, as First Row starts. A song bought or a playlist edited
 /// afterwards (in Music, on this device or another) is picked up here, so nothing waits for
 /// First Row to be opened again: the library is looked at when First Row comes back to the
-/// front, when Music is opened from the main menu and, on iPhone and iPad, when the system
-/// says it has changed, and read again only if it has. The lists in the menus follow it,
-/// and so does the list being played.
+/// front, when Music is opened from the main menu, when a song starts and, on iPhone and
+/// iPad, when the system says it has changed, and read again only if it has. The lists in
+/// the menus follow it, and so does the list being played.
 extension MenuView {
     enum MusicLibraryCheckReason {
         case cameToFront
         case openedMusic
+        case songStarted
         case systemNotice
     }
 
@@ -119,7 +120,7 @@ extension MenuView {
         switch reason {
         case .cameToFront:
             guard sinceLastCheck >= 5 else { return }
-        case .openedMusic:
+        case .openedMusic, .songStarted:
             guard sinceLastCheck >= 60 else { return }
         case .systemNotice:
             break
@@ -127,6 +128,8 @@ extension MenuView {
         isCheckingMusicLibrary = true
         musicLibraryCheckedAt = Date()
         Task {
+            // (Once the song has got going: its start is not the moment to read a library.)
+            if reason == .songStarted { try? await firstRowSleep(4) }
             await self.readMusicLibraryIfChanged()
             self.isCheckingMusicLibrary = false
             self.musicLibraryCheckedAt = Date()

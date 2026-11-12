@@ -599,6 +599,11 @@ extension MenuView {
         jellyfinMusicPlaybackDidStart(song)
         updateMusicNowPlayingFlipTimerState()
         triggerScreenSaverNowPlayingToastIfNeeded()
+        #if !os(iOS)
+            // A playlist changed on another device reaches this one's library while First
+            // Row stays in front: looked for as a song starts. (iPhone and iPad are told.)
+            if activeMusicQueueOrigin != nil { checkMusicLibraryForChanges(.songStarted) }
+        #endif
     }
 
     #if os(macOS)
