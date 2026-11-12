@@ -94,6 +94,14 @@ final class YouTubePanelLayer {
     private let message = SceneLayer()
     private let clip = SceneLayer()
     private let list = SceneLayer()
+    /// The rows fade out towards an end of what shows that has more of them past it, as the
+    /// menus' lists do: the mask that fades them, and which ends it faded the last time.
+    private let edgeMask = SceneGradientLayer()
+    private var lastEdgeFades: (top: Bool, bottom: Bool)?
+    /// How much further than `headroom` the row picked out keeps from an end that fades, so
+    /// that it stands clear of the fade.
+    private var edgeRoom: CGFloat = 0
+    private var rowCount = 0
     private var blocks: [String: Block] = [:]
     /// What the panel last showed, kept while it slides away.
     private var shown: YouTubePanelState?
@@ -139,7 +147,10 @@ final class YouTubePanelLayer {
     /// step moves a row like that.
     func room(ofRow index: Int) -> (overflow: CGFloat, page: CGFloat) {
         guard rowHeights.indices.contains(index), shownHeight > 0 else { return (0, 400) }
-        return (max(0, headroom * 2 + rowHeights[index] - shownHeight), max(120, (shownHeight * 0.5).rounded()))
+        // (With rows before it, it starts clear of the fade at the top; with rows after it, it
+        // ends clear of the one at the bottom.)
+        let clear = (index > 0 ? edgeRoom : 0) + (index < rowCount - 1 ? edgeRoom : 0)
+        return (max(0, headroom * 2 + clear + rowHeights[index] - shownHeight), max(120, (shownHeight * 0.5).rounded()))
     }
 
     /// Where the panel goes on a canvas of this size: all the way up its right side, or from
@@ -223,6 +234,8 @@ final class YouTubePanelLayer {
         header.addSublayer(count)
         clip.masksToBounds = true
         clip.addSublayer(list)
+        edgeMask.startPoint = CGPoint(x: 0.5, y: 0)
+        edgeMask.endPoint = CGPoint(x: 0.5, y: 1)
     }
 
     /// The system's Liquid Glass for the sheet, where there is some (the modern look).
@@ -351,6 +364,11 @@ final class YouTubePanelLayer {
         // (Room above the first row inside what's shown of the list: the modern look's tile
         // under the row picked out grows a little past the row, and casts a shadow.)
         headroom = isModern ? 14 : 0
+        // How far in from an end the rows fade, where there are more of them past it: as far
+        // as the menus' lists do in each look.
+        let fadeReach: CGFloat = isModern ? 44 : menu.submenuTopFadeHeight
+        edgeRoom = max(0, fadeReach - headroom)
+        rowCount = content.rows.count
         var top = titleTop + titleGraphic.size.height + (isModern ? 22 : 30) - headroom
         if state != nil, menu.youtubePanelHasBack {
             // In a comment's replies Back stands at the head of the panel, taller than the
@@ -463,8 +481,11 @@ final class YouTubePanelLayer {
         var wanted: CGFloat = 0
         if tops.indices.contains(focus) {
             let lead = max(0, focus - menu.stickySelectionRowIndex)
-            let showsItsEnd = tops[focus] + heights[focus] + headroom - viewport.height
-            wanted = min(tops[focus] - headroom, max(tops[lead] - headroom, showsItsEnd)) + scrolled
+            // (The one picked out stands clear of the fade at an end with rows past it.)
+            let above = focus > 0 ? edgeRoom : 0
+            let below = focus < content.rows.count - 1 ? edgeRoom : 0
+            let showsItsEnd = tops[focus] + heights[focus] + headroom + below - viewport.height
+            wanted = max(0, min(tops[focus] - headroom - above, max(tops[lead] - headroom, showsItsEnd))) + scrolled
         }
         let isWhole = prepared == content.rows.count
         let limit = max(0, contentHeight - viewport.height)
@@ -475,6 +496,31 @@ final class YouTubePanelLayer {
         if isWhole, content.freeScroll != nil, !menu.isYouTubePanelUnderFinger { offset = min(offset, limit) }
         scrollOffset = offset
         scrollLimit = isWhole ? limit : .greatestFiniteMagnitude
+        // The rows fade out towards an end that has more of them past it, and back in as the
+        // last of them comes into sight, as the menus' lists do. Half way in they're half
+        // there in the modern look; in the classic look they're a fifth there, as rows are
+        // under the black its lists' ends have over them.
+        let fades = (top: offset > 1, bottom: !isWhole || offset < limit - 1)
+        if (fades.top || fades.bottom), viewport.height > 1 {
+            let attaching = clip.mask !== edgeMask
+            if attaching { clip.mask = edgeMask }
+            edgeMask.frame = CGRect(origin: .zero, size: viewport.size)
+            let reach = min(0.25, fadeReach / viewport.height)
+            edgeMask.locations = [0, reach / 2, reach, 1 - reach, 1 - reach / 2, 1].map { NSNumber(value: Double($0)) }
+            if attaching || lastEdgeFades?.top != fades.top || lastEdgeFades?.bottom != fades.bottom {
+                let whole = CGColor(gray: 0, alpha: 1)
+                func stops(_ faded: Bool) -> (edge: CGColor, mid: CGColor) {
+                    faded ? (CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: isModern ? 0.5 : 0.22)) : (whole, whole)
+                }
+                let above = stops(fades.top), below = stops(fades.bottom)
+                let animates = !attaching && lastEdgeFades != nil && !wasHidden && !kindChanged
+                edgeMask.set("colors", to: [above.edge, above.mid, whole, whole, below.mid, below.edge], unchanged: false, animation: animates ? .smoothInOut(duration: 0.28) : nil)
+                lastEdgeFades = fades
+            }
+        } else if clip.mask != nil {
+            clip.mask = nil
+            lastEdgeFades = nil
+        }
         let shownViewport = viewport.offsetBy(dx: frame.minX, dy: frame.minY)
         rowPitches = pitches
         rowFrames = tops.indices.map { index in
