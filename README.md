@@ -38,10 +38,13 @@ There are two looks. **Classic** is the original, down to the pixel. **Modern** 
 
 ## What's in it
 
-- **Movies** from your Movies folder, external drives and network shares (anything in a `Movies` folder at the top of a volume), plus any folders you add in Settings. Movies remember where you stopped, even after quitting, and show up in Continue Watching. Press `Down` while one plays for subtitles, audio track and speed.
+- **Movies** from your Movies folder, external drives and network shares (anything in a `Movies` folder at the top of a volume), plus any folders you add in Settings. Besides MP4, MOV and M4V it plays MKV, AVI, WMV, FLV, WebM, MPEG, transport streams and most other kinds of movie file, DVDs and Blu-rays kept as a folder or a disc image among them, with the subtitles and audio tracks inside them, subtitle files kept beside them, and their chapters. Movies remember where you stopped, even after quitting, and show up in Continue Watching. Press `Down` while one plays for subtitles, audio track, chapter and speed.
+- **DVD** at the top of the main menu while there's a DVD to play: a disc in a drive (a built-in one, a USB SuperDrive or any other), or a disc image that's open. A DVD that isn't protected against copying plays in First Row. One that is protected opens in the DVD player that comes with the Mac, or in a Windows PC's own DVD player app if it has one; on Linux it plays where the system is set up for such discs.
 - **Music** from your library and Apple Music, or folders and an iTunes library file you add in Settings (macOS), with a Now Playing screen that shows lyrics, lists the songs around the one playing and slowly flips the player round to protect the screen from burn-in.
 - **Spotify** under Music: your Liked Songs, playlists, albums and artists, playing in the same Now Playing screen. You sign in once on Spotify's own page.
-- **Jellyfin** under Sources: find servers on your network or add one by address, sign in with Quick Connect or a password, and browse Continue Watching, Next Up and your libraries. Videos and songs play in First Row's own players and your progress goes back to the server.
+- **Media servers** under Sources: Jellyfin, Emby, Plex, Kodi, and anything that speaks UPnP, such as Windows Media Center, Windows Media Player, most network drives and many TV recorders. First Row finds the ones on your network, or you add one by its address. You sign in to Jellyfin with Quick Connect or a password, to Emby with a password, and to Plex with a code. Videos and songs play in First Row's own players, and Jellyfin, Emby, Plex and Kodi are told where you stopped.
+- **Shared folders** under Sources, on the Mac, iPhone, iPad and Apple TV: the folders another computer or a network drive shares, browsed and played from where they are, with a name and password where they want one.
+- **Dropbox, Google Drive, OneDrive and iCloud Drive**: where their apps keep a folder on the computer, Settings > Media Folders offers it by name (macOS, Windows, Linux), and a movie or song that is still with its service is fetched when you play it. On iPhone and iPad, Settings > Add Movies from Files brings movies in from anywhere the Files app reaches.
 - **Photos** from Apple Photos, an iPhoto library or folders you add in Settings, as slideshows with music and a Ken Burns effect.
 - **Podcasts** you've downloaded in Apple Podcasts (macOS).
 - **iTunes Top Charts** for movies, TV episodes, songs and music videos, with playable previews.
@@ -51,6 +54,8 @@ There are two looks. **Classic** is the original, down to the pixel. **Modern** 
 - **Media keys, Control Center and headphone buttons** on macOS, iOS and tvOS, with whatever's playing shown in the system's Now Playing.
 
 Movies and shows bought from the Apple TV app won't play because of their DRM.
+
+On the Mac, iPhone, iPad and Apple TV, the kinds of movie file beyond MP4, MOV and M4V, and shared folders, need macOS 15, iOS 18 or tvOS 18. On older systems First Row plays what the system's own player can, as before.
 
 ## Controls
 
@@ -69,7 +74,7 @@ In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, and `Retu
 
 ## Building
 
-Open `First Row.xcodeproj` in Xcode and run the **First Row** scheme for macOS, iOS or tvOS. The Linux and Windows builds use the Swift package in `Package.swift` and need SDL 3 and mpv.
+Open `First Row.xcodeproj` in Xcode and run the **First Row** scheme for macOS, iOS or tvOS. To have it play the further kinds of movie file, build the media engine first with `MediaEngine/build.sh` (see [`MediaEngine/README.md`](MediaEngine/README.md)): the app's build picks it up from there. The Linux and Windows builds use the Swift package in `Package.swift` and need SDL 3 and mpv (see [`Portable/README.md`](Portable/README.md)).
 
 ## How it's put together
 
@@ -137,6 +142,10 @@ If you'd like to support the project, you can [buy me a coffee](https://buymeaco
 ## Credits
 
 > <sub>"macbook pro M3 16 inch 2024" by jackbaeten, "iPhone 17 Pro" by Ranguel, "Apple Tv 4k 3rdgen Wifi Siri Remote 3rdgen" by polyman and "LG OLED55G56LS OLED Evo TV" by Ram-je (Sketchfab, CC BY 4.0). "Apple iPhone Duo Fold Star White 2026" by extraakash (Sketchfab). Wurlitzer EP200 samples by Greg Sullivan (CC BY 3.0).</sub>
+
+## What it's made with
+
+The other people's work that goes out with First Row, and the terms each part comes under, are listed in [`MediaEngine/README.md`](MediaEngine/README.md) for the Mac, iPhone, iPad and Apple TV apps and in [`Portable/Licenses/README.md`](Portable/Licenses/README.md) for Linux and Windows. The licences' own texts are inside each download.
 
 ## License
 
