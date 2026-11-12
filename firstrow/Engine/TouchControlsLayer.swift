@@ -205,6 +205,12 @@ final class TouchControlsLayer {
                         Wanted(control: .playPause, frame: CGRect(x: middle.x - 36, y: middle.y - 36, width: 72, height: 72), symbol: menu.movieControlsGlyphState == .pause ? "play.fill" : "pause.fill", pointSize: 28),
                         Wanted(control: .skipForward, frame: CGRect(x: middle.x + 36 + 44, y: middle.y - 28, width: 56, height: 56), symbol: "goforward.10", pointSize: 22),
                     ]
+                    // While the player waits for more of the movie its pinwheel turns over
+                    // the middle of the picture, where the play button is: the button makes way
+                    // for it. (Bent at the fold the buttons are under the picture.)
+                    if menu.showsMovieBufferingPinwheel, !isBent {
+                        wanted.removeAll { $0.control == .playPause }
+                    }
                     // Where the panel of subtitles, sound and speed opens over these buttons
                     // (bent at the fold, and across a phone held sideways) they make way for it.
                     if menu.movieOptions != nil {

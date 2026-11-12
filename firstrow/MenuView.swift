@@ -337,6 +337,11 @@ final class MenuView: ObservableObject {
     @Published var lastClosedMovieURL: URL?
     @Published var lastClosedMovieTimestamp: Double = 0
     @Published var isMoviePlaybackVisible = false
+    /// The movie's player is waiting for more of the movie than it has (as it starts, after a
+    /// jump to another place, on a slow connection), and has been for long enough to say so:
+    /// a pinwheel turns over the picture.
+    @Published var showsMovieBufferingPinwheel = false
+    var movieBufferingWatchTask: Task<Void, Never>?
     @Published var isMovieTransitioning = false
     @Published var movieTransitionOverlayOpacity: Double = 0
     @Published var isMovieResumePromptVisible = false

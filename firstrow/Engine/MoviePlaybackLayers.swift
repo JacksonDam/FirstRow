@@ -26,6 +26,10 @@ final class MoviePlaybackLayers {
     /// A YouTube video's captions and the panel beside its picture (see `YouTubeVideoLayers`).
     let captions = YouTubeCaptionLayer()
     let panel = YouTubePanelLayer()
+    /// The pinwheel that turns over the picture while the player waits for more of the movie.
+    private let waiting = SceneLayer()
+    private let pinwheel = SpinnerLayer()
+    private var showsPinwheel = false
     #if os(iOS)
         /// Bent at the fold: the picture again, dimly, under it (see `MovieReflection`).
         private let reflection = MovieReflection()
@@ -45,7 +49,17 @@ final class MoviePlaybackLayers {
         controls.layer.isHidden = true
         backdrop.backgroundColor = CGColor(gray: 0, alpha: 1)
         backdrop.isHidden = true
-        for sublayer in [backdrop, playerLayer, captions.layer, controls.layer, modernControls.layer, panel.layer, options.layer] {
+        waiting.opacity = 0
+        waiting.isHidden = true
+        waiting.addSublayer(pinwheel.layer)
+        #if !FIRSTROW_PORTABLE
+            // (A little shade around its spokes, for a picture as light as they are.)
+            pinwheel.layer.shadowColor = CGColor(gray: 0, alpha: 1)
+            pinwheel.layer.shadowOpacity = 0.55
+            pinwheel.layer.shadowRadius = 5
+            pinwheel.layer.shadowOffset = .zero
+        #endif
+        for sublayer in [backdrop, playerLayer, captions.layer, waiting, controls.layer, modernControls.layer, panel.layer, options.layer] {
             group.addSublayer(sublayer)
         }
         #if os(iOS)
@@ -120,6 +134,41 @@ final class MoviePlaybackLayers {
             scale: canvas.pixelScale(backingScale: scale),
             pass: pass,
         )
+        // The pinwheel, over the middle of the picture: of what a video's panel leaves of it,
+        // moving over as the panel comes, as the buttons there do. (Bent at the fold the
+        // picture is above the panel, and the pinwheel is in the middle of that.)
+        let showsWaiting = showsPlayer && menu.showsMovieBufferingPinwheel
+        if showsWaiting || showsPinwheel {
+            canvas.apply(to: waiting)
+            var middle = CGPoint(x: canvas.size.width / 2, y: canvas.size.height / 2)
+            if let upright = canvas.upright, isBent {
+                middle = CGPoint(x: upright.moviePicture.midX, y: upright.moviePicture.midY)
+            } else {
+                middle.x -= YouTubePanelLayer.width(in: panelSize) * menu.youtubePanelSpread / 2
+            }
+            let side: CGFloat = 92
+            pinwheel.layer.place(CGRect(x: middle.x - side / 2, y: middle.y - side / 2, width: side, height: side))
+        }
+        if showsWaiting != showsPinwheel {
+            showsPinwheel = showsWaiting
+            if showsWaiting {
+                waiting.isHidden = false
+                pinwheel.start()
+            } else {
+                // (It goes on turning as it fades, and is put away once it has.)
+                Task { @MainActor [weak self] in
+                    try? await firstRowSleep(0.25)
+                    guard let self, !self.showsPinwheel else { return }
+                    self.waiting.isHidden = true
+                    self.pinwheel.stop()
+                }
+            }
+            waiting.setOpacity(showsWaiting ? 1 : 0, .easeOut(duration: 0.2))
+        }
+        if !showsPlayer, !waiting.isHidden {
+            waiting.isHidden = true
+            pinwheel.stop()
+        }
         canvas.apply(to: panel.layer)
         // (Bent at the fold, the panel has the screen under the fold, as the controls do: the
         // picture over it is left whole.)

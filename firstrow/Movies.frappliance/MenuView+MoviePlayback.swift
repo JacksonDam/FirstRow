@@ -776,9 +776,36 @@ extension MenuView {
                 }
             }
         }
+        watchMovieBuffering(of: player)
+    }
+
+    /// Has the pinwheel show while the player is waiting for more of the movie than it has:
+    /// once it has waited a third of a second, so the short waits that every start and every
+    /// jump to another place have don't flash it.
+    private func watchMovieBuffering(of player: AVPlayer) {
+        movieBufferingWatchTask?.cancel()
+        if showsMovieBufferingPinwheel { showsMovieBufferingPinwheel = false }
+        movieBufferingWatchTask = Task { @MainActor [weak self] in
+            var waitingSince: CFTimeInterval?
+            while !Task.isCancelled {
+                try? await firstRowSleep(0.1)
+                guard let self, !Task.isCancelled, self.observedMoviePlayer === player else { return }
+                let now = CACurrentMediaTime()
+                if self.isMoviePlaybackVisible, player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                    waitingSince = waitingSince ?? now
+                } else {
+                    waitingSince = nil
+                }
+                let shows = waitingSince.map { now - $0 >= 0.3 } ?? false
+                if shows != self.showsMovieBufferingPinwheel { self.showsMovieBufferingPinwheel = shows }
+            }
+        }
     }
 
     func removeMoviePlaybackObservation() {
+        movieBufferingWatchTask?.cancel()
+        movieBufferingWatchTask = nil
+        if showsMovieBufferingPinwheel { showsMovieBufferingPinwheel = false }
         if let token = movieTimeObserverToken, let observedMoviePlayer {
             observedMoviePlayer.removeTimeObserver(token)
         }
