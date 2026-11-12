@@ -16,6 +16,8 @@ extension MenuView {
         /// Movies > Remove Movies on iPhone and iPad: the movies First Row keeps of its own.
         case ownMovies
         case ownMovie(URL)
+        /// Movies > Import: where more movies come from.
+        case importMovies
     }
 
     struct MediaFoldersPageState: Equatable {
@@ -24,6 +26,7 @@ extension MenuView {
     }
 
     static let mediaFoldersItemID = "settings_media_folders"
+    static let importMoviesItemID = "movies_import"
     static let addCloudFolderItemIDPrefix = "media_add_cloud_"
 
     var currentMediaFoldersPage: MediaFoldersPage {
@@ -87,6 +90,19 @@ extension MenuView {
             return items
         case .folder:
             return [plainMenuListItem(id: "media_remove_folder", title: "Remove from First Row")]
+        case .importMovies:
+            #if os(iOS)
+                // (The Files app reaches Dropbox, Google Drive, OneDrive and the rest itself.)
+                return [plainMenuListItem(id: "import_files", title: "Files", trailingText: "...")]
+            #else
+                // The folders that Dropbox, Google Drive and the like keep on this computer,
+                // then any folder at all.
+                var items = cloudFolders.enumerated().map { index, folder in
+                    plainMenuListItem(id: "\(Self.addCloudFolderItemIDPrefix)\(index)", title: folder.name, trailingText: "...")
+                }
+                items.append(plainMenuListItem(id: "media_add_folder", title: "Folder", trailingText: "..."))
+                return items
+            #endif
         case .ownMovies:
             return ownMovieFiles.enumerated().map { index, file in
                 plainMenuListItem(id: "own_movie_\(index)", title: file.deletingPathExtension().lastPathComponent, leadsToMenu: true)
@@ -116,6 +132,8 @@ extension MenuView {
                 : "\(kind.title) Folder", fallback: "\(kind.title) Folder")
         case let .library(kind):
             kind.title
+        case .importMovies:
+            "Import"
         case .ownMovies:
             "Remove Movies"
         case let .ownMovie(file):
@@ -135,7 +153,7 @@ extension MenuView {
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1
         }
-        if first == .overview { lookForCloudFolders() }
+        if first == .overview || first == .importMovies { lookForCloudFolders() }
     }
 
     /// Finds the folders that Dropbox, Google Drive and the like keep here, to offer them.
@@ -213,6 +231,17 @@ extension MenuView {
             MediaSources.shared.removeFolder(at: index, kind: kind)
             mediaSourcesRevision &+= 1
             navigateUpInMediaFolders()
+        case .importMovies:
+            #if os(iOS)
+                // The Files picker comes up over the menu (see `AppShell`).
+                isMovieFilesPickerPresented = true
+            #else
+                if item.id == "media_add_folder" {
+                    chooseMediaFolders(.movies)
+                } else if let index = Int(item.id.dropFirst(Self.addCloudFolderItemIDPrefix.count)), cloudFolders.indices.contains(index) {
+                    chooseMediaFolders(.movies, in: cloudFolders[index])
+                }
+            #endif
         case .ownMovies:
             guard ownMovieFiles.indices.contains(selectedThirdIndex) else { return }
             pushMediaFoldersPage(.ownMovie(ownMovieFiles[selectedThirdIndex]))
@@ -282,6 +311,10 @@ extension MenuView {
         // (Rows of folders are numbered, so the ones below the new folders are found by place.)
         if added > 0, let selectedID, !selectedID.hasPrefix("media_folder_"), currentMediaFoldersPage == .folders(kind) {
             selectedThirdIndex = min(selectedThirdIndex + added, max(0, mediaFoldersListItems().count - 1))
+        }
+        if currentMediaFoldersPage == .importMovies {
+            // (Asked for from Movies > Import: back to the Movies menu, whose Movies Folder now has them.)
+            navigateUpInMediaFolders()
         }
     }
 

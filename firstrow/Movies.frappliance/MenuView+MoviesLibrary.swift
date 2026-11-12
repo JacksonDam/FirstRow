@@ -168,11 +168,14 @@ extension MenuView {
             if thirdMenuMode == .moviesFolder {
                 loadThirdMenuDirectory(moviesRootDirectoryURL(), resetSelection: true)
             }
+            if thirdMenuMode == .mediaFolders, currentMediaFoldersPage == .importMovies {
+                // (Asked for from Movies > Import: back to the Movies menu, where they now are.)
+                navigateUpInMediaFolders()
+            }
         }
 
         // MARK: - Removing movies
 
-        static let addMoviesItemID = "movies_add_from_files"
         static let removeMoviesItemID = "movies_remove"
         private static let removedMovieNamesDefaultsKey = "moviesRemovedFromFirstRow"
 

@@ -406,15 +406,16 @@ extension MenuView {
             return
         }
         #if os(iOS)
-            if activeRootItemID == "movies", item.id == Self.addMoviesItemID {
-                // The Files picker comes up over the menu (see `AppShell`).
-                playSound(named: "Selection")
-                isMovieFilesPickerPresented = true
-                return
-            }
             if activeRootItemID == "movies", item.id == Self.removeMoviesItemID {
                 playSound(named: "Selection")
                 enterRemoveMoviesMenu()
+                return
+            }
+        #endif
+        #if !os(tvOS)
+            if activeRootItemID == "movies", item.id == Self.importMoviesItemID {
+                playSound(named: "Selection")
+                enterMediaFoldersMenu(startingAt: .importMovies)
                 return
             }
         #endif
