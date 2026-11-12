@@ -890,7 +890,9 @@ extension MenuView {
             options.hasMoved = true
             movieOptions = options
         }
-        _ = handleMovieOptionsInput(backward ? .leftArrow : .enter)
+        // (Where there is no value to go back to, the click goes on like any other.)
+        let goesBack = backward && options.rows[index].selected > 0
+        _ = handleMovieOptionsInput(goesBack ? .leftArrow : .enter)
     }
 
     /// Moves the system's own music player (Apple Music and library songs on iPhone, iPad and

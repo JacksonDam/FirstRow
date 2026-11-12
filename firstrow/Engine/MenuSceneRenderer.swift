@@ -909,7 +909,10 @@ extension MenuSceneRenderer {
         guard panel.contains(point) else { return nil }
         guard let index = playback.options.rowFrames.firstIndex(where: { $0.contains(point) }) else { return (-1, false) }
         let values = playback.options.valueFrames
-        let backward = values.indices.contains(index) && point.x < values[index].minX + min(70, values[index].width * 0.35)
+        // (On the value's "‹", not anywhere to its left: a click on the row's name went back a
+        // value too, which on a row at its first value did nothing.)
+        let backward = values.indices.contains(index) && point.x >= values[index].minX - 18
+            && point.x < values[index].minX + min(70, values[index].width * 0.35)
         return (index, backward)
     }
 
