@@ -24,6 +24,8 @@ let package = Package(
                 .linkedLibrary("ws2_32", .when(platforms: [.windows])),
                 .linkedLibrary("advapi32", .when(platforms: [.windows])),
                 .linkedLibrary("shell32", .when(platforms: [.windows])),
+                .linkedLibrary("netapi32", .when(platforms: [.windows])),
+                .linkedLibrary("mpr", .when(platforms: [.windows])),
             ],
         ),
         .target(name: "CoreGraphics", dependencies: ["CPortable"], path: "Portable/Sources/CoreGraphics", swiftSettings: portableSettings),

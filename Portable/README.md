@@ -28,6 +28,8 @@ dist/linux/FirstRow/first-row
 
 The Swift runtime is linked in, so `dist/linux/FirstRow` only needs SDL 3 and libmpv on the machine it runs on.
 
+Shared folders (Sources > Add Server > Shared Folder) are read with Samba's client library, which First Row loads as it runs if the system has it (`libsmbclient.so.0`: the `libsmbclient0` package on Ubuntu and Debian, `libsmbclient` on Fedora, there already on most desktops, whose file managers use it). Without it First Row runs as before and doesn't offer shared folders. On Windows the system reaches shared folders itself.
+
 The window brings its own icon where the desktop lets a window do that (X11, and Wayland desktops with the `xdg-toplevel-icon` protocol, such as KDE Plasma). GNOME on Wayland takes a window's icon from the app's desktop entry and nowhere else: `dist/linux/FirstRow/install.sh` adds one for this user (which also puts First Row in the applications menu), and `install.sh remove` takes it out again.
 
 ### Windows

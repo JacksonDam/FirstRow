@@ -192,6 +192,11 @@ open class AVPlayer: NSObject, @unchecked Sendable {
             target = "edl://" + piece(pair.video) + (pair.audio.map { ";!new_stream;" + piece($0) } ?? "")
         }
         var options: [String] = []
+        if let shared = AVPlayer.sharedFolderTarget(for: url) {
+            // (A movie in a shared folder: see SharedFolders.swift.)
+            target = shared.target
+            options += shared.options
+        }
         if let disc = AVPlayer.discTarget(for: url) {
             // (A DVD: see DiscDrive.swift.)
             target = disc.target

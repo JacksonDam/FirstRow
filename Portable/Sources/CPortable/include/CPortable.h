@@ -75,6 +75,22 @@ int fr_windows_open_dvd_player(const char* drive);
    Returns 1 if it went there, 0 if it couldn't be put there. */
 int fr_move_to_trash(const char* path);
 
+/* Shared folders (SMB). `fr_smb_list` answers what a computer shares (with no share named) or
+   what a folder of a share holds, as lines of "d<tab>name" for a share or a folder and
+   "f<tab>name" for a file, and returns how many, or -1 if it can't be reached, -2 if a name and
+   password are wanted, -3 if this system has nothing to read shared folders with, -4 if Windows
+   is signed in to that computer as someone else and won't be as two people at once.
+   `fr_smb_connect` signs in to a share on Windows, where files are then opened by their own
+   names ("\\server\share\file"). On Linux a file is read with `fr_smb_open` and the rest. */
+int fr_smb_available(void);
+int fr_smb_list(const char* server, const char* share, const char* path, const char* user, const char* password, char* out, int capacity);
+int fr_smb_connect(const char* server, const char* share, const char* user, const char* password);
+void* fr_smb_open(const char* server, const char* share, const char* path, const char* user, const char* password);
+long long fr_smb_read(void* file, char* buffer, unsigned long long count);
+long long fr_smb_seek(void* file, long long offset);
+long long fr_smb_size(void* file);
+void fr_smb_close(void* file);
+
 #ifdef __cplusplus
 }
 #endif

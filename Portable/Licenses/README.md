@@ -20,7 +20,8 @@ Portions of this software are copyright © The FreeType Project (www.freetype.or
 reserved.
 
 On Linux, SDL 3 and mpv are the system's own (`libsdl3` and `libmpv`) and aren't part of First
-Row's download.
+Row's download. Nor is Samba's client library (`libsmbclient`, under the GPL version 3), which
+First Row loads from the system, if it is there, to read shared folders.
 
 ## mpv on Windows
 

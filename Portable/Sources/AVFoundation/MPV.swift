@@ -191,6 +191,10 @@ final class MPVCore {
             mpv_terminate_destroy(handle)
             return nil
         }
+        #if !os(Windows)
+            // (Movies in shared folders are read for it: see SharedFolders.swift.)
+            registerSharedFolderReading(on: handle)
+        #endif
         observe("eof-reached", MPV_FORMAT_FLAG, id: Self.endOfFileID)
         observe("time-pos", MPV_FORMAT_DOUBLE, id: Self.timeID)
         observe("duration", MPV_FORMAT_DOUBLE, id: Self.durationID)
