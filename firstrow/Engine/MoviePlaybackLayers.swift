@@ -60,6 +60,10 @@ final class MoviePlaybackLayers {
         placePicture(canvas.upright.map { $0.isBent ? canvas.window($0.moviePicture) : bounds } ?? bounds)
         var controlsSize = canvas.size
         if let upright = canvas.upright, isBent { controlsSize.height = upright.movieControlsFloor }
+        // A video's panel takes the right of the screen: the controls keep to what it leaves
+        // them, the bar narrowing as the panel comes.
+        let panelSize = controlsSize
+        controlsSize.width -= YouTubePanelLayer.width(in: panelSize) * menu.youtubePanelSpread
         // The bar's dark fade is for a picture that lies under it: not for a bar below the fold
         // of a bent screen, nor on a flat one under a picture that stops short of it.
         var barIsOverPicture = !isBent
@@ -77,13 +81,13 @@ final class MoviePlaybackLayers {
         captions.update(
             text: showsPlayer ? menu.youtubeCaptionText : nil,
             raised: showsControls && controlsOpacity > 0.5,
-            width: controlsSize.width - (menu.youtubePanel != nil && menu.youtubePanelReveal > 0.5 ? YouTubePanelLayer.width(in: controlsSize) : 0),
+            width: controlsSize.width,
             size: controlsSize,
             scale: canvas.pixelScale(backingScale: scale),
             pass: pass,
         )
         canvas.apply(to: panel.layer)
-        panel.update(menu: menu, size: controlsSize, scale: canvas.pixelScale(backingScale: scale), canvasScale: canvas.scale, pass: pass)
+        panel.update(menu: menu, size: panelSize, scale: canvas.pixelScale(backingScale: scale), canvasScale: canvas.scale, pass: pass)
         controls.layer.isHidden = !showsControls || isModern
         modernControls.layer.isHidden = !showsControls || !isModern
         // The options' buttons sit above the right end of the bar, and the panel grows out of them.

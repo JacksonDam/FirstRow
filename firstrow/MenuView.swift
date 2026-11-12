@@ -703,6 +703,12 @@ final class MenuView: ObservableObject {
     @Published var youtubePanel: YouTubePanelState?
     /// How far that panel is out (0 away, 1 out).
     @Published var youtubePanelReveal: CGFloat = 0
+    /// How far it has come, worked out a frame at a time as it comes and goes (0 to 1): the
+    /// transport bar narrows by as much and the buttons over the picture move across, so that
+    /// the panel covers neither.
+    @Published var youtubePanelSpread: CGFloat = 0
+    var youtubePanelSpreadMove: (from: CGFloat, to: CGFloat, elapsed: Double, animation: Animation)?
+    let youtubePanelSpreadClock = FrameClock()
     /// A change of picture size waiting to be acted on (where the player has to start again for it).
     var youtubeStreamReloadTask: Task<Void, Never>?
     /// Watches the size a video's picture is shown at, to learn where the next should start.

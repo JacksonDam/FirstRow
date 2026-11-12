@@ -107,6 +107,7 @@ extension MenuView {
         withAnimation(.smooth(duration: 0.36)) {
             youtubePanelReveal = 1
         }
+        spreadYouTubePanel(to: 1, .smooth(duration: 0.36))
         showMovieControlsInstantly()
         switch kind {
         case .comments, .replies: loadYouTubeComments()
@@ -120,12 +121,41 @@ extension MenuView {
         withAnimation(.smoothInOut(duration: 0.3)) {
             youtubePanelReveal = 0
         }
+        spreadYouTubePanel(to: 0, .smoothInOut(duration: 0.3))
         scheduleMovieControlsAutoHide()
         Task { @MainActor in
             try? await firstRowSleep(0.32)
             guard self.youtubePanelReveal <= 0.001 else { return }
             self.youtubePanel = nil
         }
+    }
+
+    /// Moves what makes way for the panel (see `youtubePanelSpread`) in step with it.
+    func spreadYouTubePanel(to target: CGFloat, _ animation: Animation?) {
+        guard let animation, animation.duration > 0, abs(target - youtubePanelSpread) > 0.001 else {
+            youtubePanelSpreadMove = nil
+            if youtubePanelSpread != target { youtubePanelSpread = target }
+            return
+        }
+        youtubePanelSpreadMove = (youtubePanelSpread, target, 0, animation)
+        if youtubePanelSpreadClock.onFrame == nil {
+            youtubePanelSpreadClock.onFrame = { [weak self] seconds in
+                guard let self, var move = self.youtubePanelSpreadMove else { return false }
+                move.elapsed += seconds
+                let progress = min(1, move.elapsed / move.animation.duration)
+                let eased = CGFloat(TimingCurve(move.animation.timingFunction).value(at: progress))
+                self.youtubePanelSpread = move.from + (move.to - move.from) * eased
+                self.youtubePanelSpreadMove = progress < 1 ? move : nil
+                return progress < 1
+            }
+        }
+        youtubePanelSpreadClock.run()
+    }
+
+    /// Back has a place of its own at the head of the panel while a comment's replies show:
+    /// there it leads back to the comments, not out of the video.
+    var youtubePanelHasBack: Bool {
+        isYouTubePanelOut && youtubePanel?.kind == .replies
     }
 
     /// The panel under a point of the window, while it's out: whether the point is on it, and
@@ -455,6 +485,7 @@ extension MenuView {
         }
         youtubePanel = nil
         youtubePanelReveal = 0
+        spreadYouTubePanel(to: 0, nil)
         playSound(named: "Selection")
         stopMoviePlaybackAndReturnToMenu()
         Task { @MainActor in
