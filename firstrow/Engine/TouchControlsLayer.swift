@@ -349,8 +349,8 @@ final class TouchControlsLayer {
 
         frames = [:]
         // The modern look on systems with Liquid Glass: the system's own glass buttons.
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *), let native = NativeControls.shared {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), let native = NativeControls.shared {
                 if isModern {
                     #if os(macOS)
                         makeButtonsAhead(size: size)

@@ -1,4 +1,4 @@
-#if os(iOS) || os(macOS)
+#if os(iOS) || os(macOS) || os(tvOS)
     import QuartzCore
     #if os(macOS)
         import AppKit
@@ -6,11 +6,13 @@
         import UIKit
     #endif
 
-    // The on-screen buttons as the system's own Liquid Glass controls (iOS 26 and macOS 26 and
-    // later, the modern look only). They sit in views over the scene, in containers that take on
-    // the scene's moves: Now Playing's buttons scale with it, and its transport slides away.
-    // Glass can't be faded part way on iPhone and iPad (it ignores opacity), so there it comes
-    // and goes the system's way, by materialising, while its symbol fades; on the Mac it fades.
+    // The on-screen buttons as the system's own Liquid Glass controls (iOS 26, macOS 26 and
+    // tvOS 26 and later, the modern look only). They sit in views over the scene, in containers
+    // that take on the scene's moves: Now Playing's buttons scale with it, and its transport
+    // slides away. Glass can't be faded part way on iPhone, iPad and tvOS (it ignores opacity),
+    // so there it comes and goes the system's way, by materialising, while its symbol fades; on
+    // the Mac it fades. tvOS has no on-screen buttons: there the glass is only what's under a
+    // movie's options and a video's panel.
 
     extension Animation {
         /// The curve's two control points, for the system's own animations.
@@ -94,7 +96,7 @@
     #endif
 
     /// A symbol as the system draws it, white.
-    @available(macOS 26.0, iOS 26.0, *)
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, *)
     @MainActor
     private func nativeSymbol(_ name: String, pointSize: CGFloat) -> NativeImage? {
         #if os(macOS)
@@ -113,7 +115,7 @@
     #endif
 
     /// One round (or capsule) glass button with a symbol on it.
-    @available(macOS 26.0, iOS 26.0, *)
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, *)
     @MainActor
     final class NativeGlassButton: NativeView {
         var onPress: (() -> Void)?
@@ -277,7 +279,7 @@
     /// The glass under a movie's option buttons and its options panel: only for show (taps and
     /// clicks go through to the scene, which knows where the buttons and rows are). The panel's
     /// rows are First Row's own layers, hosted inside the glass.
-    @available(macOS 26.0, iOS 26.0, *)
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, *)
     @MainActor
     final class NativeOptionsGlass {
         #if os(macOS)
@@ -491,7 +493,7 @@
     /// A sheet of glass that's only for show, with First Row's own layers inside it: the panel
     /// beside a YouTube video's picture. Clicks and taps go through to the scene, which knows
     /// where the panel's rows are.
-    @available(macOS 26.0, iOS 26.0, *)
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, *)
     @MainActor
     final class NativeGlassSheet {
         #if os(macOS)
@@ -694,10 +696,10 @@
     #endif
 
     /// The native buttons and glass over the scene.
-    @available(macOS 26.0, iOS 26.0, *)
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, *)
     @MainActor
     final class NativeControls {
-        /// Made when the system has Liquid Glass; nil before macOS 26 and iOS 26.
+        /// Made when the system has Liquid Glass; nil before macOS 26, iOS 26 and tvOS 26.
         static var shared: NativeControls?
 
         static func makeIfSupported() -> NativeControls? {

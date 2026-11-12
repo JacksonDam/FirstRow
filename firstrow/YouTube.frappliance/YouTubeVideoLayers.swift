@@ -149,8 +149,8 @@ final class YouTubePanelLayer {
 
     /// The system's Liquid Glass for the sheet, where there is some (the modern look).
     private var nativeGlass: AnyObject? {
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *), ModernTheme.isActive {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), ModernTheme.isActive {
                 return NativeControls.shared?.sheet
             }
         #endif
@@ -158,8 +158,8 @@ final class YouTubePanelLayer {
     }
 
     private func putGlassAway() {
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *), hasUsedGlass {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), hasUsedGlass {
                 NativeControls.shared?.sheet.hide()
             }
         #endif
@@ -201,8 +201,8 @@ final class YouTubePanelLayer {
         let away = CATransform3DMakeTranslation(reach, 0, 0)
         let move = pass.animation
         var isInGlass = false
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *), let glass = nativeGlass as? NativeGlassSheet {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), let glass = nativeGlass as? NativeGlassSheet {
                 // The rows are drawn at canvas size inside the glass, which is in window points.
                 isInGlass = true
                 hasUsedGlass = true

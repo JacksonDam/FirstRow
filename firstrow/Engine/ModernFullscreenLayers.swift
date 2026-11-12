@@ -503,8 +503,8 @@ final class MovieOptionsLayer {
     /// `anchor` is the progress bar (canvas points) while the controls show, nil while they don't.
     /// The system's Liquid Glass for the buttons and panel, where there is some (modern look).
     private var nativeGlass: AnyObject? {
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *), ModernTheme.isActive {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), ModernTheme.isActive {
                 return NativeControls.shared?.options
             }
         #endif
@@ -571,8 +571,8 @@ final class MovieOptionsLayer {
             }
         }
         buttons.setOpacity(showsButtons && !usesNativeGlass ? controlsOpacity : 0, pass.animation)
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
                 // The system's glass instead, with the system's symbol, in window points.
                 let windowFrame = CGRect(x: clusterFrame.minX * canvasScale, y: clusterFrame.minY * canvasScale, width: clusterFrame.width * canvasScale, height: clusterFrame.height * canvasScale)
                 glass.updateCluster(
@@ -596,8 +596,8 @@ final class MovieOptionsLayer {
         }
         // With the system's glass, the panel's rows are hosted inside it; without, the panel
         // draws its own background here.
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
                 let host = glass.panelLayerHost
                 if panel.superlayer !== host {
                     panel.removeAllAnimations()
@@ -627,8 +627,8 @@ final class MovieOptionsLayer {
         let collapsedScale: CGFloat = showsButtons ? 0.2 : 0.86
         let move: Animation? = opening || closing ? (pass.animation ?? (opening ? .smooth(duration: 0.36) : .smoothInOut(duration: 0.3))) : nil
         if usesNativeGlass {
-            #if os(iOS) || os(macOS)
-                if #available(macOS 26.0, iOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
+            #if os(iOS) || os(macOS) || os(tvOS)
+                if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
                     // Drawn at canvas size inside the glass, which is in window points.
                     panel.backgroundColor = CGColor(gray: 0, alpha: 0)
                     panel.cornerRadius = 0

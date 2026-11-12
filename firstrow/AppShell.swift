@@ -110,8 +110,8 @@ final class FirstRowAppController {
             windowContentView.addSubview(hostView)
         #endif
         // The modern look's buttons as the system's Liquid Glass, on systems that have it.
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *), let native = NativeControls.makeIfSupported() {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), let native = NativeControls.makeIfSupported() {
                 #if os(macOS)
                     native.view.frame = windowContentView.bounds
                     native.view.autoresizingMask = [.width, .height]
@@ -331,8 +331,8 @@ final class FirstRowAppController {
 
     private func installMenuInput(_ menu: MenuView) {
         menu.pointer.hitTester = renderer
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *) {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *) {
                 NativeControls.shared?.onPress = { [weak menu] control in menu?.pressOnScreenControl(control) }
                 #if os(iOS)
                     // Kept on top of the touch views added below.
@@ -607,8 +607,8 @@ final class FirstRowAppController {
     private func beginQuitTransition() {
         guard !isQuitting else { return }
         isQuitting = true
-        #if os(iOS) || os(macOS)
-            if #available(macOS 26.0, iOS 26.0, *) {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *) {
                 NativeControls.shared?.hideAll(animation: .easeInOut(duration: 0.5))
             }
         #endif
