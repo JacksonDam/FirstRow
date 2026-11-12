@@ -765,9 +765,11 @@ final class MovieResumePromptLayer {
         }
         pressed.isHidden = true
         selection.layer.isHidden = false
-        let visualWidth = buttonWidth + menu.selectionTextureVisualWidthDelta + menu.movieResumeSelectionTextureLeadingAdjustment + menu.movieResumeSelectionTextureTrailingAdjustment
+        // (The box is drawn the same amount wider than the button on either side, so that the
+        // word in the button's middle is in the box's middle too.)
+        let visualWidth = buttonWidth + menu.selectionTextureVisualWidthDelta
         let visualHeight = buttonHeight + menu.selectionTextureVisualHeightDelta
-        let visualXOffset = -((visualWidth - buttonWidth) * 0.5) + ((menu.movieResumeSelectionTextureTrailingAdjustment - menu.movieResumeSelectionTextureLeadingAdjustment) * 0.5)
+        let visualXOffset = -((visualWidth - buttonWidth) * 0.5)
         let visualYOffset = -((visualHeight - buttonHeight) * 0.5)
         let slide = appearing ? nil : pass.animation(.easeInOut(duration: menu.movieResumePromptSelectionSlideDuration), when: moved)
         selection.update(
