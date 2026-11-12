@@ -192,6 +192,12 @@ open class AVPlayer: NSObject, @unchecked Sendable {
             target = "edl://" + piece(pair.video) + (pair.audio.map { ";!new_stream;" + piece($0) } ?? "")
         }
         var options: [String] = []
+        if url.isFileURL, let drive = AVPlayer.discDrive(for: url) {
+            // A disc in a drive: played as a disc, read from the drive itself (the value is
+            // given with its length, as mpv takes one that may hold any character).
+            target = "dvd://"
+            options.append("dvd-device=%\(drive.utf8.count)%\(drive)")
+        }
         if lastTime > 0 { options.append("start=\(lastTime)") }
         if options.isEmpty {
             core.commandWithoutWaiting(["loadfile", target, "replace"])

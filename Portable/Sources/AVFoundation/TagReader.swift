@@ -84,6 +84,10 @@ enum TagReader {
             // (A disc kept as a folder of its files, which mpv plays as the disc.)
             info.hasVideo = true
             info.hasAudio = true
+        } else if AVPlayer.discDrive(for: url) != nil {
+            // (A disc in a drive, which isn't read here: mpv plays it from the drive.)
+            info.hasVideo = true
+            info.hasAudio = true
         } else if let reader = FileReader(url) {
             let head = reader.read(0, 64)
             let ext = url.pathExtension.lowercased()

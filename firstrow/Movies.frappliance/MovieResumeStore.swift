@@ -31,6 +31,20 @@ enum MovieResumeStore {
     private static let minimumSeconds: Double = 10
     private static let finishedMargin: Double = 45
 
+    /// The disc in a drive whose address doesn't say which disc it holds, and what the disc
+    /// calls itself: where it was stopped is kept under both, so that the next disc in the
+    /// same drive starts at its start. (Set from the main thread as discs come and go.)
+    nonisolated(unsafe) static var discInDrive: (path: String, name: String)?
+
+    /// What a movie's place is kept under: its path, with the disc's name for a disc in a drive.
+    private static func place(of url: URL) -> String {
+        let path = url.standardizedFileURL.path
+        if let discInDrive, discInDrive.path == path {
+            return path + "#" + discInDrive.name
+        }
+        return path
+    }
+
     /// Read often (the Movies menu asks on every draw), so kept until something changes.
     nonisolated(unsafe) private static var cachedEntries: [Entry]?
 
@@ -44,14 +58,14 @@ enum MovieResumeStore {
 
     static func seconds(for url: URL) -> Double? {
         guard url.isFileURL else { return nil }
-        let path = url.standardizedFileURL.path
+        let path = place(of: url)
         return stored().first { $0.path == path }?.seconds
     }
 
     /// Remembers where a file stopped, or forgets it if it was barely started or played to the end.
     static func record(_ url: URL, seconds: Double, duration: Double) {
         guard url.isFileURL, seconds.isFinite else { return }
-        let path = url.standardizedFileURL.path
+        let path = place(of: url)
         var list = stored().filter { $0.path != path }
         let hasLength = duration.isFinite && duration > 0
         let finished = hasLength && (seconds >= duration - finishedMargin || seconds / duration > 0.95)
@@ -68,7 +82,7 @@ enum MovieResumeStore {
     }
 
     static func remove(_ url: URL) {
-        let path = url.standardizedFileURL.path
+        let path = place(of: url)
         save(stored().filter { $0.path != path })
     }
 

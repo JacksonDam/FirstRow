@@ -929,6 +929,9 @@ extension MenuView {
 
     /// Why, for the screen that says a movie couldn't be played.
     static func whyMovieCouldNotBePlayed(_ url: URL?) -> String {
+        if let url, url.isFileURL, DiscWatch.shared.protectedDisc == url.standardizedFileURL {
+            return "It's protected against copying."
+        }
         #if !FIRSTROW_PORTABLE
             let kind = url?.pathExtension.lowercased() ?? ""
             if !MediaEngine.isAvailable, !kind.isEmpty, !MediaEngine.systemPlayerExtensions.contains(kind) {
