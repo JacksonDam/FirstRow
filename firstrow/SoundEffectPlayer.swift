@@ -170,10 +170,15 @@ private final class FinishListener: NSObject, AVAudioPlayerDelegate {
         private let queue: DispatchQueue
         private let engine = AVAudioEngine()
         private var buffers: [String: AVAudioPCMBuffer] = [:]
-        private var voices: [String: [Voice]] = [:]
+        /// The voices, by the kind of buffer they play (the sounds here are all of one kind).
+        /// Any of them plays any sound of its kind.
+        private var voices: [AVAudioFormat: [Voice]] = [:]
         private var unplayable: Set<String> = []
         private var changeObserver: NSObjectProtocol?
-        private let voicesPerSound = 3
+        /// Enough for every sound to play through however often sounds are asked for: the
+        /// longest that's asked for over and over (a row passed in a list) lasts a sixth of a
+        /// second, and one is let go if it comes within 15 ms of the last.
+        private let voicesPerKind = 12
 
         init(queue: DispatchQueue) {
             self.queue = queue
@@ -221,23 +226,25 @@ private final class FinishListener: NSObject, AVAudioPlayerDelegate {
         func play(_ name: String, url: URL) -> Bool {
             guard prepare(name, url: url), let buffer = buffers[name] else { return false }
             let now = Date()
-            var mine = voices[name] ?? []
-            let voice: Voice
-            if let free = mine.first(where: { $0.busyUntil <= now }) {
-                voice = free
-            } else if mine.count < voicesPerSound {
-                voice = Voice()
-                engine.attach(voice.node)
-                engine.connect(voice.node, to: engine.mainMixerNode, format: buffer.format)
-                mine.append(voice)
-                voices[name] = mine
-            } else if let soonest = mine.min(by: { $0.busyUntil < $1.busyUntil }) {
-                // Every voice of this sound is sounding: the one nearest its end starts over.
-                voice = soonest
-                voice.node.stop()
+            let mine: [Voice]
+            if let made = voices[buffer.format] {
+                mine = made
             } else {
-                return false
+                // All of a kind's voices at once, the first time one is needed, and not one
+                // more whenever sounds overlap: that would be while the engine is playing.
+                mine = (0 ..< voicesPerKind).map { _ in Voice() }
+                for voice in mine {
+                    engine.attach(voice.node)
+                    engine.connect(voice.node, to: engine.mainMixerNode, format: buffer.format)
+                }
+                voices[buffer.format] = mine
             }
+            // A voice that has played its sound through. With every one still sounding, this
+            // sound is let go: making room for it would cut another off part way through its
+            // wave, which is heard as a click, and a list swiped down at speed (forty rows a
+            // second) made one for every row: a crackle under the softer of the two looks'
+            // sounds.
+            guard let voice = mine.first(where: { $0.busyUntil <= now }) else { return true }
             if !engine.isRunning {
                 do {
                     try engine.start()
