@@ -461,6 +461,14 @@
                 let current = generation
                 let isCluster = glass === cluster
                 if shown { glass.isHidden = false }
+                guard let animation, animation.duration > 0 else {
+                    // At once, with nothing to wait for. (The wait's end, run from in here,
+                    // would read what this is still changing: the look changed with a
+                    // movie's options up, and that stopped First Row.)
+                    animateViews(nil, { glass.animator().alphaValue = shown ? 1 : 0 })
+                    if !shown { glass.isHidden = true }
+                    return
+                }
                 animateViews(animation, { glass.animator().alphaValue = shown ? 1 : 0 }, completion: { [weak self] in
                     guard let self else { return }
                     let still = isCluster ? self.clusterGeneration == current && !self.clusterShown : self.panelGeneration == current && !self.panelShown
@@ -477,6 +485,15 @@
                 if shown {
                     glass.isHidden = false
                     UIView.performWithoutAnimation { content.alpha = 0 }
+                }
+                guard let animation, animation.duration > 0 else {
+                    // At once, with nothing to wait for (see the Mac's, above).
+                    animateViews(nil, {
+                        glass.effect = shown ? UIGlassEffect(style: .regular) : nil
+                        content.alpha = shown ? 1 : 0
+                    })
+                    if !shown { glass.isHidden = true }
+                    return
                 }
                 animateViews(animation, {
                     glass.effect = shown ? UIGlassEffect(style: .regular) : nil
