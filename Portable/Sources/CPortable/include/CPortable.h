@@ -65,6 +65,11 @@ void fr_tcp_close(int64_t socket);
    the replies that arrive within `timeout_ms`, one per line, into `out`. Returns how many came. */
 int fr_udp_discover(const char* message, const char* extra_host, int extra_port, int port, int timeout_ms, char* out, int out_capacity);
 
+/* On Windows, starts the PC's own DVD player on the disc in `drive` ("D:\\"): the app chosen for
+   DVD movies in Windows' AutoPlay settings, or one that is listed there. Returns 1 if one was
+   started, 0 if there is none (and always 0 on other systems). */
+int fr_windows_open_dvd_player(const char* drive);
+
 #ifdef __cplusplus
 }
 #endif

@@ -20,7 +20,11 @@ let package = Package(
             path: "Portable/Sources/CPortable",
             exclude: ["plutovg/LICENSE", "plutovg/FTL.TXT"],
             cSettings: [.define("PLUTOVG_BUILD"), .define("PLUTOVG_BUILD_STATIC"), .unsafeFlags(["-O2"])],
-            linkerSettings: [.linkedLibrary("ws2_32", .when(platforms: [.windows]))],
+            linkerSettings: [
+                .linkedLibrary("ws2_32", .when(platforms: [.windows])),
+                .linkedLibrary("advapi32", .when(platforms: [.windows])),
+                .linkedLibrary("shell32", .when(platforms: [.windows])),
+            ],
         ),
         .target(name: "CoreGraphics", dependencies: ["CPortable"], path: "Portable/Sources/CoreGraphics", swiftSettings: portableSettings),
         .target(name: "ImageIO", dependencies: ["CoreGraphics"], path: "Portable/Sources/ImageIO", swiftSettings: portableSettings),

@@ -5,6 +5,7 @@ import Foundation
     import UIKit
 #else
     import AVFoundation
+    import CPortable
     import FirstRowPortable
 #endif
 #if os(Windows)
@@ -23,8 +24,9 @@ struct DVDMenuFeature: MenuFeatureConfiguration {
 final class DiscWatch {
     static let shared = DiscWatch()
 
-    /// The disc there is to play: the folder that holds its VIDEO_TS, or on Linux the drive
-    /// itself ("/dev/sr0") when the system hasn't opened the disc in it.
+    /// The disc there is to play: the folder that holds its VIDEO_TS (on Windows, that
+    /// folder itself), or on Linux the drive itself ("/dev/sr0") when the system hasn't
+    /// opened the disc in it.
     private(set) var disc: URL?
     /// Called when a disc has come or gone.
     var onChange: (() -> Void)?
@@ -85,7 +87,19 @@ final class DiscWatch {
     private nonisolated static func findDisc() -> URL? {
         // (A test looks at nothing that is connected.)
         guard !FirstRowHarness.isActive else { return nil }
-        return candidateVolumes().first(where: holdsDVD)
+        return candidateVolumes().first(where: holdsDVD).map(playable)
+    }
+
+    /// What a disc that has been found goes by. On Windows that is its folder of pictures,
+    /// not the drive's own top ("D:\\"), which Foundation there doesn't keep whole.
+    private nonisolated static func playable(_ volume: URL) -> URL {
+        #if os(Windows)
+            for name in ["VIDEO_TS", "video_ts"] {
+                let folder = volume.appendingPathComponent(name, isDirectory: true)
+                if FileManager.default.fileExists(atPath: folder.path) { return folder }
+            }
+        #endif
+        return volume
     }
 
     private nonisolated static func holdsDVD(_ volume: URL) -> Bool {
@@ -211,7 +225,10 @@ final class DiscWatch {
             }
         #endif
         let fileManager = FileManager.default
-        let folder = ["VIDEO_TS", "video_ts"].map { disc.appendingPathComponent($0, isDirectory: true) }.first { fileManager.fileExists(atPath: $0.path) }
+        // (The disc's folder of pictures: in the disc, or the disc's own address where it goes by that.)
+        let folder = (["VIDEO_TS", "video_ts"].map { disc.appendingPathComponent($0, isDirectory: true) } + [disc]).first {
+            fileManager.fileExists(atPath: $0.appendingPathComponent("VIDEO_TS.IFO").path) || fileManager.fileExists(atPath: $0.appendingPathComponent("video_ts.ifo").path)
+        }
         guard let folder, let names = try? fileManager.contentsOfDirectory(atPath: folder.path) else { return false }
         // The first part of each title's own pictures ("VTS_01_1.VOB"), the largest first.
         let parts = names.filter { $0.uppercased().hasPrefix("VTS_") && $0.uppercased().hasSuffix("_1.VOB") }
@@ -397,9 +414,15 @@ extension MenuView {
                 }
             #elseif FIRSTROW_PORTABLE
                 // First Row unscrambles nothing itself. On Linux a protected disc plays where
-                // the system has what its players use for one, and says so where it hasn't; on
-                // Windows there is nothing of the system's to leave it to, so it isn't played.
+                // the system has what its players use for one, and says so where it hasn't. On
+                // Windows it goes to the PC's own DVD player, an app licensed to play it, if
+                // the PC has one, and says so if it hasn't.
                 if isProtected, !DiscWatch.canPlayProtectedDiscs {
+                    #if os(Windows)
+                        if let drive = AVPlayer.discDrive(for: disc), fr_windows_open_dvd_player(drive + "\\") != 0 {
+                            return
+                        }
+                    #endif
                     self.playSound(named: "Limit")
                     self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
                         "header": "This disc can't be played.",
