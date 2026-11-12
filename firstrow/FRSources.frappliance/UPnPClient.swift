@@ -2,6 +2,9 @@ import Foundation
 #if canImport(FoundationNetworking)
     import FoundationNetworking
 #endif
+#if canImport(FoundationXML)
+    import FoundationXML
+#endif
 
 /// A UPnP media server (DLNA): Windows Media Center and Windows Media Player's sharing, most
 /// network drives, Kodi's and Plex's own UPnP sides, MiniDLNA and the like. It is asked for

@@ -167,6 +167,8 @@
 		214C9077252F9135ECA720A9 /* MediaServers.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC4763107F3FDB6F3C64B12 /* MediaServers.swift */; };
 		4C2349CDB2FEA6A98BACE0DE /* UPnPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC53AA885E20044F1701E33 /* UPnPClient.swift */; };
 		B7E2D9E20DC5B32438A816FA /* MenuView+Servers.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F75EC1599611B051B08EF4 /* MenuView+Servers.swift */; };
+		B9D07896CFBA9D3C0A02846E /* PlexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FF5C8DCD4C9E57874DAE06 /* PlexClient.swift */; };
+		68CD57C17D82EB1BEACA7FEC /* KodiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C660D02F691119E87EEF6B /* KodiClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -349,6 +351,8 @@
 		CAC4763107F3FDB6F3C64B12 /* MediaServers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaServers.swift; sourceTree = "<group>"; };
 		ABC53AA885E20044F1701E33 /* UPnPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UPnPClient.swift; sourceTree = "<group>"; };
 		B4F75EC1599611B051B08EF4 /* MenuView+Servers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Servers.swift"; sourceTree = "<group>"; };
+		D4FF5C8DCD4C9E57874DAE06 /* PlexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlexClient.swift; sourceTree = "<group>"; };
+		11C660D02F691119E87EEF6B /* KodiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KodiClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -410,6 +414,8 @@
 				CAC4763107F3FDB6F3C64B12 /* MediaServers.swift */,
 				ABC53AA885E20044F1701E33 /* UPnPClient.swift */,
 				B4F75EC1599611B051B08EF4 /* MenuView+Servers.swift */,
+				D4FF5C8DCD4C9E57874DAE06 /* PlexClient.swift */,
+				11C660D02F691119E87EEF6B /* KodiClient.swift */,
 			);
 			path = FRSources.frappliance;
 			sourceTree = "<group>";
@@ -922,6 +928,8 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				68CD57C17D82EB1BEACA7FEC /* KodiClient.swift in Sources */,
+				B9D07896CFBA9D3C0A02846E /* PlexClient.swift in Sources */,
 				B7E2D9E20DC5B32438A816FA /* MenuView+Servers.swift in Sources */,
 				4C2349CDB2FEA6A98BACE0DE /* UPnPClient.swift in Sources */,
 				214C9077252F9135ECA720A9 /* MediaServers.swift in Sources */,

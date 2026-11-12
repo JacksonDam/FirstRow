@@ -11,6 +11,8 @@ import Foundation
 enum ServerPage: Equatable {
     /// Choosing a server to add: those found on the network, and the kinds there are.
     case add
+    /// The ways of adding a Plex server: signing in to Plex, or by its address.
+    case plex
     /// What a server shows first.
     case top(serverID: String)
     /// Something of a server's that was opened: a folder, a show, an album.
@@ -53,11 +55,14 @@ struct ServerPlaybackSession {
 }
 
 /// The makers of each kind of server's client.
+@MainActor
 enum MediaServerClients {
     static func client(for record: MediaServerRecord) -> (any MediaServerClient)? {
         switch record.kind {
+        case .plex: PlexClient(record: record)
+        case .kodi: KodiClient(record: record)
         case .upnp: UPnPClient(record: record)
-        case .plex, .kodi, .sharedFolder: nil
+        case .sharedFolder: nil
         }
     }
 
@@ -67,15 +72,17 @@ enum MediaServerClients {
     }
 
     /// The server of a kind at an address someone typed.
-    static func find(_ kind: MediaServerKind, at typed: String, user _: String?, password _: String?) async throws -> FoundMediaServer {
+    static func find(_ kind: MediaServerKind, at typed: String, user: String?, password: String?) async throws -> FoundMediaServer {
         switch kind {
+        case .plex: try await PlexClient.find(at: typed, caller: .current)
+        case .kodi: try await KodiClient.find(at: typed, user: user, password: password)
         case .upnp: try await UPnPClient.find(at: typed)
-        case .plex, .kodi, .sharedFolder: throw MediaServerError.notAServer(kind)
+        case .sharedFolder: throw MediaServerError.notAServer(kind)
         }
     }
 
     /// The kinds that can be added here.
-    static var kinds: [MediaServerKind] { [.upnp] }
+    static var kinds: [MediaServerKind] { [.plex, .kodi, .upnp] }
 }
 
 /// Sources: the media servers and shared folders other than Jellyfin's and Emby's, and
@@ -154,6 +161,9 @@ extension MenuView {
             if !servers.isLooking {
                 items.append(plainMenuListItem(id: "server_look_again", title: "Look Again", showsTopDivider: true))
             }
+        case .plex:
+            items.append(plainMenuListItem(id: "server_plex_sign_in", title: "Sign In to Plex", trailingText: "..."))
+            items.append(plainMenuListItem(id: "server_plex_address", title: "Enter the Server's Address", trailingText: "..."))
         case .top, .list:
             guard state.isLoaded else { return items }
             if state.items.isEmpty, servers.error == nil {
@@ -188,7 +198,7 @@ extension MenuView {
     var shouldHideServerMenuUntilLoaded: Bool {
         guard let state = currentServerPage else { return false }
         switch state.page {
-        case .add: return false
+        case .add, .plex: return false
         case .top, .list: return !state.isLoaded && servers.error == nil
         }
     }
@@ -197,6 +207,8 @@ extension MenuView {
         switch page {
         case .add:
             return "Add Server"
+        case .plex:
+            return "Plex"
         case let .top(id):
             return truncatedHeaderTitle(MediaServerStore.shared.server(withID: id)?.name ?? "Server", fallback: "Server")
         case let .list(_, item):
@@ -212,7 +224,7 @@ extension MenuView {
         for state in servers.pages.reversed() {
             switch state.page {
             case let .top(id), let .list(id, _): return id
-            case .add: continue
+            case .add, .plex: continue
             }
         }
         return nil
@@ -302,7 +314,7 @@ extension MenuView {
         guard let page = currentServerPage else { return }
         headerText = serverTitle(for: page.page)
         clearServerPreview()
-        if page.isLoaded || page.page == .add {
+        if page.isLoaded || page.page == .add || page.page == .plex {
             selectServerRememberedRow()
             refreshDetailPreviewForCurrentContext()
         } else {
@@ -402,6 +414,8 @@ extension MenuView {
         switch state.page {
         case .add:
             lookForServers()
+        case .plex:
+            break
         case let .top(id):
             load(id) { try await $0.top() }
         case let .list(id, item):
@@ -412,7 +426,7 @@ extension MenuView {
     /// Reloads what is showing after a movie, so what has been watched and where it stopped
     /// catch up.
     func refreshServerPageAfterPlayback() {
-        if thirdMenuMode == .server, let page = currentServerPage, page.page != .add {
+        if thirdMenuMode == .server, let page = currentServerPage, page.page != .add, page.page != .plex {
             loadCurrentServerPage(quietly: true)
         }
     }
@@ -460,10 +474,21 @@ extension MenuView {
             } else if id == "server_kind_jellyfin" {
                 playSound(named: "Selection")
                 enterJellyfin(pages: [JellyfinPageState(page: .addServer)])
+            } else if id == "server_kind_plex" {
+                playSound(named: "Selection")
+                pushServerPage(.plex)
             } else if id.hasPrefix("server_kind_"), let kind = MediaServerKind(rawValue: String(id.dropFirst("server_kind_".count))) {
                 askForServerAddress(kind)
             } else if id.hasPrefix("server_found_"), let index = Int(id.dropFirst("server_found_".count)), servers.found.indices.contains(index) {
                 addFoundServer(servers.found[index])
+            } else {
+                playLimitSoundOnceForCurrentHold()
+            }
+        case .plex:
+            if id == "server_plex_sign_in" {
+                signInToPlex()
+            } else if id == "server_plex_address" {
+                askForServerAddress(.plex)
             } else {
                 playLimitSoundOnceForCurrentHold()
             }
@@ -624,6 +649,64 @@ extension MenuView {
         }
     }
 
+    /// Signs in to Plex with a code shown here and typed at plex.tv/link, then keeps every
+    /// server the account can use.
+    private func signInToPlex() {
+        showServerMessage(status: "Asking Plex for a Code...")
+        servers.requestID &+= 1
+        let requestID = servers.requestID
+        let caller = PlexCaller.current
+        Task { @MainActor in
+            let code: PlexAccount.Code
+            do {
+                code = try await PlexAccount.requestCode(caller: caller)
+            } catch {
+                guard self.servers.requestID == requestID else { return }
+                self.showServerMessage(error: "Can't Reach Plex")
+                self.playSound(named: "Limit")
+                return
+            }
+            guard self.servers.requestID == requestID, self.thirdMenuMode == .server else { return }
+            self.showServerMessage()
+            self.presentCodeDisplay(CodeDisplayState(
+                title: "Sign In to Plex",
+                message: "On a phone or computer, go to plex.tv/link, sign in and enter this code.",
+                code: code.code,
+                status: "Waiting for the code...",
+            )) {
+                self.servers.requestID &+= 1
+            }
+            // Asks every two seconds until the code has been entered, cancelled or has run out.
+            for _ in 0 ..< 420 {
+                try? await firstRowSleep(2)
+                guard self.servers.requestID == requestID else { return }
+                guard let token = await PlexAccount.token(for: code, caller: caller) else { continue }
+                guard self.servers.requestID == requestID else { return }
+                self.updateCodeDisplayStatus("Finding Your Servers...")
+                let found = (try? await PlexAccount.servers(token: token, caller: caller)) ?? []
+                guard self.servers.requestID == requestID else { return }
+                self.dismissCodeDisplay()
+                guard !found.isEmpty else {
+                    self.showServerMessage(error: "No Plex Servers Could Be Reached")
+                    self.playSound(named: "Limit")
+                    return
+                }
+                self.playSound(named: "Selection")
+                for server in found.dropFirst() {
+                    MediaServerStore.shared.save(MediaServerRecord(
+                        id: UUID().uuidString.lowercased(), kind: .plex, name: server.name, address: server.address,
+                        token: server.details["token"], details: nil,
+                    ))
+                }
+                self.keepServer(found[0], user: nil, password: nil)
+                return
+            }
+            guard self.servers.requestID == requestID else { return }
+            self.dismissCodeDisplay()
+            self.showServerMessage(error: "The Code Ran Out")
+        }
+    }
+
     private func addFoundServer(_ server: FoundMediaServer) {
         if let id = server.details["jellyfin"] {
             // (A Jellyfin or Emby server: its own menus sign in to it.)
@@ -644,7 +727,7 @@ extension MenuView {
             user: user,
             password: password,
             token: server.details["token"],
-            details: server.details.isEmpty ? nil : server.details,
+            details: server.details.filter { $0.key != "token" }.isEmpty ? nil : server.details.filter { $0.key != "token" },
         )
         MediaServerStore.shared.save(record)
         objectWillChange.send()
