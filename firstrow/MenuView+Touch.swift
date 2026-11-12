@@ -55,6 +55,8 @@ extension MenuView {
             case panelSelecting
             /// Pushing that panel back to the right, where it came from.
             case panelPush
+            /// Sliding over the rows of a movie's options; lifting changes the one under it.
+            case optionSelecting
             case ignored
         }
 
@@ -297,6 +299,12 @@ extension MenuView {
                 pointer.hitTester?.highlightTouchControl(control)
                 return
             }
+            // A movie's options: the row under the finger is picked out, and follows it.
+            if isMoviePlaybackVisible, movieOptions != nil, let hit = pointer.hitTester?.movieOptionsRow(at: point), hit.index >= 0 {
+                state.mode = .optionSelecting
+                pickOutMovieOptionRow(hit.index)
+                return
+            }
             let panelWasMoving = state.panelMotion.map { abs($0.velocity) > 20 * $0.scenePerPoint } ?? false
             state.panelMotion = nil
             if let hit = youtubePanelHit(at: point) {
@@ -501,6 +509,8 @@ extension MenuView {
                 scrollYouTubePanel(by: point.y - state.panelOriginY)
             case .panelSelecting:
                 slidePanelTouchSelection(to: point)
+            case .optionSelecting:
+                if let hit = pointer.hitTester?.movieOptionsRow(at: point), hit.index >= 0 { pickOutMovieOptionRow(hit.index) }
             case .swiping, .panelPush, .ignored:
                 break
             }
@@ -594,6 +604,13 @@ extension MenuView {
                 // Pushed back to the right, where it came from (a comment's replies give way
                 // to the comments first).
                 if dx > Self.touchSwipeDistance, abs(dx) > abs(dy) * 1.5 { _ = handleYouTubePanelInput(.escape) }
+            case .optionSelecting:
+                // Lifting over a row changes it: on its "‹" back a value, anywhere else on
+                // to the next one.
+                if isTouchSelecting { isTouchSelecting = false }
+                if let hit = pointer.hitTester?.movieOptionsRow(at: point), hit.index >= 0 {
+                    chooseMovieOptionRow(hit.index, backward: hit.backward)
+                }
             case .ignored:
                 break
             }
@@ -1094,7 +1111,7 @@ extension MenuView {
             startTouchClock()
         }
 
-        // MARK: - A video's panel
+        // MARK: - A video's panel, and a movie's options
 
         /// Drags the panel's rows, `dy` window points from where the drag started, past their
         /// ends less and less, as the menus' lists go.
@@ -1165,6 +1182,17 @@ extension MenuView {
         private func endPanelTouchSelection() {
             touch.panelSelectionTarget = nil
             if isTouchSelecting { isTouchSelecting = false }
+        }
+
+        /// Picks out the row of a movie's options that is under the finger.
+        private func pickOutMovieOptionRow(_ index: Int) {
+            if var options = movieOptions, options.rows.indices.contains(index), options.focusedRow != index {
+                options.focusedRow = index
+                options.hasMoved = true
+                movieOptions = options
+                playSound(named: "SelectionChange")
+            }
+            if !isTouchSelecting { isTouchSelecting = true }
         }
 
         private func handleMovieTouchTap(at point: CGPoint) {

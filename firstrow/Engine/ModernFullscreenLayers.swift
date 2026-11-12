@@ -710,7 +710,9 @@ final class MovieOptionsLayer {
         let moved = lastFocus != nil && lastFocus != focus
         lastFocus = focus
         let focusFrame = CGRect(x: inset, y: inset + CGFloat(focus) * rowHeight + 4, width: width - inset * 2, height: rowHeight - 8)
-        classicFocus.layer.isHidden = isModern
+        // Fingers in charge with none on a row: no row shows as picked out, as in the menus.
+        let showsFocus = !menu.touchHidesSelection
+        classicFocus.layer.isHidden = isModern || !showsFocus
         if !isModern {
             // The glow texture reaches past the row as the menus' does, scaled to this row's height.
             let spill = focusFrame.height / 75
@@ -731,7 +733,7 @@ final class MovieOptionsLayer {
                 continue
             }
             let row = content.rows[index]
-            let focused = index == focus && isModern
+            let focused = index == focus && isModern && showsFocus
             // The row's tile: nothing to see at rest (or in the classic look, which has its
             // own bar); under the modern look's focus it turns white, with the menus' shadow,
             // and grows a little as the focus arrives, easing. Not as the panel opens.
