@@ -69,10 +69,15 @@ extension MenuView {
         state.preferredKind = kind
         if kind != nil { state.hasMoved = true }
         movieOptions = state
-        withAnimation(.smooth(duration: 0.36)) {
-            movieOptionsReveal = 1
+        // It opens once its rows are known, at the size it will have. Opened first and filled
+        // in a moment later, it grew out of its button towards where a panel of one row goes,
+        // and jumped to its own place part way: from its top corner, to look at.
+        loadMovieTrackRows(player) { [weak self] in
+            guard let self, self.movieOptions != nil else { return }
+            withAnimation(.smooth(duration: 0.36)) {
+                self.movieOptionsReveal = 1
+            }
         }
-        loadMovieTrackRows(player)
     }
 
     /// Puts the panel back into its buttons.
@@ -136,16 +141,20 @@ extension MenuView {
         return MovieOptionRow(kind: .speed, title: "Speed", values: Self.movieSpeeds.map(Self.speedTitle), selected: index)
     }
 
-    /// Fills in the subtitle and audio rows from the file's tracks.
-    private func loadMovieTrackRows(_ player: AVPlayer) {
+    /// Fills in the subtitle and audio rows from the file's tracks, and says when it has.
+    private func loadMovieTrackRows(_ player: AVPlayer, then done: @escaping () -> Void) {
         if youtubeSession != nil {
             loadYouTubeOptionRows()
+            done()
             return
         }
         #if FIRSTROW_PORTABLE
             let subtitles = player.tracks(ofType: "sub")
             let audio = player.tracks(ofType: "audio")
-            guard var state = movieOptions else { return }
+            guard var state = movieOptions else {
+                done()
+                return
+            }
             var rows: [MovieOptionRow] = []
             if !subtitles.isEmpty {
                 state.subtitleIDs = [nil] + subtitles.map(\.id)
@@ -162,12 +171,19 @@ extension MenuView {
             }
             movieOptions = state
             noteMovieOptionKinds(state.rows)
+            done()
         #else
-            guard let item = player.currentItem else { return }
+            guard let item = player.currentItem else {
+                done()
+                return
+            }
             Task { @MainActor in
                 let legible = await Self.mediaSelectionGroup(item.asset, .legible)
                 let audible = await Self.mediaSelectionGroup(item.asset, .audible)
-                guard var state = self.movieOptions, self.moviePlayer === player else { return }
+                guard var state = self.movieOptions, self.moviePlayer === player else {
+                    done()
+                    return
+                }
                 var rows: [MovieOptionRow] = []
                 if let legible {
                     let options = legible.options.filter { !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) }
@@ -191,6 +207,7 @@ extension MenuView {
                 state.preferredKind = nil
                 self.movieOptions = state
                 self.noteMovieOptionKinds(state.rows)
+                done()
             }
         #endif
     }
