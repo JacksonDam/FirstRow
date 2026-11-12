@@ -3,7 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>First Row looks for Jellyfin servers on your network and plays from them.</string>
+	<string>First Row looks for media servers and shared folders on your network and plays from them.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_plexmediasvr._tcp</string>
+		<string>_xbmc-jsonrpc-h._tcp</string>
+		<string>_smb._tcp</string>
+	</array>
 	<key>GCSupportsMultipleMicroGamepads</key>
 	<true/>
 </dict>

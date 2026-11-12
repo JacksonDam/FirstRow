@@ -66,9 +66,31 @@ enum MediaServerClients {
         }
     }
 
-    /// The servers of every kind on the local network.
+    /// The servers of every kind on the local network. (Those found by the names they
+    /// announce are looked at only when one is chosen: `asks` says to.)
     static func discover() async -> [FoundMediaServer] {
-        await UPnPClient.discover()
+        #if FIRSTROW_PORTABLE
+            return await UPnPClient.discover()
+        #else
+            async let upnp = UPnPClient.discover()
+            async let plex = LocalNetwork.services(ofType: "_plexmediasvr._tcp")
+            async let kodi = LocalNetwork.services(ofType: "_xbmc-jsonrpc-h._tcp")
+            async let shared = SharedFolderClient.isAvailable ? LocalNetwork.services(ofType: "_smb._tcp") : []
+            var found: [FoundMediaServer] = []
+            for server in await plex {
+                found.append(FoundMediaServer(kind: .plex, name: server.name, address: "http://\(server.host):\(server.port)", details: ["asks": "1"]))
+            }
+            for server in await kodi {
+                found.append(FoundMediaServer(kind: .kodi, name: server.name, address: "http://\(server.host):\(server.port)", details: ["asks": "1"]))
+            }
+            for server in await shared {
+                found.append(FoundMediaServer(kind: .sharedFolder, name: server.name, address: server.port == 445 ? server.host : "\(server.host):\(server.port)", details: ["asks": "1"]))
+            }
+            // (A Plex server or Kodi that also answers as a UPnP server is listed once, as itself.)
+            let named = Set(found.map { $0.name.lowercased() })
+            found += await upnp.filter { server in !named.contains { server.name.lowercased().contains($0) } }
+            return found
+        #endif
     }
 
     /// The server of a kind at an address someone typed.
@@ -408,8 +430,13 @@ extension MenuView {
                     finish(items)
                 } catch {
                     guard self.servers.requestID == requestID else { return }
-                    self.servers.error = error.localizedDescription
+                    // A folder that wants a name and password asks for them here.
+                    let wantsSignIn = (error as? MediaServerError).map { if case .signInNeeded = $0 { true } else { false } } ?? false
+                    let record = MediaServerStore.shared.server(withID: id)
+                    let canSignIn = record?.kind == .sharedFolder || record?.kind == .kodi
+                    self.servers.error = wantsSignIn && record?.user != nil ? MediaServerError.signInFailed.localizedDescription : error.localizedDescription
                     finish(nil)
+                    if wantsSignIn, canSignIn, let record { self.askForSignIn(to: record) }
                 }
             }
         }
@@ -709,6 +736,23 @@ extension MenuView {
         }
     }
 
+    /// Asks who to sign in to a server as, keeps the answer with the server and looks again.
+    private func askForSignIn(to record: MediaServerRecord) {
+        requestTextEntry(title: "User Name", prompt: "Sign in to \(record.name).", initialText: record.user ?? "") { [weak self] user in
+            guard let self, let user, !user.isEmpty else { return }
+            self.requestTextEntry(title: "Password", prompt: "Enter the password for \(user).", isSecure: true) { [weak self] password in
+                guard let self, let password else { return }
+                var signedIn = record
+                signedIn.user = user
+                signedIn.password = password
+                MediaServerStore.shared.save(signedIn)
+                guard self.thirdMenuMode == .server else { return }
+                self.servers.error = nil
+                self.loadCurrentServerPage()
+            }
+        }
+    }
+
     private func addFoundServer(_ server: FoundMediaServer) {
         if let id = server.details["jellyfin"] {
             // (A Jellyfin or Emby server: its own menus sign in to it.)
@@ -717,6 +761,11 @@ extension MenuView {
             return
         }
         playSound(named: "Selection")
+        if server.details["asks"] != nil {
+            // (Found by the name it announces: it's asked what it is now.)
+            connectToServer(server.kind, typed: server.address, user: nil, password: nil)
+            return
+        }
         keepServer(server, user: nil, password: nil)
     }
 

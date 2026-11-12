@@ -3,6 +3,7 @@ import Foundation
     import CPortable
 #elseif canImport(Darwin)
     import Darwin
+    import dnssd
 #endif
 
 /// Asking the devices on the local network who they are: media servers of several kinds
@@ -110,3 +111,100 @@ enum LocalNetwork {
         }
     #endif
 }
+
+#if !FIRSTROW_PORTABLE
+    /// A service a device on the local network announces by name (Bonjour): where it is.
+    struct AnnouncedService: Sendable {
+        var name: String
+        var host: String
+        var port: Int
+    }
+
+    extension LocalNetwork {
+        /// The devices announcing a kind of service ("_smb._tcp"), each with where to reach
+        /// it. Under the test harness nothing is looked for.
+        static func services(ofType type: String, timeout: TimeInterval = 2.5) async -> [AnnouncedService] {
+            guard !FirstRowHarness.isActive else { return [] }
+            let names = await withCheckedContinuation { (continuation: CheckedContinuation<[String], Never>) in
+                ServiceSearch.shared.browse(type: type, timeout: timeout) { continuation.resume(returning: $0) }
+            }
+            var found: [AnnouncedService] = []
+            for name in names.prefix(24) {
+                let place = await withCheckedContinuation { (continuation: CheckedContinuation<(host: String, port: Int)?, Never>) in
+                    ServiceSearch.shared.resolve(name: name, type: type, timeout: 2) { continuation.resume(returning: $0) }
+                }
+                if let place { found.append(AnnouncedService(name: name, host: place.host, port: place.port)) }
+            }
+            return found
+        }
+    }
+
+    /// Runs the system's own searches for announced services, each for a short while.
+    private final class ServiceSearch: @unchecked Sendable {
+        static let shared = ServiceSearch()
+        private let queue = DispatchQueue(label: "firstrow.services")
+
+        /// What one search has found so far, handed to the system as the search's context.
+        private final class Finds {
+            var names: [String] = []
+            var place: (host: String, port: Int)?
+        }
+
+        func browse(type: String, timeout: TimeInterval, then done: @escaping @Sendable ([String]) -> Void) {
+            let finds = Finds()
+            var search: DNSServiceRef?
+            let context = Unmanaged.passRetained(finds)
+            let status = DNSServiceBrowse(&search, 0, 0, type, "local.", { _, flags, _, error, name, _, _, context in
+                guard error == kDNSServiceErr_NoError, let name, let context, flags & DNSServiceFlags(kDNSServiceFlagsAdd) != 0 else { return }
+                let finds = Unmanaged<Finds>.fromOpaque(context).takeUnretainedValue()
+                let text = String(cString: name)
+                if !finds.names.contains(text) { finds.names.append(text) }
+            }, context.toOpaque())
+            guard status == kDNSServiceErr_NoError, let search else {
+                context.release()
+                done([])
+                return
+            }
+            DNSServiceSetDispatchQueue(search, queue)
+            queue.asyncAfter(deadline: .now() + timeout) {
+                DNSServiceRefDeallocate(search)
+                let names = finds.names
+                context.release()
+                done(names)
+            }
+        }
+
+        func resolve(name: String, type: String, timeout: TimeInterval, then done: @escaping @Sendable ((host: String, port: Int)?) -> Void) {
+            let finds = Finds()
+            var search: DNSServiceRef?
+            let context = Unmanaged.passRetained(finds)
+            let status = DNSServiceResolve(&search, 0, 0, name, type, "local.", { _, _, _, error, _, host, port, _, _, context in
+                guard error == kDNSServiceErr_NoError, let host, let context else { return }
+                let finds = Unmanaged<Finds>.fromOpaque(context).takeUnretainedValue()
+                var text = String(cString: host)
+                if text.hasSuffix(".") { text.removeLast() }
+                if finds.place == nil { finds.place = (text, Int(UInt16(bigEndian: port))) }
+            }, context.toOpaque())
+            guard status == kDNSServiceErr_NoError, let search else {
+                context.release()
+                done(nil)
+                return
+            }
+            DNSServiceSetDispatchQueue(search, queue)
+            // (Looked at every tenth of a second, so one that answers at once is done at once.)
+            var waited = 0.0
+            func look() {
+                if finds.place != nil || waited >= timeout {
+                    DNSServiceRefDeallocate(search)
+                    let place = finds.place
+                    context.release()
+                    done(place)
+                    return
+                }
+                waited += 0.1
+                queue.asyncAfter(deadline: .now() + 0.1) { look() }
+            }
+            queue.async { look() }
+        }
+    }
+#endif
