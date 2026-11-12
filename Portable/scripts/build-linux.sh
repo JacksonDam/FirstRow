@@ -12,6 +12,11 @@ cp .build/release/FirstRow "$out/first-row"
 cp -R firstrow/Assets.xcassets firstrow/Sounds firstrow/ScreenSaverDefaultPhotos firstrow/Fonts "$out/Resources/"
 if [ -d firstrow/Videos ]; then cp -R firstrow/Videos "$out/Resources/"; fi
 cp firstrow/Assets.xcassets/AppIcon.appiconset/icon-mac-512x512.png "$out/first-row.png"
+# What First Row is made with, and the terms of each part (see Portable/Licenses/README.md).
+mkdir -p "$out/Licenses"
+cp Portable/Licenses/README.md Portable/Licenses/Swift.Apache-2.0.txt Portable/Licenses/ICU.Unicode.txt Portable/Licenses/stb.txt "$out/Licenses/"
+cp Portable/Sources/CPortable/plutovg/LICENSE "$out/Licenses/plutovg.MIT.txt"
+cp Portable/Sources/CPortable/plutovg/FTL.TXT "$out/Licenses/FreeType.FTL.txt"
 # The window shows its icon by itself where the desktop lets a window bring one. The desktop
 # entry gives First Row its icon everywhere else (GNOME's dock, the applications menu), once
 # install.sh has put it where the desktop looks.

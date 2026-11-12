@@ -5,6 +5,8 @@ param(
     [ValidateSet("x64", "arm64")] [string] $Arch = "x64",
     # The newest SDL 3 release unless one is named.
     [string] $SdlVersion = "",
+    # The mpv release whose libmpv is used.
+    [string] $MpvVersion = "0.42.0",
     # Includes the test harness's folder overrides, as Debug builds on the Mac do.
     [switch] $Harness
 )
@@ -24,28 +26,25 @@ if (-not (Test-Path $sdl)) {
     Expand-Archive $zip -DestinationPath $deps -Force
 }
 
-# libmpv: the newest development build from mpv-winbuild-cmake, with an import library made
-# from its .def file so the Visual C++ linker can use it.
-$mpv = Join-Path $deps "mpv"
+# libmpv: mpv's own build of it for Windows, the one under the LGPL ("lgpl" in its name).
+# That build has nothing in it under the GPL, and nothing that reads DVDs or unscrambles
+# them: First Row reads an unprotected DVD's files itself (see DVDMenuFeature.swift). A named
+# release is used, not the newest, so that what goes into First Row is what was looked through.
+# An import library is made from the DLL's list of exports, for the Visual C++ linker.
+$mpv = Join-Path $deps "mpv-$MpvVersion-lgpl"
 if (-not (Test-Path (Join-Path $mpv "mpv.lib"))) {
     $mpvArch = if ($Arch -eq "x64") { "x86_64" } else { "aarch64" }
-    $release = Invoke-RestMethod "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
-    $asset = $release.assets | Where-Object { $_.name -like "mpv-dev-$mpvArch-*.7z" -and $_.name -notlike "*v3*" } | Select-Object -First 1
-    $archive = Join-Path $deps $asset.name
-    Invoke-WebRequest $asset.browser_download_url -OutFile $archive
+    $name = "libmpv-v$MpvVersion-$mpvArch-w64-mingw32-lgpl.zip"
+    $archive = Join-Path $deps $name
+    Invoke-WebRequest "https://github.com/mpv-player/mpv/releases/download/v$MpvVersion/$name" -OutFile $archive
     New-Item -ItemType Directory -Force -Path $mpv | Out-Null
-    & 7z x $archive "-o$mpv" -y | Out-Null
+    Expand-Archive $archive -DestinationPath $mpv -Force
     $machine = if ($Arch -eq "x64") { "X64" } else { "ARM64" }
-    $def = Get-ChildItem $mpv -Recurse -Filter "*.def" | Select-Object -First 1
-    if (-not $def) {
-        # No .def in the package: list the DLL's exports to make one.
-        $dll = Get-ChildItem $mpv -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1
-        $exports = & dumpbin.exe /exports $dll.FullName | Select-String "^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)" | ForEach-Object { $_.Matches[0].Groups[1].Value }
-        $defPath = Join-Path $mpv "mpv.def"
-        Set-Content $defPath (@("LIBRARY libmpv-2.dll", "EXPORTS") + $exports)
-        $def = Get-Item $defPath
-    }
-    & lib.exe "/def:$($def.FullName)" "/name:libmpv-2.dll" "/out:$(Join-Path $mpv 'mpv.lib')" "/machine:$machine" | Out-Null
+    $dll = Get-ChildItem $mpv -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1
+    $exports = & dumpbin.exe /exports $dll.FullName | Select-String "^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)" | ForEach-Object { $_.Matches[0].Groups[1].Value }
+    $def = Join-Path $mpv "mpv.def"
+    Set-Content $def (@("LIBRARY libmpv-2.dll", "EXPORTS") + $exports)
+    & lib.exe "/def:$def" "/name:libmpv-2.dll" "/out:$(Join-Path $mpv 'mpv.lib')" "/machine:$machine" | Out-Null
 }
 
 $sdlInclude = Join-Path $sdl "include"
@@ -203,4 +202,11 @@ foreach ($folder in "Assets.xcassets", "Sounds", "ScreenSaverDefaultPhotos", "Vi
     $source = Join-Path $root "firstrow\$folder"
     if (Test-Path $source) { Copy-Item $source (Join-Path $out "Resources") -Recurse }
 }
+# What First Row is made with, and the terms of each part (see Portable\Licenses\README.md).
+$licenses = Join-Path $out "Licenses"
+New-Item -ItemType Directory -Force -Path $licenses | Out-Null
+Copy-Item (Join-Path $root "Portable\Licenses\*") $licenses
+Copy-Item (Join-Path $root "Portable\Sources\CPortable\plutovg\LICENSE") (Join-Path $licenses "plutovg.MIT.txt")
+Copy-Item (Join-Path $root "Portable\Sources\CPortable\plutovg\FTL.TXT") (Join-Path $licenses "FreeType.FTL.txt")
+Copy-Item (Join-Path $mpv "LICENSE.LGPL") (Join-Path $licenses "mpv.LGPL.txt")
 Write-Host "Built $out"
