@@ -55,7 +55,7 @@ There are two looks. **Classic** is the original, down to the pixel. **Modern** 
 
 Movies and shows bought from the Apple TV app won't play because of their DRM.
 
-On the Mac, iPhone, iPad and Apple TV, the kinds of movie file beyond MP4, MOV and M4V, and shared folders, need macOS 15, iOS 18 or tvOS 18. On older systems First Row plays what the system's own player can, as before.
+On the Mac, iPhone, iPad and Apple TV, the kinds of movie file beyond MP4, MOV and M4V play on every system First Row runs on. HDR, Dolby Vision, Dolby Atmos, picture in picture for those kinds of file and shared folders need macOS 15, iOS 18 or tvOS 18.
 
 ## Controls
 
@@ -74,7 +74,7 @@ In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, and `Retu
 
 ## Building
 
-Open `First Row.xcodeproj` in Xcode and run the **First Row** scheme for macOS, iOS or tvOS. To have it play the further kinds of movie file, build the media engine first with `MediaEngine/build.sh` (see [`MediaEngine/README.md`](MediaEngine/README.md)): the app's build picks it up from there. The Linux and Windows builds use the Swift package in `Package.swift` and need SDL 3 and mpv (see [`Portable/README.md`](Portable/README.md)).
+Open `First Row.xcodeproj` in Xcode and run the **First Row** scheme for macOS, iOS or tvOS. To have it play the further kinds of movie file, build the media engines first with `MediaEngine/build.sh` and `MediaEngine/Older/build.sh` (see [`MediaEngine/README.md`](MediaEngine/README.md)): the app's build picks it up from there. The Linux and Windows builds use the Swift package in `Package.swift` and need SDL 3 and mpv (see [`Portable/README.md`](Portable/README.md)).
 
 ## How it's put together
 

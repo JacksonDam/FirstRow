@@ -14,6 +14,20 @@ HDR, Dolby Vision and Dolby Atmos reach the screen and the speakers as the syste
 This is the Mac, iPhone, iPad and Apple TV side. On Linux and Windows First Row plays
 everything through mpv (see `Portable/README.md`).
 
+## Two engines
+
+There are two, and First Row loads whichever the system it's on can run:
+
+- **The main engine** (`MediaEngine/Sources`, built by `MediaEngine/build.sh`) on macOS 15, iOS 18
+  and tvOS 18 and later. It is the one described above, and the only one with HDR, Dolby
+  Vision, Dolby Atmos, picture in picture and shared folders.
+- **The engine for older systems** (`MediaEngine/Older`, built by `MediaEngine/Older/build.sh`) on
+  the systems before those that First Row still runs on: macOS 10.15 to 14, iOS and tvOS 15.6 to
+  17. It is plainer: FFmpeg, built from its source for those systems, reads the file and
+  decodes what the system's own decoders can't, and the picture and sound go out through the
+  system's sample-buffer layer and renderer. It plays the same kinds of file, with their
+  subtitles, audio tracks and chapters, and unprotected DVDs.
+
 ## Why it is a framework of its own
 
 The engine needs macOS 15, iOS 18 or tvOS 18, and Xcode 27 to build. First Row itself still
@@ -37,6 +51,19 @@ the network the first time, to fetch AetherEngine and its prebuilt FFmpeg. What 
 in `MediaEngine/build/<sdk>/`. The app's own build copies the engine for the system it's
 building for into the app, if it finds it there, and signs it with the app.
 
+### The engine for older systems
+
+```sh
+MediaEngine/Older/build.sh            # every system, or name them as above
+```
+
+It fetches FFmpeg's source the first time and builds it for each system (a few minutes each),
+then compiles `Engine.m` against it. The Mac's is built with the Xcode named in
+`OLDER_MAC_DEVELOPER_DIR` if that is set: it has to be one old enough to build for macOS 10.15
+(the newest only go back to macOS 12). `nasm` is needed for the Intel Mac's build. FFmpeg's own
+build can't be done in a folder with a space in its name, so it is done among the temporary
+files, or in `OLDER_BUILD_DIR` if that is set.
+
 ## What's in it, and under what terms
 
 | Part | Licence | How it's included |
@@ -49,6 +76,12 @@ building for into the app, if it finds it there, and signs it with the app.
 | [libdovi](https://github.com/quietvoid/dovi_tool) (from [LibDovi](https://github.com/superuser404notfound/LibDovi)) | MIT, © quietvoid | compiled in |
 | [SMBClient](https://github.com/kishikawakatsumi/SMBClient) | MIT, © Kishikawa Katsumi | compiled in |
 | [Anime4K](https://github.com/bloc97/Anime4K) (a scaler in AetherEngine) | MIT, © bloc97 | compiled in |
+
+The engine for older systems has one part that isn't First Row's own:
+
+| Part | Licence | How it's included |
+| --- | --- | --- |
+| [FFmpeg](https://ffmpeg.org) 8.1.3, built from its source by `MediaEngine/Older/build.sh` without `--enable-gpl` or `--enable-nonfree` | LGPL-2.1 or later | compiled into `FirstRowMediaEngineOlder.framework` |
 
 The exact versions are in `Package.resolved`. The licences' own texts are copied into the built
 framework (`Licenses/`), and so travel with every copy of First Row that carries the engine.

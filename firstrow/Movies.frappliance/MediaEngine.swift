@@ -11,33 +11,50 @@
         private static var engine: MediaEngineProviding?
         private static var hasLooked = false
 
-        /// The engine, if this copy of First Row carries one that this system can run.
+        /// The engine, if this copy of First Row carries one that this system can run: the
+        /// main one on the systems new enough for it, and the plainer one for older systems
+        /// on the rest (see MediaEngine/README.md).
         static var shared: MediaEngineProviding? {
             if hasLooked { return engine }
             hasLooked = true
-            guard #available(macOS 15.0, iOS 18.0, tvOS 18.0, *) else { return nil }
+            if #available(macOS 15.0, iOS 18.0, tvOS 18.0, *),
+               let main = load(framework: MediaEngineInterface.frameworkName, provider: MediaEngineInterface.providerClassName)
+            {
+                engine = main
+                isMain = true
+                return main
+            }
+            engine = load(framework: MediaEngineInterface.olderFrameworkName, provider: MediaEngineInterface.olderProviderClassName)
+            return engine
+        }
+
+        /// Loads one of the engine's frameworks from the app and makes its engine.
+        private static func load(framework: String, provider: String) -> MediaEngineProviding? {
             guard let frameworks = Bundle.main.privateFrameworksURL else { return nil }
-            let url = frameworks.appendingPathComponent(MediaEngineInterface.frameworkName + ".framework", isDirectory: true)
+            let url = frameworks.appendingPathComponent(framework + ".framework", isDirectory: true)
             guard FileManager.default.fileExists(atPath: url.path), let bundle = Bundle(url: url), bundle.load(),
-                  let made = (NSClassFromString(MediaEngineInterface.providerClassName) as? NSObject.Type)?.init(),
+                  let made = (NSClassFromString(provider) as? NSObject.Type)?.init(),
                   made.responds(to: #selector(getter: MediaEngineProviding.interfaceVersion))
             else { return nil }
             // (The class is the framework's own, known here by its name alone.)
             let found = (made as? MediaEngineProviding) ?? unsafeBitCast(made, to: MediaEngineProviding.self)
             guard found.interfaceVersion == MediaEngineInterface.version else { return nil }
-            engine = found
             return found
         }
 
         static var isAvailable: Bool { shared != nil }
 
-        /// Whether this system could run the engine, if this copy of First Row carried it.
+        /// Whether the engine is the main one, which is the one that reads shared folders.
+        static var isMainEngine: Bool { shared != nil && isMain }
+        private static var isMain = false
+
+        /// Whether this system could run the main engine, if this copy of First Row carried it.
         static var isSystemNewEnough: Bool {
             if #available(macOS 15.0, iOS 18.0, tvOS 18.0, *) { return true }
             return false
         }
 
-        /// The oldest system the engine runs on, by name.
+        /// The oldest system the main engine runs on, by name.
         static var systemNeeded: String {
             #if os(macOS)
                 "macOS 15"
@@ -56,7 +73,7 @@
         static func plays(_ url: URL) -> Bool {
             guard isAvailable else { return false }
             let scheme = url.scheme?.lowercased() ?? ""
-            if scheme == "smb" { return true }
+            if scheme == "smb" { return isMainEngine }
             guard url.isFileURL || scheme == "http" || scheme == "https" else { return false }
             let kind = url.pathExtension.lowercased()
             if url.isFileURL, kind.isEmpty || kind == "dvdmedia" {

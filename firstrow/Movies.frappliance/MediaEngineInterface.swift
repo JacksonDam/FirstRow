@@ -185,5 +185,8 @@
         /// The framework's class that is the engine.
         static let providerClassName = "FirstRowMediaEngine"
         static let frameworkName = "FirstRowMediaEngine"
+        /// The engine for the systems older than the main engine runs on (MediaEngine/Older).
+        static let olderProviderClassName = "FirstRowMediaEngineOlder"
+        static let olderFrameworkName = "FirstRowMediaEngineOlder"
     }
 #endif

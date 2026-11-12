@@ -22,7 +22,7 @@ struct SharedFolderClient: MediaServerClient {
         #if FIRSTROW_PORTABLE
             false
         #else
-            MediaEngine.isAvailable
+            MediaEngine.isMainEngine
         #endif
     }
 
