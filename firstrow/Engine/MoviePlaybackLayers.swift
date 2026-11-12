@@ -76,17 +76,13 @@ final class MoviePlaybackLayers {
         let isBent = canvas.upright?.isBent == true
         placePicture(canvas.upright.map { $0.isBent ? canvas.window($0.moviePicture) : bounds } ?? bounds)
         #if !FIRSTROW_PORTABLE
-            // From the foot of the picture itself (of its box, until the picture's shape is
-            // known) to the bottom of the screen: the picture stands on what shows it again,
-            // with no black between them.
-            var underThePicture: CGRect?
+            // (All of the screen under the fold, to its bottom edge: none of it in the fold.)
+            var underTheFold: CGRect?
             if let upright = canvas.upright, isBent {
-                let box = canvas.window(upright.moviePicture)
-                let video = playerLayer.videoRect
-                let top = video.height > 1 ? min(box.maxY, box.minY + video.maxY) : box.maxY
-                underThePicture = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top)
+                let top = canvas.window(upright.lowerPane).minY
+                underTheFold = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top)
             }
-            reflection.update(player: showsPlayer ? menu.moviePlayer : nil, frame: underThePicture)
+            reflection.update(player: showsPlayer ? menu.moviePlayer : nil, frame: underTheFold, staysReady: UprightStance.screenFolds)
         #endif
         #if os(iOS)
             keepPictureInPicture(for: showsPlayer && menu.youtubeSession != nil)

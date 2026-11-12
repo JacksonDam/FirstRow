@@ -60,7 +60,9 @@
         #if os(iOS)
             /// A screen that folds, so held upright it turns upright too (but not closed, on the
             /// outside screen, which is like any iPhone's).
-            private var isFoldable = false
+            private var isFoldable = false {
+                didSet { UprightStance.screenFolds = isFoldable }
+            }
             private var isClosed = false
             /// Open part way, bent at the fold like a laptop, rather than out flat.
             private var isBent = false

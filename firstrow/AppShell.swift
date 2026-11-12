@@ -167,6 +167,7 @@ final class FirstRowAppController {
         #if os(macOS)
             // A test window stands in for a foldable's inner screen: upright when taller than wide.
             if FirstRowHarness.isActive, ProcessInfo.processInfo.environment["FIRSTROW_HARNESS_SCENE"] == "duo" {
+                UprightStance.screenFolds = true
                 upright = size.height > size.width
                     ? UprightStance(screenSize: size, fold: nil, safeTop: 0, safeBottom: 21, isBent: FirstRowHarness.standsBent)
                     : nil

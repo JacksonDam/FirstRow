@@ -47,6 +47,10 @@ struct MenuVirtualSceneLayout {
 /// card) goes above the fold and the menu itself below it, and the full-screen things split the
 /// same way.
 struct UprightStance: Equatable {
+    /// Whether this is a screen that folds at all (however it is held just now), so that what
+    /// takes a moment to get ready for a bend can be got ready beforehand.
+    @MainActor static var screenFolds = false
+
     /// As wide as a landscape scene is tall, so everything keeps its size as the screen turns.
     static let sceneWidth: CGFloat = 1080
     static let menuWidth: CGFloat = 720
