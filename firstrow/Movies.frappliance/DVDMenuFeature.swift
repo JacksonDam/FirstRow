@@ -246,16 +246,18 @@ final class DiscWatch {
         return bytes[start + 6] & 0x30 != 0
     }
 
-    #if os(Linux)
-        /// Whether what players use to play a disc that is protected against copying is
-        /// installed. (It isn't part of First Row, nor of most systems as they come.)
+    #if FIRSTROW_PORTABLE
+        /// Whether the system has what its players use to play a disc that is protected
+        /// against copying. (It isn't part of First Row, nor of most systems as they come.)
         nonisolated static var canPlayProtectedDiscs: Bool {
-            for name in ["libdvdcss.so.2", "libdvdcss.so"] {
-                if let library = dlopen(name, RTLD_LAZY) {
-                    dlclose(library)
-                    return true
+            #if os(Linux)
+                for name in ["libdvdcss.so.2", "libdvdcss.so"] {
+                    if let library = dlopen(name, RTLD_LAZY) {
+                        dlclose(library)
+                        return true
+                    }
                 }
-            }
+            #endif
             return false
         }
     #endif
@@ -393,12 +395,15 @@ extension MenuView {
                     }
                     return
                 }
-            #elseif os(Linux)
+            #elseif FIRSTROW_PORTABLE
+                // First Row unscrambles nothing itself. On Linux a protected disc plays where
+                // the system has what its players use for one, and says so where it hasn't; on
+                // Windows there is nothing of the system's to leave it to, so it isn't played.
                 if isProtected, !DiscWatch.canPlayProtectedDiscs {
                     self.playSound(named: "Limit")
                     self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
                         "header": "This disc can't be played.",
-                        "subcaption": "It's protected against copying, and libdvdcss, which players need for such a disc, isn't installed.",
+                        "subcaption": "It's protected against copying.",
                     ])
                     return
                 }

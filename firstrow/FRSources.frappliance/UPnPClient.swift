@@ -30,7 +30,7 @@ struct UPnPClient: MediaServerClient {
 
     /// The media servers on the local network.
     static func discover(timeout: TimeInterval = 3) async -> [FoundMediaServer] {
-        let replies = await LocalNetwork.ask(searchQuestion, port: 1900, group: "239.255.255.250", timeout: timeout, testTarget: "FIRSTROW_UPNP_DISCOVERY_EXTRA")
+        let replies = await LocalNetwork.ask(searchQuestion, port: 1900, group: "239.255.255.250", timeout: timeout)
         return await servers(inReplies: replies)
     }
 
@@ -47,7 +47,7 @@ struct UPnPClient: MediaServerClient {
         if let url = URL(string: text), let named = url.host { host = named }
         if let colon = host.lastIndex(of: ":"), host.filter({ $0 == ":" }).count == 1 { host = String(host[..<colon]) }
         // Asked by itself, as it would be with everyone else.
-        let replies = await LocalNetwork.ask(searchQuestion, port: 1900, host: host, timeout: 2.5, testTarget: "FIRSTROW_UPNP_DISCOVERY_EXTRA")
+        let replies = await LocalNetwork.ask(searchQuestion, port: 1900, host: host, timeout: 2.5)
         if let found = await servers(inReplies: replies).first { return found }
         // Where the usual servers keep their descriptions.
         let usual = [

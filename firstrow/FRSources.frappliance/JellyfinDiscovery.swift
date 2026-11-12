@@ -5,7 +5,7 @@ import Foundation
 enum JellyfinDiscovery {
     static func discover(timeout: TimeInterval = 2.5) async -> [JellyfinServerInfo] {
         async let jellyfin = LocalNetwork.ask("who is JellyfinServer?", port: 7359, timeout: timeout, testTarget: "FIRSTROW_JELLYFIN_DISCOVERY_EXTRA")
-        async let emby = LocalNetwork.ask("who is EmbyServer?", port: 7359, timeout: timeout, testTarget: "FIRSTROW_EMBY_DISCOVERY_EXTRA")
+        async let emby = LocalNetwork.ask("who is EmbyServer?", port: 7359, timeout: timeout)
         var servers: [JellyfinServerInfo] = []
         for reply in await jellyfin + emby {
             guard let data = reply.data(using: .utf8),

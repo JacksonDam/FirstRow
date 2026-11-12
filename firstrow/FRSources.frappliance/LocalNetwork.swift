@@ -18,10 +18,10 @@ enum LocalNetwork {
     /// network the Mac is on.
     ///
     /// With `host`, only that one device is asked.
-    static func ask(_ question: String, port: UInt16, group: String? = nil, host: String? = nil, timeout: TimeInterval = 2.5, testTarget: String) async -> [String] {
+    static func ask(_ question: String, port: UInt16, group: String? = nil, host: String? = nil, timeout: TimeInterval = 2.5, testTarget: String? = nil) async -> [String] {
         var only: (host: String, port: UInt16)? = host.map { ($0, port) }
         if FirstRowHarness.isActive {
-            guard let value = ProcessInfo.processInfo.environment[testTarget], let colon = value.lastIndex(of: ":"),
+            guard let testTarget, let value = ProcessInfo.processInfo.environment[testTarget], let colon = value.lastIndex(of: ":"),
                   let port = UInt16(value[value.index(after: colon)...])
             else { return [] }
             only = (String(value[..<colon]), port)
