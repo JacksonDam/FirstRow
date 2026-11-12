@@ -31,9 +31,8 @@ final class MoviePlaybackLayers {
         private let reflection = MovieReflectionLayer()
     #endif
     #if os(iOS)
-        /// A YouTube video goes on playing in the system's picture in picture when First Row
-        /// is left while it plays, and comes back to its place here when First Row is opened
-        /// again.
+        /// A movie goes on playing in the system's picture in picture when First Row is left
+        /// while it plays, and comes back to its place here when First Row is opened again.
         private var pictureInPicture: AVPictureInPictureController?
         private var returnsFromPictureInPicture: NSObjectProtocol?
     #endif
@@ -85,7 +84,7 @@ final class MoviePlaybackLayers {
             reflection.update(player: showsPlayer ? menu.moviePlayer : nil, frame: underTheFold, staysReady: UprightStance.screenFolds)
         #endif
         #if os(iOS)
-            keepPictureInPicture(for: showsPlayer && menu.youtubeSession != nil)
+            keepPictureInPicture(for: showsPlayer)
         #endif
         var controlsSize = canvas.size
         if let upright = canvas.upright, isBent { controlsSize.height = upright.movieControlsFloor }
@@ -163,8 +162,8 @@ final class MoviePlaybackLayers {
     }
 
     #if os(iOS)
-        /// Has the system's picture in picture ready while a YouTube video plays: it takes the
-        /// picture up by itself as First Row goes to the background.
+        /// Has the system's picture in picture ready while a movie plays: it takes the picture
+        /// up by itself as First Row goes to the background.
         private func keepPictureInPicture(for isWanted: Bool) {
             guard isWanted else {
                 if let controller = pictureInPicture {
