@@ -406,6 +406,16 @@ extension MenuView {
         }
         let target = pointer.hitTester?.pointerTarget(at: point)
         pointer.pressTarget = target
+        // The button kept down on a movie asks about deleting it.
+        if case let .menuRow(level, index)? = target, level == .third, level == pointerActiveListLevel, movieRemoval(forThirdMenuRow: index) != nil {
+            let hold = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolatedIfPossible {
+                    guard let self, self.pointer.pressTarget == target, self.pointer.hitTester?.pointerTarget(at: self.pointer.location ?? point) == target else { return }
+                    if self.askAboutRemovingMovie(inThirdMenuRow: index) { self.pointer.pressTarget = nil }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.confirmHoldDelay, execute: hold)
+        }
         // The bars react on the press, so a drag can start from it.
         if case let .progressBar(fraction) = target {
             if isMoviePlaybackVisible {

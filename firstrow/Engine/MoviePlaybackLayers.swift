@@ -590,12 +590,16 @@ final class MovieControlsLayer {
     }
 }
 
-/// "Resume Playing / Start from Beginning" over a blurred frame of the movie.
+/// "Resume Playing / Start from Beginning" over a blurred frame of the movie. The same screen
+/// asks whether to delete a movie (`MenuView.movieRemoval`): the question, and its two answers
+/// side by side.
 @MainActor
 final class MovieResumePromptLayer {
     let layer = SceneLayer()
     private let backdrop = SceneLayer()
     private let dim = SceneLayer()
+    private let question = SceneLayer()
+    private let note = SceneLayer()
     private let options = SceneLayer()
     private let selection = SelectionBoxLayer()
     private let pressed = SceneLayer()
@@ -620,6 +624,8 @@ final class MovieResumePromptLayer {
         pressed.cornerRadius = 5
         layer.addSublayer(backdrop)
         layer.addSublayer(dim)
+        layer.addSublayer(question)
+        layer.addSublayer(note)
         layer.addSublayer(options)
         options.addSublayer(pressed)
         options.addSublayer(selection.layer)
@@ -648,6 +654,14 @@ final class MovieResumePromptLayer {
         let isModern = ModernTheme.isActive
         for sublayer in [pressed, selection.layer] + labels { sublayer.isHidden = isModern }
         for row in modernRows { row.layer.isHidden = !isModern }
+        question.isHidden = menu.movieRemoval == nil
+        note.isHidden = menu.movieRemoval?.note == nil
+        if let removal = menu.movieRemoval {
+            dim.backgroundColor = CGColor(gray: 0, alpha: isModern ? 0.6 : 0.5)
+            updateRemoval(removal, menu: menu, pass: pass, sceneSize: sceneSize, scale: scale, appearing: appearing, isModern: isModern)
+            layer.setOpacity(menu.movieResumePromptOpacity, appearing ? nil : pass.animation)
+            return
+        }
         if isModern {
             dim.backgroundColor = CGColor(gray: 0, alpha: 0.5)
             updateModern(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale, appearing: appearing)
@@ -683,6 +697,85 @@ final class MovieResumePromptLayer {
             labels[index].opacity = hidden ? 0 : 1
         }
         layer.setOpacity(menu.movieResumePromptOpacity, appearing ? nil : pass.animation)
+    }
+
+    /// Whether to delete a movie: the question and what will happen to the movie, and under
+    /// them the two answers side by side, the one picked out drawn as a menu's row is.
+    private func updateRemoval(_ removal: MovieRemoval, menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat, appearing: Bool, isModern: Bool) {
+        let middle = Self.middle(menu, sceneSize)
+        let gap: CGFloat = 44
+        let buttonWidth = min(400, (sceneSize.width - 160 - gap) * 0.5)
+        let buttonHeight = menu.selectionBoxHeight
+        let blockWidth = buttonWidth * 2 + gap
+        let fontName = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
+        let shadows = [TextShadow(color: RGBA(white: 0, alpha: 0.8), radius: 6, offset: CGSize(width: 0, height: 2))]
+        let wrapWidth = min(sceneSize.width - 200, 1400)
+        let asked = TextRenderer.render(TextSpec(text: removal.question, fontName: fontName, size: 56, wrapWidth: wrapWidth, alignment: .center, lineSpacing: 6, shadows: shadows), scale: scale)
+        let told = removal.note.map {
+            TextRenderer.render(TextSpec(text: $0, fontName: fontName, size: 34, color: RGBA(white: 1, alpha: 0.72), wrapWidth: wrapWidth, alignment: .center, shadows: shadows), scale: scale)
+        }
+        let buttonsTop = (middle + 30).rounded()
+        var top = buttonsTop - 70 - (told.map { $0.size.height + 18 } ?? 0) - asked.size.height
+        question.show(asked, at: CGPoint(x: ((sceneSize.width - asked.size.width) * 0.5).rounded(), y: top.rounded()))
+        top += asked.size.height + 18
+        if let told {
+            note.show(told, at: CGPoint(x: ((sceneSize.width - told.size.width) * 0.5).rounded(), y: top.rounded()))
+        }
+        options.frame = CGRect(x: ((sceneSize.width - blockWidth) * 0.5).rounded(), y: buttonsTop, width: blockWidth, height: buttonHeight)
+        optionFrames = (0 ..< 2).map { index in
+            CGRect(x: options.frame.minX + CGFloat(index) * (buttonWidth + gap), y: buttonsTop, width: buttonWidth, height: buttonHeight)
+        }
+        let selected = min(1, max(0, menu.movieResumePromptSelectedIndex))
+        let moved = lastSelectedIndex != nil && lastSelectedIndex != selected
+        lastSelectedIndex = selected
+        let titles = removal.answers
+        if isModern {
+            ModernMenuRowLayer.focusAnimation = .smooth(duration: ModernTheme.focusDuration)
+            for index in 0 ..< 2 {
+                let row = modernRows[index]
+                row.layer.frame = CGRect(x: CGFloat(index) * (buttonWidth + gap), y: 0, width: buttonWidth, height: buttonHeight)
+                let item = MenuListItemConfig(
+                    id: "movie-removal-\(index)", title: titles[index], leadsToMenu: false,
+                    leadingImageAssetName: nil, leadingImage: nil, trailingText: nil, trailingSymbolName: nil,
+                    showsTopDivider: false, showsBlueDot: false, showsLightRowBackground: false, alignsTextToDividerStart: false,
+                )
+                row.update(MenuRowLayer.Spec(
+                    item: item,
+                    isSelected: index == selected,
+                    isSettled: true,
+                    rowWidth: buttonWidth,
+                    rowHeight: buttonHeight,
+                    leadingCompensation: 0,
+                    showsPlaybackSpeaker: false,
+                    arrowAppearance: menu.menuArrowAppearance,
+                    isPhotosRoot: false,
+                    isPhotosThirdMenu: false,
+                    dynamicLeadingImage: nil,
+                    scale: scale,
+                    theme: .modern,
+                ), menu: menu)
+            }
+            return
+        }
+        pressed.isHidden = true
+        selection.layer.isHidden = false
+        let visualWidth = buttonWidth + menu.selectionTextureVisualWidthDelta + menu.movieResumeSelectionTextureLeadingAdjustment + menu.movieResumeSelectionTextureTrailingAdjustment
+        let visualHeight = buttonHeight + menu.selectionTextureVisualHeightDelta
+        let visualXOffset = -((visualWidth - buttonWidth) * 0.5) + ((menu.movieResumeSelectionTextureTrailingAdjustment - menu.movieResumeSelectionTextureLeadingAdjustment) * 0.5)
+        let visualYOffset = -((visualHeight - buttonHeight) * 0.5)
+        let slide = appearing ? nil : pass.animation(.easeInOut(duration: menu.movieResumePromptSelectionSlideDuration), when: moved)
+        selection.update(
+            frame: CGRect(x: CGFloat(selected) * (buttonWidth + gap) + visualXOffset, y: visualYOffset, width: visualWidth, height: visualHeight),
+            selectionBoxHeight: menu.selectionBoxHeight, animation: slide,
+        )
+        for index in 0 ..< 2 {
+            let graphic = TextRenderer.render(TextSpec(text: titles[index], fontName: firstRowBoldFontName, size: 45, maxWidth: buttonWidth - 40, minimumScaleFactor: 0.72), scale: scale)
+            labels[index].show(graphic, at: CGPoint(
+                x: (CGFloat(index) * (buttonWidth + gap) + (buttonWidth - graphic.size.width) * 0.5).rounded(),
+                y: ((buttonHeight - graphic.size.height) * 0.5).rounded(),
+            ))
+            labels[index].opacity = 1
+        }
     }
 
     /// The height the two options are centred on: the screen's middle, or standing upright the

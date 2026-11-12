@@ -153,13 +153,6 @@ extension MenuView {
             handlePodcastsRootMenuSelection(chosenRootItem)
             return
         }
-        #if os(iOS)
-            if chosenRootItem.id == "movies" {
-                // (What the chosen folder holds comes in first, so that the menu knows what is here.)
-                importMoviesFromBookmarkedFolderIfNeeded()
-                lookForOwnMovies()
-            }
-        #endif
         beginSubmenuTransition(for: chosenRootItem)
     }
 
@@ -405,13 +398,6 @@ extension MenuView {
             enterMoviesFolderMenu()
             return
         }
-        #if os(iOS)
-            if activeRootItemID == "movies", item.id == Self.removeMoviesItemID {
-                playSound(named: "Selection")
-                enterRemoveMoviesMenu()
-                return
-            }
-        #endif
         #if !os(tvOS)
             if activeRootItemID == "movies", item.id == Self.importMoviesItemID {
                 playSound(named: "Selection")

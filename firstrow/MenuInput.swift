@@ -56,9 +56,15 @@ extension MenuView {
         #endif
     }
 
-    func handleKeyDown(_ key: KeyCode, isRepeat: Bool = false, modifiers: NSEvent.ModifierFlags = []) {
+    /// `willBeLetGo` for a key whose release will be told of too (`handleKeyUp`): Return can
+    /// then be held on a movie to ask about deleting it, and acts as a press when it's let go.
+    func handleKeyDown(_ key: KeyCode, isRepeat: Bool = false, modifiers: NSEvent.ModifierFlags = [], willBeLetGo: Bool = false) {
         // The file picker is answering keys of its own.
         if isChoosingMediaSource { return }
+        if key == .enter, willBeLetGo, onboardingStep == nil, !isTextEntryActive {
+            if isRepeat, isConfirmPressDown { return }
+            if !isRepeat, confirmPressBegan() { return }
+        }
         if onboardingStep != nil {
             handleOnboardingKey(key, isRepeat: isRepeat)
             return
@@ -73,6 +79,7 @@ extension MenuView {
     }
 
     func handleKeyUp(_ key: KeyCode) {
+        if key == .enter { confirmPressEnded() }
         handleDirectionalPressEnded(key)
     }
 

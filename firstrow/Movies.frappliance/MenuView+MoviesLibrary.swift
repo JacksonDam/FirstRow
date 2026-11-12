@@ -128,7 +128,6 @@ extension MenuView {
         func handleMoviesFolderPickedFromFiles(_ selectedFolderURL: URL) {
             storeBookmarkedMoviesFolderURL(selectedFolderURL)
             importMoviesFromFolderIntoDocuments(selectedFolderURL)
-            lookForOwnMovies()
             if entersMoviesFolderAfterPicking {
                 entersMoviesFolderAfterPicking = false
                 enterMoviesFolderMenu()
@@ -164,7 +163,6 @@ extension MenuView {
                     try? fileManager.copyItem(at: source, to: destination)
                 }
             }
-            lookForOwnMovies()
             if thirdMenuMode == .moviesFolder {
                 loadThirdMenuDirectory(moviesRootDirectoryURL(), resetSelection: true)
             }
@@ -176,51 +174,34 @@ extension MenuView {
 
         // MARK: - Removing movies
 
-        static let removeMoviesItemID = "movies_remove"
         private static let removedMovieNamesDefaultsKey = "moviesRemovedFromFirstRow"
 
-        /// The names of the movies that were removed here, which the chosen folder is not to
+        /// The names of the movies that were deleted here, which the chosen folder is not to
         /// bring back.
         var removedMovieNames: Set<String> {
             get { Set(UserDefaults.standard.stringArray(forKey: Self.removedMovieNamesDefaultsKey) ?? []) }
             set { UserDefaults.standard.set(newValue.sorted(), forKey: Self.removedMovieNamesDefaultsKey) }
         }
 
-        /// Looks again for the movies First Row keeps of its own: the copies in its own folder,
-        /// brought in from Files or from the folder chosen there, in name order.
-        func lookForOwnMovies() {
-            let folder = moviesDocumentsDirectoryURL()
-            let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
-            ownMovieFiles = files
-                .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true && supportedMovieFileExtensions.contains($0.pathExtension.lowercased()) }
-                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-            if hasOwnMovies != !ownMovieFiles.isEmpty { hasOwnMovies = !ownMovieFiles.isEmpty }
-        }
-
-        /// Movies > Remove Movies: the movies First Row keeps, each leading to a row that removes it.
-        func enterRemoveMoviesMenu() {
-            lookForOwnMovies()
-            guard !ownMovieFiles.isEmpty else { return }
-            enterMediaFoldersMenu(startingAt: .ownMovies)
-        }
-
-        /// Takes a movie out of First Row: its copy here, the subtitle files that came with it,
-        /// and where it was stopped. Whatever it was copied from is left as it is.
-        func removeOwnMovie(_ file: URL) {
+        /// Takes a movie out of First Row: its copy here and the subtitle files that came with
+        /// it. Whatever it was copied from is left as it is.
+        func removeOwnMovie(_ file: URL) -> Bool {
             let fileManager = FileManager.default
             let folder = file.deletingLastPathComponent()
             let name = file.deletingPathExtension().lastPathComponent.lowercased()
+            do {
+                try fileManager.removeItem(at: file)
+            } catch {
+                return false
+            }
             for other in (try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [] {
                 // ("Movie.srt", "Movie.en.srt": the subtitle files kept beside it.)
                 let otherName = other.deletingPathExtension().lastPathComponent.lowercased()
                 guard Self.subtitleFileExtensions.contains(other.pathExtension.lowercased()), otherName == name || otherName.hasPrefix(name + ".") else { continue }
                 try? fileManager.removeItem(at: other)
             }
-            try? fileManager.removeItem(at: file)
-            MovieResumeStore.remove(file)
-            if lastClosedMovieURL?.standardizedFileURL == file.standardizedFileURL { lastClosedMovieURL = nil }
             removedMovieNames.insert(file.lastPathComponent)
-            lookForOwnMovies()
+            return true
         }
 
         /// With no movies and no folder chosen yet, Movies Folder asks for one first: the Files

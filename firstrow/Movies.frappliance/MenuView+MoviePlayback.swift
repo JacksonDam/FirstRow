@@ -196,6 +196,7 @@ extension MenuView {
 
     func dismissMovieResumePrompt() {
         isMovieResumePromptVisible = false
+        movieRemoval = nil
         isMovieResumePromptConfirming = false
         movieResumePromptHideUnselected = false
         movieResumePromptSolidBlackSelected = false
@@ -230,6 +231,11 @@ extension MenuView {
     func handleMovieResumePromptInput(_ key: KeyCode, isRepeat: Bool) {
         guard isMovieResumePromptVisible, !isMovieResumePromptConfirming, !isMovieTransitioning else { return }
         _ = isRepeat
+        if movieRemoval != nil {
+            // (The same screen, asking whether to delete a movie: see `MenuView+MovieRemoval.swift`.)
+            handleMovieRemovalInput(key)
+            return
+        }
         switch key {
         case .upArrow, .downArrow:
             let now = Date()

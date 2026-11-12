@@ -13,9 +13,6 @@ extension MenuView {
         case folders(MediaSources.FolderKind)
         case folder(MediaSources.FolderKind, index: Int)
         case library(MediaSources.LibraryKind)
-        /// Movies > Remove Movies on iPhone and iPad: the movies First Row keeps of its own.
-        case ownMovies
-        case ownMovie(URL)
         /// Movies > Import: where more movies come from.
         case importMovies
     }
@@ -103,12 +100,6 @@ extension MenuView {
                 items.append(plainMenuListItem(id: "media_add_folder", title: "Folder", trailingText: "..."))
                 return items
             #endif
-        case .ownMovies:
-            return ownMovieFiles.enumerated().map { index, file in
-                plainMenuListItem(id: "own_movie_\(index)", title: file.deletingPathExtension().lastPathComponent, leadsToMenu: true)
-            }
-        case .ownMovie:
-            return [plainMenuListItem(id: "own_movie_remove", title: "Remove from First Row")]
         case let .library(kind):
             if sources.library(kind) != nil {
                 return [
@@ -134,10 +125,6 @@ extension MenuView {
             kind.title
         case .importMovies:
             "Import"
-        case .ownMovies:
-            "Remove Movies"
-        case let .ownMovie(file):
-            truncatedHeaderTitle(file.deletingPathExtension().lastPathComponent, fallback: "Movie")
         }
     }
 
@@ -242,19 +229,6 @@ extension MenuView {
                     chooseMediaFolders(.movies, in: cloudFolders[index])
                 }
             #endif
-        case .ownMovies:
-            guard ownMovieFiles.indices.contains(selectedThirdIndex) else { return }
-            pushMediaFoldersPage(.ownMovie(ownMovieFiles[selectedThirdIndex]))
-        case let .ownMovie(file):
-            #if os(iOS)
-                removeOwnMovie(file)
-            #endif
-            if ownMovieFiles.isEmpty {
-                // (Nothing left to remove: back to the Movies menu, whose row for this has gone.)
-                mediaFoldersPages = Array(mediaFoldersPages.prefix(1))
-            }
-            _ = file
-            navigateUpInMediaFolders()
         case let .library(kind):
             if item.id == "media_clear_library" {
                 MediaSources.shared.setLibrary(nil, kind: kind)

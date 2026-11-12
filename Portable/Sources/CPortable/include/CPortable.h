@@ -70,6 +70,11 @@ int fr_udp_discover(const char* message, const char* extra_host, int extra_port,
    started, 0 if there is none (and always 0 on other systems). */
 int fr_windows_open_dvd_player(const char* drive);
 
+/* Puts a file or a folder in the system's trash: the Recycle Bin on Windows, the desktops' shared
+   trash in the home folder on Linux (which takes only what is on the home folder's own disk).
+   Returns 1 if it went there, 0 if it couldn't be put there. */
+int fr_move_to_trash(const char* path);
+
 #ifdef __cplusplus
 }
 #endif

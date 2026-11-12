@@ -75,12 +75,6 @@ extension MenuView {
         if activeRootItemID == "movies", !MovieResumeStore.entries().isEmpty {
             items.insert(SubmenuItemConfig(id: Self.continueWatchingItemID, title: "Continue Watching", leadsToMenu: true), at: 0)
         }
-        #if os(iOS)
-            if activeRootItemID == "movies", hasOwnMovies {
-                // What First Row keeps of its own here can be taken out again.
-                items.append(SubmenuItemConfig(id: Self.removeMoviesItemID, title: "Remove Movies", leadsToMenu: true))
-            }
-        #endif
         #if !os(tvOS)
             if activeRootItemID == "movies" {
                 // Where more movies come from: Dropbox, Google Drive and the like, and files.

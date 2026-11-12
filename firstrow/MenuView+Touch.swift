@@ -80,6 +80,8 @@ extension MenuView {
         var scrollStart: CGFloat = 0
         var startTarget: PointerTarget?
         var holdTask: Task<Void, Never>?
+        /// Waits to see whether a finger stays where it is on a movie, to ask about deleting it.
+        var removeTask: Task<Void, Never>?
         /// The finger's recent heights in window points, for its speed when it lets go.
         var samples: [(time: TimeInterval, y: CGFloat)] = []
         /// Where the finger was when the drag became a scroll, so getting past the slop
@@ -275,6 +277,7 @@ extension MenuView {
             let caughtList = catchCoastingList()
             let state = touch
             state.holdTask?.cancel()
+            state.removeTask?.cancel()
             state.isFingerDown = true
             state.selectionTarget = nil
             startTouchClock()
@@ -400,6 +403,19 @@ extension MenuView {
             }
             guard isMenuTouchContext, case let .menuRow(level, index) = target, level == pointerActiveListLevel else { return }
             state.level = level
+            // A finger kept still on a movie asks about deleting it.
+            if level == .third, movieRemoval(forThirdMenuRow: index) != nil {
+                state.removeTask = Task { @MainActor [weak self] in
+                    try? await firstRowSleep(Self.touchRemoveHoldDelay)
+                    guard let self, !Task.isCancelled, self.touch.isFingerDown else { return }
+                    let moved = hypot(self.touch.last.x - self.touch.start.x, self.touch.last.y - self.touch.start.y)
+                    guard moved < 14, self.touch.mode == .undecided || self.touch.mode == .selecting else { return }
+                    guard self.askAboutRemovingMovie(inThirdMenuRow: index) else { return }
+                    self.touch.holdTask?.cancel()
+                    self.touch.mode = .ignored
+                    self.endTouchSelection()
+                }
+            }
             let scroll = pointer.hitTester?.menuListScrollState(level)
             state.scrollState = scroll
             if scroll?.canScroll != true {
@@ -529,6 +545,7 @@ extension MenuView {
         private func touchEnded(at point: CGPoint, time: TimeInterval) {
             let state = touch
             state.holdTask?.cancel()
+            state.removeTask?.cancel()
             let dx = point.x - state.start.x
             let dy = point.y - state.start.y
             let mode = state.mode
@@ -629,6 +646,7 @@ extension MenuView {
         private func touchCancelled() {
             let state = touch
             state.holdTask?.cancel()
+            state.removeTask?.cancel()
             state.isFingerDown = false
             state.selectionTarget = nil
             pointer.hitTester?.highlightTouchControl(nil)

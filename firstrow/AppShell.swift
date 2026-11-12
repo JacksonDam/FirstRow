@@ -428,8 +428,9 @@ final class FirstRowAppController {
                 menu?.noteRemotePress()
                 if [.upArrow, .downArrow, .leftArrow, .rightArrow].contains(key) {
                     menu?.handleDirectionalPressBegan(key)
-                } else if key == .enter, menu?.remoteSelectBegan() == true {
-                    // (Now Playing: it acts when Select comes up, or when it has been held.)
+                } else if key == .enter, menu?.remoteSelectBegan() == true || menu?.confirmPressBegan() == true {
+                    // (Now Playing, and a movie that can be deleted: it acts when Select comes
+                    // up, or when it has been held.)
                 } else if key == .space, menu?.takesPlayPause(fromRemotePress: true) == false {
                     // (Already acted on, as the system's media command.)
                 } else {
@@ -438,7 +439,10 @@ final class FirstRowAppController {
             }
             remote.onKeyUp = { [weak self, weak menu] key in
                 if self?.isPlayingIntro == true { return }
-                if key == .enter { menu?.remoteSelectEnded() }
+                if key == .enter {
+                    menu?.remoteSelectEnded()
+                    menu?.confirmPressEnded()
+                }
                 menu?.handleDirectionalPressEnded(key)
             }
             remote.claimsFirstResponder = !isLaunchToggleWindowActive
@@ -514,7 +518,7 @@ final class FirstRowAppController {
                 menu.handleTypedText(characters)
                 return
             }
-            menu?.handleKeyDown(key, isRepeat: event.isARepeat, modifiers: modifiers)
+            menu?.handleKeyDown(key, isRepeat: event.isARepeat, modifiers: modifiers, willBeLetGo: true)
         }
 
         func handleKeyUp(_ event: NSEvent) {
@@ -531,7 +535,7 @@ final class FirstRowAppController {
                 handleLaunchBackPressBegan()
             }
             menu?.noteInputSource(.keyboard)
-            menu?.handleKeyDown(key, isRepeat: isRepeat)
+            menu?.handleKeyDown(key, isRepeat: isRepeat, willBeLetGo: true)
         }
 
         func handleKeyUp(_ key: KeyCode) {

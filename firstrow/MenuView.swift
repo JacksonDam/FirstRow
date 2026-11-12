@@ -237,9 +237,14 @@ final class MenuView: ObservableObject {
     /// Bumped whenever the chosen folders or libraries change, to redraw lists that show them.
     @Published var mediaSourcesRevision = 0
     var isChoosingMediaSource = false
-    /// The movies First Row keeps of its own on iPhone and iPad (brought in from Files), as
-    /// last looked for. Empty everywhere else.
-    var ownMovieFiles: [URL] = []
+    /// The movie that is being asked about on the question screen: whether to delete it (see
+    /// `MenuView+MovieRemoval.swift`). Nil while that screen asks where to start a movie.
+    @Published var movieRemoval: MovieRemoval?
+    /// A confirm press that may yet turn out to be a hold: it's down, and whether holding it
+    /// has already brought the question up.
+    var isConfirmPressDown = false
+    var confirmHoldFired = false
+    var confirmHold: DispatchWorkItem?
     /// The folders that Dropbox, Google Drive and the like keep on this computer, as last found.
     var cloudFolders: [CloudFolders.Folder] = []
 
@@ -783,8 +788,6 @@ final class MenuView: ObservableObject {
         @Published var isMoviesFolderPickerPresented = false
         /// Movies > Add Movies from Files has asked for the Files picker.
         @Published var isMovieFilesPickerPresented = false
-        /// Whether First Row keeps any movies of its own: the Movies menu offers to remove them if so.
-        @Published var hasOwnMovies = false
         @Published var hasPromptedMoviesFolderPickerThisSession = false
         /// Movies Folder opens once the folder picker it asked with has been answered.
         var entersMoviesFolderAfterPicking = false
