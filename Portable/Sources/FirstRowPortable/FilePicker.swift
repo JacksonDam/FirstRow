@@ -38,11 +38,13 @@ public enum PortableFilePicker {
         }
     }
 
-    public static func chooseFolders(allowMany: Bool, completion: @escaping @MainActor ([URL]) -> Void) {
+    /// Asks for folders, with the chooser starting in the home folder or in the one given.
+    public static func chooseFolders(allowMany: Bool, startingIn folder: URL? = nil, completion: @escaping @MainActor ([URL]) -> Void) {
         SDL_ShowCursor()
         let request = Request(completion: completion, filters: [])
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        SDL_ShowOpenFolderDialog(callback, Unmanaged.passRetained(request).toOpaque(), PortableApplication.windowHandle, home, allowMany)
+        let start = folder.map { $0.withUnsafeFileSystemRepresentation { $0.map { String(cString: $0) } } ?? $0.path }
+            ?? FileManager.default.homeDirectoryForCurrentUser.path
+        SDL_ShowOpenFolderDialog(callback, Unmanaged.passRetained(request).toOpaque(), PortableApplication.windowHandle, start, allowMany)
     }
 
     /// `filters` are (description, semicolon-separated extensions) pairs, such as ("XML", "xml").

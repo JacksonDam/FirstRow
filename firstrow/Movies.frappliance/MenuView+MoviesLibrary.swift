@@ -148,6 +148,34 @@ extension MenuView {
             }
         }
 
+        /// Keeps the movies picked in Files (Settings > Add Movies from Files), and the
+        /// subtitle files picked with them: they are copies the picker made, so they're moved
+        /// in among First Row's own movies, under their own names where those are free.
+        func handleMovieFilesPickedFromFiles(_ urls: [URL]) {
+            let fileManager = FileManager.default
+            let documents = moviesDocumentsDirectoryURL().standardizedFileURL
+            try? fileManager.createDirectory(at: documents, withIntermediateDirectories: true)
+            let kinds = supportedMovieFileExtensions.union(Self.subtitleFileExtensions)
+            for source in urls where kinds.contains(source.pathExtension.lowercased()) {
+                let base = source.deletingPathExtension().lastPathComponent
+                let kind = source.pathExtension
+                var destination = documents.appendingPathComponent(source.lastPathComponent, isDirectory: false)
+                var copy = 2
+                while fileManager.fileExists(atPath: destination.path) {
+                    destination = documents.appendingPathComponent("\(base) \(copy).\(kind)", isDirectory: false)
+                    copy += 1
+                }
+                do {
+                    try fileManager.moveItem(at: source, to: destination)
+                } catch {
+                    try? fileManager.copyItem(at: source, to: destination)
+                }
+            }
+            if thirdMenuMode == .moviesFolder {
+                loadThirdMenuDirectory(moviesRootDirectoryURL(), resetSelection: true)
+            }
+        }
+
         /// With no movies and no folder chosen yet, Movies Folder asks for one first: the Files
         /// picker comes straight up (iOS moves the menu back behind it), and the folder opens once
         /// one is chosen. Returns whether it asked.
@@ -226,7 +254,7 @@ extension MenuView {
             // Folders chosen in Settings go by their own names; drives by the drive's name.
             let chosenFolderPaths = MediaSources.shared.folders(.movies).map(\.standardizedFileURL.path)
             if chosenFolderPaths.contains(url.standardizedFileURL.path) {
-                return FileManager.default.displayName(atPath: url.path)
+                return CloudFolders.title(ofFolder: url)
             }
             return (try? url.resourceValues(forKeys: [.volumeNameKey]))?.volumeName
                 ?? url.lastPathComponent
@@ -530,6 +558,16 @@ extension MenuView {
     /// A movie's menu picture: its embedded cover art, or else a frame from the video.
     nonisolated func generateMoviePreviewImage(for url: URL) async -> NSImage? {
         let standardizedURL = url.standardizedFileURL
+        if CloudFolders.isStillInTheCloud(standardizedURL) {
+            // Reading it for a picture would fetch the whole movie from its service: it's
+            // fetched when it's played. Its service may have a picture of it to show.
+            #if canImport(QuickLookThumbnailing)
+                if let picture = await CloudFolders.picture(of: standardizedURL, longestSide: 1100) {
+                    return NSImage(cgImage: picture, size: NSSize(width: picture.width, height: picture.height))
+                }
+            #endif
+            return nil
+        }
         #if !FIRSTROW_PORTABLE
             if await MediaEngine.plays(standardizedURL) {
                 // (A kind of file the system knows nothing of: the engine reads it.)
@@ -563,7 +601,7 @@ extension MenuView {
 
     nonisolated func generateMovieThumbnail(for url: URL, preferredSeconds: Double? = nil) async -> NSImage? {
         let standardizedURL = url.standardizedFileURL
-        if shouldSkipMovieThumbnailGeneration(for: standardizedURL) {
+        if shouldSkipMovieThumbnailGeneration(for: standardizedURL) || CloudFolders.isStillInTheCloud(standardizedURL) {
             return nil
         }
         #if !FIRSTROW_PORTABLE

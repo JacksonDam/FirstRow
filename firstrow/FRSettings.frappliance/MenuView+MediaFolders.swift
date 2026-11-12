@@ -21,6 +21,7 @@ extension MenuView {
     }
 
     static let mediaFoldersItemID = "settings_media_folders"
+    static let addCloudFolderItemIDPrefix = "media_add_cloud_"
 
     var currentMediaFoldersPage: MediaFoldersPage {
         mediaFoldersPages.last?.page ?? .overview
@@ -58,7 +59,7 @@ extension MenuView {
             var items = entries.enumerated().map { index, entry in
                 plainMenuListItem(
                     id: "media_folder_\(index)",
-                    title: entry.url.map { FileManager.default.displayName(atPath: $0.path) } ?? URL(fileURLWithPath: entry.displayPath).lastPathComponent,
+                    title: CloudFolders.title(ofFolder: entry.url ?? URL(fileURLWithPath: entry.displayPath)),
                     leadsToMenu: true,
                     trailingText: entry.url == nil ? "Not Found" : nil,
                 )
@@ -76,6 +77,10 @@ extension MenuView {
                 showsLightRowBackground: false,
                 alignsTextToDividerStart: false,
             ))
+            // The folders that Dropbox, Google Drive and the like keep on this computer.
+            for (index, folder) in cloudFolders.enumerated() {
+                items.append(plainMenuListItem(id: "\(Self.addCloudFolderItemIDPrefix)\(index)", title: "Add from \(folder.name)", trailingText: "..."))
+            }
             return items
         case .folder:
             return [plainMenuListItem(id: "media_remove_folder", title: "Remove from First Row")]
@@ -98,7 +103,7 @@ extension MenuView {
             "\(kind.title) Folders"
         case let .folder(kind, index):
             truncatedHeaderTitle(MediaSources.shared.folderEntries(kind).indices.contains(index)
-                ? URL(fileURLWithPath: MediaSources.shared.folderEntries(kind)[index].displayPath).lastPathComponent
+                ? CloudFolders.title(ofFolder: URL(fileURLWithPath: MediaSources.shared.folderEntries(kind)[index].displayPath))
                 : "\(kind.title) Folder", fallback: "\(kind.title) Folder")
         case let .library(kind):
             kind.title
@@ -116,6 +121,19 @@ extension MenuView {
             self.headerText = self.mediaFoldersHeaderTitle(for: .overview)
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1
+        }
+        lookForCloudFolders()
+    }
+
+    /// Finds the folders that Dropbox, Google Drive and the like keep here, to offer them.
+    private func lookForCloudFolders() {
+        Task.detached(priority: .userInitiated) {
+            let found = CloudFolders.found()
+            await MainActor.run {
+                guard found != self.cloudFolders else { return }
+                self.cloudFolders = found
+                self.mediaSourcesRevision &+= 1
+            }
         }
     }
 
@@ -172,6 +190,9 @@ extension MenuView {
         case let .folders(kind):
             if item.id == "media_add_folder" {
                 chooseMediaFolders(kind)
+            } else if item.id.hasPrefix(Self.addCloudFolderItemIDPrefix) {
+                guard let index = Int(item.id.dropFirst(Self.addCloudFolderItemIDPrefix.count)), cloudFolders.indices.contains(index) else { return }
+                chooseMediaFolders(kind, in: cloudFolders[index])
             } else {
                 pushMediaFoldersPage(.folder(kind, index: selectedThirdIndex))
             }
@@ -222,32 +243,48 @@ extension MenuView {
 
     // MARK: - Choosing files
 
-    private func chooseMediaFolders(_ kind: MediaSources.FolderKind) {
+    /// Adds folders, with the selection staying on the row it's on as the list grows above it.
+    private func addMediaFolders(_ urls: [URL], kind: MediaSources.FolderKind) {
+        let before = mediaFoldersListItems()
+        let selectedID = before.indices.contains(selectedThirdIndex) ? before[selectedThirdIndex].id : nil
+        let known = MediaSources.shared.folderEntries(kind).count
+        for url in urls {
+            MediaSources.shared.addFolder(url, kind: kind)
+        }
+        mediaSourcesRevision &+= 1
+        let added = MediaSources.shared.folderEntries(kind).count - known
+        // (Rows of folders are numbered, so the ones below the new folders are found by place.)
+        if added > 0, let selectedID, !selectedID.hasPrefix("media_folder_"), currentMediaFoldersPage == .folders(kind) {
+            selectedThirdIndex = min(selectedThirdIndex + added, max(0, mediaFoldersListItems().count - 1))
+        }
+    }
+
+    /// Asks for folders with the system's own chooser, which starts in a cloud service's
+    /// folder when it was asked for by name: the folder itself, or any inside it, can be added.
+    private func chooseMediaFolders(_ kind: MediaSources.FolderKind, in cloudFolder: CloudFolders.Folder? = nil) {
         #if os(macOS)
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true
             panel.canChooseFiles = false
             panel.allowsMultipleSelection = true
             panel.prompt = "Add"
-            panel.message = "Choose folders of \(kind.title.lowercased()) for First Row."
-            presentMediaSourcePanel(panel) { [weak self] urls in
+            panel.message = if let cloudFolder {
+                "Choose folders of \(kind.title.lowercased()) in \(cloudFolder.name) for First Row."
+            } else {
+                "Choose folders of \(kind.title.lowercased()) for First Row."
+            }
+            presentMediaSourcePanel(panel, startingIn: cloudFolder?.url) { [weak self] urls in
                 guard let self, !urls.isEmpty else { return }
-                for url in urls {
-                    MediaSources.shared.addFolder(url, kind: kind)
-                }
-                self.mediaSourcesRevision &+= 1
+                self.addMediaFolders(urls, kind: kind)
             }
         #elseif FIRSTROW_PORTABLE
             guard !isChoosingMediaSource else { return }
             isChoosingMediaSource = true
-            PortableFilePicker.chooseFolders(allowMany: true) { [weak self] urls in
+            PortableFilePicker.chooseFolders(allowMany: true, startingIn: cloudFolder?.url) { [weak self] urls in
                 guard let self else { return }
                 self.isChoosingMediaSource = false
                 guard !urls.isEmpty else { return }
-                for url in urls {
-                    MediaSources.shared.addFolder(url, kind: kind)
-                }
-                self.mediaSourcesRevision &+= 1
+                self.addMediaFolders(urls, kind: kind)
             }
         #endif
     }
@@ -301,11 +338,11 @@ extension MenuView {
 
     #if os(macOS)
         /// Shows the system's file picker over First Row, with the pointer, until it's answered.
-        private func presentMediaSourcePanel(_ panel: NSOpenPanel, completion: @escaping @MainActor ([URL]) -> Void) {
+        private func presentMediaSourcePanel(_ panel: NSOpenPanel, startingIn folder: URL? = nil, completion: @escaping @MainActor ([URL]) -> Void) {
             guard !isChoosingMediaSource else { return }
             isChoosingMediaSource = true
             panel.level = .modalPanel
-            panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+            panel.directoryURL = folder ?? FileManager.default.homeDirectoryForCurrentUser
             NSCursor.setHiddenUntilMouseMoves(false)
             panel.begin { [weak self] response in
                 MainActor.assumeIsolatedIfPossible {

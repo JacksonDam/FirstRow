@@ -456,9 +456,21 @@ final class FirstRowAppController {
 
     #if os(iOS)
         private func presentFolderPickerIfNeeded() {
-            guard let menu, menu.isMoviesFolderPickerPresented, !isPresentingFolderPicker,
+            guard let menu, menu.isMoviesFolderPickerPresented || menu.isMovieFilesPickerPresented, !isPresentingFolderPicker,
                   let presenter = hostView.window?.rootViewController else { return }
             isPresentingFolderPicker = true
+            if menu.isMovieFilesPickerPresented {
+                let kinds = menu.supportedMovieFileExtensions.union(MenuView.subtitleFileExtensions)
+                IOSFolderPicker.presentForFiles(ofKinds: kinds, from: presenter, onPick: { [weak self, weak menu] urls in
+                    self?.isPresentingFolderPicker = false
+                    menu?.isMovieFilesPickerPresented = false
+                    menu?.handleMovieFilesPickedFromFiles(urls)
+                }, onCancel: { [weak self, weak menu] in
+                    self?.isPresentingFolderPicker = false
+                    menu?.isMovieFilesPickerPresented = false
+                })
+                return
+            }
             IOSFolderPicker.present(from: presenter, onPick: { [weak self, weak menu] url in
                 self?.isPresentingFolderPicker = false
                 menu?.isMoviesFolderPickerPresented = false

@@ -171,6 +171,7 @@
 		68CD57C17D82EB1BEACA7FEC /* KodiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C660D02F691119E87EEF6B /* KodiClient.swift */; };
 		7AFD1C1DBCEA445EDB5520BB /* SharedFolderClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2538E71F7337842045E520F /* SharedFolderClient.swift */; };
 		C8DC1B742FC767B2F9A5A60A /* DVDMenuFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945E7651110F113F0EDCE57D /* DVDMenuFeature.swift */; };
+		09A2D4E653934072F1A420CD /* CloudFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = E74E90D0E8F673C0AC295077 /* CloudFolders.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -357,6 +358,7 @@
 		11C660D02F691119E87EEF6B /* KodiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KodiClient.swift; sourceTree = "<group>"; };
 		F2538E71F7337842045E520F /* SharedFolderClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedFolderClient.swift; sourceTree = "<group>"; };
 		945E7651110F113F0EDCE57D /* DVDMenuFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DVDMenuFeature.swift; sourceTree = "<group>"; };
+		E74E90D0E8F673C0AC295077 /* CloudFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudFolders.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -421,6 +423,7 @@
 				D4FF5C8DCD4C9E57874DAE06 /* PlexClient.swift */,
 				11C660D02F691119E87EEF6B /* KodiClient.swift */,
 				F2538E71F7337842045E520F /* SharedFolderClient.swift */,
+				E74E90D0E8F673C0AC295077 /* CloudFolders.swift */,
 			);
 			path = FRSources.frappliance;
 			sourceTree = "<group>";
@@ -934,6 +937,7 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				09A2D4E653934072F1A420CD /* CloudFolders.swift in Sources */,
 				C8DC1B742FC767B2F9A5A60A /* DVDMenuFeature.swift in Sources */,
 				7AFD1C1DBCEA445EDB5520BB /* SharedFolderClient.swift in Sources */,
 				68CD57C17D82EB1BEACA7FEC /* KodiClient.swift in Sources */,

@@ -237,6 +237,8 @@ final class MenuView: ObservableObject {
     /// Bumped whenever the chosen folders or libraries change, to redraw lists that show them.
     @Published var mediaSourcesRevision = 0
     var isChoosingMediaSource = false
+    /// The folders that Dropbox, Google Drive and the like keep on this computer, as last found.
+    var cloudFolders: [CloudFolders.Folder] = []
 
     // MARK: - Navigation state
 
@@ -776,6 +778,8 @@ final class MenuView: ObservableObject {
 
     #if os(iOS)
         @Published var isMoviesFolderPickerPresented = false
+        /// Settings > Add Movies from Files has asked for the Files picker.
+        @Published var isMovieFilesPickerPresented = false
         @Published var hasPromptedMoviesFolderPickerThisSession = false
         /// Movies Folder opens once the folder picker it asked with has been answered.
         var entersMoviesFolderAfterPicking = false

@@ -58,7 +58,7 @@ extension MenuView {
             guard !identifiers.isEmpty else { continue }
             albums.append(sourceAlbum(
                 id: "photos_source::folder::\(folder.standardizedFileURL.path)",
-                title: FileManager.default.displayName(atPath: folder.path),
+                title: CloudFolders.title(ofFolder: folder),
                 identifiers: identifiers,
             ))
         }

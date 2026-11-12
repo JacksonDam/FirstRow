@@ -1922,7 +1922,57 @@ extension MenuView {
             return results
         }
 
-        nonisolated func makeMusicLibrarySongEntryFromAudioFile(_ url: URL, covers: SharedCovers? = nil) async -> MusicLibrarySongEntry? {
+        /// A song that is still with a service such as Dropbox, told from where it's kept
+        /// ("Artist/Album/03 Title.mp3"): reading what the file says of itself would fetch all
+        /// of it, and every song in the folder with it. Once it has been played it is on the
+        /// disk, and is read like any other the next time the library is.
+        nonisolated func songEntryFromItsPlace(_ url: URL, in root: URL?) -> MusicLibrarySongEntry {
+            var title = url.deletingPathExtension().lastPathComponent
+            var trackNumber = 0
+            var discNumber = 1
+            // "03 Title", "03 - Title", "03. Title", "2-03 Title".
+            let digits = title.prefix(while: \.isNumber)
+            if !digits.isEmpty, digits.count <= 3 {
+                var rest = title.dropFirst(digits.count)
+                var number = Int(digits) ?? 0
+                if rest.first == "-", let following = Optional(rest.dropFirst().prefix(while: \.isNumber)), !following.isEmpty, following.count <= 3 {
+                    discNumber = max(1, number)
+                    number = Int(following) ?? 0
+                    rest = rest.dropFirst(1 + following.count)
+                }
+                let name = rest.drop(while: { $0 == " " || $0 == "-" || $0 == "." || $0 == "_" })
+                if !name.isEmpty, rest.count > name.count {
+                    title = String(name)
+                    trackNumber = number
+                }
+            }
+            var folders = url.deletingLastPathComponent().standardizedFileURL.pathComponents
+            if let root {
+                let above = root.standardizedFileURL.pathComponents
+                folders = folders.starts(with: above) ? Array(folders.dropFirst(above.count)) : []
+            }
+            let album = folders.last ?? "Unknown Album"
+            let artist = folders.count > 1 ? folders[folders.count - 2] : "Unknown Artist"
+            return MusicLibrarySongEntry(
+                id: "ext::\(url.standardizedFileURL.path)",
+                title: title,
+                artist: artist,
+                album: album,
+                genre: "Unknown Genre",
+                composer: "Unknown Composer",
+                durationSeconds: 0,
+                trackNumber: trackNumber,
+                discNumber: discNumber,
+                artworkAlbumKey: nil,
+                url: url,
+                artwork: nil,
+            )
+        }
+
+        nonisolated func makeMusicLibrarySongEntryFromAudioFile(_ url: URL, covers: SharedCovers? = nil, in root: URL? = nil) async -> MusicLibrarySongEntry? {
+            if CloudFolders.isStillInTheCloud(url) {
+                return songEntryFromItsPlace(url, in: root)
+            }
             let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
             let commonMetadata: [AVMetadataItem]
             let metadata: [AVMetadataItem]
@@ -1995,7 +2045,7 @@ extension MenuView {
             let covers = SharedCovers()
             for root in externalMusicRootURLs() {
                 for url in scanExternalMusicFiles(in: root) {
-                    if let entry = await makeMusicLibrarySongEntryFromAudioFile(url, covers: covers) {
+                    if let entry = await makeMusicLibrarySongEntryFromAudioFile(url, covers: covers, in: root) {
                         results.append(entry)
                     }
                 }
