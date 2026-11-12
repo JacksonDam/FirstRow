@@ -95,7 +95,7 @@ final class YouTubePanelLayer {
     /// step moves a row like that.
     func room(ofRow index: Int) -> (overflow: CGFloat, page: CGFloat) {
         guard rowHeights.indices.contains(index), shownHeight > 0 else { return (0, 400) }
-        return (max(0, headroom + rowHeights[index] + 12 - shownHeight), max(120, (shownHeight * 0.5).rounded()))
+        return (max(0, headroom * 2 + rowHeights[index] - shownHeight), max(120, (shownHeight * 0.5).rounded()))
     }
 
     /// Where the panel goes on a canvas of this size.
@@ -356,7 +356,8 @@ final class YouTubePanelLayer {
             block.layer.removeFromSuperlayer()
             blocks[id] = nil
         }
-        let contentHeight = max(0, y - gap)
+        // (With the same room under the last row as above the first, for the tile and its shadow.)
+        let contentHeight = max(0, y - gap) + headroom
 
         // Under the rows (or in their place): that more is on its way, or why there are none.
         let note = content.isLoading ? "Loading..." : (content.rows.isEmpty ? (content.note ?? "") : "")
