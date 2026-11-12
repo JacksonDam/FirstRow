@@ -140,6 +140,22 @@ final class ModernKeyTile {
             shadowCutout.path = cutout
         }
         shadowCaster.frame = rest
+        // A tile that casts no shadow has its caster out of the way altogether. (It is a
+        // masked layer, which the system gives a pass of its own at every frame whether it
+        // shows anything or not: one for each row of a panel as the panel scrolled.)
+        let casts = focused || restingShadow
+        if casts {
+            shadowCaster.isHidden = false
+        } else if unfocus == nil {
+            shadowCaster.isHidden = true
+        } else {
+            // (Once its shadow has faded.)
+            Task { @MainActor [weak self] in
+                try? await firstRowSleep(0.26)
+                guard let self, self.isFocused != true else { return }
+                self.shadowCaster.isHidden = true
+            }
+        }
         // The size eases; the colour changes at once, or fades on the way out.
         if was != focused {
             tile.set("backgroundColor", to: focused ? focusFill : (fill ?? CGColor(gray: 1, alpha: 0)), unchanged: false, animation: unfocus)
