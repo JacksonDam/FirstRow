@@ -645,7 +645,7 @@ extension MenuView {
     }
 
     private func askForYouTubeSearch() {
-        requestTextEntry(title: "Search YouTube", prompt: "Type what to look for.") { [weak self] text in
+        requestTextEntry(title: "Search YouTube", prompt: "Type what to look for.", isSearch: true) { [weak self] text in
             guard let self, let query = text?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else { return }
             self.enterYouTube(.search(query))
         }

@@ -83,9 +83,11 @@ extension MenuView {
     }
 
     /// Asks for text. `completion` gets nil if it was cancelled.
-    func requestTextEntry(title: String, prompt: String, initialText: String = "", isSecure: Bool = false, completion: @escaping (String?) -> Void) {
+    /// `isSearch` for words to look for, rather than a server's address or a name: where the
+    /// system's own keyboard does the typing, it is the keyboard for searching.
+    func requestTextEntry(title: String, prompt: String, initialText: String = "", isSecure: Bool = false, isSearch: Bool = false, completion: @escaping (String?) -> Void) {
         #if canImport(UIKit) && !os(macOS) && !FIRSTROW_PORTABLE
-            presentSystemTextEntry(title: title, prompt: prompt, initialText: initialText, isSecure: isSecure, completion: completion)
+            presentSystemTextEntry(title: title, prompt: prompt, initialText: initialText, isSecure: isSecure, isSearch: isSearch, completion: completion)
         #else
             textEntryCompletion = completion
             textEntry = TextEntryState(title: title, prompt: prompt, text: initialText, isSecure: isSecure)
@@ -281,7 +283,7 @@ extension MenuView {
     // MARK: - iPhone, iPad and Apple TV
 
     #if canImport(UIKit) && !os(macOS) && !FIRSTROW_PORTABLE
-        private func presentSystemTextEntry(title: String, prompt: String, initialText: String, isSecure: Bool, completion: @escaping (String?) -> Void) {
+        private func presentSystemTextEntry(title: String, prompt: String, initialText: String, isSecure: Bool, isSearch: Bool, completion: @escaping (String?) -> Void) {
             let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             let window = scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
             guard var presenter = window?.rootViewController else {
@@ -295,8 +297,15 @@ extension MenuView {
                 field.isSecureTextEntry = isSecure
                 field.autocapitalizationType = .none
                 field.autocorrectionType = .no
-                field.keyboardType = isSecure ? .default : .URL
+                // An address gets the keyboard made for addresses; a name, a password and words
+                // to search for get the usual one, the last with Search for its Return key.
+                field.keyboardType = isSecure || isSearch ? .default : .URL
                 if !isSecure, title.lowercased().contains("name") { field.keyboardType = .default }
+                if isSearch {
+                    field.returnKeyType = .search
+                    field.autocorrectionType = .default
+                    field.clearButtonMode = .whileEditing
+                }
             }
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
                 completion(nil)
