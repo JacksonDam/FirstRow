@@ -535,6 +535,9 @@ final class MovieOptionsLayer {
         let state = menu.isMoviePlaybackVisible ? menu.movieOptions : nil
         if let state { shownState = state }
         let isOpen = state != nil && menu.movieOptionsReveal > 0.5
+        // (With the movie gone and the panel back in its button, there is nothing to show
+        // until the next movie's own.)
+        if !menu.isMoviePlaybackVisible, !wasOpen { shownState = nil }
 
         // One button for everything the movie offers (it opens the panel on its first row),
         // picked out while the panel's open. The classic look has none: ↓ opens the panel.
@@ -620,8 +623,14 @@ final class MovieOptionsLayer {
                     host.addSublayer(panel)
                 }
             } else if panel.superlayer !== layer {
+                // Out of the glass, which was what showed and hid it (the look has been
+                // changed): it starts here put away, where left as the glass had it it stood
+                // open over the menus and over the next movie.
                 panel.removeAllAnimations()
                 layer.addSublayer(panel)
+                panel.setOpacity(0, nil)
+                panel.isHidden = true
+                wasOpen = false
             }
         #endif
         let opening = isOpen && !wasOpen
