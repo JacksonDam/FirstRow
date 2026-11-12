@@ -679,6 +679,7 @@ extension MenuView {
         didPlayLimitForCurrentHold = false
         pointer.pin = (state.identity, target)
         requestPhotoCoversForScrolledList()
+        requestYouTubeRowsForScrolledList()
         useLinearSelectionSweepAnimation = false
         selectionAnimationDuration = Self.pointerScrollDuration
         updateOverflowFadeVisibility(oldOffset: current, newOffset: target)

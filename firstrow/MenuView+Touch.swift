@@ -844,6 +844,7 @@ extension MenuView {
             pointer.pin = (scroll.identity, offset)
             updateOverflowFadeVisibility(oldOffset: old, newOffset: offset)
             requestPhotoCoversForScrolledList()
+            requestYouTubeRowsForScrolledList()
             objectWillChange.send()
         }
 

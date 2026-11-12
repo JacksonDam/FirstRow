@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 #if os(macOS)
     import AppKit
 #elseif canImport(UIKit)
@@ -82,6 +83,9 @@ struct YouTubeMenuState {
     var carouselShownKey: String?
     /// A list's first page, fetched for the carousel and kept for when the list is opened.
     var firstPages: [String: (page: YouTubePage, fetched: Date)] = [:]
+    /// When a scrolled list last asked for its rows' pictures, and whether it is to ask again.
+    var lastScrollRequestTime: CFTimeInterval = 0
+    var isScrollRequestPending = false
     /// The round pictures shown in a video's panel (a channel's), by their address.
     var panelPictures: [URL: NSImage] = [:]
     var panelPicturesInFlight: Set<URL> = []
@@ -266,12 +270,48 @@ extension MenuView {
         "playlist:" + playlist.id
     }
 
-    /// Fetches the small pictures of the rows around the selection that don't have theirs yet.
+    /// The rows the list is showing: the selected one's neighbourhood, or, where a finger or
+    /// the wheel has moved the list away from it, the rows that are in view there.
+    private var youtubeRowsInView: ClosedRange<Int> {
+        if let list = pointer.hitTester?.menuListScrollState(.third), list.rowPitch > 1,
+           let offset = pointer.pinnedScrollOffset(identity: list.identity)
+        {
+            let first = max(0, Int((-offset / list.rowPitch).rounded(.down)))
+            return first ... first + max(1, thirdLevelVisibleMenuRowCount)
+        }
+        return selectedThirdIndex ... selectedThirdIndex
+    }
+
+    /// A list moved by a finger or the wheel shows other rows than the selected one's
+    /// neighbours: their pictures are asked for as it goes (a few times a second, and once
+    /// more when it has stopped), and more videos as its end nears. They used to wait for a
+    /// row to be picked out.
+    func requestYouTubeRowsForScrolledList() {
+        guard thirdMenuMode == .youtube, isInThirdMenu else { return }
+        let now = CACurrentMediaTime()
+        guard now - youtube.lastScrollRequestTime >= 0.1 else {
+            guard !youtube.isScrollRequestPending else { return }
+            youtube.isScrollRequestPending = true
+            Task {
+                try? await firstRowSleep(0.12)
+                youtube.isScrollRequestPending = false
+                requestYouTubeRowsForScrolledList()
+            }
+            return
+        }
+        youtube.lastScrollRequestTime = now
+        loadMoreYouTubeVideosIfNeeded()
+        loadYouTubeRowPictures()
+    }
+
+    /// Fetches the small pictures of the rows in view, and a few either side, that don't have
+    /// theirs yet.
     private func loadYouTubeRowPictures() {
         guard thirdMenuMode == .youtube, let state = currentYouTubePage, state.isLoaded else { return }
         let rows = youtubeMenuListItems()
+        let inView = youtubeRowsInView
         var wanted: [(key: String, url: URL)] = []
-        for row in rows.indices where row >= selectedThirdIndex - 6 && row <= selectedThirdIndex + 12 {
+        for row in rows.indices where row >= inView.lowerBound - 6 && row <= inView.upperBound + 12 {
             if let index = youtubeVideoIndex(forRowID: rows[row].id), state.videos.indices.contains(index), let url = state.videos[index].rowThumbnailURL {
                 wanted.append((state.videos[index].id, url))
             } else if let index = youtubePlaylistIndex(forRowID: rows[row].id), state.playlists.indices.contains(index), let url = state.playlists[index].pictureURL {
@@ -492,7 +532,7 @@ extension MenuView {
     private func loadMoreYouTubeVideosIfNeeded() {
         guard thirdMenuMode == .youtube, let pageIndex = youtube.pages.indices.last else { return }
         let state = youtube.pages[pageIndex]
-        guard state.isLoaded, !state.isLoadingMore, selectedThirdIndex >= youtubeMenuListItems().count - 8 else { return }
+        guard state.isLoaded, !state.isLoadingMore, youtubeRowsInView.upperBound >= youtubeMenuListItems().count - 8 else { return }
         guard let continuation = state.continuation, state.videos.count < 400 else { return }
         youtube.pages[pageIndex].isLoadingMore = true
         let requestID = youtube.requestID
