@@ -314,7 +314,7 @@ final class MenuSceneRenderer: TransactionRendering {
             }
         }
         memo.theme = theme
-        sceneContent.setOpacity(menu.menuSceneOpacity, pass.animation)
+        sceneContent.setOpacity(menu.menuOpacityOnScreen, pass.animation)
         sceneContent.setTransform(Self.scale(isModern ? menu.menuSceneScale : 1, about: CGPoint(x: sceneSize.width * 0.5, y: sceneSize.height * 0.5)), pass.animation)
         menuGroup.place(CGRect(origin: .zero, size: sceneSize))
         menuGroup.setOpacity(isModern ? menu.modernSwapOpacity : 1, pass.animation)
@@ -678,7 +678,7 @@ final class MenuSceneRenderer: TransactionRendering {
         func onScreen(_ layer: CALayer) -> Double {
             Double(layer.presentation()?.opacity ?? layer.opacity)
         }
-        var heading = opacity * menu.menuSceneOpacity * (isModern ? menu.modernSwapOpacity : 1)
+        var heading = opacity * menu.menuOpacityOnScreen * (isModern ? menu.modernSwapOpacity : 1)
         var showing = onScreen(list.layer) * onScreen(sceneContent) * onScreen(menuGroup)
         for (overlay, target) in overlays {
             heading *= 1 - target

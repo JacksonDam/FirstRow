@@ -211,6 +211,9 @@ final class ModernKeyTile {
 @MainActor
 final class TextEntryLayer {
     let layer = SceneLayer()
+    /// The classic look's typing screens are on black of their own, whatever the menu under
+    /// them is doing: nothing of it shows through.
+    private let backing = SceneLayer()
     private let title = SceneLayer()
     private let prompt = SceneLayer()
     private let field = SceneLayer()
@@ -249,8 +252,9 @@ final class TextEntryLayer {
     init() {
         layer.opacity = 0
         layer.isHidden = true
+        backing.backgroundColor = CGColor(gray: 0, alpha: 1)
         field.masksToBounds = true
-        for sublayer in [title, prompt, field, selection.layer, code, status] {
+        for sublayer in [backing, title, prompt, field, selection.layer, code, status] {
             layer.addSublayer(sublayer)
         }
         field.addSublayer(fieldText)
@@ -288,6 +292,9 @@ final class TextEntryLayer {
         wasVisible = true
         layer.isHidden = false
         layer.frame = CGRect(origin: .zero, size: sceneSize)
+        // (Well past the scene's edges, which a wide screen shows more than the scene of.)
+        backing.isHidden = ModernTheme.isActive
+        backing.frame = CGRect(x: -sceneSize.width, y: -sceneSize.height, width: sceneSize.width * 3, height: sceneSize.height * 3)
         let centerX = sceneSize.width * 0.5
 
         func place(_ target: SceneLayer, _ spec: TextSpec, centerX: CGFloat, top: CGFloat) {

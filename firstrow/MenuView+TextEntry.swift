@@ -115,6 +115,12 @@ extension MenuView {
         hideTextEntryLayer { self.codeDisplay = nil }
     }
 
+    /// How strongly the menu shows. Under a typing screen that is up it doesn't, whatever
+    /// else has brought the menu back in meanwhile (a list that finished changing, say).
+    var menuOpacityOnScreen: Double {
+        menuSceneOpacity * (1 - textEntryOpacity)
+    }
+
     private func showTextEntryLayer() {
         withAnimation(.easeInOut(duration: 0.3)) {
             menuSceneOpacity = 0
