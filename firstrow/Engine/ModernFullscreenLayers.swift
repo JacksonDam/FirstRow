@@ -659,7 +659,12 @@ final class MovieOptionsLayer {
                     var collapsed = CATransform3DMakeTranslation(pivot.x, pivot.y, 0)
                     collapsed = CATransform3DScale(collapsed, collapsedScale, collapsedScale, 1)
                     collapsed = CATransform3DTranslate(collapsed, -pivot.x, -pivot.y, 0)
-                    glass.updatePanel(frame: windowFrame, open: isOpen, collapsed: collapsed, animation: move)
+                    // (Once it's on its way back into its button it's left to get there: what
+                    // it goes back into can change meanwhile, as when a video's panel comes out
+                    // and the button makes way, and it jumped to the new place part way.)
+                    if isOpen || closing {
+                        glass.updatePanel(frame: windowFrame, open: isOpen, collapsed: collapsed, animation: move)
+                    }
                 }
             #endif
         } else {
@@ -677,8 +682,11 @@ final class MovieOptionsLayer {
                 panel.setTransform(collapsed, nil)
                 panel.setOpacity(0, nil)
             }
-            panel.setTransform(isOpen ? CATransform3DIdentity : collapsed, move)
-            panel.setOpacity(isOpen ? 1 : 0, move)
+            // (On its way back into its button it's left to get there: see above.)
+            if isOpen || closing {
+                panel.setTransform(isOpen ? CATransform3DIdentity : collapsed, move)
+                panel.setOpacity(isOpen ? 1 : 0, move)
+            }
         }
         wasOpen = isOpen
         if isOpen {
