@@ -98,15 +98,15 @@ struct UprightStance: Equatable {
         isBent ? upperPane : CGRect(origin: .zero, size: sceneSize)
     }
 
-    /// Bent, a movie's controls sit together in the middle of the lower pane: its buttons, and
-    /// under them its transport bar, laid out as if the screen ended here. Flat, the bar is
-    /// along the bottom as on any screen.
-    var movieControlsFloor: CGFloat { isBent ? lowerPane.midY + 222 : sceneSize.height }
+    /// Bent, a movie's controls have the lower pane: its transport bar (with the options
+    /// button over its end, and the options over that) along the bottom of it, as along the
+    /// bottom of any screen, and its buttons in the middle of it.
+    var movieControlsFloor: CGFloat { isBent ? lowerPane.maxY : sceneSize.height }
 
-    /// The middle of a movie's row of buttons: with the rest of its controls under the fold, or
-    /// over the middle of the picture.
+    /// The middle of a movie's row of buttons: the middle of the pane under the fold, or over
+    /// the middle of the picture.
     var movieButtonsCenter: CGPoint {
-        CGPoint(x: sceneSize.width / 2, y: isBent ? lowerPane.midY - 86 : sceneSize.height / 2)
+        CGPoint(x: sceneSize.width / 2, y: isBent ? lowerPane.midY : sceneSize.height / 2)
     }
 }
 
