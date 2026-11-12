@@ -436,7 +436,12 @@ extension MenuView {
                     let canSignIn = record?.kind == .sharedFolder || record?.kind == .kodi
                     self.servers.error = wantsSignIn && record?.user != nil ? MediaServerError.signInFailed.localizedDescription : error.localizedDescription
                     finish(nil)
-                    if wantsSignIn, canSignIn, let record { self.askForSignIn(to: record) }
+                    guard wantsSignIn, canSignIn, let record else { return }
+                    // (Once the menu has finished changing, which an answer that comes at
+                    // once is ahead of: the menu would come back in over the question.)
+                    while self.isMenuFolderSwapTransitioning { try? await firstRowSleep(0.05) }
+                    guard self.servers.requestID == requestID, self.thirdMenuMode == .server else { return }
+                    self.askForSignIn(to: record)
                 }
             }
         }
