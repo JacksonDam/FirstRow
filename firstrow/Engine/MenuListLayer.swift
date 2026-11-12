@@ -166,6 +166,7 @@ final class MenuListLayer {
         let identity = Self.identity(of: items)
         if lastScrollOffset == nil || lastIdentity != identity {
             menu.pointer.listAppears(identity: identity)
+            menu.youtubeListAppeared()
         }
         let pinnedScrollOffset = menu.pointer.pinnedScrollOffset(
             identity: identity,

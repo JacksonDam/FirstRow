@@ -275,16 +275,27 @@ extension MenuView {
         "playlist:" + playlist.id
     }
 
-    /// The rows the list is showing: the selected one's neighbourhood, or, where a finger or
-    /// the wheel has moved the list away from it, the rows that are in view there.
+    /// The rows the list is showing: the ones in view where it's drawn (which a finger or the
+    /// wheel may have moved away from the selected row, now or before the list was left and
+    /// come back to), or the selected one's neighbourhood until it has been drawn.
     private var youtubeRowsInView: ClosedRange<Int> {
         if let list = pointer.hitTester?.menuListScrollState(.third), list.rowPitch > 1,
-           let offset = pointer.pinnedScrollOffset(identity: list.identity)
+           list.identity == MenuListLayer.identity(of: youtubeMenuListItems())
         {
+            let offset = pointer.pinnedScrollOffset(identity: list.identity) ?? list.scrollOffset
             let first = max(0, Int((-offset / list.rowPitch).rounded(.down)))
             return first ... first + max(1, thirdLevelVisibleMenuRowCount)
         }
         return selectedThirdIndex ... selectedThirdIndex
+    }
+
+    /// A list has just been drawn that wasn't the one drawn before it (called as it's drawn).
+    /// A list of videos come back to wants the pictures of the rows it shows: they may have
+    /// gone to make room for another list's while it was away, and they aren't the selected
+    /// row's neighbours where a finger left the list scrolled.
+    func youtubeListAppeared() {
+        guard thirdMenuMode == .youtube, isInThirdMenu else { return }
+        Task { @MainActor in self.loadYouTubeRowPictures() }
     }
 
     /// A list moved by a finger or the wheel shows other rows than the selected one's

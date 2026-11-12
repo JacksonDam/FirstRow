@@ -259,6 +259,8 @@ extension MenuView {
         youtubePanel = nil
         youtubePanelReveal = 0
         spreadYouTubePanel(to: 0, nil)
+        // (The list under the player shows again: its rows' pictures, if they've gone since.)
+        youtubeListAppeared()
         // The history has this video at its top now.
         if thirdMenuMode == .youtube, let index = youtube.pages.indices.last, case .history = youtube.pages[index].page {
             youtube.pages[index].videos = YouTubeStore.shared.history
