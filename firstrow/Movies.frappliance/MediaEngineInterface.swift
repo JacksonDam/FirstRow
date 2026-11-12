@@ -150,6 +150,15 @@
         /// The system's player, when it is what's showing the picture (it isn't for the kinds
         /// of video the engine has to decode itself).
         var systemPlayer: AVPlayer? { get }
+
+        /// On iPhone and iPad, has the system's picture in picture ready while this is set: a
+        /// movie that is playing goes into the system's small window by itself as First Row is
+        /// left. Nothing happens on other systems.
+        var keepsPictureInPictureReady: Bool { get set }
+        /// The picture is in the system's small window.
+        var isInPictureInPicture: Bool { get }
+        /// Brings the picture back from the small window to its place in First Row.
+        func leavePictureInPicture()
     }
 
     /// The engine itself: the one object First Row makes of the framework's own class.
@@ -172,7 +181,7 @@
     }
 
     enum MediaEngineInterface {
-        static let version = 2
+        static let version = 3
         /// The framework's class that is the engine.
         static let providerClassName = "FirstRowMediaEngine"
         static let frameworkName = "FirstRowMediaEngine"

@@ -44,6 +44,8 @@ final class MoviePlaybackLayers {
         /// while it plays, and comes back to its place here when First Row is opened again.
         private var pictureInPicture: AVPictureInPictureController?
         private var returnsFromPictureInPicture: NSObjectProtocol?
+        /// The engine's player whose picture in picture is being kept ready, when the movie is one of its.
+        private weak var pictureInPictureEngine: EngineMoviePlayer?
     #endif
 
     init() {
@@ -121,7 +123,18 @@ final class MoviePlaybackLayers {
             )
         #endif
         #if os(iOS)
-            keepPictureInPicture(for: showsPlayer)
+            // (A movie the engine plays has its picture in the engine's own layer, so the
+            // engine keeps the system's small window ready for it; any other is kept here.)
+            let enginePlayer = menu.moviePlayer as? EngineMoviePlayer
+            keepPictureInPicture(for: showsPlayer && enginePlayer == nil)
+            if enginePlayer !== pictureInPictureEngine {
+                pictureInPictureEngine?.keepsPictureInPictureReady = false
+                pictureInPictureEngine = enginePlayer
+            }
+            if let enginePlayer, enginePlayer.keepsPictureInPictureReady != showsPlayer {
+                enginePlayer.keepsPictureInPictureReady = showsPlayer
+            }
+            watchForReturnFromPictureInPicture()
         #endif
         var controlsSize = canvas.size
         if let upright = canvas.upright, isBent { controlsSize.height = upright.movieControlsFloor }
@@ -251,11 +264,20 @@ final class MoviePlaybackLayers {
             let controller = AVPictureInPictureController(playerLayer: playerLayer)
             controller?.canStartPictureInPictureAutomaticallyFromInline = true
             pictureInPicture = controller
+        }
+
+        /// When First Row is opened again, the picture comes back from the small window to
+        /// its place here, whichever player's it is.
+        private func watchForReturnFromPictureInPicture() {
             guard returnsFromPictureInPicture == nil else { return }
             returnsFromPictureInPicture = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolatedIfPossible {
-                    guard let controller = self?.pictureInPicture, controller.isPictureInPictureActive else { return }
-                    controller.stopPictureInPicture()
+                    if let controller = self?.pictureInPicture, controller.isPictureInPictureActive {
+                        controller.stopPictureInPicture()
+                    }
+                    if let engine = self?.pictureInPictureEngine, engine.isInPictureInPicture {
+                        engine.leavePictureInPicture()
+                    }
                 }
             }
         }

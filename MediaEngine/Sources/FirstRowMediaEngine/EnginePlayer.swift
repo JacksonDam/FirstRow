@@ -1,5 +1,8 @@
 import AetherEngine
 import AVFoundation
+#if os(iOS)
+    import AVKit
+#endif
 import Combine
 import Foundation
 import QuartzCore
@@ -106,6 +109,9 @@ final class EnginePlayer: NSObject, MediaEnginePlaying {
             publisher.sink { [weak self] _ in self?.noteChange() }.store(in: &watches)
         }
         watch(engine.$state)
+        #if os(iOS)
+            watch(engine.$softwarePiPSource)
+        #endif
         watch(engine.$playbackPhase)
         watch(engine.$duration)
         watch(engine.$audioTracks)
@@ -145,9 +151,78 @@ final class EnginePlayer: NSObject, MediaEnginePlaying {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.changeIsDue = false
+            #if os(iOS)
+                self.fitPictureInPicture()
+            #endif
             self.onChange?()
         }
     }
+
+    // MARK: - Picture in picture
+
+    #if os(iOS)
+        /// The system's small window for this movie, made round whichever layer has the
+        /// picture: the system player's own, or the layer the engine fills itself.
+        private var smallWindow: AVPictureInPictureController?
+        private weak var smallWindowLayer: CALayer?
+        private var wantsSmallWindow = false
+
+        var keepsPictureInPictureReady: Bool {
+            get { wantsSmallWindow }
+            set {
+                guard newValue != wantsSmallWindow else { return }
+                wantsSmallWindow = newValue
+                fitPictureInPicture()
+            }
+        }
+
+        var isInPictureInPicture: Bool { smallWindow?.isPictureInPictureActive == true }
+
+        func leavePictureInPicture() {
+            guard let smallWindow, smallWindow.isPictureInPictureActive else { return }
+            smallWindow.stopPictureInPicture()
+        }
+
+        /// Makes the small window for the layer that has the picture now, or lets it go. (The
+        /// layer changes with the movie, and with how the engine has to play it.)
+        private func fitPictureInPicture() {
+            guard wantsSmallWindow, AVPictureInPictureController.isPictureInPictureSupported() else {
+                if let smallWindow {
+                    if smallWindow.isPictureInPictureActive { smallWindow.stopPictureInPicture() }
+                    self.smallWindow = nil
+                    smallWindowLayer = nil
+                    engine.pictureInPictureActive = false
+                }
+                return
+            }
+            if let layer = engine.nativePlayerLayer {
+                guard smallWindowLayer !== layer else { return }
+                smallWindow = AVPictureInPictureController(playerLayer: layer)
+                smallWindowLayer = layer
+            } else if let source = engine.softwarePiPSource {
+                guard smallWindowLayer !== source.layer else { return }
+                smallWindow = source.makePictureInPictureController()
+                smallWindowLayer = source.layer
+            } else {
+                // (Nothing to show yet, or a way of playing that has no layer the system can take.)
+                guard smallWindow?.isPictureInPictureActive != true else { return }
+                smallWindow = nil
+                smallWindowLayer = nil
+                return
+            }
+            smallWindow?.canStartPictureInPictureAutomaticallyFromInline = true
+            smallWindow?.delegate = self
+        }
+    #else
+        var keepsPictureInPictureReady: Bool {
+            get { false }
+            set {}
+        }
+
+        var isInPictureInPicture: Bool { false }
+
+        func leavePictureInPicture() {}
+    #endif
 
     // MARK: - Opening and letting go
 
@@ -485,3 +560,20 @@ final class EnginePlayer: NSObject, MediaEnginePlaying {
 
     var systemPlayer: AVPlayer? { engine.currentAVPlayer }
 }
+
+#if os(iOS)
+    extension EnginePlayer: AVPictureInPictureControllerDelegate {
+        // The engine is told, so that it keeps the movie going while First Row is in the background.
+        nonisolated func pictureInPictureControllerWillStartPictureInPicture(_: AVPictureInPictureController) {
+            Task { @MainActor in self.engine.pictureInPictureActive = true }
+        }
+
+        nonisolated func pictureInPictureControllerDidStopPictureInPicture(_: AVPictureInPictureController) {
+            Task { @MainActor in self.engine.pictureInPictureActive = false }
+        }
+
+        nonisolated func pictureInPictureController(_: AVPictureInPictureController, failedToStartPictureInPictureWithError _: Error) {
+            Task { @MainActor in self.engine.pictureInPictureActive = false }
+        }
+    }
+#endif

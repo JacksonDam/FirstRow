@@ -168,6 +168,18 @@
         /// The system's player, when the engine is showing the picture with it.
         var systemPlayer: AVPlayer? { isMine ? engine.systemPlayer : nil }
 
+        /// See `MediaEnginePlaying`: picture in picture on iPhone and iPad.
+        var keepsPictureInPictureReady: Bool {
+            get { isMine && engine.keepsPictureInPictureReady }
+            set { if isMine { engine.keepsPictureInPictureReady = newValue } }
+        }
+
+        var isInPictureInPicture: Bool { isMine && engine.isInPictureInPicture }
+
+        func leavePictureInPicture() {
+            if isMine { engine.leavePictureInPicture() }
+        }
+
         // MARK: MoviePlayer
 
         var isMuted: Bool {
