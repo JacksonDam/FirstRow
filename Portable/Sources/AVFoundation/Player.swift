@@ -89,7 +89,13 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         set { newValue > 0 ? play() : pause() }
     }
 
-    public var timeControlStatus: TimeControlStatus { playing ? .playing : .paused }
+    /// Asked to play, the player is waiting while mpv has nothing to show: the file still
+    /// opening, a jump to another place still being made, more of a stream still to come.
+    public var timeControlStatus: TimeControlStatus {
+        guard playing else { return .paused }
+        if hasReachedEnd { return .playing }
+        return core?.isCoreIdle ?? true ? .waitingToPlayAtSpecifiedRate : .playing
+    }
 
     override public init() {
         super.init()
