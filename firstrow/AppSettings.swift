@@ -22,6 +22,7 @@ enum AppSettings {
     private static let screenSaverDelayKey = "screenSaverStartAfterSeconds"
     private static let onboardingKey = "hasCompletedOnboarding"
     private static let introMovieKey = "introMovieEnabled"
+    private static let youtubeKey = "showsYouTube"
     private static let legacyScreenSaverKey = "isScreenSaverEnabled"
 
     /// The look in use. It's asked for dozens of times in every pass over the interface, so
@@ -61,6 +62,15 @@ enum AppSettings {
         get { UserDefaults.standard.object(forKey: introMovieKey) as? Bool ?? true }
         set {
             UserDefaults.standard.set(newValue, forKey: introMovieKey)
+            NotificationCenter.default.post(name: didChangeNotification, object: nil)
+        }
+    }
+
+    /// YouTube is on the main menu. Off until it's turned on in Settings.
+    static var showsYouTube: Bool {
+        get { UserDefaults.standard.bool(forKey: youtubeKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: youtubeKey)
             NotificationCenter.default.post(name: didChangeNotification, object: nil)
         }
     }

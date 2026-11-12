@@ -6,6 +6,7 @@ extension MenuView {
     static let settingsScreenSaverItemID = "settings_screensaver"
     static let settingsSoundEffectsItemID = "settings_soundeffects"
     static let settingsIntroMovieItemID = "settings_intromovie"
+    static let settingsYouTubeItemID = "settings_youtube"
     private static let screenSaverPreviewItemID = "screensaver_preview"
     private static let screenSaverChoicePrefix = "screensaver_after_"
 
@@ -16,6 +17,7 @@ extension MenuView {
         case Self.settingsScreenSaverItemID: AppSettings.screenSaverDelayTitle(AppSettings.screenSaverDelay)
         case Self.settingsThemeItemID: AppSettings.theme.title
         case Self.settingsIntroMovieItemID: AppSettings.playsIntroMovieAtLaunch ? "On" : "Off"
+        case Self.settingsYouTubeItemID: AppSettings.showsYouTube ? "On" : "Off"
         default: nil
         }
     }
@@ -37,10 +39,25 @@ extension MenuView {
             AppSettings.playsIntroMovieAtLaunch.toggle()
             objectWillChange.send()
             playSound(named: "Selection")
+        case Self.settingsYouTubeItemID:
+            setShowsYouTube(!AppSettings.showsYouTube)
+            playSound(named: "Selection")
         default:
             return false
         }
         return true
+    }
+
+    /// Puts YouTube on the main menu or takes it off. The main menu's selection stays on the
+    /// item it was on (Settings, where this is changed), whose place in the menu moves by one.
+    func setShowsYouTube(_ shows: Bool) {
+        let selectedID = menuItems.indices.contains(selectedIndex) ? menuItems[selectedIndex].id : nil
+        AppSettings.showsYouTube = shows
+        menuItems = Self.shownRootItems()
+        if let index = menuItems.firstIndex(where: { $0.id == selectedID }), index != selectedIndex {
+            withTransaction(.instant) { selectedIndex = index }
+        }
+        objectWillChange.send()
     }
 
     /// Fades to black, changes the look, and fades back in on the same row.

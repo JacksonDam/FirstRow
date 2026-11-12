@@ -47,7 +47,12 @@ enum MenuStateWatch {
 final class MenuView: ObservableObject {
     /// Sends before any `@Published` state changes, and when something else asks for a redraw.
     let objectWillChange = ObservableObjectPublisher()
-    let menuItems = MenuConfiguration.rootItems
+    /// The main menu's items: YouTube is among them once it's turned on in Settings.
+    var menuItems = MenuView.shownRootItems()
+
+    static func shownRootItems() -> [RootMenuItemConfig] {
+        MenuConfiguration.rootItems.filter { $0.id != "youtube" || AppSettings.showsYouTube }
+    }
 
     // MARK: - Layout constants
 

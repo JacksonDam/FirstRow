@@ -31,6 +31,7 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
             .init(id: "settings_soundeffects", title: "Sound Effects", trailingText: "On"),
             .init(id: "settings_theme", title: "Theme", trailingText: "Classic"),
             .init(id: "settings_intromovie", title: "Intro Movie", trailingText: "On"),
+            .init(id: "settings_youtube", title: "YouTube", trailingText: "Off"),
         ]
         #if os(macOS) || FIRSTROW_PORTABLE
             submenuItems.append(.init(id: "settings_media_folders", title: "Media Folders", trailingText: "..."))
