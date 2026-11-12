@@ -301,8 +301,15 @@ open class AVPlayer: NSObject, @unchecked Sendable {
             let language = core.string("track-list/\(index)/lang") ?? ""
             let title = core.string("track-list/\(index)/title") ?? ""
             let name = PlayerTrack.languageName(language)
-            let label = [name, title].filter { !$0.isEmpty }.joined(separator: " – ")
-            result.append(PlayerTrack(id: id, title: label.isEmpty ? "Track \(result.count + 1)" : label, isSelected: core.flag("track-list/\(index)/selected") ?? false))
+            var label = [name, title].filter { !$0.isEmpty }.joined(separator: ": ")
+            if label.isEmpty { label = "Track \(result.count + 1)" }
+            // (For sound, how many speakers it's for, unless its name already says.)
+            if type == "audio", let layout = PlayerTrack.layoutName(channels: core.int("track-list/\(index)/demux-channel-count") ?? 0),
+               label.range(of: layout, options: .caseInsensitive) == nil
+            {
+                label += " (\(layout))"
+            }
+            result.append(PlayerTrack(id: id, title: label, isSelected: core.flag("track-list/\(index)/selected") ?? false))
         }
         return result
     }
@@ -713,6 +720,17 @@ public struct PlayerTrack: Equatable {
     public let id: Int
     public let title: String
     public let isSelected: Bool
+
+    static func layoutName(channels: Int) -> String? {
+        switch channels {
+        case 1: "Mono"
+        case 2: "Stereo"
+        case 6: "5.1"
+        case 7: "6.1"
+        case 8: "7.1"
+        default: nil
+        }
+    }
 
     /// "English" for "eng" or "en", or the code itself when it isn't known.
     static func languageName(_ code: String) -> String {

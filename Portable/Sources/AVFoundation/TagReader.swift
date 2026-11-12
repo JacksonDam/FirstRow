@@ -79,7 +79,12 @@ enum TagReader {
         }
         lock.unlock()
         var info = MediaFileInfo()
-        if let reader = FileReader(url) {
+        var isFolder: ObjCBool = false
+        if url.isFileURL, FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder), isFolder.boolValue {
+            // (A disc kept as a folder of its files, which mpv plays as the disc.)
+            info.hasVideo = true
+            info.hasAudio = true
+        } else if let reader = FileReader(url) {
             let head = reader.read(0, 64)
             let ext = url.pathExtension.lowercased()
             if ascii(head, 0, 3) == "ID3" {
@@ -99,7 +104,7 @@ enum TagReader {
                 info.hasAudio = true
             }
             if ext == "mp3", info.tags.isEmpty { readID3v1(reader, &info) }
-            if ["mkv", "avi", "webm", "wmv", "flv", "mpg", "mpeg", "ts", "m2ts", "ogv"].contains(ext) {
+            if Self.videoExtensions.contains(ext) {
                 info.hasVideo = true
                 info.hasAudio = true
             }
@@ -114,6 +119,13 @@ enum TagReader {
         lock.unlock()
         return withPictures ? info : kept
     }
+
+    /// The kinds of file that hold a movie, apart from those read above for what they hold.
+    private static let videoExtensions: Set<String> = [
+        "mkv", "avi", "webm", "wmv", "flv", "mpg", "mpeg", "ts", "m2ts", "ogv",
+        "3g2", "asf", "divx", "dvr-ms", "evo", "f4v", "img", "iso", "m1v", "m2t", "m2v", "mk3d", "mpe", "mpv", "mts", "mxf",
+        "ogm", "rm", "rmvb", "tp", "trp", "vob", "wtv",
+    ]
 
     // MARK: ID3
 

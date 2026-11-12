@@ -180,6 +180,12 @@ final class MPVCore {
         set("ytdl", "no")
         // Cover art in audio files is not a video to show.
         set("audio-display", "no")
+        // Interlaced video (a DVD's, a broadcast's) is deinterlaced, and what isn't is left
+        // as it is. (A libmpv too old to tell the two apart leaves everything as it is.)
+        set("deinterlace", "auto")
+        // A movie's subtitle files kept beside it ("Film.srt", "Film.en.srt") are offered
+        // with its own.
+        set("sub-auto", "fuzzy")
         if Self.silent { set("ao", "null") }
         guard mpv_initialize(handle) >= 0 else {
             mpv_terminate_destroy(handle)
