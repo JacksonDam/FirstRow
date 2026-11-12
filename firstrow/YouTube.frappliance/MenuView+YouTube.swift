@@ -56,6 +56,7 @@ struct YouTubePageState {
     var playlists: [YouTubePlaylist] = []
     /// A page come to from a video that was playing (its channel's): the video, and where it
     /// had got to. Back on this page goes back to the video there.
+    /// (One page at most has one: see `placeYouTubePage`.)
     var resumes: YouTubeResumePoint?
 }
 
@@ -438,8 +439,16 @@ extension MenuView {
     /// change from one page to the next: inside that change, or for a page that takes its
     /// place while a video covers the menus (`resuming` the video, when Back is to go back to
     /// it).
+    ///
+    /// Going back passes one video at most, the last one left for a page. So a page come to
+    /// from a video takes the place of an earlier such page and of everything opened from
+    /// it: however many videos' channels were gone through, Back from the last of those
+    /// videos is at the list the first was chosen from.
     func placeYouTubePage(_ page: YouTubeMenuPage, resuming point: YouTubeResumePoint? = nil) {
         rememberYouTubeSelection()
+        if point != nil, let earlier = youtube.pages.firstIndex(where: { $0.resumes != nil }), earlier > 0 {
+            youtube.pages.removeSubrange(earlier...)
+        }
         var state = YouTubePageState(page: page)
         state.resumes = point
         youtube.pages.append(state)

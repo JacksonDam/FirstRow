@@ -543,16 +543,18 @@ extension MenuView {
             spreadYouTubePanel(to: 0, nil)
             stopMoviePlaybackAndReturnToMenu()
         }
-        // (One of the channel's own videos, chosen from its page: the page is under it already.)
-        if case .list(.channel(id, _)) = currentYouTubePage?.page {
-            leaveVideo()
-            return
-        }
         var point: YouTubeResumePoint?
         if let session = youtubeSession {
             var seconds = moviePlaybackCurrentSeconds
             if let shown = moviePlayer?.positionSeconds { seconds = max(seconds, shown) }
             point = YouTubeResumePoint(video: session.video, seconds: session.playback.isLive || !seconds.isFinite ? 0 : seconds)
+        }
+        // (One of the channel's own videos, chosen from its page: the page is under it
+        // already, and Back on it now goes back to this video, the last one left for it.)
+        if case .list(.channel(id, _)) = currentYouTubePage?.page, let index = youtube.pages.indices.last {
+            if let point { youtube.pages[index].resumes = point }
+            leaveVideo()
+            return
         }
         youtube.isOpeningChannel = true
         placeYouTubePage(.list(.channel(id: id, name: name)), resuming: point)
