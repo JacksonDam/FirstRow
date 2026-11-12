@@ -73,6 +73,12 @@ final class YouTubePanelLayer {
     /// shared out between them), and how far apart their tops are.
     private var rowFrames: [CGRect] = []
     private var rowPitches: [CGFloat] = []
+    /// Each laid-out row's height, how much of the list shows at once, and the room kept
+    /// above the first row.
+    private var rowHeights: [CGFloat] = []
+    private var shownHeight: CGFloat = 0
+    private var headroom: CGFloat = 0
+    private var lastScrolled: CGFloat = 0
 
     /// The row at a point of the canvas, while the panel is out.
     func row(at point: CGPoint) -> Int? {
@@ -83,6 +89,13 @@ final class YouTubePanelLayer {
     /// From a row's top to the next one's, on the canvas.
     func pitch(ofRow index: Int) -> CGFloat? {
         rowPitches.indices.contains(index) ? rowPitches[index] : nil
+    }
+
+    /// How much more of a row there is than shows at once (none for most), and how far a
+    /// step moves a row like that.
+    func room(ofRow index: Int) -> (overflow: CGFloat, page: CGFloat) {
+        guard rowHeights.indices.contains(index), shownHeight > 0 else { return (0, 400) }
+        return (max(0, headroom + rowHeights[index] + 12 - shownHeight), max(120, (shownHeight * 0.5).rounded()))
     }
 
     /// Where the panel goes on a canvas of this size.
@@ -110,6 +123,8 @@ final class YouTubePanelLayer {
         let mark = SceneLayer()
         let body = SceneLayer()
         let footer = SceneLayer()
+        /// The words, a few lines to a piece when there are many (inside `body`).
+        var bodyPieces: [SceneLayer] = []
         var key = ""
 
         init(in holder: SceneLayer) {
@@ -272,7 +287,7 @@ final class YouTubePanelLayer {
 
         // (Room above the first row inside what's shown of the list: the modern look's tile
         // under the row picked out grows a little past the row, and casts a shadow.)
-        let headroom: CGFloat = isModern ? 14 : 0
+        headroom = isModern ? 14 : 0
         let top = titleTop + titleGraphic.size.height + (isModern ? 22 : 30) - headroom
         let viewport = CGRect(x: 0, y: top, width: width, height: frame.height - top - (isModern ? 22 : 40))
         clip.place(viewport)
@@ -284,6 +299,7 @@ final class YouTubePanelLayer {
         let gap: CGFloat = isModern ? 4 : 34
         var tops: [CGFloat] = []
         var pitches: [CGFloat] = []
+        var heights: [CGFloat] = []
         var y: CGFloat = headroom
         var live = Set<String>()
         let kindChanged = lastKind != nil && lastKind != content.kind
@@ -320,6 +336,7 @@ final class YouTubePanelLayer {
             }
             tops.append(y)
             pitches.append(block.height + gap)
+            heights.append(block.height)
             // Its tile: nothing to see at rest; white under the modern look's focus, with the
             // menus' shadow, growing a little as the focus arrives (not as the panel comes out,
             // or changes what it shows).
@@ -350,7 +367,12 @@ final class YouTubePanelLayer {
         }
 
         // The one picked out sits at the top of the list, until the list's end comes up.
-        let wanted = tops.indices.contains(focus) ? tops[focus] - headroom : 0
+        // (One with more to it than the panel shows moves up under it by as much as it has
+        // been asked to.)
+        rowHeights = heights
+        shownHeight = viewport.height
+        let scrolled = min(max(0, content.scrolled), room(ofRow: focus).overflow)
+        let wanted = tops.indices.contains(focus) ? tops[focus] - headroom + scrolled : 0
         let offset = prepared == content.rows.count ? min(wanted, max(0, contentHeight - viewport.height)) : wanted
         let shownViewport = viewport.offsetBy(dx: frame.minX, dy: frame.minY)
         rowPitches = pitches
@@ -358,7 +380,8 @@ final class YouTubePanelLayer {
             CGRect(x: frame.minX, y: shownViewport.minY + tops[index] - offset - gap / 2, width: width, height: pitches[index])
                 .intersection(shownViewport)
         }
-        let slides = lastFocus != nil && lastFocus != focus && !wasHidden && !kindChanged
+        let slides = lastFocus != nil && (lastFocus != focus || lastScrolled != scrolled) && !wasHidden && !kindChanged
+        lastScrolled = scrolled
         let slide: Animation = isModern ? .smooth(duration: 0.34) : .easeInOut(duration: 0.22)
         list.setFrame(CGRect(x: 0, y: -offset, width: width, height: max(contentHeight, 1)), slides ? slide : (offset == lastOffset || kindChanged ? nil : pass.animation))
         lastFocus = focus
@@ -370,6 +393,44 @@ final class YouTubePanelLayer {
     private static let modernCornerRadius: CGFloat = 34
 
     /// Sets a row's words (and its picture, tick or arrow) in its block, and the block's height.
+    /// A row's words as the pieces they're drawn in: all of them as one, unless there are
+    /// many; then paragraph by paragraph, a long paragraph a few lines at a time.
+    private static func pieces(of text: String) -> [(text: String, startsParagraph: Bool)] {
+        guard text.count > 600 || text.split(whereSeparator: \.isNewline).count > 12 else { return [(text, true)] }
+        var pieces: [(text: String, startsParagraph: Bool)] = []
+        for paragraph in text.components(separatedBy: "\n\n") {
+            var startsParagraph = true
+            var lines: [String] = []
+            var length = 0
+            func flush() {
+                let piece = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !piece.isEmpty {
+                    pieces.append((piece, startsParagraph))
+                    startsParagraph = false
+                }
+                lines = []
+                length = 0
+            }
+            for line in paragraph.split(whereSeparator: \.isNewline).map(String.init) {
+                var rest = Substring(line)
+                // (A line as long as a page: cut at spaces.)
+                while rest.count > 420 {
+                    let cut = rest.prefix(420)
+                    let end = cut.lastIndex(of: " ") ?? cut.endIndex
+                    flush()
+                    lines = [String(rest[..<end]).trimmingCharacters(in: .whitespaces)]
+                    flush()
+                    rest = rest[end...]
+                }
+                if length + rest.count > 420 || lines.count >= 7 { flush() }
+                lines.append(String(rest))
+                length += rest.count
+            }
+            flush()
+        }
+        return pieces
+    }
+
     /// Draws a row's lettering for one of its states and gives the row's height.
     private func set(_ block: Words, to row: YouTubePanelRow, picture: NSImage?, look: Look) -> CGFloat {
         let scale = look.scale
@@ -423,17 +484,38 @@ final class YouTubePanelLayer {
         // The words.
         block.body.isHidden = row.body.isEmpty
         if !row.body.isEmpty {
-            let bodyGraphic = TextRenderer.render(TextSpec(
-                text: row.body,
-                fontName: row.isTitle ? look.bold : look.regular,
-                size: row.isTitle ? 36 : 28,
-                color: look.words,
-                wrapWidth: column - left,
-                lineSpacing: 3,
-            ), scale: scale)
+            // (A long description is one row, drawn a few lines to a piece: as one picture it
+            // would be thousands of pixels tall.)
+            let size: CGFloat = row.isTitle ? 36 : 28
+            let pieces = Self.pieces(of: row.body)
+            while block.bodyPieces.count < pieces.count {
+                let piece = SceneLayer()
+                block.body.addSublayer(piece)
+                block.bodyPieces.append(piece)
+            }
+            var pieceTop: CGFloat = 0
+            for (index, layer) in block.bodyPieces.enumerated() {
+                guard pieces.indices.contains(index) else {
+                    layer.isHidden = true
+                    layer.contents = nil
+                    continue
+                }
+                layer.isHidden = false
+                let graphic = TextRenderer.render(TextSpec(
+                    text: pieces[index].text,
+                    fontName: row.isTitle ? look.bold : look.regular,
+                    size: size,
+                    color: look.words,
+                    wrapWidth: column - left,
+                    lineSpacing: 3,
+                ), scale: scale)
+                if index > 0 { pieceTop += pieces[index].startsParagraph ? (size * 1.25).rounded() : 3 }
+                layer.show(graphic, at: CGPoint(x: 0, y: pieceTop))
+                pieceTop += graphic.size.height
+            }
             let bodyTop = height == 0 ? 0 : height + 8
-            block.body.show(bodyGraphic, at: CGPoint(x: pad.width + left, y: pad.height + bodyTop))
-            height = bodyTop + bodyGraphic.size.height
+            block.body.frame = CGRect(x: pad.width + left, y: pad.height + bodyTop, width: column - left, height: pieceTop)
+            height = bodyTop + pieceTop
         }
         // A dim last line.
         block.footer.isHidden = row.footer.isEmpty

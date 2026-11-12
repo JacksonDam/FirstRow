@@ -932,7 +932,19 @@ extension MenuSceneRenderer {
     }
 
     func youtubePanelRowTravel(_ index: Int) -> CGFloat {
-        (playback.panel.pitch(ofRow: index) ?? 220) * max(fullscreenCanvas.scale, 0.0001)
+        let pitch = playback.panel.pitch(ofRow: index) ?? 220
+        // (Past the end of a row longer than the panel, a little further moves on.)
+        let overflow = playback.panel.room(ofRow: index).overflow
+        let needed = overflow > 0 ? overflow + min(pitch - overflow, 160) : pitch
+        return needed * max(fullscreenCanvas.scale, 0.0001)
+    }
+
+    var youtubePanelScale: CGFloat {
+        max(fullscreenCanvas.scale, 0.0001)
+    }
+
+    func youtubePanelRoom(ofRow index: Int) -> (overflow: CGFloat, page: CGFloat) {
+        playback.panel.room(ofRow: index)
     }
 
     var pointerScene: PointerScene {

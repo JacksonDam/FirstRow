@@ -289,7 +289,9 @@ extension MenuView {
             }
             if let hit = youtubePanelHit(at: point) {
                 state.mode = .panel(onPanel: hit.isOnPanel)
-                state.panelAnchorY = point.y
+                // (Where the finger would have been with the row picked out at its top.)
+                let room = pointer.hitTester?.youtubePanelRoom(ofRow: youtubePanel?.focused ?? 0)
+                state.panelAnchorY = point.y + min(youtubePanel?.scrolled ?? 0, room?.overflow ?? 0) * (pointer.hitTester?.youtubePanelScale ?? 1)
                 state.panelDidMove = false
                 return
             }
@@ -1044,6 +1046,12 @@ extension MenuView {
                 }
             }
             showYouTubePanelRow(focus)
+            // A row with more to it than the panel shows follows the finger meanwhile.
+            let room = hitTester.youtubePanelRoom(ofRow: focus)
+            if room.overflow > 0 || panel.scrolled > 0 {
+                let travelled = max(0, state.panelAnchorY - point.y) / max(hitTester.youtubePanelScale, 0.0001)
+                setYouTubePanelScrolled(min(room.overflow, travelled))
+            }
         }
 
         private func handleMovieTouchTap(at point: CGPoint) {

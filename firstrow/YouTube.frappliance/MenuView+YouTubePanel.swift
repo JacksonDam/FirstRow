@@ -71,6 +71,9 @@ struct YouTubePanelState {
     var countText: String?
     /// Where more comments or replies come from.
     var continuation: String?
+    /// How far the row picked out has been moved up, when there's more of it than the panel
+    /// shows at once (a long description, a long comment).
+    var scrolled: CGFloat = 0
     var isLoading = true
     var isLoadingMore = false
     /// Shown in place of rows when there are none.
@@ -142,9 +145,54 @@ extension MenuView {
     // MARK: Moving and pressing
 
     /// Picks out another row (for the wheel or a finger; the arrows have their own way below).
+    /// One step up or down the panel: more of the row picked out, while there's more of it
+    /// than the panel shows, then the next row (or the one before, at its end). False at
+    /// either end of the panel.
+    @discardableResult
+    func moveYouTubePanel(by direction: Int, playsSound: Bool = true) -> Bool {
+        guard var state = youtubePanel, isYouTubePanelOut, direction != 0 else { return false }
+        func room(_ index: Int) -> (overflow: CGFloat, page: CGFloat) {
+            pointer.hitTester?.youtubePanelRoom(ofRow: index) ?? (0, 400)
+        }
+        let here = room(state.focused)
+        let scrolled = min(max(0, state.scrolled), here.overflow)
+        if direction > 0 {
+            if scrolled < here.overflow - 0.5 {
+                state.scrolled = min(here.overflow, scrolled + here.page)
+            } else if state.focused + 1 < state.rows.count {
+                state.focused += 1
+                state.scrolled = 0
+            } else {
+                return false
+            }
+        } else {
+            if scrolled > 0.5 {
+                state.scrolled = max(0, scrolled - here.page)
+            } else if state.focused > 0 {
+                state.focused -= 1
+                // (Come to from below, it shows its end.)
+                state.scrolled = room(state.focused).overflow
+            } else {
+                return false
+            }
+        }
+        youtubePanel = state
+        if playsSound { playSound(named: "SelectionChange") }
+        loadMoreYouTubePanelRowsIfNeeded()
+        return true
+    }
+
+    /// Moves the row picked out up under the panel by this much (a finger does, on a long one).
+    func setYouTubePanelScrolled(_ scrolled: CGFloat) {
+        guard var state = youtubePanel, isYouTubePanelOut, abs(state.scrolled - scrolled) > 0.5 else { return }
+        state.scrolled = scrolled
+        youtubePanel = state
+    }
+
     func showYouTubePanelRow(_ index: Int, playsSound: Bool = false) {
         guard var state = youtubePanel, isYouTubePanelOut, index != state.focused, state.rows.indices.contains(index) else { return }
         state.focused = index
+        state.scrolled = 0
         youtubePanel = state
         if playsSound { playSound(named: "SelectionChange") }
         loadMoreYouTubePanelRowsIfNeeded()
@@ -173,23 +221,8 @@ extension MenuView {
             } else {
                 closeYouTubePanel()
             }
-        case .upArrow:
-            guard state.focused > 0 else {
-                playLimitSoundOnceForCurrentHold()
-                return true
-            }
-            state.focused -= 1
-            youtubePanel = state
-            playSound(named: "SelectionChange")
-        case .downArrow:
-            guard state.focused + 1 < state.rows.count else {
-                playLimitSoundOnceForCurrentHold()
-                return true
-            }
-            state.focused += 1
-            youtubePanel = state
-            playSound(named: "SelectionChange")
-            loadMoreYouTubePanelRowsIfNeeded()
+        case .upArrow, .downArrow:
+            if !moveYouTubePanel(by: key == .downArrow ? 1 : -1) { playLimitSoundOnceForCurrentHold() }
         case .enter, .rightArrow:
             if state.rows.indices.contains(state.focused), state.rows[state.focused].isPressable {
                 pressFocusedYouTubePanelRow()
@@ -396,8 +429,10 @@ extension MenuView {
         // (The player was told the whole description; the page about the video has it with
         // its links cut short.)
         let description = session.playback.description.flatMap { $0.isEmpty ? nil : $0 } ?? details.description
-        for (index, paragraph) in Self.youtubeDescriptionParagraphs(description).enumerated() {
-            rows.append(YouTubePanelRow(id: "text:\(index)", role: .text, body: paragraph))
+        // (One row, however many paragraphs: it moves up under the arrows when it's longer
+        // than the panel.)
+        if let description = description?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+            rows.append(YouTubePanelRow(id: "description", role: .text, body: description))
         }
         changeYouTubePanel(videoID, .info) { state in
             let focusedID = state.rows.indices.contains(state.focused) ? state.rows[state.focused].id : nil
@@ -411,36 +446,6 @@ extension MenuView {
 
     /// A description as rows to move through: its paragraphs, a long one cut into pieces of a
     /// few lines at the ends of sentences or lines.
-    static func youtubeDescriptionParagraphs(_ text: String?) -> [String] {
-        guard let text else { return [] }
-        var pieces: [String] = []
-        for paragraph in text.components(separatedBy: "\n\n") {
-            var lines: [String] = []
-            var length = 0
-            func flush() {
-                let piece = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-                if !piece.isEmpty { pieces.append(piece) }
-                lines = []
-                length = 0
-            }
-            for line in paragraph.split(whereSeparator: \.isNewline).map(String.init) {
-                var rest = Substring(line)
-                // (A line as long as a page: cut at spaces.)
-                while rest.count > 420 {
-                    let cut = rest.prefix(420)
-                    let end = cut.lastIndex(of: " ") ?? cut.endIndex
-                    flush()
-                    pieces.append(String(rest[..<end]).trimmingCharacters(in: .whitespaces))
-                    rest = rest[end...]
-                }
-                if length + rest.count > 420 || lines.count >= 7 { flush() }
-                lines.append(String(rest))
-                length += rest.count
-            }
-            flush()
-        }
-        return pieces
-    }
 
     /// Leaves the video for its channel's page: the channel's videos, in the menus.
     private func openYouTubeChannelFromPanel(id: String, name: String) {

@@ -152,8 +152,11 @@ final class ModernKeyTile {
         let radius = focused ? cornerRadius + 3 : cornerRadius
         tile.set("cornerRadius", to: radius, unchanged: tile.cornerRadius == radius, animation: growth)
         content.place(rest)
+        // (A tall tile's lettering grows by less: by the menus' share, a long description's
+        // first and last lines would leave the tile.)
+        let lift = min(ModernTheme.focusedContentScale, 1 + 8 / max(rest.height, 1))
         var grown = CATransform3DMakeTranslation(rest.midX, rest.midY, 0)
-        grown = CATransform3DScale(grown, ModernTheme.focusedContentScale, ModernTheme.focusedContentScale, 1)
+        grown = CATransform3DScale(grown, lift, lift, 1)
         grown = CATransform3DTranslate(grown, -rest.midX, -rest.midY, 0)
         content.setTransform(focused ? grown : CATransform3DIdentity, growth)
 

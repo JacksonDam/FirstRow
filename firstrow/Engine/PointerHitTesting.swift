@@ -92,6 +92,11 @@ protocol PointerHitTesting: AnyObject {
     func youtubePanelRow(at windowPoint: CGPoint) -> (isOnPanel: Bool, index: Int?)?
     /// How far a finger travels, in window points, to move on from row `index` to the next.
     func youtubePanelRowTravel(_ index: Int) -> CGFloat
+    /// How much more of row `index` there is than the panel shows at once, and how far a step
+    /// moves it (both in the panel's own points).
+    func youtubePanelRoom(ofRow index: Int) -> (overflow: CGFloat, page: CGFloat)
+    /// Window points to one of the panel's own.
+    var youtubePanelScale: CGFloat { get }
     /// The on-screen button at `windowPoint`, if one is showing there.
     func touchControl(at windowPoint: CGPoint) -> TouchControl?
     /// Shows an on-screen button as held down (nil for none).

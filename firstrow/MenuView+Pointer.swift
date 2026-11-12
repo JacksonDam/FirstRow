@@ -548,11 +548,12 @@ extension MenuView {
         }
         pointer.lastWheelDate = now
         if isMoviePlaybackVisible {
-            if let panel = youtubePanel, youtubePanelHit(at: point)?.isOnPanel == true {
-                // Over a video's panel the wheel goes through its rows, one a notch.
+            if youtubePanel != nil, youtubePanelHit(at: point)?.isOnPanel == true {
+                // Over a video's panel the wheel goes through its rows, one a notch (and
+                // through a row longer than the panel a step at a time).
                 pointer.wheelAccumulator += precise ? -dy / 40 : -dy
                 let steps = wholeSteps(&pointer.wheelAccumulator)
-                if steps != 0 { showYouTubePanelRow(max(0, min(panel.rows.count - 1, panel.focused + steps))) }
+                for _ in 0 ..< abs(steps) { moveYouTubePanel(by: steps > 0 ? 1 : -1, playsSound: false) }
                 return
             }
             // Ten seconds a notch.
