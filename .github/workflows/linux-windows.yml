@@ -16,7 +16,7 @@ jobs:
       - name: Install SDL 3, libmpv and Mesa
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y libsdl3-dev libmpv-dev libgl-dev libegl-dev libgl1-mesa-dri fonts-dejavu-core xz-utils
+          DEBIAN_FRONTEND=noninteractive apt-get install -y libsdl3-dev libmpv-dev libgl-dev libegl-dev libgl1-mesa-dri fonts-dejavu-core
       - name: Build
         run: Portable/scripts/build-linux.sh
       - name: Draw the main menu
@@ -32,7 +32,7 @@ jobs:
           path: |
             menu.png
             tv.png
-            dist/linux/FirstRow-linux-*.tar.xz
+            dist/linux/FirstRow-linux-*.tar.gz
 
   # The small libmpv the Windows package carries, built from source (kept from run to run
   # until the script that builds it changes).

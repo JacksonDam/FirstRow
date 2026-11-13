@@ -26,7 +26,7 @@ Portable/scripts/build-linux.sh
 dist/linux/FirstRow/first-row
 ```
 
-The Swift runtime is linked in, so `dist/linux/FirstRow` only needs SDL 3 and libmpv on the machine it runs on. The script also packs the folder as `dist/linux/FirstRow-linux-<machine>.tar.xz`, which is the download.
+The Swift runtime is linked in, so `dist/linux/FirstRow` only needs SDL 3 and libmpv on the machine it runs on. The script also packs the folder as `dist/linux/FirstRow-linux-<machine>.tar.gz`, which is the download.
 
 Shared folders (Sources > Add Server > Shared Folder) are read with Samba's client library, which First Row loads as it runs if the system has it (`libsmbclient.so.0`: the `libsmbclient0` package on Ubuntu and Debian, `libsmbclient` on Fedora, there already on most desktops, whose file managers use it). Without it First Row runs as before and doesn't offer shared folders. On Windows the system reaches shared folders itself.
 

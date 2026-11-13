@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds First Row for Linux into dist/linux/FirstRow, and packs that folder as
-# dist/linux/FirstRow-linux-<machine>.tar.xz.
+# dist/linux/FirstRow-linux-<machine>.tar.gz.
 # Needs Swift 6.4 (swift.org), SDL 3 and libmpv: on Ubuntu 26.04 and Debian 13,
 #   sudo apt install libsdl3-dev libmpv-dev libgl-dev
 set -e
@@ -64,9 +64,8 @@ echo "Added $entry"
 INSTALL
 chmod +x "$out/install.sh"
 echo "Built $out"
-# The download: xz makes the program a third smaller than gzip does, and every desktop's
-# archive manager and tar open it.
-archive="dist/linux/FirstRow-linux-$(uname -m).tar.xz"
+# The download: a .tar.gz, as every release's has been.
+archive="dist/linux/FirstRow-linux-$(uname -m).tar.gz"
 rm -f "$archive"
-tar -C dist/linux -cf - FirstRow | xz -9e -T0 > "$archive"
+tar -C dist/linux -cf - FirstRow | gzip -9 > "$archive"
 echo "Packed $archive ($(($(wc -c < "$archive") / 1048576)) MB)"
