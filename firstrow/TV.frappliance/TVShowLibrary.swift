@@ -281,6 +281,69 @@ enum TVShowNames {
     }
 }
 
+/// What a folder holds, read in one go: the name of each thing in it and whether it is a
+/// folder, with nothing more asked of the disk for each (a folder brought in whole can hold
+/// thousands of files, and may be on a drive or with a service that answers slowly).
+enum FolderReader {
+    typealias Child = (url: URL, isFolder: Bool)
+
+    static func children(of folder: URL) -> [Child]? {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles],
+        ) else { return nil }
+        return contents.map { ($0, (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true) }
+    }
+
+    /// Whether a folder is a disc kept as its files (see `MenuView.isDiscFolder`), told from
+    /// what has already been read of it.
+    static func isDisc(_ folder: URL, children: [Child]) -> Bool {
+        if folder.pathExtension.lowercased() == "dvdmedia" { return true }
+        return children.contains { child in
+            guard child.isFolder else { return false }
+            let name = child.url.lastPathComponent.uppercased()
+            return name == "VIDEO_TS" || name == "BDMV"
+        }
+    }
+
+    /// Whether a file is a movie, by the ending of its name. On iPhone and iPad the system
+    /// is asked about an ending First Row doesn't list, once for each ending.
+    static func isMovie(_ url: URL, _ movieExtensions: Set<String>) -> Bool {
+        let ending = url.pathExtension.lowercased()
+        if movieExtensions.contains(ending) { return true }
+        #if os(iOS)
+            guard !ending.isEmpty else { return false }
+            endingsLock.lock()
+            defer { endingsLock.unlock() }
+            if let known = endingsTheSystemKnows[ending] { return known }
+            let isMovie = UTType(filenameExtension: ending)?.conforms(to: .movie) ?? false
+            endingsTheSystemKnows[ending] = isMovie
+            return isMovie
+        #else
+            return false
+        #endif
+    }
+
+    #if os(iOS)
+        private static let endingsLock = NSLock()
+        nonisolated(unsafe) private static var endingsTheSystemKnows: [String: Bool] = [:]
+    #endif
+
+    /// Does a piece of work for each of `items`, several at a time when there are enough of
+    /// them to be worth it, and gives the answers back in the items' order.
+    static func each<Item, Answer>(of items: [Item], _ work: (Item) -> Answer) -> [Answer] {
+        guard items.count > 3 else { return items.map(work) }
+        var answers = [Answer?](repeating: nil, count: items.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: items.count) { index in
+            let answer = work(items[index])
+            lock.lock()
+            answers[index] = answer
+            lock.unlock()
+        }
+        return answers.map { $0! }
+    }
+}
+
 /// Looks through folders for episodes.
 enum TVShowScanner {
     /// How deep under a folder it looks, and how many files and folders it reads in all
@@ -294,29 +357,28 @@ enum TVShowScanner {
         var episodes: [TVEpisode] = []
         var seen = Set<String>()
         var left = most
-        func take(_ url: URL, _ values: URLResourceValues?) {
+        func take(_ url: URL) {
             guard var episode = TVShowNames.episode(at: url), seen.insert(episode.url.path).inserted else { return }
-            let values = values ?? (try? url.resourceValues(forKeys: dateKeys))
-            episode.date = date(from: values)
+            // (Only an episode's dates are read: most files in a folder are no episode.)
+            episode.date = date(from: try? url.resourceValues(forKeys: dateKeys))
             episodes.append(episode)
         }
         func look(in folder: URL, level: Int) {
-            guard left > 0, let contents = try? FileManager.default.contentsOfDirectory(
-                at: folder, includingPropertiesForKeys: Array(scanKeys.union(dateKeys)), options: [.skipsHiddenFiles],
-            ) else { return }
-            for url in contents {
+            guard left > 0, let children = FolderReader.children(of: folder) else { return }
+            // (A disc kept as a folder is a movie, not a folder of episodes.)
+            if level > 0, FolderReader.isDisc(folder, children: children) { return }
+            for child in children {
                 left -= 1
                 guard left > 0 else { return }
-                let values = try? url.resourceValues(forKeys: scanKeys.union(dateKeys))
-                if values?.isDirectory == true {
-                    if level < depth, !MenuView.isDiscFolder(url) { look(in: url, level: level + 1) }
-                } else if isMovie(url, values, movieExtensions) {
-                    take(url, values)
+                if child.isFolder {
+                    if level < depth { look(in: child.url, level: level + 1) }
+                } else if FolderReader.isMovie(child.url, movieExtensions) {
+                    take(child.url)
                 }
             }
         }
-        for file in files where isMovie(file, nil, movieExtensions) {
-            take(file, nil)
+        for file in files where FolderReader.isMovie(file, movieExtensions) {
+            take(file)
         }
         for folder in folders {
             look(in: folder, level: 0)
@@ -325,39 +387,29 @@ enum TVShowScanner {
     }
 
     /// Whether the movies in a folder, and in the folders inside it, are all episodes (and
-    /// there is one at least): such a folder has nothing to show in Movies Folder.
-    static func holdsOnlyEpisodes(_ folder: URL, movieExtensions: Set<String>) -> Bool {
+    /// there is one at least): such a folder has nothing to show in Movies Folder. `children`
+    /// is what the folder holds, where that has been read already.
+    static func holdsOnlyEpisodes(_ folder: URL, children known: [FolderReader.Child]? = nil, movieExtensions: Set<String>) -> Bool {
         var left = 1500
         var episodes = 0
-        func look(in folder: URL, level: Int) -> Bool {
-            guard let contents = try? FileManager.default.contentsOfDirectory(
-                at: folder, includingPropertiesForKeys: Array(scanKeys), options: [.skipsHiddenFiles],
-            ) else { return false }
-            for url in contents {
-                left -= 1
-                // (Too much to read through: it is shown as the folder it is.)
-                guard left > 0 else { return false }
-                let values = try? url.resourceValues(forKeys: scanKeys)
-                if values?.isDirectory == true {
-                    if MenuView.isDiscFolder(url) || level >= 4 { return false }
-                    if !look(in: url, level: level + 1) { return false }
-                } else if isMovie(url, values, movieExtensions) {
-                    guard TVShowNames.episode(at: url) != nil else { return false }
-                    episodes += 1
-                }
+        func look(in folder: URL, _ known: [FolderReader.Child]?, level: Int) -> Bool {
+            guard let children = known ?? FolderReader.children(of: folder) else { return false }
+            left -= children.count
+            // (Too much to read through: it is shown as the folder it is.)
+            guard left > 0 else { return false }
+            if FolderReader.isDisc(folder, children: children) { return false }
+            // Its own files first: one movie that is no episode settles it, without the
+            // folders inside it being read at all.
+            for child in children where !child.isFolder && FolderReader.isMovie(child.url, movieExtensions) {
+                guard TVShowNames.episode(at: child.url) != nil else { return false }
+                episodes += 1
+            }
+            for child in children where child.isFolder {
+                guard level < 4, look(in: child.url, nil, level: level + 1) else { return false }
             }
             return true
         }
-        return look(in: folder, level: 0) && episodes > 0
-    }
-
-    static var scanKeys: Set<URLResourceKey> {
-        #if canImport(UniformTypeIdentifiers)
-            if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) {
-                return [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
-            }
-        #endif
-        return [.isDirectoryKey, .isRegularFileKey]
+        return look(in: folder, known, level: 0) && episodes > 0
     }
 
     private static var dateKeys: Set<URLResourceKey> {
@@ -373,15 +425,6 @@ enum TVShowScanner {
             values?.addedToDirectoryDate ?? values?.creationDate ?? values?.contentModificationDate ?? .distantPast
         #else
             values?.contentModificationDate ?? .distantPast
-        #endif
-    }
-
-    static func isMovie(_ url: URL, _ values: URLResourceValues?, _ movieExtensions: Set<String>) -> Bool {
-        if movieExtensions.contains(url.pathExtension.lowercased()) { return true }
-        #if os(iOS)
-            return values?.contentType?.conforms(to: .movie) ?? false
-        #else
-            return false
         #endif
     }
 }

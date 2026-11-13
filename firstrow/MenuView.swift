@@ -507,6 +507,17 @@ final class MenuView: ObservableObject {
     @Published var moviesFolderSubmenuPreviewIdentity: String = ""
     @Published var moviesFolderSubmenuPreviewRequestID = 0
     @Published var isLoadingMoviesFolderEntries = false
+    /// The movies the Movies Folder row shows pictures of, as they were last found (they are
+    /// looked for away from the main thread: see `refreshMoviesTopLevelPreviewURLsIfStale`).
+    var moviesTopLevelPreviewURLs: [URL] = []
+    var moviesTopLevelPreviewLookedAt: Date?
+    var moviesTopLevelPreviewIsStale = true
+    var isLookingForMoviesTopLevelPreview = false
+    #if os(iOS)
+        /// The top of Movies Folder is being read before it opens (it asks for movies first if
+        /// there are none).
+        var isReadingMoviesFolderBeforeOpening = false
+    #endif
     @Published var moviesFolderEntriesRequestID = 0
 
     // MARK: - Music preview/carousel state

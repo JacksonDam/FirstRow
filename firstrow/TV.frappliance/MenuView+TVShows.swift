@@ -29,21 +29,23 @@ extension MenuView {
         #if os(iOS)
             adoptMoviesFolderChosenBefore()
         #endif
-        var folders = moviesTopLevelFolderURLs()
-        var files: [URL] = []
-        for url in MediaSources.shared.folders(.movies) {
-            var isFolder: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder) else { continue }
-            if !isFolder.boolValue {
-                files.append(url)
-            } else if !Self.isDiscFolder(url) {
-                folders.append(url)
-            }
-        }
-        let movieExtensions = supportedMovieFileExtensions
+        let rules = moviesScanRules
+        let candidates = moviesRootCandidateURLs()
         let requestID = incrementRequestID(&tvLibraryRequestID)
-        Task.detached(priority: .userInitiated) { [folders, files] in
-            let library = TVShowScanner.library(folders: folders, files: files, movieExtensions: movieExtensions)
+        Task.detached(priority: .userInitiated) {
+            // (Where to look is found out here too: it is read from the disk.)
+            var folders = self.moviesTopLevelFolderURLs(rootCandidates: candidates, rules: rules)
+            var files: [URL] = []
+            for url in MediaSources.shared.folders(.movies) {
+                var isFolder: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder) else { continue }
+                if !isFolder.boolValue {
+                    files.append(url)
+                } else if !Self.isDiscFolder(url) {
+                    folders.append(url)
+                }
+            }
+            let library = TVShowScanner.library(folders: folders, files: files, movieExtensions: rules.movieExtensions)
             await MainActor.run {
                 guard self.tvLibraryRequestID == requestID, library != self.tvLibrary else { return }
                 self.adoptTVLibrary(library)

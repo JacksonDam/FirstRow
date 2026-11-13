@@ -177,9 +177,16 @@ extension MenuView {
         Task {
             try? await firstRowSleep(movieEntryFadeDuration)
             guard !Task.isCancelled else { return }
-            // (Behind the question about a folder, a picture from the first movie in it.)
+            // (Behind the question about a folder, a picture from the first movie in it,
+            // found away from the main thread.)
             var picture: URL?
-            if case .imported(isFolder: true) = removal.kind { picture = firstMovieFileURL(in: removal.url) }
+            if case .imported(isFolder: true) = removal.kind {
+                let rules = moviesScanRules
+                picture = await Task.detached(priority: .userInitiated) {
+                    MoviesFolderScanner.previewMovieFileURLs(in: removal.url, limit: 1, rules: rules).first
+                }.value
+                guard !Task.isCancelled else { return }
+            }
             presentMovieResumePrompt(for: removal.url, pictureFrom: picture)
             movieRemoval = removal
             // (Cancel is the answer picked out: deleting takes a deliberate move.)
@@ -226,6 +233,7 @@ extension MenuView {
 
     /// Back to the list, brought up to date. If the movie couldn't be deleted, that is said.
     private func leaveMovieRemoval(showing failed: MovieRemoval?) {
+        noteMoviesTopLevelChanged()
         if isShowingContinueWatching {
             refreshContinueWatchingIfShown()
         } else if tvShowListing != nil {

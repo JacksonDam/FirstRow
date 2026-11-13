@@ -660,22 +660,24 @@ extension MenuView {
         guard directoryEntry.isDirectory else { return }
         let selectedDirectory = directoryEntry.url.standardizedFileURL
         let parentDirectory = thirdMenuCurrentURL?.standardizedFileURL
-        Task(priority: .userInitiated) {
-            let hasNavigableContent = moviesFolderContainsNavigableContent(in: selectedDirectory)
+        let rules = moviesScanRules
+        // (Read away from the main thread: the folder may hold thousands of files.)
+        Task.detached(priority: .userInitiated) {
+            let hasNavigableContent = MoviesFolderScanner.holdsSomethingToList(selectedDirectory, rules: rules)
             await MainActor.run {
-                guard thirdMenuMode == .moviesFolder else { return }
-                guard thirdMenuCurrentURL?.standardizedFileURL == parentDirectory else { return }
-                guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return }
-                let currentSelection = thirdMenuItems[selectedThirdIndex]
+                guard self.thirdMenuMode == .moviesFolder else { return }
+                guard self.thirdMenuCurrentURL?.standardizedFileURL == parentDirectory else { return }
+                guard self.thirdMenuItems.indices.contains(self.selectedThirdIndex) else { return }
+                let currentSelection = self.thirdMenuItems[self.selectedThirdIndex]
                 guard currentSelection.isDirectory else { return }
                 guard currentSelection.url.standardizedFileURL == selectedDirectory else { return }
                 if hasNavigableContent {
-                    rememberCurrentMoviesFolderSelectionIndex()
-                    transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
+                    self.rememberCurrentMoviesFolderSelectionIndex()
+                    self.transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
                         self.loadThirdMenuDirectory(selectedDirectory, resetSelection: true)
                     }
                 } else {
-                    presentFeatureErrorScreen(.noContentFound)
+                    self.presentFeatureErrorScreen(.noContentFound)
                 }
             }
         }

@@ -18,24 +18,13 @@ import Foundation
 #endif
 
 extension MenuView {
-    /// File properties read while scanning for movies (content types where the system has them).
-    static var movieScanResourceKeys: Set<URLResourceKey> {
-        #if canImport(UniformTypeIdentifiers)
-            if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) {
-                return [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
-            }
-        #endif
-        return [.isDirectoryKey, .isRegularFileKey]
+    /// What a look through folders for Movies Folder goes by. It is settled here, on the main
+    /// thread, and the looking is done away from it (see `MoviesFolderScanner`).
+    var moviesScanRules: MoviesFolderScanner.Rules {
+        MoviesFolderScanner.Rules(movieExtensions: supportedMovieFileExtensions, discsPlay: Self.playsEveryKindOfMovie)
     }
 
     #if os(iOS)
-        func isSupportedMovieFile(url: URL, values: URLResourceValues?) -> Bool {
-            let normalizedExtension = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let isSupportedByExtension = supportedMovieFileExtensions.contains(normalizedExtension)
-            let isSupportedByType = values?.contentType?.conforms(to: .movie) ?? false
-            return isSupportedByExtension || isSupportedByType
-        }
-
         /// Before 2.4 one folder could be chosen in Files, and its movies were copied in each
         /// time Movies Folder opened. That folder is now one brought in with Import like any
         /// other, a folder at the top of Movies Folder; the copies made of its movies stay.
@@ -115,6 +104,7 @@ extension MenuView {
         /// there, and the Import page gives way to the Movies menu, where it all now is.
         private func finishTakingInPickedMovies() {
             guard pickedMoviesBeingCopied == 0 else { return }
+            noteMoviesTopLevelChanged()
             if entersMoviesFolderAfterPicking {
                 entersMoviesFolderAfterPicking = false
                 enterMoviesFolderMenu()
@@ -152,20 +142,15 @@ extension MenuView {
 
         /// With nothing in Movies Folder and nothing brought in yet, Movies Folder asks for
         /// something first: the Files picker comes straight up (iOS moves the menu back behind
-        /// it), and the folder opens once something is picked. Returns whether it asked.
-        func promptForMoviesFolderPickerIfNeeded() -> Bool {
-            guard !hasPromptedMoviesFolderPickerThisSession, pickedMoviesBeingCopied == 0,
-                  scanMoviesTopLevelEntries().isEmpty
-            else { return false }
+        /// it), and the folder opens once something is picked. Whether it is to ask.
+        var asksForMoviesBeforeOpeningAnEmptyFolder: Bool {
+            !hasPromptedMoviesFolderPickerThisSession && pickedMoviesBeingCopied == 0
+        }
+
+        func promptForMoviesFolderPicker() {
             hasPromptedMoviesFolderPickerThisSession = true
             entersMoviesFolderAfterPicking = true
             isMovieFilesPickerPresented = true
-            return true
-        }
-    #else
-        func isSupportedMovieFile(url: URL, values _: URLResourceValues?) -> Bool {
-            let normalizedExtension = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return supportedMovieFileExtensions.contains(normalizedExtension)
         }
     #endif
 
@@ -201,9 +186,10 @@ extension MenuView {
     // MARK: - The top of Movies Folder
 
     /// The folders whose contents are at the top of Movies Folder: the Movies folder itself
-    /// and, on a computer, every folder called Movies at the top of a drive.
-    func moviesTopLevelFolderURLs() -> [URL] {
-        var folders = [moviesRootDirectoryURL()]
+    /// and, on a computer, every folder called Movies at the top of a drive. Read from the
+    /// disk, so not for the main thread.
+    nonisolated func moviesTopLevelFolderURLs(rootCandidates: [URL], rules: MoviesFolderScanner.Rules) -> [URL] {
+        var folders = [MoviesFolderScanner.rootFolder(among: rootCandidates, rules: rules)]
         #if os(macOS) || FIRSTROW_PORTABLE
             folders += externalVolumeRootURLs().compactMap { volume in
                 let movies = volume.appendingPathComponent("Movies", isDirectory: true)
@@ -217,36 +203,35 @@ extension MenuView {
 
     /// The top of Movies Folder: what is in those folders, with what was brought in by
     /// Movies > Import among it, a file as a movie and a folder as a folder. Movies first,
-    /// then folders, each by name.
-    func scanMoviesTopLevelEntries() -> [MoviesFolderEntry] {
-        #if os(iOS)
-            adoptMoviesFolderChosenBefore()
-        #endif
+    /// then folders, each by name. Read from the disk, so not for the main thread.
+    nonisolated func scanMoviesTopLevelEntries(rootCandidates: [URL], rules: MoviesFolderScanner.Rules) -> [MoviesFolderEntry] {
         var movies: [MoviesFolderEntry] = []
         var folders: [MoviesFolderEntry] = []
         var seen = Set<String>()
-        let topFolders = moviesTopLevelFolderURLs()
+        let topFolders = moviesTopLevelFolderURLs(rootCandidates: rootCandidates, rules: rules)
         let topPaths = Set(topFolders.map(\.standardizedFileURL.path))
         // (What was brought in comes first, so that it is known as brought in where it is
         // also inside one of those folders.)
-        let movieExtensions = supportedMovieFileExtensions
         for url in MediaSources.shared.folders(.movies) {
             let path = url.standardizedFileURL.path
             var isFolder: ObjCBool = false
             guard !topPaths.contains(path), FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), seen.insert(path).inserted else { continue }
-            if isFolder.boolValue, !(Self.playsEveryKindOfMovie && Self.isDiscFolder(url)) {
+            if isFolder.boolValue {
+                let children = FolderReader.children(of: url) ?? []
+                if rules.discsPlay, FolderReader.isDisc(url, children: children) {
+                    let title = url.pathExtension.lowercased() == "dvdmedia" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
+                    movies.append(MoviesFolderEntry(id: path, title: title, url: url, isDirectory: false, isImported: true))
+                    continue
+                }
                 // (A folder of nothing but TV episodes is under TV Shows, as an episode is.)
-                if TVShowScanner.holdsOnlyEpisodes(url, movieExtensions: movieExtensions) { continue }
+                if TVShowScanner.holdsOnlyEpisodes(url, children: children, movieExtensions: rules.movieExtensions) { continue }
                 folders.append(MoviesFolderEntry(id: path, title: CloudFolders.title(ofFolder: url), url: url, isDirectory: true, isImported: true))
-            } else if !isFolder.boolValue, TVShowNames.episode(at: url) != nil {
-                continue
-            } else if isFolder.boolValue || isSupportedMovieFile(url: url, values: try? url.resourceValues(forKeys: Self.movieScanResourceKeys)) {
-                let title = url.pathExtension.lowercased() == "dvdmedia" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
-                movies.append(MoviesFolderEntry(id: path, title: title, url: url, isDirectory: false, isImported: true))
+            } else if TVShowNames.episode(at: url) == nil, FolderReader.isMovie(url, rules.movieExtensions) {
+                movies.append(MoviesFolderEntry(id: path, title: url.lastPathComponent, url: url, isDirectory: false, isImported: true))
             }
         }
         for folder in topFolders {
-            for entry in scanMoviesFolderEntries(in: folder) where seen.insert(entry.id).inserted {
+            for entry in MoviesFolderScanner.entries(in: folder, rules: rules) where seen.insert(entry.id).inserted {
                 if entry.isDirectory { folders.append(entry) } else { movies.append(entry) }
             }
         }
@@ -258,50 +243,89 @@ extension MenuView {
 
     /// The first few movies there are to show a picture of for Movies Folder: those at its
     /// top, then those inside the folders brought in.
-    func moviesTopLevelPreviewURLs(limit: Int) -> [URL] {
+    nonisolated static func moviesToPicture(among entries: [MoviesFolderEntry], limit: Int, rules: MoviesFolderScanner.Rules) -> [URL] {
         var urls: [URL] = []
-        let entries = scanMoviesTopLevelEntries()
         for entry in entries where !entry.isDirectory && urls.count < limit && !Self.isDiscFolder(entry.url) {
             urls.append(entry.url.standardizedFileURL)
         }
         for entry in entries where entry.isDirectory && entry.isImported && urls.count < limit {
-            urls += previewMovieFileURLs(in: entry.url, limit: limit - urls.count)
+            urls += MoviesFolderScanner.previewMovieFileURLs(in: entry.url, limit: limit - urls.count, rules: rules)
         }
         return urls
     }
 
-    /// Shows the top of Movies Folder. With nothing there at all, the menu goes back to
-    /// Movies and says so.
-    func loadMoviesTopLevel(resetSelection: Bool) {
+    /// Looks again for the movies the Movies Folder row shows pictures of, away from the main
+    /// thread, where what is known of them is out of date: the row keeps what it last
+    /// showed meanwhile, and is brought up to date if the answer is another.
+    func refreshMoviesTopLevelPreviewURLsIfStale() {
+        if let lookedAt = moviesTopLevelPreviewLookedAt, !moviesTopLevelPreviewIsStale, Date().timeIntervalSince(lookedAt) < 30 { return }
+        guard !isLookingForMoviesTopLevelPreview else { return }
+        isLookingForMoviesTopLevelPreview = true
+        moviesTopLevelPreviewIsStale = false
+        #if os(iOS)
+            adoptMoviesFolderChosenBefore()
+        #endif
+        let rules = moviesScanRules
+        let candidates = moviesRootCandidateURLs()
+        let limit = moviesFolderSubmenuPreviewLoadLimit
+        Task.detached(priority: .userInitiated) {
+            let entries = self.scanMoviesTopLevelEntries(rootCandidates: candidates, rules: rules)
+            let urls = Self.moviesToPicture(among: entries, limit: limit, rules: rules)
+            await MainActor.run {
+                self.isLookingForMoviesTopLevelPreview = false
+                self.moviesTopLevelPreviewLookedAt = Date()
+                guard urls != self.moviesTopLevelPreviewURLs else { return }
+                self.moviesTopLevelPreviewURLs = urls
+                self.refreshDetailPreviewForCurrentContext()
+            }
+        }
+    }
+
+    /// What Movies Folder holds may have changed (something brought in, taken out, deleted):
+    /// its row's pictures are looked for again the next time they're wanted.
+    func noteMoviesTopLevelChanged() {
+        moviesTopLevelPreviewIsStale = true
+        if activeRootItemID == "movies", isInSubmenu, !isInThirdMenu { refreshMoviesTopLevelPreviewURLsIfStale() }
+    }
+
+    /// Shows the top of Movies Folder (read away from the main thread, unless it has just
+    /// been read: `alreadyRead`). With nothing there at all, the menu goes back to Movies
+    /// and says so.
+    func loadMoviesTopLevel(resetSelection: Bool, alreadyRead: [MoviesFolderEntry]? = nil) {
         thirdMenuCurrentURL = nil
         thirdMenuRootURL = nil
         isLoadingMoviesFolderEntries = true
         let requestID = incrementRequestID(&moviesFolderEntriesRequestID)
-        Task(priority: .userInitiated) {
-            let entries = scanMoviesTopLevelEntries()
+        #if os(iOS)
+            adoptMoviesFolderChosenBefore()
+        #endif
+        let rules = moviesScanRules
+        let candidates = moviesRootCandidateURLs()
+        Task.detached(priority: .userInitiated) {
+            let entries = alreadyRead ?? self.scanMoviesTopLevelEntries(rootCandidates: candidates, rules: rules)
             await MainActor.run {
-                guard moviesFolderEntriesRequestID == requestID, thirdMenuMode == .moviesFolder, thirdMenuCurrentURL == nil else { return }
-                isLoadingMoviesFolderEntries = false
-                thirdMenuItems = entries
+                guard self.moviesFolderEntriesRequestID == requestID, self.thirdMenuMode == .moviesFolder, self.thirdMenuCurrentURL == nil else { return }
+                self.isLoadingMoviesFolderEntries = false
+                self.thirdMenuItems = entries
                 let maxIndex = max(0, entries.count - 1)
-                if let remembered = moviesFolderSelectionIndexByDirectoryPath[Self.moviesTopLevelSelectionKey] {
-                    selectedThirdIndex = min(max(0, remembered), maxIndex)
+                if let remembered = self.moviesFolderSelectionIndexByDirectoryPath[Self.moviesTopLevelSelectionKey] {
+                    self.selectedThirdIndex = min(max(0, remembered), maxIndex)
                 } else if resetSelection {
-                    selectedThirdIndex = 0
+                    self.selectedThirdIndex = 0
                 } else {
-                    selectedThirdIndex = min(max(0, selectedThirdIndex), maxIndex)
+                    self.selectedThirdIndex = min(max(0, self.selectedThirdIndex), maxIndex)
                 }
-                refreshDetailPreviewForCurrentContext()
+                self.refreshDetailPreviewForCurrentContext()
                 if entries.isEmpty {
-                    isInThirdMenu = false
-                    thirdMenuMode = .none
-                    thirdMenuOpacity = 0
-                    submenuOpacity = 1
-                    headerText = rootMenuTitle(for: activeRootItemID)
-                    resetThirdMenuDirectoryState()
-                    moviesFolderSelectionIndexByDirectoryPath = [:]
-                    refreshDetailPreviewForCurrentContext()
-                    presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: true)
+                    self.isInThirdMenu = false
+                    self.thirdMenuMode = .none
+                    self.thirdMenuOpacity = 0
+                    self.submenuOpacity = 1
+                    self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
+                    self.resetThirdMenuDirectoryState()
+                    self.moviesFolderSelectionIndexByDirectoryPath = [:]
+                    self.refreshDetailPreviewForCurrentContext()
+                    self.presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: true)
                 }
             }
         }
@@ -350,37 +374,28 @@ extension MenuView {
         return isURLInsideTVManagedMediaLibrary(standardizedURL)
     }
 
-    func movieFileEntries(in directoryURL: URL) -> [MoviesFolderEntry] {
-        scanMoviesFolderEntries(in: directoryURL).filter { !$0.isDirectory }
-    }
-
-    func moviesRootDirectoryURL() -> URL {
+    /// The folders that could be the Movies folder itself, the likeliest first. On iPhone and
+    /// iPad First Row has kept its own movies in three places, and the first of them with a
+    /// movie in it is the one (see `MoviesFolderScanner.rootFolder`); everywhere else there
+    /// is the one folder.
+    func moviesRootCandidateURLs() -> [URL] {
         #if os(iOS)
             let documentsDirectory = moviesDocumentsDirectoryURL()
-            let fileManager = FileManager.default
-            let legacyfirstRowDirectory = documentsDirectory.appendingPathComponent("Front Row", isDirectory: true)
-            let inboxDirectory = documentsDirectory.appendingPathComponent("Inbox", isDirectory: true)
-            let candidates = [documentsDirectory, legacyfirstRowDirectory, inboxDirectory]
-            for candidate in candidates {
-                var isDirectory: ObjCBool = false
-                guard fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-                    continue
-                }
-                if !movieFileEntries(in: candidate).isEmpty {
-                    return candidate
-                }
-            }
-            return documentsDirectory
+            return [
+                documentsDirectory,
+                documentsDirectory.appendingPathComponent("Front Row", isDirectory: true),
+                documentsDirectory.appendingPathComponent("Inbox", isDirectory: true),
+            ]
         #else
             if let harnessMoviesFolder = FirstRowHarness.moviesFolderOverride {
-                return harnessMoviesFolder
+                return [harnessMoviesFolder]
             }
             #if FIRSTROW_PORTABLE
-                return portableUserFolder(named: "Movies", standardName: "Videos", xdgKey: "XDG_VIDEOS_DIR")
+                return [portableUserFolder(named: "Movies", standardName: "Videos", xdgKey: "XDG_VIDEOS_DIR")]
             #else
                 // (The user's name can come back empty, as it does in the Apple TV simulator.)
                 let home = realUserHomeDirectoryURL() ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-                return home.appendingPathComponent("Movies", isDirectory: true)
+                return [home.appendingPathComponent("Movies", isDirectory: true)]
             #endif
         #endif
     }
@@ -444,129 +459,6 @@ extension MenuView {
         #endif
     }
 
-    func moviesFolderContainsNavigableContent(in directoryURL: URL) -> Bool {
-        let fileManager = FileManager.default
-        let resourceKeys = Self.movieScanResourceKeys
-        let urls: [URL]
-        do {
-            urls = try fileManager.contentsOfDirectory(
-                at: directoryURL,
-                includingPropertiesForKeys: Array(resourceKeys),
-                options: [.skipsHiddenFiles],
-            )
-        } catch {
-            return false
-        }
-        for url in urls {
-            let values = try? url.resourceValues(forKeys: resourceKeys)
-            if values?.isDirectory == true {
-                if TVShowScanner.holdsOnlyEpisodes(url, movieExtensions: supportedMovieFileExtensions) { continue }
-                return true
-            }
-            guard values?.isRegularFile == true else { continue }
-            if isSupportedMovieFile(url: url, values: values), TVShowNames.episode(at: url) == nil {
-                return true
-            }
-        }
-        return false
-    }
-
-    func scanMoviesFolderEntries(in directoryURL: URL) -> [MoviesFolderEntry] {
-        let fileManager = FileManager.default
-        let resourceKeys = Self.movieScanResourceKeys
-        let urls: [URL]
-        do {
-            urls = try fileManager.contentsOfDirectory(
-                at: directoryURL,
-                includingPropertiesForKeys: Array(resourceKeys),
-                options: [.skipsHiddenFiles],
-            )
-        } catch {
-            let nsError = error as NSError
-            if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoSuchFileError {
-                return []
-            }
-            print("Unable to read Movies directory at path: \(directoryURL.path) (\(error.localizedDescription))")
-            return []
-        }
-        var directoryEntries: [MoviesFolderEntry] = []
-        var movieEntries: [MoviesFolderEntry] = []
-        let movieExtensions = supportedMovieFileExtensions
-        for url in urls {
-            let values = try? url.resourceValues(forKeys: resourceKeys)
-            let isDirectory = values?.isDirectory ?? false
-            if isDirectory {
-                // (Episodes of TV shows, and folders of nothing else, are under TV Shows.)
-                if !Self.isDiscFolder(url), TVShowScanner.holdsOnlyEpisodes(url, movieExtensions: movieExtensions) { continue }
-                if Self.playsEveryKindOfMovie, Self.isDiscFolder(url) {
-                    movieEntries.append(
-                        MoviesFolderEntry(
-                            id: url.standardizedFileURL.path,
-                            title: url.pathExtension.lowercased() == "dvdmedia" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent,
-                            url: url,
-                            isDirectory: false,
-                        ),
-                    )
-                    continue
-                }
-                directoryEntries.append(
-                    MoviesFolderEntry(
-                        id: url.standardizedFileURL.path,
-                        title: url.lastPathComponent,
-                        url: url,
-                        isDirectory: true,
-                    ),
-                )
-                continue
-            }
-            if isSupportedMovieFile(url: url, values: values), TVShowNames.episode(at: url) == nil {
-                movieEntries.append(
-                    MoviesFolderEntry(
-                        id: url.standardizedFileURL.path,
-                        title: url.lastPathComponent,
-                        url: url,
-                        isDirectory: false,
-                    ),
-                )
-            }
-        }
-        let sorter: (MoviesFolderEntry, MoviesFolderEntry) -> Bool = {
-            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-        }
-        return movieEntries.sorted(by: sorter) + directoryEntries.sorted(by: sorter)
-    }
-
-    func firstMovieFileURL(in directoryURL: URL) -> URL? {
-        previewMovieFileURLs(in: directoryURL, limit: 1).first
-    }
-
-    func previewMovieFileURLs(in directoryURL: URL, limit: Int) -> [URL] {
-        guard limit > 0 else { return [] }
-        let fileManager = FileManager.default
-        let resourceKeys = Self.movieScanResourceKeys
-        let urls: [URL]
-        do {
-            urls = try fileManager.contentsOfDirectory(
-                at: directoryURL,
-                includingPropertiesForKeys: Array(resourceKeys),
-                options: [.skipsHiddenFiles],
-            )
-        } catch {
-            return []
-        }
-        var resolved: [URL] = []
-        resolved.reserveCapacity(limit)
-        for url in urls {
-            if resolved.count >= limit { break }
-            let values = try? url.resourceValues(forKeys: resourceKeys)
-            if values?.isDirectory == true { continue }
-            guard values?.isRegularFile == true else { continue }
-            guard isSupportedMovieFile(url: url, values: values), TVShowNames.episode(at: url) == nil else { continue }
-            resolved.append(url.standardizedFileURL)
-        }
-        return resolved
-    }
-
     func resetThirdMenuDirectoryState() {
         isShowingContinueWatching = false
         tvShowListing = nil
@@ -590,7 +482,7 @@ extension MenuView {
         guard submenuItems.indices.contains(selectedSubIndex) else { return nil }
         let selectedItem = submenuItems[selectedSubIndex]
         guard selectedItem.id == "movies_folder" else { return nil }
-        return moviesTopLevelPreviewURLs(limit: 1).first
+        return moviesTopLevelPreviewURLs.first
     }
 
     /// A movie's menu picture: its embedded cover art, or else a frame from the video.
@@ -679,8 +571,11 @@ extension MenuView {
 
     func resolveMoviesFolderSubmenuPreviewURLs() -> [URL] {
         guard activeRootItemID == "movies", isInSubmenu, !isInThirdMenu else { return [] }
+        // (Looked for as the Movies menu shows, so that they are known by the time its
+        // Movies Folder row is chosen.)
+        refreshMoviesTopLevelPreviewURLsIfStale()
         guard selectedMoviesSubmenuItemID == "movies_folder" else { return [] }
-        return moviesTopLevelPreviewURLs(limit: moviesFolderSubmenuPreviewLoadLimit)
+        return moviesTopLevelPreviewURLs
     }
 
     func moviesFolderSubmenuPreviewIdentityKey(from urls: [URL]) -> String {
@@ -865,21 +760,17 @@ extension MenuView {
     nonisolated static func moviesFolderPictureSources(
         in folder: URL, movieExtensions: Set<String>, discsPlay: Bool, limit: Int, level: Int = 0,
     ) -> [URL] {
-        let keys = TVShowScanner.scanKeys
-        guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: folder, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles],
-        ) else { return [] }
+        guard let children = FolderReader.children(of: folder) else { return [] }
         var movies: [URL] = []
         var folders: [URL] = []
-        for url in contents {
-            let values = try? url.resourceValues(forKeys: keys)
-            if values?.isDirectory == true {
+        for (url, isFolder) in children {
+            if isFolder {
                 if discsPlay, isDiscFolder(url) {
                     movies.append(url)
                 } else {
                     folders.append(url)
                 }
-            } else if TVShowScanner.isMovie(url, values, movieExtensions), TVShowNames.episode(at: url) == nil {
+            } else if FolderReader.isMovie(url, movieExtensions), TVShowNames.episode(at: url) == nil {
                 movies.append(url)
             }
         }
@@ -914,6 +805,8 @@ extension MenuView {
         return moviesFolderSelectionIndexByDirectoryPath[key]
     }
 
+    /// Shows a folder's list, read away from the main thread: a folder brought in whole can
+    /// hold thousands of files, and the menus stay alive while it is read.
     func loadThirdMenuDirectory(_ directoryURL: URL, resetSelection: Bool) {
         // (A folder opened from the top of Movies Folder: Back from it goes back there.)
         if thirdMenuCurrentURL == nil {
@@ -923,32 +816,33 @@ extension MenuView {
         thirdMenuCurrentURL = standardizedDirectory
         isLoadingMoviesFolderEntries = true
         let requestID = incrementRequestID(&moviesFolderEntriesRequestID)
-        Task(priority: .userInitiated) {
-            let scannedEntries = scanMoviesFolderEntries(in: standardizedDirectory)
+        let rules = moviesScanRules
+        Task.detached(priority: .userInitiated) {
+            let scannedEntries = MoviesFolderScanner.entries(in: standardizedDirectory, rules: rules)
             await MainActor.run {
-                guard moviesFolderEntriesRequestID == requestID else { return }
-                guard thirdMenuMode == .moviesFolder else { return }
-                guard thirdMenuCurrentURL?.standardizedFileURL == standardizedDirectory else { return }
-                isLoadingMoviesFolderEntries = false
-                thirdMenuItems = scannedEntries
+                guard self.moviesFolderEntriesRequestID == requestID else { return }
+                guard self.thirdMenuMode == .moviesFolder else { return }
+                guard self.thirdMenuCurrentURL?.standardizedFileURL == standardizedDirectory else { return }
+                self.isLoadingMoviesFolderEntries = false
+                self.thirdMenuItems = scannedEntries
                 let maxIndex = max(0, scannedEntries.count - 1)
-                if let remembered = rememberedMoviesFolderSelectionIndex(for: standardizedDirectory) {
-                    selectedThirdIndex = min(max(0, remembered), maxIndex)
+                if let remembered = self.rememberedMoviesFolderSelectionIndex(for: standardizedDirectory) {
+                    self.selectedThirdIndex = min(max(0, remembered), maxIndex)
                 } else if resetSelection {
-                    selectedThirdIndex = 0
+                    self.selectedThirdIndex = 0
                 } else {
-                    selectedThirdIndex = min(max(0, selectedThirdIndex), maxIndex)
+                    self.selectedThirdIndex = min(max(0, self.selectedThirdIndex), maxIndex)
                 }
                 if !scannedEntries.isEmpty {
-                    let key = moviesFolderDirectorySelectionKey(for: standardizedDirectory)
-                    moviesFolderSelectionIndexByDirectoryPath[key] = selectedThirdIndex
+                    let key = self.moviesFolderDirectorySelectionKey(for: standardizedDirectory)
+                    self.moviesFolderSelectionIndexByDirectoryPath[key] = self.selectedThirdIndex
                 }
-                refreshDetailPreviewForCurrentContext()
+                self.refreshDetailPreviewForCurrentContext()
                 let isShowingRootDirectory =
-                    thirdMenuRootURL?.standardizedFileURL == standardizedDirectory
+                    self.thirdMenuRootURL?.standardizedFileURL == standardizedDirectory
                 if isShowingRootDirectory, scannedEntries.isEmpty {
                     // (Its last movie has just been deleted: the top of Movies Folder again.)
-                    loadMoviesTopLevel(resetSelection: false)
+                    self.loadMoviesTopLevel(resetSelection: false)
                 }
             }
         }
@@ -956,8 +850,35 @@ extension MenuView {
 
     func enterMoviesFolderMenu() {
         #if os(iOS)
-            if promptForMoviesFolderPickerIfNeeded() { return }
+            // With nothing to list, Movies Folder asks for something first: so its top is
+            // read before it opens (away from the main thread), and opens with what was read.
+            if asksForMoviesBeforeOpeningAnEmptyFolder {
+                guard !isReadingMoviesFolderBeforeOpening else { return }
+                isReadingMoviesFolderBeforeOpening = true
+                adoptMoviesFolderChosenBefore()
+                let rules = moviesScanRules
+                let candidates = moviesRootCandidateURLs()
+                Task.detached(priority: .userInitiated) {
+                    let entries = self.scanMoviesTopLevelEntries(rootCandidates: candidates, rules: rules)
+                    await MainActor.run {
+                        self.isReadingMoviesFolderBeforeOpening = false
+                        // (Still where it was asked for: the Movies menu, with nothing opened since.)
+                        guard self.activeRootItemID == "movies", self.isInSubmenu, !self.isInThirdMenu,
+                              !self.isMenuFolderSwapTransitioning, self.activeFullscreenScene == nil else { return }
+                        if entries.isEmpty, self.asksForMoviesBeforeOpeningAnEmptyFolder {
+                            self.promptForMoviesFolderPicker()
+                        } else {
+                            self.openMoviesFolderMenu(alreadyRead: entries)
+                        }
+                    }
+                }
+                return
+            }
         #endif
+        openMoviesFolderMenu()
+    }
+
+    private func openMoviesFolderMenu(alreadyRead: [MoviesFolderEntry]? = nil) {
         transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
             self.isShowingContinueWatching = false
             self.thirdMenuMode = .moviesFolder
@@ -969,13 +890,13 @@ extension MenuView {
             self.isInThirdMenu = true
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1
-            self.loadMoviesTopLevel(resetSelection: true)
+            self.loadMoviesTopLevel(resetSelection: true, alreadyRead: alreadyRead)
         }
     }
 }
 
 extension MenuView {
-    struct MoviesFolderEntry: Identifiable {
+    struct MoviesFolderEntry: Identifiable, Sendable {
         let id: String
         let title: String
         let url: URL
@@ -997,5 +918,108 @@ extension MenuView {
 
     var moviesFallbackImage: NSImage? {
         ModernTheme.isActive ? ModernTheme.placeholderArtwork(symbol: "film.fill", aspect: 2.0 / 3.0) : NSImage(named: "moviesfallback")
+    }
+}
+
+/// Reads folders for Movies Folder. All of it reads the disk, so none of it is for the main
+/// thread: a folder brought in whole can hold thousands of files and hundreds of folders,
+/// and may be on a drive or with a service that answers slowly.
+enum MoviesFolderScanner {
+    /// What a look through folders goes by, settled on the main thread before it starts.
+    struct Rules: Sendable {
+        let movieExtensions: Set<String>
+        /// A disc kept as a folder is a movie to play, not a folder to look in
+        /// (`MenuView.playsEveryKindOfMovie`).
+        let discsPlay: Bool
+    }
+
+    private typealias Entry = MenuView.MoviesFolderEntry
+
+    /// What a folder inside the one being listed is.
+    private enum FolderKind {
+        case folder
+        case disc
+        /// Nothing in it but episodes of TV shows, which are under TV Shows.
+        case episodes
+    }
+
+    private static func kind(of folder: URL, rules: Rules) -> FolderKind {
+        // (A folder that can't be read is listed as the folder it is.)
+        guard let inside = FolderReader.children(of: folder) else { return .folder }
+        if FolderReader.isDisc(folder, children: inside) { return .disc }
+        return TVShowScanner.holdsOnlyEpisodes(folder, children: inside, movieExtensions: rules.movieExtensions) ? .episodes : .folder
+    }
+
+    private static func title(ofDisc folder: URL) -> String {
+        folder.pathExtension.lowercased() == "dvdmedia" ? folder.deletingPathExtension().lastPathComponent : folder.lastPathComponent
+    }
+
+    /// A folder's list: its movies by name, then the folders in it by name. Episodes of TV
+    /// shows, and folders of nothing else, are left to TV Shows.
+    static func entries(in directory: URL, rules: Rules) -> [MenuView.MoviesFolderEntry] {
+        guard let children = FolderReader.children(of: directory) else { return [] }
+        var movies: [Entry] = []
+        var folders: [Entry] = []
+        for child in children where !child.isFolder {
+            guard FolderReader.isMovie(child.url, rules.movieExtensions), TVShowNames.episode(at: child.url) == nil else { continue }
+            movies.append(Entry(id: child.url.standardizedFileURL.path, title: child.url.lastPathComponent, url: child.url, isDirectory: false))
+        }
+        // Each folder in it is looked into (a disc? nothing but episodes?), several at a time.
+        let inside = children.filter(\.isFolder).map(\.url)
+        let kinds = FolderReader.each(of: inside) { kind(of: $0, rules: rules) }
+        for (folder, kind) in zip(inside, kinds) {
+            switch kind {
+            case .episodes:
+                continue
+            case .disc where rules.discsPlay:
+                movies.append(Entry(id: folder.standardizedFileURL.path, title: title(ofDisc: folder), url: folder, isDirectory: false))
+            case .disc, .folder:
+                folders.append(Entry(id: folder.standardizedFileURL.path, title: folder.lastPathComponent, url: folder, isDirectory: true))
+            }
+        }
+        let byName: (Entry, Entry) -> Bool = {
+            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+        }
+        return movies.sorted(by: byName) + folders.sorted(by: byName)
+    }
+
+    /// Whether a folder's list would have anything in it: answered by the first movie or
+    /// folder that belongs there, without the rest being looked into.
+    static func holdsSomethingToList(_ directory: URL, rules: Rules) -> Bool {
+        guard let children = FolderReader.children(of: directory) else { return false }
+        for child in children where !child.isFolder {
+            if FolderReader.isMovie(child.url, rules.movieExtensions), TVShowNames.episode(at: child.url) == nil { return true }
+        }
+        for child in children where child.isFolder {
+            if kind(of: child.url, rules: rules) != .episodes { return true }
+        }
+        return false
+    }
+
+    /// The first movies straight inside a folder, for a picture of it.
+    static func previewMovieFileURLs(in directory: URL, limit: Int, rules: Rules) -> [URL] {
+        guard limit > 0, let children = FolderReader.children(of: directory) else { return [] }
+        var found: [URL] = []
+        for child in children where !child.isFolder {
+            if found.count >= limit { break }
+            guard FolderReader.isMovie(child.url, rules.movieExtensions), TVShowNames.episode(at: child.url) == nil else { continue }
+            found.append(child.url.standardizedFileURL)
+        }
+        return found
+    }
+
+    /// The Movies folder itself, among the folders it could be: the first that has a movie
+    /// of its own to list, or the first of them when none has.
+    static func rootFolder(among candidates: [URL], rules: Rules) -> URL {
+        guard candidates.count > 1 else { return candidates.first ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true) }
+        for candidate in candidates {
+            guard let children = FolderReader.children(of: candidate) else { continue }
+            let hasMovie = children.contains { child in
+                if child.isFolder { return rules.discsPlay && MenuView.isDiscFolder(child.url) }
+                return FolderReader.isMovie(child.url, rules.movieExtensions) && TVShowNames.episode(at: child.url) == nil
+            }
+            if hasMovie { return candidate }
+        }
+        return candidates[0]
     }
 }
