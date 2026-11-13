@@ -52,7 +52,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         case advance, pause, none
     }
 
-    public private(set) var currentItem: AVPlayerItem?
+    public fileprivate(set) var currentItem: AVPlayerItem?
     public var automaticallyWaitsToMinimizeStalling = true
     public var actionAtItemEnd: ActionAtItemEnd = .pause
     public var allowsExternalPlayback = false
@@ -60,7 +60,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
 
     var core: MPVCore?
     private var wantsVideo = false
-    private var pendingLoad = false
+    fileprivate var pendingLoad = false
     private var playing = false
     private var lastTime: Double = 0
     /// The file has reached its end, and mpv is playing out the last of its sound (or has).
@@ -208,6 +208,27 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         } else {
             core.commandWithoutWaiting(["loadfile", target, "replace", "-1", options.joined(separator: ",")])
         }
+        didAskCoreToLoad()
+    }
+
+    /// The item's own file has just been given to mpv (which empties mpv's list of what is
+    /// to play): a queue player gives it what waits behind the item.
+    fileprivate func didAskCoreToLoad() {}
+
+    /// mpv has played the item's file to its end and is going on, by itself, to the next in
+    /// its list. Whether that is taken care of (a queue player makes the item that was
+    /// waiting its item, and says the one before has ended).
+    fileprivate func coreIsGoingOnToNextFile() -> Bool { false }
+
+    /// The player's item is another, which mpv is already playing from its start.
+    fileprivate func take(asCurrent item: AVPlayerItem) {
+        currentItem?.player = nil
+        currentItem = item
+        item.player = self
+        lastTime = 0
+        hasReachedEnd = false
+        seekAskedAt = nil
+        reportedAtPause = nil
     }
 
     /// An address that stands for a picture and its sound kept at two addresses (as a
@@ -261,11 +282,16 @@ open class AVPlayer: NSObject, @unchecked Sendable {
             guard event.pointee.reply_userdata == Self.endReply, hasReachedEnd else { return }
             tellOfEnd()
         case MPV_EVENT_END_FILE:
-            if let data = event.pointee.data?.assumingMemoryBound(to: mpv_event_end_file.self).pointee, data.reason == MPV_END_FILE_REASON_ERROR {
+            guard let data = event.pointee.data?.assumingMemoryBound(to: mpv_event_end_file.self).pointee else { break }
+            if data.reason == MPV_END_FILE_REASON_ERROR {
                 currentItem?.status = .failed
                 if let item = currentItem {
                     NotificationCenter.default.post(name: .AVPlayerItemFailedToPlayToEndTime, object: item)
                 }
+            } else if data.reason == MPV_END_FILE_REASON_EOF {
+                // (With nothing after it in mpv's list the file is kept open at its end, and
+                // `eof-reached` above says so instead.)
+                _ = coreIsGoingOnToNextFile()
             }
         default:
             break
@@ -470,7 +496,85 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     }
 }
 
-public final class AVQueuePlayer: AVPlayer, @unchecked Sendable {}
+/// A player with files waiting behind the one it plays. They are given to mpv as the rest
+/// of its own list of what to play, so mpv goes from one file into the next by itself: with
+/// no gap in the sound, where the two are alike enough for the sound output to be kept as
+/// it is (mpv's `gapless-audio`), and without the padding an MP3 or AAC file says it has at
+/// its ends.
+public final class AVQueuePlayer: AVPlayer, @unchecked Sendable {
+    private var waiting: [AVPlayerItem] = []
+    /// mpv has been given the waiting items (it is given them only while the player is to
+    /// go on at an item's end: see `actionAtItemEnd`).
+    private var coreHasWaiting = false
+
+    public init(items: [AVPlayerItem]) {
+        super.init(playerItem: items.first)
+        for item in items.dropFirst() { insert(item, after: nil) }
+    }
+
+    override public var actionAtItemEnd: ActionAtItemEnd {
+        didSet {
+            if actionAtItemEnd != oldValue { giveCoreWhatWaits() }
+        }
+    }
+
+    public func items() -> [AVPlayerItem] {
+        (currentItem.map { [$0] } ?? []) + waiting
+    }
+
+    public func canInsert(_ item: AVPlayerItem, after _: AVPlayerItem?) -> Bool {
+        !items().contains { $0 === item }
+    }
+
+    /// Puts an item at the end of those waiting (First Row asks for nowhere else).
+    public func insert(_ item: AVPlayerItem, after _: AVPlayerItem?) {
+        guard canInsert(item, after: nil) else { return }
+        waiting.append(item)
+        giveCoreWhatWaits()
+    }
+
+    public func remove(_ item: AVPlayerItem) {
+        guard let index = waiting.firstIndex(where: { $0 === item }) else { return }
+        waiting.remove(at: index)
+        giveCoreWhatWaits()
+    }
+
+    override public func replaceCurrentItem(with item: AVPlayerItem?) {
+        waiting = []
+        coreHasWaiting = false
+        super.replaceCurrentItem(with: item)
+    }
+
+    override fileprivate func didAskCoreToLoad() {
+        coreHasWaiting = false
+        giveCoreWhatWaits()
+    }
+
+    /// Makes mpv's list what it should be: the file playing, and behind it the files
+    /// waiting, if the player is to go on to them.
+    private func giveCoreWhatWaits() {
+        // (Before the item's own file has been given to mpv there is nothing to add to:
+        // `didAskCoreToLoad` comes back here.)
+        guard !pendingLoad, let core, currentItem != nil else { return }
+        let wanted = actionAtItemEnd == .advance ? waiting : []
+        guard coreHasWaiting || !wanted.isEmpty else { return }
+        // (Everything but the file playing goes, files already played among it.)
+        core.commandWithoutWaiting(["playlist-clear"])
+        for item in wanted {
+            let url = item.asset.url
+            core.commandWithoutWaiting(["loadfile", url.isFileURL ? url.path : url.absoluteString, "append"])
+        }
+        coreHasWaiting = !wanted.isEmpty
+    }
+
+    override fileprivate func coreIsGoingOnToNextFile() -> Bool {
+        guard coreHasWaiting, actionAtItemEnd == .advance, !waiting.isEmpty, let ended = currentItem else { return false }
+        take(asCurrent: waiting.removeFirst())
+        coreHasWaiting = !waiting.isEmpty
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: ended)
+        return true
+    }
+}
 
 public struct AVLayerVideoGravity: RawRepresentable, Hashable, Sendable {
     public let rawValue: String

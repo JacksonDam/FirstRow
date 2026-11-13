@@ -431,6 +431,10 @@ extension MenuView {
         if resetTransitionState {
             clearMusicSongSwitchTransitionState()
         }
+        // The player may have gone on to this song by itself, without a gap (see
+        // `queueNextMusicFile`): it is then taken out of the session that is about to be
+        // stopped, and goes on playing.
+        let playerGoneOn = takeMusicPlayerGoneOn(to: song)
         // (Looked at before the session is stopped, which lets go of the list.)
         let goingOn = musicQueueGoingOn(to: song, in: playbackQueue, at: trackIndex)
         let playbackQueue = goingOn.queue
@@ -487,7 +491,11 @@ extension MenuView {
             SystemMusicPlayerCalls.pauseMusicApp(unlessPlaying: song.url == nil ? song.id : nil)
         #endif
         let performPlayback: () -> Void
-        if song.spotify != nil {
+        if let playerGoneOn {
+            performPlayback = {
+                self.adoptMusicPlayerGoneOn(playerGoneOn.player, to: playerGoneOn.item, of: song)
+            }
+        } else if song.spotify != nil {
             performPlayback = {
                 self.startMusicPlaybackViaSpotify(song, playbackRequestID: playbackRequestID)
             }
@@ -499,13 +507,7 @@ extension MenuView {
                 }
             } else if let songURL = song.url?.standardizedFileURL {
                 performPlayback = {
-                    let player = AVPlayer(url: songURL)
-                    player.isMuted = FirstRowHarness.isActive
-                    player.volume = self.musicPlaybackVolume(for: songURL)
-                    player.automaticallyWaitsToMinimizeStalling = false
-                    self.configureMusicPlaybackObservation(for: player)
-                    self.musicAudioPlayer = player
-                    player.playImmediately(atRate: 1.0)
+                    self.startMusicFilePlayer(for: songURL)
                 }
             } else {
                 return
@@ -518,13 +520,7 @@ extension MenuView {
                     }
                 } else if let songURL = song.url?.standardizedFileURL {
                     performPlayback = {
-                        let player = AVPlayer(url: songURL)
-                        player.isMuted = FirstRowHarness.isActive
-                        player.volume = self.musicPlaybackVolume(for: songURL)
-                        player.automaticallyWaitsToMinimizeStalling = false
-                        self.configureMusicPlaybackObservation(for: player)
-                        self.musicAudioPlayer = player
-                        player.playImmediately(atRate: 1.0)
+                        self.startMusicFilePlayer(for: songURL)
                     }
                 } else {
                     return
@@ -536,13 +532,7 @@ extension MenuView {
                     }
                 } else if let songURL = song.url?.standardizedFileURL {
                     performPlayback = {
-                        let player = AVPlayer(url: songURL)
-                        player.isMuted = FirstRowHarness.isActive
-                        player.volume = self.musicPlaybackVolume(for: songURL)
-                        player.automaticallyWaitsToMinimizeStalling = false
-                        self.configureMusicPlaybackObservation(for: player)
-                        self.musicAudioPlayer = player
-                        player.playImmediately(atRate: 1.0)
+                        self.startMusicFilePlayer(for: songURL)
                     }
                 } else {
                     return
@@ -551,13 +541,7 @@ extension MenuView {
                 // Songs here always come from files.
                 guard let songURL = song.url?.standardizedFileURL else { return }
                 performPlayback = {
-                    let player = AVPlayer(url: songURL)
-                    player.isMuted = FirstRowHarness.isActive
-                    player.normalizesLoudness = self.musicPlaybackVolume(for: songURL) < 1
-                    player.automaticallyWaitsToMinimizeStalling = false
-                    self.configureMusicPlaybackObservation(for: player)
-                    self.musicAudioPlayer = player
-                    player.playImmediately(atRate: 1.0)
+                    self.startMusicFilePlayer(for: songURL)
                 }
             #endif
         #endif
@@ -1669,20 +1653,27 @@ extension MenuView {
         )
     }
 
-    func configureMusicPlaybackObservation(for player: AVPlayer) {
+    /// Follows the player while it plays `item` (the item it is playing, unless another is
+    /// named: one it is about to go on to, or has just gone on to).
+    func configureMusicPlaybackObservation(for player: AVPlayer, item: AVPlayerItem? = nil) {
         removeMusicPlaybackObservation()
         observedMusicAudioPlayer = player
-        musicNowPlayingElapsedSeconds = max(0, player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0)
-        musicNowPlayingDurationSeconds = resolvedMusicDurationSeconds(for: player)
-        if let currentItem = player.currentItem {
+        let observedItem = item ?? player.currentItem
+        // (A queue player still has the song before as its item for a moment after that
+        // song's end: its time isn't this one's.)
+        let isOnItem = player.currentItem === observedItem
+        musicNowPlayingElapsedSeconds = isOnItem ? max(0, player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0) : 0
+        let knownDuration = Self.musicDurationSeconds(of: observedItem)
+        if isOnItem || knownDuration > 0 { musicNowPlayingDurationSeconds = knownDuration }
+        if let observedItem {
             musicPlaybackDidEndObserver = NotificationCenter.default.addObserver(
                 forName: .AVPlayerItemDidPlayToEndTime,
-                object: currentItem,
+                object: observedItem,
                 queue: .main,
             ) { _ in
                 MainActor.assumeIsolatedIfPossible {
                     guard self.observedMusicAudioPlayer === player else { return }
-                    let resolvedDuration = self.resolvedMusicDurationSeconds(for: player)
+                    let resolvedDuration = Self.musicDurationSeconds(of: observedItem)
                     self.musicNowPlayingDurationSeconds = max(self.musicNowPlayingDurationSeconds, resolvedDuration)
                     self.musicNowPlayingElapsedSeconds = self.musicNowPlayingDurationSeconds
                     self.stopMusicScrubbing(showPauseGlyph: false)
@@ -1695,7 +1686,16 @@ extension MenuView {
                             self.stopMusicPlaybackSession(clearDisplayState: false)
                         }
                     } else {
+                        // (The song has ended by itself: where the next was put behind it,
+                        // the player is already going on to it, and is kept.)
+                        self.musicPlayerIsGoingOnByItself = true
                         self.switchMusicNowPlayingTrack(direction: 1)
+                        if self.musicPlayerIsGoingOnByItself {
+                            // Nothing took the player on (no song after this one, or the
+                            // change to it wasn't made): it plays no further.
+                            self.musicPlayerIsGoingOnByItself = false
+                            self.dropQueuedMusicFile()
+                        }
                     }
                     self.updateMusicNowPlayingFlipTimerState()
                 }
@@ -1715,15 +1715,132 @@ extension MenuView {
                     SystemMusicPlayerCalls.stopStray()
                 }
             #endif
+            // (Only this song's time: the player's item is the song before for a moment at
+            // the start, and the song after for a moment at the end.)
+            guard player.currentItem === observedItem else { return }
             let currentSeconds = max(0, time.seconds.isFinite ? time.seconds : 0)
             if self.musicScrubDirection == 0 {
                 self.musicNowPlayingElapsedSeconds = currentSeconds
             }
-            let durationSeconds = self.resolvedMusicDurationSeconds(for: player)
+            let durationSeconds = Self.musicDurationSeconds(of: observedItem)
             if durationSeconds > 0 {
                 self.musicNowPlayingDurationSeconds = durationSeconds
             }
         }
+    }
+
+    private static func musicDurationSeconds(of item: AVPlayerItem?) -> Double {
+        guard let seconds = item?.duration.seconds, seconds.isFinite, seconds > 0 else { return 0 }
+        return seconds
+    }
+
+    // MARK: - One song into the next without a gap
+
+    /// Starts a player on a song's file (or address). It is a queue player, so that the song
+    /// after it can be put behind it (`queueNextMusicFile`); a song alone in it ends as it
+    /// would in a plain player, paused at its end.
+    private func startMusicFilePlayer(for songURL: URL) {
+        musicQueuedNext = nil
+        let item = AVPlayerItem(url: songURL)
+        let player = AVQueuePlayer(items: [item])
+        player.actionAtItemEnd = .pause
+        player.isMuted = FirstRowHarness.isActive
+        #if FIRSTROW_PORTABLE
+            player.normalizesLoudness = musicPlaybackVolume(for: songURL) < 1
+        #else
+            player.volume = musicPlaybackVolume(for: songURL)
+        #endif
+        player.automaticallyWaitsToMinimizeStalling = false
+        configureMusicPlaybackObservation(for: player, item: item)
+        musicAudioPlayer = player
+        player.playImmediately(atRate: 1.0)
+        queueNextMusicFile()
+    }
+
+    /// The song that follows the one playing in its list, if First Row plays both from
+    /// files itself.
+    private func nextMusicFileToQueue() -> (song: MusicLibrarySongEntry, url: URL)? {
+        // (Only a list that was started as a list: a song played alone goes by the menu's
+        // list at its end, which may be another by then.)
+        guard !isPodcastAudioNowPlaying, musicNowPlayingArtist != "iTunes Top Songs", !activeMusicPlaybackQueue.isEmpty,
+              let playingID = activeMusicPlaybackSongID,
+              let index = activeMusicPlaybackQueue.firstIndex(where: { $0.id == playingID }),
+              activeMusicPlaybackQueue.indices.contains(index + 1)
+        else { return nil }
+        let next = activeMusicPlaybackQueue[index + 1]
+        guard next.spotify == nil, let url = next.url?.standardizedFileURL, url.isFileURL, !CloudFolders.isStillInTheCloud(url) else { return nil }
+        #if os(macOS)
+            guard !next.prefersSystemMusicPlayerPlayback else { return nil }
+        #endif
+        return (next, url)
+    }
+
+    /// Puts the song after the one playing behind it in the player, where both are files
+    /// First Row plays itself. The player then goes from one into the other without a gap,
+    /// as an album made to be heard in one piece wants, and with none of the padding an MP3
+    /// or AAC file says it has at its ends; First Row follows as the first one ends (see
+    /// `takeMusicPlayerGoneOn`). Called as a song starts and whenever its list changes.
+    func queueNextMusicFile() {
+        guard let player = musicAudioPlayer as? AVQueuePlayer else { return }
+        let next = nextMusicFileToQueue()
+        if let queued = musicQueuedNext {
+            if queued.songID == next?.song.id, player.items().contains(where: { $0 === queued.item }) { return }
+            player.remove(queued.item)
+            musicQueuedNext = nil
+        }
+        guard let next else {
+            player.actionAtItemEnd = .pause
+            return
+        }
+        let item = AVPlayerItem(url: next.url)
+        guard player.canInsert(item, after: nil) else {
+            player.actionAtItemEnd = .pause
+            return
+        }
+        player.insert(item, after: nil)
+        player.actionAtItemEnd = .advance
+        musicQueuedNext = (songID: next.song.id, item: item)
+    }
+
+    /// Takes the song put behind the one playing back out of the player, which then stops
+    /// at the end of the one playing.
+    func dropQueuedMusicFile() {
+        guard let queued = musicQueuedNext else { return }
+        musicQueuedNext = nil
+        guard let player = musicAudioPlayer as? AVQueuePlayer else { return }
+        player.remove(queued.item)
+        player.actionAtItemEnd = .pause
+    }
+
+    /// The player, if it is going on by itself to `song` (the song before has just played
+    /// to its end with this one behind it). It is taken out of the session, so that the
+    /// stop that comes before a song's start leaves it playing.
+    private func takeMusicPlayerGoneOn(to song: MusicLibrarySongEntry) -> (player: AVQueuePlayer, item: AVPlayerItem)? {
+        guard musicPlayerIsGoingOnByItself else { return nil }
+        musicPlayerIsGoingOnByItself = false
+        guard let queued = musicQueuedNext, queued.songID == song.id, let player = musicAudioPlayer as? AVQueuePlayer,
+              player.items().contains(where: { $0 === queued.item })
+        else {
+            // (Another song is wanted: what was put behind doesn't get to play.)
+            dropQueuedMusicFile()
+            return nil
+        }
+        musicQueuedNext = nil
+        removeMusicPlaybackObservation()
+        musicAudioPlayer = nil
+        return (player, queued.item)
+    }
+
+    /// The player that went on to `song` by itself becomes the session's player again.
+    private func adoptMusicPlayerGoneOn(_ player: AVQueuePlayer, to item: AVPlayerItem, of song: MusicLibrarySongEntry) {
+        // (Nothing is behind this song yet: until something is, it ends as a song alone does.)
+        player.actionAtItemEnd = .pause
+        #if !FIRSTROW_PORTABLE
+            if let url = song.url { player.volume = musicPlaybackVolume(for: url) }
+        #endif
+        configureMusicPlaybackObservation(for: player, item: item)
+        musicAudioPlayer = player
+        queueNextMusicFile()
     }
 
     func removeMusicPlaybackObservation() {
@@ -2124,6 +2241,7 @@ extension MenuView {
         #endif
         removeMusicPlaybackObservation()
         musicAudioPlayer = nil
+        musicQueuedNext = nil
         isCurrentMusicPlaybackUsingAppleScript = false
         isCurrentMusicPlaybackManagedByFirstRow = false
         if preserveSystemMusicPlayback,

@@ -400,6 +400,8 @@ extension MenuView {
         let pickedOutID = nowPlayingQueueHoverIndex.flatMap { old.indices.contains($0) ? old[$0].id : nil }
         activeMusicPlaybackQueue = queue
         musicQueueDepartedSongID = departed
+        // (What follows the song playing may be another song now: see `queueNextMusicFile`.)
+        queueNextMusicFile()
         if let row = queue.firstIndex(where: { $0.id == playingID }) {
             musicNowPlayingTrackPositionText = "\(row + 1) of \(queue.count)"
             prefetchMusicArtworkAroundTrackIndex(row, activeSongID: playingID)

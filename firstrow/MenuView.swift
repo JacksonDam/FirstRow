@@ -673,6 +673,11 @@ final class MenuView: ObservableObject {
     @Published var musicNowPlayingFlipGeneration: Int = 0
     @Published var isMusicNowPlayingFlipAnimating = false
     @Published var musicAudioPlayer: AVPlayer?
+    /// The song put behind the one playing in the player, to be gone on to without a gap
+    /// (see `queueNextMusicFile`).
+    var musicQueuedNext: (songID: String, item: AVPlayerItem)?
+    /// The song playing has just ended by itself, and the player may be going on to the next.
+    var musicPlayerIsGoingOnByItself = false
     @Published var isCurrentMusicPlaybackUsingAppleScript = false
     @Published var currentMusicPlaybackTemporaryFileURL: URL?
     @Published var musicTimeObserverToken: Any?

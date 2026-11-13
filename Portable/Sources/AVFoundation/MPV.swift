@@ -180,6 +180,9 @@ final class MPVCore {
         set("ytdl", "no")
         // Cover art in audio files is not a video to show.
         set("audio-display", "no")
+        // The file after the one playing (a queue player's: see AVQueuePlayer) is opened a
+        // little before it is due, so that its sound is ready where the other's ends.
+        set("prefetch-playlist", "yes")
         // Interlaced video (a DVD's, a broadcast's) is deinterlaced, and what isn't is left
         // as it is. (A libmpv too old to tell the two apart leaves everything as it is.)
         set("deinterlace", "auto")
