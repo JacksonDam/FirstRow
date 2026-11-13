@@ -266,17 +266,22 @@ extension MenuView {
             // one a choice was made in, for coming back to. Going back up out of a list forgets
             // it, so next time it opens afresh.
             pointer.tracksFinger = false
-            if key == .escape || key == .delete, activeFullscreenScene == nil, !isMoviePlaybackVisible,
-               !isMovieResumePromptVisible, textEntry == nil, let level = pointerActiveListLevel,
-               let identity = pointer.hitTester?.menuListScrollState(level)?.identity
-            {
-                // Not yet: it stays where it is as it fades, and starts afresh next time.
-                pointer.forgetScrollWhenShownAgain(identity: identity)
-            }
-        #else
-            // Enter waits to see what it opens (see settlePointerScrollAfterEnter).
-            if key != .enter { pointer.clearPin() }
         #endif
+        // Enter waits to see what it opens (see settlePointerScrollAfterEnter).
+        guard key != .enter else { return }
+        if activeFullscreenScene == nil, !isMoviePlaybackVisible, !isMovieResumePromptVisible, textEntry == nil,
+           let level = pointerActiveListLevel, let identity = pointer.hitTester?.menuListScrollState(level)?.identity
+        {
+            // Going back up out of a list, on a Mac or a PC as on an iPhone. Not yet: it stays
+            // where the pointer or the finger left it as it fades, and starts afresh the next
+            // time it is shown. (Handed back to the arrows as Back was pressed, a list the
+            // pointer had moved was seen to jump to where the arrows keep it, on its way out.)
+            pointer.forgetScrollWhenShownAgain(identity: identity)
+        } else {
+            #if !os(iOS)
+                pointer.clearPin()
+            #endif
+        }
     }
 
     /// After Enter: a player coming up over the list leaves it where the wheel left it until
@@ -378,7 +383,7 @@ extension MenuView {
             // The mouse's own back button goes back; the right button does nothing (Back is
             // on screen instead).
             if button == .back {
-                pointer.clearPin()
+                // (The list stays where the pointer left it as it goes: see notePointerAwareKey.)
                 pointer.pressTarget = nil
                 handleKeyDown(.escape)
             }

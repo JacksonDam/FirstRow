@@ -110,7 +110,13 @@ final class MenuListLayer {
             reset()
         }
         let menuWidth = c.menuWidth
-        let selectedIndex = items.isEmpty ? 0 : min(max(0, c.selectedIndex), items.count - 1)
+        let identity = Self.identity(of: items)
+        var selectedIndex = items.isEmpty ? 0 : min(max(0, c.selectedIndex), items.count - 1)
+        // A list on its way out keeps the row it had chosen, as it keeps where it was scrolled
+        // to (below): what is made ready behind it shows once it is out of sight.
+        if c.visibility == .leaving, lastIdentity == identity, let lastSelectedIndex, items.indices.contains(lastSelectedIndex) {
+            selectedIndex = lastSelectedIndex
+        }
         let selectionWidth = menuWidth * c.selectionBoxWidthScale
         let selectionHeight = menu.selectionBoxHeight * c.selectionBoxHeightScale
         let usesLargeSelectionTextureSizing = c.selectionBoxWidthScale > 1.001 || c.selectionBoxHeightScale > 1.001
@@ -163,7 +169,6 @@ final class MenuListLayer {
             selectedRowOffset = rowOffsets.indices.contains(selectedIndex) ? rowOffsets[selectedIndex] : 0
         }
         // While the pointer drives the list, it stays where the pointer left it.
-        let identity = Self.identity(of: items)
         if lastScrollOffset == nil || lastIdentity != identity {
             menu.pointer.listAppears(identity: identity)
             menu.youtubeListAppeared()
