@@ -31,6 +31,9 @@
         private weak var player: AVPlayer?
         private var pixelsWide: CGFloat = 0
         private var staysReady = false
+        /// Where the movie's picture is in the layer `picture` lies in, when that layer isn't
+        /// the system's own video layer (which says where its picture is): the engine's.
+        private var pictureBox: CGRect?
         /// When the frames were asked for, and when the first of them was there.
         private var askedAt: CFTimeInterval?
         private var firstFrameAt: CFTimeInterval?
@@ -61,11 +64,12 @@
         /// `staysReady`: the screen is one that folds, so the player is asked for its frames
         /// from the movie's start. Asked for them only as the screen bent, it held the picture
         /// still for a fifth of a second while it made room for them, just as the picture was
-        /// moving up.
-        func update(player: AVPlayer?, under: CGRect?, pixelsWide: CGFloat, staysReady: Bool) {
+        /// moving up. `pictureBox`: see the property.
+        func update(player: AVPlayer?, under: CGRect?, pixelsWide: CGFloat, staysReady: Bool, pictureBox: CGRect? = nil) {
             self.player = player
             self.pixelsWide = pixelsWide
             self.staysReady = staysReady
+            self.pictureBox = pictureBox
             guard let item = player?.currentItem, under != nil || staysReady else {
                 rest()
                 detach()
@@ -146,7 +150,7 @@
             let ahead = min(max(seconds, 1.0 / 120), 1.0 / 30)
             let time = output.itemTime(forHostTime: CACurrentMediaTime() + ahead)
             // Over the player's own picture, wherever in its layer that is.
-            let place = (picture.superlayer as? AVPlayerLayer)?.videoRect ?? .zero
+            let place = pictureBox ?? (picture.superlayer as? AVPlayerLayer)?.videoRect ?? .zero
             guard place.width > 1, place.height > 1 else {
                 picture.isHidden = true
                 return true

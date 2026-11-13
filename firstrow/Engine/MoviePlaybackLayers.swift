@@ -43,6 +43,14 @@ final class MoviePlaybackLayers {
         private let firstFrameClock = FrameClock()
     #endif
     #if os(iOS)
+        /// The same for a movie the engine shows with the system's player, on a screen that
+        /// folds (see `holdEnginePictureBack`): the movie it was last looked at for, and
+        /// when the wait began.
+        private weak var heldEngine: EngineMoviePlayer?
+        private var heldEngineSince: CFTimeInterval?
+        private let engineFrameClock = FrameClock()
+    #endif
+    #if os(iOS)
         /// Bent at the fold: the picture again, dimly, under it (see `MovieReflection`).
         private let reflection = MovieReflection()
     #endif
@@ -125,12 +133,25 @@ final class MoviePlaybackLayers {
                 let top = canvas.window(upright.lowerPane).minY
                 underTheFold = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top)
             }
+            // A movie the engine plays is shown in the engine's own layer. Where the engine
+            // has the system's player show it (a movie in a shared folder, an MKV the system
+            // can decode), the reflection is of that player's frames, and the frame over the
+            // fold lies in the engine's layer, where the picture is. (Where the engine draws
+            // the movie itself, for a kind of video the system can't decode, there are no
+            // frames to be had while it plays, and no reflection.)
+            let engineSystemPlayer = systemPlayer == nil ? engine?.systemPlayer : nil
+            let pictureHost: CALayer = (engineSystemPlayer == nil ? nil : enginePicture) ?? playerLayer
+            if reflection.picture.superlayer !== pictureHost {
+                withoutLayerActions { pictureHost.addSublayer(reflection.picture) }
+            }
             reflection.update(
-                player: showsPlayer ? systemPlayer : nil,
+                player: showsPlayer ? systemPlayer ?? engineSystemPlayer : nil,
                 under: underTheFold,
                 pixelsWide: min(bounds.width, bounds.height) * scale,
                 staysReady: UprightStance.screenFolds,
+                pictureBox: pictureHost === playerLayer ? nil : Self.fitted(pictureShape, in: CGRect(origin: .zero, size: pictureBox.size)),
             )
+            holdEnginePictureBack(for: engine)
         #endif
         #if os(iOS)
             // (A movie the engine plays has its picture in the engine's own layer, so the
@@ -332,6 +353,39 @@ final class MoviePlaybackLayers {
             awaitedPlayer = nil
             playerLayer.setOpacity(1, isShowing && ModernTheme.isActive ? .easeOut(duration: 0.25) : nil)
             return false
+        }
+    #endif
+
+    #if os(iOS)
+        /// On a screen that folds, the frames for the reflection are asked of the system's
+        /// player from a movie's start, and the first frame a video's layer then shows has
+        /// been seen drawn at the wrong size (see `MovieReflection.isSettled`). The engine's
+        /// layer is such a layer when the engine shows the picture with the system's player,
+        /// so its picture too is kept out of sight until those frames have been coming for a
+        /// moment: over the black behind it, as a movie's own start is. Only for a picture
+        /// that hasn't been seen yet (once for each movie, as it starts), and never for more
+        /// than a second and a half.
+        private func holdEnginePictureBack(for engine: EngineMoviePlayer?) {
+            guard UprightStance.screenFolds, let engine, engine !== heldEngine, let layer = enginePicture else { return }
+            // (Its picture is up already: too late, and nothing to wait for.)
+            guard !engine.hasPicture else {
+                heldEngine = engine
+                return
+            }
+            // (Not known yet whether the engine will show it with the system's player.)
+            guard engine.systemPlayer != nil else { return }
+            heldEngine = engine
+            heldEngineSince = CACurrentMediaTime()
+            layer.setOpacity(0, nil)
+            engineFrameClock.onFrame = { [weak self, weak engine, weak layer] _ in
+                guard let self, let layer else { return false }
+                let now = CACurrentMediaTime()
+                let isReady = engine?.hasPicture == true && reflection.isSettled(at: now)
+                guard isReady || engine == nil || layer !== enginePicture || now - (heldEngineSince ?? now) > 1.5 else { return true }
+                layer.setOpacity(1, isReady && ModernTheme.isActive ? .easeOut(duration: 0.25) : nil)
+                return false
+            }
+            engineFrameClock.run()
         }
     #endif
 
