@@ -218,6 +218,12 @@ extension MenuView {
     /// The Siri Remote's TV button: brings Now Playing's list out, or puts it away.
     func handleRemoteTVButton() {
         noteInputSource(.siriRemote)
+        toggleNowPlayingQueue()
+    }
+
+    /// Brings Now Playing's list out with the song playing picked out in it, for the arrows to
+    /// move from, or puts it away: the keyboard's Tab, and the Siri Remote's TV button.
+    func toggleNowPlayingQueue() {
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isFullscreenSceneTransitioning else { return }
         registerUserInteractionForScreenSaver()
         if isNowPlayingQueueVisible {

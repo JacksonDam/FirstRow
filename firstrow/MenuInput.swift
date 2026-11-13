@@ -20,6 +20,7 @@ enum KeyCode: UInt16 {
     case enter = 36
     case escape = 53
     case delete = 51
+    case tab = 48
 }
 
 /// Where the last input came from. Hints for pointing and touching (the faint bars) stay

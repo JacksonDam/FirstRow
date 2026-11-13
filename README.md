@@ -71,7 +71,7 @@ On the Mac, iPhone, iPad and Apple TV, the kinds of movie file beyond MP4, MOV a
 
 All of them work at once, with nothing to turn on. First Row follows whatever you used last: touch or the mouse brings up on-screen buttons like Back and the playback controls, and a key, a remote or a game controller puts them away again.
 
-In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, and `Return` shows the lyrics. In a movie, tap `Left` or `Right` to skip 10 seconds or hold them to scrub, and press `Down` for subtitles, audio and speed.
+In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, `Return` shows the lyrics, and `Tab` brings out the song list: `Up` and `Down` then move through it, `Return` plays the song picked out, and `Tab` or `Esc` puts it away. In a movie, tap `Left` or `Right` to skip 10 seconds or hold them to scrub, and press `Down` for subtitles, audio and speed.
 
 ## Building
 

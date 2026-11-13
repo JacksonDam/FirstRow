@@ -213,7 +213,7 @@ enum FirstRowHarness {
 
         private static let keyCodes: [String: KeyCode] = [
             "down": .downArrow, "up": .upArrow, "left": .leftArrow, "right": .rightArrow,
-            "enter": .enter, "return": .enter, "delete": .delete, "escape": .escape, "space": .space,
+            "enter": .enter, "return": .enter, "delete": .delete, "escape": .escape, "space": .space, "tab": .tab,
         ]
 
         @MainActor

@@ -35,6 +35,7 @@
             case .escape: "\u{1b}"
             case .delete: "\u{7f}"
             case .space: " "
+            case .tab: "\t"
             default: ""
             }
             // Window number 0: the event reaches the app's key monitors whichever window is key.

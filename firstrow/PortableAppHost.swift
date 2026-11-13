@@ -59,6 +59,8 @@
                 NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
                 return
             }
+            // (Tab with Alt, Control or the system's key held is for switching windows.)
+            if key.isTab, shortcut || modifiers.contains(.alt) { return }
             guard let code = key.keyCode else { return }
             controller.handleKeyDown(code, isRepeat: isRepeat)
         }
@@ -113,8 +115,14 @@
             case .escape: .escape
             case .delete: .delete
             case .space: .space
+            case .tab: .tab
             case .other: nil
             }
+        }
+
+        var isTab: Bool {
+            if case .tab = self { return true }
+            return false
         }
 
         var isEscape: Bool {

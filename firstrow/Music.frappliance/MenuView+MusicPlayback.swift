@@ -2673,6 +2673,9 @@ extension MenuView {
             toggleNowPlayingLyrics()
         case .space, .enter:
             handleMusicSpacebarPressed()
+        case .tab:
+            // The list of songs comes out beside Now Playing, and goes back again.
+            if !isRepeat { toggleNowPlayingQueue() }
         case .upArrow:
             switchMusicNowPlayingTrack(direction: -1)
         case .downArrow:
