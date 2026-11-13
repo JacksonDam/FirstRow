@@ -112,13 +112,35 @@ extension MenuView {
         return resolvedActiveMusicPlaybackQueue().firstIndex { $0.id == id }
     }
 
-    /// What the list is called: the menu it came from.
+    /// What the list is called: the album, playlist or other list of the library its songs
+    /// are, or else the menu it came from.
     var nowPlayingQueueTitle: String {
+        if isInThirdMenu, let name = shownMusicSongsListName { return name }
         if isInThirdMenu, !headerText.isEmpty { return headerText }
         #if os(macOS)
             if let restoredMusicQueueTitle, !isPodcastAudioNowPlaying { return restoredMusicQueueTitle }
         #endif
         return isPodcastAudioNowPlaying ? "Episodes" : "Songs"
+    }
+
+    /// The songs on screen, by name, when they are those of one album, playlist, genre,
+    /// composer or artist: the menu's own heading says only which of those kinds it is
+    /// ("Albums", "Artists"). An artist's songs that are all one album's are that album.
+    var shownMusicSongsListName: String? {
+        guard thirdMenuMode == .musicSongs, isMusicSongsCategoryScoped, activeMusicLibraryMediaType == .songs,
+              let kind = activeMusicCategoryKind, musicCategoryThirdMenuItems.indices.contains(lastSelectedMusicCategoryIndex)
+        else { return nil }
+        let chosen = musicCategoryThirdMenuItems[lastSelectedMusicCategoryIndex]
+        // (All of an artist's songs, from the artist's albums: the heading there is the artist.)
+        if chosen.id.hasPrefix(Self.musicArtistAllSongsIDPrefix) {
+            return activeMusicCategoryMenuTitle.isEmpty ? nil : activeMusicCategoryMenuTitle
+        }
+        guard kind == .artists else { return chosen.title }
+        // (Every artist's songs: "Songs", as the list of them all is called.)
+        guard chosen.id != "\(MusicCategoryKind.artists.rawValue)::all" else { return nil }
+        guard let album = chosen.songs.first?.album, album != "Unknown Album",
+              !chosen.songs.contains(where: { $0.album != album }) else { return chosen.title }
+        return album
     }
 
     #if os(macOS)
