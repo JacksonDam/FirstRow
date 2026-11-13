@@ -26,7 +26,7 @@ Portable/scripts/build-linux.sh
 dist/linux/FirstRow/first-row
 ```
 
-The Swift runtime is linked in, so `dist/linux/FirstRow` only needs SDL 3 and libmpv on the machine it runs on.
+The Swift runtime is linked in, so `dist/linux/FirstRow` only needs SDL 3 and libmpv on the machine it runs on. The script also packs the folder as `dist/linux/FirstRow-linux-<machine>.tar.xz`, which is the download.
 
 Shared folders (Sources > Add Server > Shared Folder) are read with Samba's client library, which First Row loads as it runs if the system has it (`libsmbclient.so.0`: the `libsmbclient0` package on Ubuntu and Debian, `libsmbclient` on Fedora, there already on most desktops, whose file managers use it). Without it First Row runs as before and doesn't offer shared folders. On Windows the system reaches shared folders itself.
 
@@ -41,7 +41,15 @@ Portable\scripts\build-windows.ps1            # or -Arch arm64
 & "dist\windows\FirstRow\First Row.exe"
 ```
 
-The script downloads SDL 3 and libmpv the first time and copies their DLLs and the Swift runtime next to the app. The libmpv is the mpv project's own build for Windows under the LGPL, from a named mpv release (`-MpvVersion`), which has nothing in it under the GPL and nothing that reads DVDs: First Row reads an unprotected DVD's files itself, and a DVD that is protected against copying goes to the PC's own DVD player, if it has one. It also makes the program's icon from the app icon's pictures (`firstrow/Assets.xcassets/AppIcon.appiconset`) and links it into `First Row.exe` with the app's name and version, so Explorer, the task bar and Alt+Tab show it. Where a libmpv build has no OpenGL renderer, video frames are converted on the processor and uploaded, which costs more processor time with large videos.
+The script downloads SDL 3 the first time and copies its DLL, libmpv's and the parts of the Swift and Visual C++ runtimes that First Row loads next to the app, then packs the folder as `dist\windows\FirstRow-windows-<x64|arm64>.zip`, which is the download. It also makes the program's icon from the app icon's pictures (`firstrow/Assets.xcassets/AppIcon.appiconset`) and links it into `First Row.exe` with the app's name and version, so Explorer, the task bar and Alt+Tab show it.
+
+The libmpv in the downloads is a small one built from source for First Row: mpv with FFmpeg's decoders and what First Row asks of it (sound through Windows' own audio, pictures drawn with OpenGL into First Row's window, the graphics card's decoders), and without the encoders, scripting and Vulkan and Direct3D renderers that make mpv's own build three times the size. It is a cross-build from a Mac or a Linux machine:
+
+```sh
+Portable/scripts/build-libmpv-windows.sh x86_64     # or aarch64
+```
+
+which needs meson, ninja, nasm, pkg-config, make, git and python3, fetches the compiler (llvm-mingw) and each part's source at a named release, checks every download against a checksum, and leaves `Portable/build/libmpv/<x64|arm64>` for `build-windows.ps1` to use. Where that folder isn't there, `build-windows.ps1` downloads the mpv project's own build for Windows under the LGPL instead, from a named mpv release (`-MpvVersion`). Either way there is nothing in it under the GPL and nothing that reads DVDs: First Row reads an unprotected DVD's files itself, and a DVD that is protected against copying goes to the PC's own DVD player, if it has one. Where a libmpv build has no OpenGL renderer, video frames are converted on the processor and uploaded, which costs more processor time with large videos.
 
 First Row needs OpenGL 3.3, which every current graphics driver provides. A machine or virtual machine without one can use Mesa's software renderer instead: put `opengl32.dll`, `libgallium_wgl.dll` and the DLLs they load (MSYS2's `mingw-w64-clang-x86_64-mesa` or `mingw-w64-clang-aarch64-mesa` package) next to `First Row.exe`, and set `GALLIUM_DRIVER=llvmpipe` (`setx GALLIUM_DRIVER llvmpipe`, then open First Row again): left to choose for itself, Mesa can pick a renderer that quits First Row at startup. In a virtual machine whose graphics driver supports Direct3D 12 (UTM's guest tools, for example), `GALLIUM_DRIVER=d3d12` with `dxil.dll` from the Windows SDK next to `First Row.exe` draws on the GPU instead.
 

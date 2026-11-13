@@ -13,3 +13,6 @@ First Row.xcodeproj/project.xcworkspace/xcuserdata/
 MediaEngine/.build/
 MediaEngine/build/
 MediaEngine/Sources/FirstRowMediaEngine/Shared/
+
+# A libmpv built for the Windows packages (Portable/scripts/build-libmpv-windows.sh).
+Portable/build/

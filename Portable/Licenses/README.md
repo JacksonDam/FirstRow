@@ -6,7 +6,7 @@ file.
 
 | Part | Where it is | Licence | Source |
 | --- | --- | --- | --- |
-| mpv 0.42.0 as libmpv, with FFmpeg, libass, libplacebo and the other libraries it is built from inside it | Windows: `libmpv-2.dll` | LGPL 2.1 or later (`mpv.LGPL.txt`) | [mpv 0.42.0](https://github.com/mpv-player/mpv/releases/tag/v0.42.0) |
+| mpv 0.42.0 as libmpv, with FFmpeg, libass, libplacebo and the other libraries it is built from inside it | Windows: `libmpv-2.dll` | LGPL 2.1 or later (`mpv.LGPL.txt`), and each library's own (see below) | [mpv 0.42.0](https://github.com/mpv-player/mpv/releases/tag/v0.42.0) |
 | SDL 3 | Windows: `SDL3.dll` | zlib (`SDL.zlib.txt`) | [SDL](https://github.com/libsdl-org/SDL) |
 | The Swift runtime and Foundation | Windows: the `swift*.dll` and `Foundation*.dll` files, `dispatch.dll` and `BlocksRuntime.dll`. Linux: inside `first-row` | Apache 2.0 with the Runtime Library Exception (`Swift.Apache-2.0.txt`) | [swiftlang](https://github.com/swiftlang) |
 | ICU | Windows: `_FoundationICU.dll`. Linux: inside `first-row` | Unicode License V3 (`ICU.Unicode.txt`) | [ICU](https://github.com/unicode-org/icu) |
@@ -25,16 +25,24 @@ First Row loads from the system, if it is there, to read shared folders.
 
 ## mpv on Windows
 
-`libmpv-2.dll` is the mpv project's own build of libmpv for Windows, the one it publishes under
-the LGPL (`libmpv-v0.42.0-x86_64-w64-mingw32-lgpl.zip` and
-`libmpv-v0.42.0-aarch64-w64-mingw32-lgpl.zip` at the address above), as it comes. mpv is built
-there with `-Dgpl=false` and an FFmpeg configured without `--enable-gpl`, so nothing in it is
-under the GPL, and it has nothing in it that reads DVDs or unscrambles them.
+`libmpv-2.dll` is one of two builds of libmpv, both under the LGPL, with nothing in them under
+the GPL and nothing that reads DVDs or unscrambles them.
 
-First Row uses it only through mpv's client API, so another build of libmpv 2 can be put in its
-place by replacing the file.
+In First Row's downloads it is a small build made from source for First Row. `libmpv.built-from.txt`,
+beside this file, lists the release of each part that is inside it, and each part's licence is
+beside this file too: mpv (`mpv.LGPL.txt`, built with `-Dgpl=false`), FFmpeg (`FFmpeg.LGPL.txt`,
+configured without `--enable-gpl` and `--enable-nonfree`), libplacebo, libass, FreeType, FriBidi,
+HarfBuzz, dav1d, libbluray, uchardet, libiconv and zlib, and the compiler's own runtime
+(`llvm-mingw.*.txt`). The script that builds it is `Portable/scripts/build-libmpv-windows.sh` in
+First Row's repository: it names the address each part's source is fetched from, and makes one
+change to mpv's build file, which it describes.
 
-Its source: mpv's is at the address above. The libraries inside it are the ones in the
-[FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) images mpv's own build uses (`win64-lgpl`
-and `winarm64-lgpl`), which that project's scripts fetch and build from source; mpv's part of
-the recipe is `ci/build-mingw64-full.sh` in its repository.
+A copy of First Row built without that (there is no `libmpv.built-from.txt` then) has the mpv
+project's own build of libmpv for Windows, the one it publishes under the LGPL
+(`libmpv-v0.42.0-x86_64-w64-mingw32-lgpl.zip` and `libmpv-v0.42.0-aarch64-w64-mingw32-lgpl.zip`
+at the address above), as it comes. Its source: mpv's is at the address above, and the
+libraries inside it are the ones in the [FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)
+images mpv's own build uses (`win64-lgpl` and `winarm64-lgpl`).
+
+First Row uses libmpv only through mpv's client API, so another build of libmpv 2 can be put
+in its place by replacing the file.

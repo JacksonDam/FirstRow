@@ -1,4 +1,5 @@
-# Builds First Row for Windows into dist\windows\FirstRow.
+# Builds First Row for Windows into dist\windows\FirstRow, and packs that folder as
+# dist\windows\FirstRow-windows-<x64|arm64>.zip.
 # Needs Swift 6.4 for Windows and Visual Studio's C++ build tools (for lib.exe), run from a
 # "Developer PowerShell for VS" prompt. SDL 3 and libmpv are downloaded on the first run.
 param(
@@ -26,25 +27,37 @@ if (-not (Test-Path $sdl)) {
     Expand-Archive $zip -DestinationPath $deps -Force
 }
 
-# libmpv: mpv's own build of it for Windows, the one under the LGPL ("lgpl" in its name).
-# That build has nothing in it under the GPL, and nothing that reads DVDs or unscrambles
-# them: First Row reads an unprotected DVD's files itself (see DVDMenuFeature.swift). A named
-# release is used, not the newest, so that what goes into First Row is what was looked through.
+# libmpv. First Row's own small build of it, when it has been built (see
+# build-libmpv-windows.sh, which builds it from source on a Mac or a Linux machine): mpv with
+# what First Row asks of it and nothing else, a third of the size of mpv's own. Otherwise
+# mpv's own build of it for Windows, the one under the LGPL ("lgpl" in its name), from a
+# named release, so that what goes into First Row is what was looked through. Neither has
+# anything in it under the GPL, or anything that reads DVDs or unscrambles them: First Row
+# reads an unprotected DVD's files itself (see DVDMenuFeature.swift).
+$ownMpv = Join-Path $root "Portable\build\libmpv\$Arch"
+$usesOwnMpv = Test-Path (Join-Path $ownMpv "libmpv-2.dll")
+if ($usesOwnMpv) {
+    $mpv = $ownMpv
+} else {
+    $mpv = Join-Path $deps "mpv-$MpvVersion-lgpl"
+    if (-not (Test-Path $mpv)) {
+        $mpvArch = if ($Arch -eq "x64") { "x86_64" } else { "aarch64" }
+        $name = "libmpv-v$MpvVersion-$mpvArch-w64-mingw32-lgpl.zip"
+        $archive = Join-Path $deps $name
+        Invoke-WebRequest "https://github.com/mpv-player/mpv/releases/download/v$MpvVersion/$name" -OutFile $archive
+        New-Item -ItemType Directory -Force -Path $mpv | Out-Null
+        Expand-Archive $archive -DestinationPath $mpv -Force
+    }
+}
 # An import library is made from the DLL's list of exports, for the Visual C++ linker.
-$mpv = Join-Path $deps "mpv-$MpvVersion-lgpl"
-if (-not (Test-Path (Join-Path $mpv "mpv.lib"))) {
-    $mpvArch = if ($Arch -eq "x64") { "x86_64" } else { "aarch64" }
-    $name = "libmpv-v$MpvVersion-$mpvArch-w64-mingw32-lgpl.zip"
-    $archive = Join-Path $deps $name
-    Invoke-WebRequest "https://github.com/mpv-player/mpv/releases/download/v$MpvVersion/$name" -OutFile $archive
-    New-Item -ItemType Directory -Force -Path $mpv | Out-Null
-    Expand-Archive $archive -DestinationPath $mpv -Force
+$mpvDll = Get-ChildItem $mpv -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1
+$mpvLib = Join-Path $mpv "mpv.lib"
+if (-not (Test-Path $mpvLib) -or (Get-Item $mpvLib).LastWriteTime -lt $mpvDll.LastWriteTime) {
     $machine = if ($Arch -eq "x64") { "X64" } else { "ARM64" }
-    $dll = Get-ChildItem $mpv -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1
-    $exports = & dumpbin.exe /exports $dll.FullName | Select-String "^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)" | ForEach-Object { $_.Matches[0].Groups[1].Value }
+    $exports = & dumpbin.exe /exports $mpvDll.FullName | Select-String "^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)" | ForEach-Object { $_.Matches[0].Groups[1].Value }
     $def = Join-Path $mpv "mpv.def"
     Set-Content $def (@("LIBRARY libmpv-2.dll", "EXPORTS") + $exports)
-    & lib.exe "/def:$def" "/name:libmpv-2.dll" "/out:$(Join-Path $mpv 'mpv.lib')" "/machine:$machine" | Out-Null
+    & lib.exe "/def:$def" "/name:libmpv-2.dll" "/out:$mpvLib" "/machine:$machine" | Out-Null
 }
 
 $sdlInclude = Join-Path $sdl "include"
@@ -167,7 +180,8 @@ $ErrorActionPreference = "Continue"
 try {
     $extra = @()
     if ($Harness) { $extra += @("-Xswiftc", "-DFIRSTROW_HARNESS_BUILD") }
-    swift build -c release --product FirstRow @extra `
+    # (Without what only a debugger reads, which is most of the program's size otherwise.)
+    swift build -c release --product FirstRow -debug-info-format none @extra `
         -Xcc "-I$sdlInclude" -Xcc "-I$mpvInclude" `
         -Xlinker "/LIBPATH:$sdlLib" -Xlinker "/LIBPATH:$mpv" `
         -Xlinker /SUBSYSTEM:WINDOWS -Xlinker /ENTRY:mainCRTStartup `
@@ -183,7 +197,7 @@ if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Force -Path (Join-Path $out "Resources") | Out-Null
 Copy-Item (Join-Path $root ".build\release\FirstRow.exe") (Join-Path $out "First Row.exe")
 Copy-Item (Join-Path $sdlLib "SDL3.dll") $out
-Get-ChildItem $mpv -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1 | Copy-Item -Destination $out
+Copy-Item $mpvDll.FullName $out
 # The Swift runtime the app was built against, wherever the installer put it.
 # The toolchain's own folder has a swiftCore.dll too, so only a Runtimes folder will do.
 $swiftCore = @(cmd /c "where swiftCore.dll 2>nul") | Where-Object { $_ -match "\\Runtimes\\" } | Select-Object -First 1
@@ -198,15 +212,68 @@ Copy-Item (Join-Path (Split-Path $swiftCore) "*.dll") $out
 $crt = if ($env:VCToolsRedistDir) { Get-ChildItem (Join-Path $env:VCToolsRedistDir $Arch) -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue | Select-Object -First 1 }
 if (-not $crt) { throw "The Visual C++ runtime wasn't found: run this from a Developer PowerShell" }
 Copy-Item (Join-Path $crt.FullName "*.dll") $out
+# Of those two runtimes, only the DLLs something here loads stay: the program's, and in turn
+# each of theirs. (The rest are for what First Row doesn't use: a debugger's view of a Swift
+# program, the parts of Swift and of C++ that nothing in it calls.)
+$shipped = @{}
+Get-ChildItem $out -Filter *.dll | ForEach-Object { $shipped[$_.Name.ToLower()] = $_.FullName }
+$loaded = @{}
+$toLookAt = New-Object System.Collections.Queue
+$toLookAt.Enqueue((Join-Path $out "First Row.exe"))
+while ($toLookAt.Count -gt 0) {
+    $imports = & dumpbin.exe /dependents $toLookAt.Dequeue() | Select-String "^\s+(\S+\.dll)\s*$" | ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
+    foreach ($name in $imports) {
+        if ($shipped.ContainsKey($name) -and -not $loaded.ContainsKey($name)) {
+            $loaded[$name] = $true
+            $toLookAt.Enqueue($shipped[$name])
+        }
+    }
+}
+if (-not $loaded.ContainsKey("swiftcore.dll")) { throw "The program's DLLs couldn't be listed (dumpbin): run this from a Developer PowerShell" }
+$shipped.Keys | Where-Object { -not $loaded.ContainsKey($_) } | ForEach-Object { Remove-Item $shipped[$_] }
 foreach ($folder in "Assets.xcassets", "Sounds", "ScreenSaverDefaultPhotos", "Videos", "Fonts") {
     $source = Join-Path $root "firstrow\$folder"
     if (Test-Path $source) { Copy-Item $source (Join-Path $out "Resources") -Recurse }
 }
+# The app icon's own pictures are for the Mac, the iPhone and the Apple TV, and large: here
+# the icon is inside First Row.exe.
+Get-ChildItem (Join-Path $out "Resources\Assets.xcassets") -Directory | Where-Object { $_.Name -like "*.appiconset" -or $_.Name -like "*.brandassets" } | Remove-Item -Recurse -Force
+Get-ChildItem (Join-Path $out "Resources") -Recurse -Force -Filter ".DS_Store" | Remove-Item -Force
 # What First Row is made with, and the terms of each part (see Portable\Licenses\README.md).
 $licenses = Join-Path $out "Licenses"
 New-Item -ItemType Directory -Force -Path $licenses | Out-Null
 Copy-Item (Join-Path $root "Portable\Licenses\*") $licenses
 Copy-Item (Join-Path $root "Portable\Sources\CPortable\plutovg\LICENSE") (Join-Path $licenses "plutovg.MIT.txt")
 Copy-Item (Join-Path $root "Portable\Sources\CPortable\plutovg\FTL.TXT") (Join-Path $licenses "FreeType.FTL.txt")
-Copy-Item (Join-Path $mpv "LICENSE.LGPL") (Join-Path $licenses "mpv.LGPL.txt")
+if ($usesOwnMpv) {
+    # (Each part of it has its licence beside the DLL it was built into, and a list of them.)
+    Copy-Item (Join-Path $mpv "Licenses\*") $licenses
+    Copy-Item (Join-Path $mpv "built-from.txt") (Join-Path $licenses "libmpv.built-from.txt")
+} else {
+    Copy-Item (Join-Path $mpv "LICENSE.LGPL") (Join-Path $licenses "mpv.LGPL.txt")
+}
 Write-Host "Built $out"
+
+# The download. 7-Zip packs a zip a little tighter than Windows does, where there is one.
+$zip = Join-Path $root "dist\windows\FirstRow-windows-$Arch.zip"
+if (Test-Path $zip) { Remove-Item $zip }
+$sevenZip = @("7z.exe", "7za.exe") | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+$packed = $false
+if ($sevenZip) {
+    # (One that only makes its own kind of archive says so, and Windows packs the folder.)
+    $ErrorActionPreference = "Continue"
+    & $sevenZip a -tzip -mx=9 -mfb=258 -mpass=15 $zip $out *> $null
+    $packed = ($LASTEXITCODE -eq 0) -and (Test-Path $zip)
+    $ErrorActionPreference = "Stop"
+}
+if (-not $packed) {
+    if (Test-Path $zip) { Remove-Item $zip }
+    # (Windows' own tar, which writes a zip any unpacker reads: Windows PowerShell's
+    # Compress-Archive puts backslashes in the names inside.)
+    $ErrorActionPreference = "Continue"
+    & tar.exe -a -c -f $zip -C (Split-Path $out) (Split-Path $out -Leaf) *> $null
+    $packed = ($LASTEXITCODE -eq 0) -and (Test-Path $zip)
+    $ErrorActionPreference = "Stop"
+    if (-not $packed) { Compress-Archive $out $zip -CompressionLevel Optimal }
+}
+Write-Host ("Packed {0} ({1:N0} MB)" -f $zip, ((Get-Item $zip).Length / 1MB))

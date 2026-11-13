@@ -1,10 +1,13 @@
 #!/bin/sh
-# Builds First Row for Linux into dist/linux/FirstRow.
+# Builds First Row for Linux into dist/linux/FirstRow, and packs that folder as
+# dist/linux/FirstRow-linux-<machine>.tar.xz.
 # Needs Swift 6.4 (swift.org), SDL 3 and libmpv: on Ubuntu 26.04 and Debian 13,
 #   sudo apt install libsdl3-dev libmpv-dev libgl-dev
 set -e
 cd "$(dirname "$0")/../.."
-swift build -c release --product FirstRow --static-swift-stdlib
+# The program goes out without what only a debugger reads: with it, it is half as big again
+# (the Swift runtime and Foundation are inside it, and their symbols with them).
+swift build -c release --product FirstRow --static-swift-stdlib -debug-info-format none -Xlinker -s
 out=dist/linux/FirstRow
 rm -rf "$out"
 mkdir -p "$out/Resources"
@@ -12,6 +15,15 @@ cp .build/release/FirstRow "$out/first-row"
 cp -R firstrow/Assets.xcassets firstrow/Sounds firstrow/ScreenSaverDefaultPhotos firstrow/Fonts "$out/Resources/"
 if [ -d firstrow/Videos ]; then cp -R firstrow/Videos "$out/Resources/"; fi
 cp firstrow/Assets.xcassets/AppIcon.appiconset/icon-mac-512x512.png "$out/first-row.png"
+# Of the app icon's pictures, the window is handed five small ones as it opens (see
+# WindowIcon.swift). The rest are for the Mac, the iPhone and the Apple TV, most of them large.
+icons="$out/Resources/Assets.xcassets/AppIcon.appiconset"
+rm -rf "$icons" "$out/Resources/Assets.xcassets"/*.brandassets
+mkdir -p "$icons"
+for icon in icon-mac-128x128.png icon-mac-256x256.png icon-mac-32x32@2x.png icon-mac-32x32.png icon-mac-16x16.png; do
+    cp "firstrow/Assets.xcassets/AppIcon.appiconset/$icon" "$icons/"
+done
+find "$out/Resources" -name .DS_Store -delete
 # What First Row is made with, and the terms of each part (see Portable/Licenses/README.md).
 mkdir -p "$out/Licenses"
 cp Portable/Licenses/README.md Portable/Licenses/Swift.Apache-2.0.txt Portable/Licenses/ICU.Unicode.txt Portable/Licenses/stb.txt "$out/Licenses/"
@@ -52,3 +64,9 @@ echo "Added $entry"
 INSTALL
 chmod +x "$out/install.sh"
 echo "Built $out"
+# The download: xz makes the program a third smaller than gzip does, and every desktop's
+# archive manager and tar open it.
+archive="dist/linux/FirstRow-linux-$(uname -m).tar.xz"
+rm -f "$archive"
+tar -C dist/linux -cf - FirstRow | xz -9e -T0 > "$archive"
+echo "Packed $archive ($(($(wc -c < "$archive") / 1048576)) MB)"
