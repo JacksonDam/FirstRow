@@ -355,6 +355,7 @@ public enum PortableApplication {
             handler()
         }
         UserDefaults.standard.synchronize()
+        AVPlayer.shutDownAll()
         SDL_GL_DestroyContext(context)
         SDL_DestroyWindow(created)
         SDL_Quit()

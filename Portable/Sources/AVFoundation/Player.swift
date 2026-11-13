@@ -182,6 +182,7 @@ open class AVPlayer: NSObject, @unchecked Sendable {
         pendingLoad = false
         hasReachedEnd = false
         seekAskedAt = nil
+        MPVCore.stopClosing()
         core.setFlagWithoutWaiting("pause", !playing)
         core.noteLoading()
         var target = url.isFileURL ? url.path : url.absoluteString
@@ -482,9 +483,15 @@ open class AVPlayer: NSObject, @unchecked Sendable {
     nonisolated(unsafe) private static var lastDebug = Date.distantPast
     private static let debugLog = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_MPV"] == "1"
 
+    /// Shuts every player's mpv down; the host calls this as First Row quits, before OpenGL goes.
+    public static func shutDownAll() {
+        MPVCore.shutDownAll()
+    }
+
     /// Where mpv's renderer finds OpenGL functions; set by the host.
     public static func setOpenGLLoader(_ loader: @escaping (String) -> UnsafeMutableRawPointer?) {
         MPVCore.procAddress = loader
+        MPVCore.noteGraphicsDriver()
         MPVCore.prepareSpare()
     }
 

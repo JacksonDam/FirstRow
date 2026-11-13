@@ -529,6 +529,31 @@ extension MenuView {
         return await generateMovieThumbnail(for: standardizedURL)
     }
 
+    /// A movie's menu picture: the one made before, or one made now and kept. They are made
+    /// one at a time, each waiting its turn, and one whose row has been left by the time
+    /// its turn comes isn't made. (A row's pictures used to be asked for afresh each time
+    /// the row was come back to, with those asked for before still being made, all at once,
+    /// and thrown away when they were done: going to and fro between two rows had dozens of
+    /// movies being decoded together, and everything else waiting on them.)
+    func moviePreviewPicture(for url: URL, isWanted: @MainActor @Sendable () -> Bool) async -> NSImage? {
+        let cacheKey = url.path
+        while moviePreviewCache[cacheKey] == nil, let making = moviePreviewBeingMade {
+            await making.value
+        }
+        if let made = moviePreviewCache[cacheKey] { return made }
+        guard isWanted() else { return nil }
+        let making = Task.detached(priority: .userInitiated) {
+            let image = await self.generateMoviePreviewImage(for: url)
+            await MainActor.run {
+                if let image { self.moviePreviewCache[cacheKey] = image }
+                self.moviePreviewBeingMade = nil
+            }
+        }
+        moviePreviewBeingMade = making
+        await making.value
+        return moviePreviewCache[cacheKey]
+    }
+
     nonisolated func generateMovieThumbnail(for url: URL, preferredSeconds: Double? = nil) async -> NSImage? {
         let standardizedURL = url.standardizedFileURL
         if shouldSkipMovieThumbnailGeneration(for: standardizedURL) || CloudFolders.isStillInTheCloud(standardizedURL) {
@@ -618,42 +643,27 @@ extension MenuView {
                 moviesFolderSubmenuPreviewDescriptors = cachedDescriptors
             }
         }
-        Task.detached(priority: .userInitiated) { [previewURLs, identity, cacheSnapshot] in
-            var generatedCacheEntries: [String: NSImage] = [:]
+        Task {
             var resolvedDescriptors: [MovieGapPreviewDescriptor] = []
             resolvedDescriptors.reserveCapacity(previewURLs.count)
             for url in previewURLs {
-                let cacheKey = url.path
-                let image: NSImage?
-                if let cached = cacheSnapshot[cacheKey] {
-                    image = cached
-                } else {
-                    image = await self.generateMoviePreviewImage(for: url)
-                    if let image {
-                        generatedCacheEntries[cacheKey] = image
-                    }
-                }
+                // (The row has been left: the rest aren't made for nobody to see.)
+                guard self.moviesFolderSubmenuPreviewRequestID == requestID else { return }
+                let image = await self.moviePreviewPicture(for: url) { self.moviesFolderSubmenuPreviewRequestID == requestID }
                 guard let image else { continue }
                 resolvedDescriptors.append(
                     MovieGapPreviewDescriptor(
-                        id: "movies_folder_preview:\(cacheKey)",
+                        id: "movies_folder_preview:\(url.path)",
                         image: image,
                         aspectRatio: 16.0 / 9.0,
                         sizeScale: 1.0,
                     ),
                 )
             }
-            let generatedCacheEntriesSnapshot = generatedCacheEntries
-            let resolvedDescriptorsSnapshot = resolvedDescriptors
-            await MainActor.run {
-                guard self.moviesFolderSubmenuPreviewRequestID == requestID else { return }
-                guard self.moviesFolderSubmenuPreviewIdentity == identity else { return }
-                for (cacheKey, image) in generatedCacheEntriesSnapshot {
-                    self.moviePreviewCache[cacheKey] = image
-                }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    self.moviesFolderSubmenuPreviewDescriptors = resolvedDescriptorsSnapshot
-                }
+            guard self.moviesFolderSubmenuPreviewRequestID == requestID else { return }
+            guard self.moviesFolderSubmenuPreviewIdentity == identity else { return }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                self.moviesFolderSubmenuPreviewDescriptors = resolvedDescriptors
             }
         }
     }
@@ -691,21 +701,18 @@ extension MenuView {
             }
             return
         }
-        Task.detached(priority: .userInitiated) { [resolvedTarget] in
-            let generatedThumbnail = await self.generateMoviePreviewImage(for: resolvedTarget)
-            await MainActor.run {
-                guard self.moviePreviewRequestID == requestID else { return }
-                guard self.moviePreviewTargetURL?.standardizedFileURL == resolvedTarget else { return }
-                if let generatedThumbnail {
-                    self.moviePreviewCache[cacheKey] = generatedThumbnail
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        self.moviePreviewImage = generatedThumbnail
-                    }
-                } else {
-                    // (No picture to be had of it: not the last movie's in its place.)
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        self.moviePreviewImage = nil
-                    }
+        Task {
+            let generatedThumbnail = await self.moviePreviewPicture(for: resolvedTarget) { self.moviePreviewRequestID == requestID }
+            guard self.moviePreviewRequestID == requestID else { return }
+            guard self.moviePreviewTargetURL?.standardizedFileURL == resolvedTarget else { return }
+            if let generatedThumbnail {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    self.moviePreviewImage = generatedThumbnail
+                }
+            } else {
+                // (No picture to be had of it: not the last movie's in its place.)
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    self.moviePreviewImage = nil
                 }
             }
         }
@@ -737,7 +744,7 @@ extension MenuView {
             var pictures: [CGImage] = []
             for source in sources {
                 guard await isStillChosen() else { return }
-                guard let picture = await self.generateMoviePreviewImage(for: source),
+                guard let picture = await self.moviePreviewPicture(for: source, isWanted: { self.moviePreviewRequestID == requestID }),
                       let cgImage = await MainActor.run(body: { LayerImageCache.cgImage(for: picture) }) else { continue }
                 pictures.append(cgImage)
                 if pictures.count == 4 { break }

@@ -165,7 +165,7 @@ final class MPVCore {
         // frames are copied back, so they're drawn as ever. On the processor a 4K film has a
         // frame in the making on every thread (hundreds of megabytes) and can fall behind.
         // Where there is no such decoder, mpv decodes on the processor as before.
-        set("hwdec", ProcessInfo.processInfo.environment["FIRSTROW_HWDEC"] ?? "auto-copy-safe")
+        set("hwdec", Self.decodersAskedFor ?? "auto-copy-safe")
         // (Copying back needs none of mpv's links between a decoder and OpenGL: they'd only
         // be looked for, one by one, each time a renderer is made.)
         set("gpu-hwdec-interop", "no")
@@ -222,6 +222,32 @@ final class MPVCore {
     func register() {
         isRegistered = true
         Self.live[ObjectIdentifier(self)] = self
+        // (A core made before OpenGL was up was made without knowing whose it is.)
+        if Self.decodersAskedFor == nil, let preferred = Self.decodersForDriver {
+            setPropertyWithoutWaiting("hwdec", preferred)
+        }
+    }
+
+    /// What `FIRSTROW_HWDEC` asks for, which is taken as it is.
+    private static let decodersAskedFor = ProcessInfo.processInfo.environment["FIRSTROW_HWDEC"]
+
+    /// The decoders to try with the graphics driver in use, where mpv's own choice among
+    /// the dependable ones isn't the one to make (main thread only).
+    nonisolated(unsafe) private static var decodersForDriver: String?
+
+    /// OpenGL is up, and current on this thread: which driver's it is decides the decoder.
+    /// mpv tries Vulkan's first. Nvidia's OpenGL and Vulkan are one library with one lock
+    /// between them, held while a Vulkan decoder is set up and again while it is let go of:
+    /// the interface's own drawing waited on it for a quarter of a second and more, with the
+    /// screen stopped, as a movie started and as it went away (which is as the menus come
+    /// back). Nvidia's own decoder, which shares nothing with OpenGL, is tried first there.
+    static func noteGraphicsDriver() {
+        #if os(Linux)
+            guard let vendor = glGetString(GL_VENDOR).map({ String(cString: $0) }), vendor.uppercased().contains("NVIDIA") else { return }
+            // (Decoders can be given as a list from mpv 0.36, whose client API is 2.1.)
+            guard mpv_client_api_version() >= 0x20001 else { return }
+            decodersForDriver = "nvdec-copy,auto-copy-safe"
+        #endif
     }
 
     static let debugEnabled = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_MPV"] == "1"
@@ -252,6 +278,11 @@ final class MPVCore {
     /// second when mpv is waiting to show a frame, with the main thread stopped, just as a
     /// movie's screen goes out and the menus come in. So mpv is asked to stop, which isn't
     /// waited for, and the renderer goes once mpv says it has stopped (see `finishClosing`).
+    ///
+    /// Stopping has mpv let go of its decoder, and a decoder on the graphics card is let go
+    /// of through the card's driver, which the interface is drawing through at the same
+    /// time: its frames come late, or not at all, for a quarter of a second. So mpv is only
+    /// paused here, and is asked to stop once nothing on screen is moving.
     func close() {
         Self.debug("core closed")
         if isRegistered {
@@ -265,27 +296,51 @@ final class MPVCore {
             shutDown()
             return
         }
-        commandWithoutWaiting(["stop"])
+        setFlagWithoutWaiting("pause", true)
         closingSince = ProcessInfo.processInfo.systemUptime
         Self.closing[ObjectIdentifier(self)] = self
     }
 
-    /// A closing core's turn in a pass of the main loop. Its renderer goes once mpv is idle,
-    /// when nothing on screen is moving if such a moment comes within three seconds (what's
-    /// left to do then is giving OpenGL's things back, which is quick, but not nothing); and
-    /// after five seconds whatever mpv says.
+    /// When a closing core was asked to stop, once it has been.
+    private var askedToStopAt: TimeInterval?
+
+    private func askToStop() {
+        guard askedToStopAt == nil else { return }
+        askedToStopAt = ProcessInfo.processInfo.systemUptime
+        commandWithoutWaiting(["stop"])
+    }
+
+    /// Has the cores that are closing stop now, moving or not: another movie is about to
+    /// open, and their decoders are better let go of before its picture is up than under it.
+    static func stopClosing() {
+        for core in closing.values { core.askToStop() }
+    }
+
+    /// A closing core's turn in a pass of the main loop. It is asked to stop when nothing on
+    /// screen is moving, if such a moment comes within three seconds. Its renderer goes once
+    /// mpv is idle, again when nothing is moving if such a moment comes within three seconds
+    /// (what's left to do then is giving OpenGL's things back, which is quick, but not
+    /// nothing); and after five seconds whatever mpv says.
     private func finishClosing(interfaceIsMoving: Bool) {
         if wakeup.take() {
             while let event = mpv_wait_event(handle, 0), event.pointee.event_id != MPV_EVENT_NONE {
                 if event.pointee.event_id == MPV_EVENT_PROPERTY_CHANGE { note(event) }
             }
         }
-        let waited = ProcessInfo.processInfo.systemUptime - closingSince
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let askedToStopAt else {
+            if !interfaceIsMoving || now - closingSince > 3 { askToStop() }
+            return
+        }
+        let waited = now - askedToStopAt
         guard (isIdle && (!interfaceIsMoving || waited > 3)) || waited > 5 else { return }
         Self.debug("core let go of after \(Int(waited * 1000)) ms")
         Self.closing.removeValue(forKey: ObjectIdentifier(self))
         shutDown()
     }
+
+    /// The cores being shut down on other threads.
+    private static let shuttingDown = DispatchGroup()
 
     private func shutDown() {
         // (The renderer goes here, where OpenGL is.)
@@ -294,13 +349,36 @@ final class MPVCore {
         let handle = handle
         let reference = wakeupReference
         wakeupReference = nil
+        Self.shuttingDown.enter()
         DispatchQueue.global(qos: .utility).async {
             mpv_terminate_destroy(handle)
             // (mpv is gone, and with it the last thing that could call on this.)
             reference?.release()
             // A film's frames and buffers are freed by now: the system gets them back.
             fr_release_free_memory()
+            Self.shuttingDown.leave()
         }
+    }
+
+    /// First Row is quitting (on the main thread, with OpenGL still up): every core is shut
+    /// down and waited for. One left playing as the program exits goes on decoding while
+    /// what it decodes with is taken away under it, which brought First Row down on its way
+    /// out whenever it was quit with a movie playing.
+    static func shutDownAll() {
+        let cores = Array(live.values) + Array(closing.values)
+        live.removeAll()
+        closing.removeAll()
+        spareLock.lock()
+        while isMakingSpare { spareLock.wait() }
+        let unused = spare
+        spare = nil
+        spareLock.unlock()
+        for core in cores + (unused.map { [$0] } ?? []) {
+            core.isShutDown = true
+            core.onEvent = nil
+            core.shutDown()
+        }
+        _ = shuttingDown.wait(timeout: .now() + 3)
     }
 
     @discardableResult

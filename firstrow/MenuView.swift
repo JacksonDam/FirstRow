@@ -502,6 +502,8 @@ final class MenuView: ObservableObject {
     @Published var moviePreviewImage: NSImage?
     @Published var moviePreviewRequestID = 0
     @Published var moviePreviewCache: [String: NSImage] = [:]
+    /// The making of a movie's picture for `moviePreviewCache`, while one is being made.
+    var moviePreviewBeingMade: Task<Void, Never>?
     /// The movies each folder's picture in `moviePreviewCache` was made from.
     var moviesFolderPictureSources: [String: [String]] = [:]
     @Published var moviesFolderSelectionIndexByDirectoryPath: [String: Int] = [:]

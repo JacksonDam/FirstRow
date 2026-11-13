@@ -106,9 +106,12 @@ extension Timer {
 }
 
 func firstRowSleep(_ seconds: Double) async throws {
-    #if os(Windows)
-        // Kept by the main loop there: a Task's sleep ends only on one of Windows' 64 clock
-        // ticks a second, so each of these pauses ran up to 16 ms over.
+    #if FIRSTROW_PORTABLE
+        // Kept by the main loop there. A Task's sleep ends only on one of Windows' 64 clock
+        // ticks a second, so each of these pauses ran up to 16 ms over; and anywhere, it
+        // ends on one of the threads everything away from the main one shares, so with
+        // those all busy (reading a folder of movies, say) a menu's pause went on until
+        // one was free, and the menu stood still for as long.
         try await PortableApplication.sleep(seconds)
     #else
         if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
