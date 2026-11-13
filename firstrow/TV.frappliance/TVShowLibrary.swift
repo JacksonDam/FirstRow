@@ -347,9 +347,11 @@ enum FolderReader {
 /// Looks through folders for episodes.
 enum TVShowScanner {
     /// How deep under a folder it looks, and how many files and folders it reads in all
-    /// before it stops (a whole drive brought in as one folder isn't read to its end).
+    /// before it stops (a whole drive brought in as one folder isn't read to its end). Reading
+    /// asks the disk only for names, so the count can be a large one: a folder with tens of
+    /// thousands of other files in it still has all its shows found.
     private static let depth = 6
-    private static let most = 20000
+    private static let most = 200_000
 
     /// Every episode among the movie files in `folders` and the folders inside them, and
     /// among `files`.
