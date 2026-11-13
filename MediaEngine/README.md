@@ -81,7 +81,7 @@ The engine for older systems has one part that isn't First Row's own:
 
 | Part | Licence | How it's included |
 | --- | --- | --- |
-| [FFmpeg](https://ffmpeg.org) 8.1.3, built from its source by `MediaEngine/Older/build.sh` without `--enable-gpl` or `--enable-nonfree` | LGPL-2.1 or later | compiled into `FirstRowMediaEngineOlder.framework` |
+| [FFmpeg](https://ffmpeg.org) 8.1.3, built from its source by `MediaEngine/Older/build.sh` without `--enable-gpl` or `--enable-nonfree`, with the decoders a library of movies needs (they are listed there) | LGPL-2.1 or later | compiled into `FirstRowMediaEngineOlder.framework` |
 
 The exact versions are in `Package.resolved`. The licences' own texts are copied into the built
 framework (`Licenses/`), and so travel with every copy of First Row that carries the engine.

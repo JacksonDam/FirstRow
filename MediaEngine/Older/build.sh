@@ -29,17 +29,36 @@ if [ ! -d "$work/ffmpeg-$version" ]; then
     tar -xf "$work/ffmpeg-$version.tar.xz" -C "$work"
 fi
 
+# What FFmpeg decodes here: what a library of movies holds, the same kinds the main engine's
+# FFmpeg decodes and the older ones a file from years back may be in. The rest of FFmpeg's
+# decoders (games' own formats, still pictures, editing rooms' formats) are left out: they
+# were most of its size. Every container, parser and protocol it knows stays in.
+video="h264 hevc mpeg1video mpeg2video mpegvideo mpeg4 msmpeg4v1 msmpeg4v2 msmpeg4v3 h261 h263 h263i h263p flv vc1 vc1image \
+wmv1 wmv2 wmv3 wmv3image mss2 vp3 vp5 vp6 vp6a vp6f vp7 vp8 vp9 av1 theora rv10 rv20 rv30 rv40 mjpeg mjpegb dvvideo \
+prores dnxhd jpeg2000 cinepak svq1 svq3 indeo2 indeo3 indeo4 indeo5 msvideo1 msrle qtrle rpza smc rawvideo huffyuv ffvhuff \
+ffv1 utvideo flashsv flashsv2 tscc tscc2 cavs png bmp gif"
+audio="aac aac_latm ac3 eac3 dca truehd mlp flac alac mp1 mp1float mp2 mp2float mp3 mp3float vorbis opus speex \
+wmav1 wmav2 wmapro wmalossless wmavoice cook atrac1 atrac3 atrac3p sipr ralf ra_144 ra_288 amrnb amrwb nellymoser \
+gsm gsm_ms qdm2 qdmc qcelp mace3 mace6 wavpack ape tta mpc7 mpc8 tak dvaudio s302m truespeech g723_1 g729 imc iac \
+pcm_* adpcm_*"
+words="ass ssa srt subrip text movtext webvtt microdvd sami subviewer subviewer1 mpl2 vplayer pjs realtext stl jacosub \
+dvdsub dvbsub pgssub xsub ccaption"
+decoders=$(echo $video $audio $words | tr ' ' ',')
+
 # slice <name> <sdk> <arch> <flag that sets the oldest system> [developer dir]
 slice() {
     name=$1; sdk=$2; arch=$3; floor=$4; developer=$5
     out="$work/$name"
-    [ -f "$out/lib/libavformat.a" ] && return 0
+    # (Built already, with the same decoders.)
+    [ -f "$out/lib/libavformat.a" ] && [ "$(cat "$out/decoders.txt" 2>/dev/null)" = "$decoders" ] && return 0
     echo "Building FFmpeg for $name..."
     if [ -n "$developer" ]; then export DEVELOPER_DIR="$developer"; else unset DEVELOPER_DIR; fi
     # (The system's files and the compiler are reached by names without spaces in them.)
     ln -sfn "$(xcrun --sdk "$sdk" --show-sdk-path)" "$work/sdk-$name"
     cc="xcrun --sdk $sdk clang"
-    flags="-arch $arch $floor -isysroot $work/sdk-$name -fno-common"
+    # (-ffile-prefix-map: the names of its own files that FFmpeg keeps inside itself don't
+    # carry this folder's path.)
+    flags="-arch $arch $floor -isysroot $work/sdk-$name -fno-common -ffile-prefix-map=$work=/build"
     extra=""
     [ "$arch" = x86_64 ] && extra="--x86asmexe=nasm"
     rm -rf "$work/obj-$name" && mkdir -p "$work/obj-$name" && cd "$work/obj-$name"
@@ -47,10 +66,14 @@ slice() {
         --cc="$cc" --extra-cflags="$flags" --extra-ldflags="$flags" $extra \
         --enable-static --disable-shared --enable-pic --disable-debug --disable-doc --disable-programs \
         --disable-avdevice --disable-avfilter --disable-encoders --disable-muxers --disable-devices \
+        --disable-decoders --enable-decoder="$decoders" \
         --disable-autodetect --enable-zlib --enable-bzlib --enable-iconv --enable-network --enable-securetransport \
         --enable-videotoolbox --enable-audiotoolbox > configure.log 2>&1 || { tail -5 configure.log; exit 1; }
+    # (The words it was configured with, which it keeps inside itself, without this folder's path.)
+    sed -i.orig "s|$work|/build|g" config.h
     make -j"$(sysctl -n hw.ncpu)" > make.log 2>&1 || { grep -E "error" make.log | head -5; exit 1; }
     make install > install.log 2>&1
+    printf '%s' "$decoders" > "$out/decoders.txt"
     cd "$here"
 }
 
@@ -70,8 +93,13 @@ plugin() {
         "$ffmpeg/lib/libavformat.a" "$ffmpeg/lib/libavcodec.a" "$ffmpeg/lib/libswresample.a" "$ffmpeg/lib/libswscale.a" "$ffmpeg/lib/libavutil.a" \
         -lz -lbz2 -liconv -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework VideoToolbox \
         -framework AudioToolbox -framework QuartzCore -framework CoreGraphics -framework CoreFoundation -framework Foundation -framework Security \
-        -Wl,-exported_symbols_list,"$work/exports.txt" \
+        -Wl,-exported_symbols_list,"$work/exports.txt" -Wl,-dead_strip -Wl,-x \
         -install_name "@rpath/FirstRowMediaEngineOlder.framework/${inside}FirstRowMediaEngineOlder" -o "$thin"
+    # (Nothing of where it was built goes out with it.)
+    if strings -a "$thin" | grep -q -F "$work"; then
+        echo "The build folder's path is inside the engine ($thin)."
+        exit 1
+    fi
 }
 
 # bundle <sdk> <binary>: the framework, with FFmpeg's licence in it.

@@ -76,10 +76,14 @@ for system in "$@"; do
     cp "$here/README.md" "$licenses/README.md"
     # The engine finds its own libraries beside itself, wherever the two are put.
     if [ -d "$out/FirstRowMediaEngine.framework/Versions/A" ]; then
-        install_name_tool -add_rpath "@loader_path/../../.." "$out/FirstRowMediaEngine.framework/Versions/A/FirstRowMediaEngine"
+        binary="$out/FirstRowMediaEngine.framework/Versions/A/FirstRowMediaEngine"
+        install_name_tool -add_rpath "@loader_path/../../.." "$binary"
     else
-        install_name_tool -add_rpath "@loader_path/.." "$out/FirstRowMediaEngine.framework/FirstRowMediaEngine"
+        binary="$out/FirstRowMediaEngine.framework/FirstRowMediaEngine"
+        install_name_tool -add_rpath "@loader_path/.." "$binary"
     fi
+    # (The names of its inner workings aren't needed to run it, and are a third of its size.)
+    strip -x "$binary" 2> /dev/null
     codesign --force --sign - "$out/FirstRowMediaEngine.framework" 2> /dev/null
     echo "  made MediaEngine/build/$sdk"
 done
