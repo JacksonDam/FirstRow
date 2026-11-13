@@ -112,7 +112,6 @@ extension MenuView {
             self.thirdMenuMode = .moviesFolder
             self.resetAllITunesTopMenusForNonITunesContext()
             self.isShowingContinueWatching = true
-            self.movieLibraryRootURLs = []
             self.thirdMenuRootURL = nil
             self.thirdMenuCurrentURL = nil
             self.thirdMenuItems = entries.map {

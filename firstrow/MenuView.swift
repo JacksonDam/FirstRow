@@ -295,7 +295,6 @@ final class MenuView: ObservableObject {
     @Published var thirdMenuItems: [MoviesFolderEntry] = []
     @Published var thirdMenuRootURL: URL?
     @Published var thirdMenuCurrentURL: URL?
-    @Published var movieLibraryRootURLs: [URL] = []
     /// The movies list is Continue Watching rather than a folder.
     @Published var isShowingContinueWatching = false
     var continueWatchingRemainingText: [String: String] = [:]
@@ -785,12 +784,14 @@ final class MenuView: ObservableObject {
     }
 
     #if os(iOS)
-        @Published var isMoviesFolderPickerPresented = false
-        /// Movies > Add Movies from Files has asked for the Files picker.
+        /// Movies > Import has asked for the Files picker (or Movies Folder has, with
+        /// nothing in it yet).
         @Published var isMovieFilesPickerPresented = false
         @Published var hasPromptedMoviesFolderPickerThisSession = false
-        /// Movies Folder opens once the folder picker it asked with has been answered.
+        /// Movies Folder opens once the picker it asked with has been answered.
         var entersMoviesFolderAfterPicking = false
+        /// How many of the movies picked in Files are still being copied in.
+        var pickedMoviesBeingCopied = 0
     #endif
 }
 

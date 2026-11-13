@@ -16,16 +16,22 @@ import Foundation
 // in from Files on iPhone and iPad) loses the copy. One of the person's own files, on a Mac or
 // a PC, goes to the Trash, from where it can be put back. And in Continue Watching it is only
 // the place in the movie that is forgotten.
+//
+// A folder, or a file, that was brought in with Movies > Import and stands at the top of
+// Movies Folder is asked about in the same way, and is only taken out of First Row: it stays
+// where it is, with everything in it.
 
 /// A movie that the question screen is asking about.
 struct MovieRemoval: Equatable {
-    enum Kind {
+    enum Kind: Equatable {
         /// First Row's own copy, on iPhone and iPad.
         case ownCopy
         /// One of the person's own files, which goes to the Trash.
         case ownFile
         /// A row of Continue Watching: only where it was stopped is forgotten.
         case continueWatching
+        /// A folder or a file brought in with Import: it is no longer shown, and stays where it is.
+        case imported(isFolder: Bool)
     }
 
     var url: URL
@@ -33,7 +39,11 @@ struct MovieRemoval: Equatable {
     var kind: Kind
 
     var question: String {
-        kind == .continueWatching ? "Remove “\(title)” from Continue Watching?" : "Delete “\(title)”?"
+        switch kind {
+        case .continueWatching: "Remove “\(title)” from Continue Watching?"
+        case .imported: "Remove “\(title)” from First Row?"
+        case .ownCopy, .ownFile: "Delete “\(title)”?"
+        }
     }
 
     /// What will happen, under the question.
@@ -41,6 +51,7 @@ struct MovieRemoval: Equatable {
         switch kind {
         case .ownCopy: "It will be removed from First Row."
         case .continueWatching: nil
+        case let .imported(isFolder): isFolder ? "The folder and what is in it stay where they are." : "The file stays where it is."
         case .ownFile:
             #if os(Windows)
                 "It will be moved to the Recycle Bin."
@@ -51,7 +62,22 @@ struct MovieRemoval: Equatable {
     }
 
     /// The two answers, in their order on the screen.
-    var answers: [String] { [kind == .continueWatching ? "Remove" : "Delete", "Cancel"] }
+    var answers: [String] {
+        switch kind {
+        case .continueWatching, .imported: ["Remove", "Cancel"]
+        case .ownCopy, .ownFile: ["Delete", "Cancel"]
+        }
+    }
+
+    /// What is said if it couldn't be done.
+    var failure: (header: String, subcaption: String) {
+        switch kind {
+        case .imported:
+            ("“\(title)” couldn't be removed.", "First Row has lost track of it. It can be taken out in Settings, under Media Folders.")
+        case .continueWatching, .ownCopy, .ownFile:
+            ("“\(title)” couldn't be deleted.", "First Row isn't allowed to change it where it is.")
+        }
+    }
 }
 
 extension MenuView {
@@ -62,17 +88,23 @@ extension MenuView {
 
     // MARK: - Which movies
 
-    /// The movie in a row of the list that is showing, if it is one that can be taken out.
+    /// The movie in a row of the list that is showing, if it is one that can be taken out
+    /// (or the folder, if it is one that was brought in).
     func movieRemoval(forThirdMenuRow index: Int) -> MovieRemoval? {
         guard activeRootItemID == "movies", isInThirdMenu, thirdMenuMode == .moviesFolder,
               activeFullscreenScene == nil, !isMovieTransitioning, !isMenuFolderSwapTransitioning, !isMovieResumePromptVisible,
-              !isMoviePlaybackVisible, thirdMenuItems.indices.contains(index)
+              !isMoviePlaybackVisible, !isLoadingMoviesFolderEntries, thirdMenuItems.indices.contains(index)
         else { return nil }
         let entry = thirdMenuItems[index]
-        guard !entry.isDirectory, entry.url.isFileURL else { return nil }
+        guard entry.url.isFileURL else { return nil }
         if isShowingContinueWatching {
-            return MovieRemoval(url: entry.url, title: entry.title, kind: .continueWatching)
+            return entry.isDirectory ? nil : MovieRemoval(url: entry.url, title: entry.title, kind: .continueWatching)
         }
+        // What was brought in with Import, at the top of Movies Folder: a folder or a file.
+        if entry.isImported, thirdMenuCurrentURL == nil {
+            return MovieRemoval(url: entry.url, title: entry.title, kind: .imported(isFolder: entry.isDirectory))
+        }
+        guard !entry.isDirectory else { return nil }
         #if os(iOS)
             // (Only what First Row keeps itself: nothing in a folder of someone else's.)
             let own = moviesDocumentsDirectoryURL().standardizedFileURL.path
@@ -143,7 +175,10 @@ extension MenuView {
         Task {
             try? await firstRowSleep(movieEntryFadeDuration)
             guard !Task.isCancelled else { return }
-            presentMovieResumePrompt(for: removal.url)
+            // (Behind the question about a folder, a picture from the first movie in it.)
+            var picture: URL?
+            if case .imported(isFolder: true) = removal.kind { picture = firstMovieFileURL(in: removal.url) }
+            presentMovieResumePrompt(for: removal.url, pictureFrom: picture)
             movieRemoval = removal
             // (Cancel is the answer picked out: deleting takes a deliberate move.)
             movieResumePromptSelectedIndex = 1
@@ -191,16 +226,21 @@ extension MenuView {
     private func leaveMovieRemoval(showing failed: MovieRemoval?) {
         if isShowingContinueWatching {
             refreshContinueWatchingIfShown()
-        } else if thirdMenuMode == .moviesFolder, let folder = thirdMenuCurrentURL ?? thirdMenuRootURL {
-            loadThirdMenuDirectory(folder, resetSelection: false)
+        } else if thirdMenuMode == .moviesFolder {
+            if let folder = thirdMenuCurrentURL {
+                loadThirdMenuDirectory(folder, resetSelection: false)
+            } else {
+                rememberCurrentMoviesFolderSelectionIndex()
+                loadMoviesTopLevel(resetSelection: false)
+            }
         }
         dismissMovieResumePromptToMenu()
         guard let failed else { return }
         Task {
             try? await firstRowSleep(movieResumePromptFadeDuration * 2 + 0.1)
             presentFullscreenScene(key: featureErrorFullscreenKey, payload: [
-                "header": "“\(failed.title)” couldn't be deleted.",
-                "subcaption": "First Row isn't allowed to change it where it is.",
+                "header": failed.failure.header,
+                "subcaption": failed.failure.subcaption,
             ])
         }
     }
@@ -222,6 +262,14 @@ extension MenuView {
             #endif
         case .ownFile:
             removed = Self.moveToTrash(file)
+        case let .imported(isFolder):
+            // (Found by where it is: the list in Settings may have changed meanwhile.)
+            let entries = MediaSources.shared.folderEntries(.movies)
+            guard let index = entries.firstIndex(where: { $0.url?.standardizedFileURL.path == file.path }) else { return false }
+            MediaSources.shared.removeFolder(at: index, kind: .movies)
+            mediaSourcesRevision &+= 1
+            // (A folder's movies keep their places: it may be brought in again.)
+            if isFolder { return true }
         }
         guard removed else { return false }
         MovieResumeStore.remove(file)

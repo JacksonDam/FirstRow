@@ -89,15 +89,28 @@ extension MenuView {
             return [plainMenuListItem(id: "media_remove_folder", title: "Remove from First Row")]
         case .importMovies:
             #if os(iOS)
-                // (The Files app reaches Dropbox, Google Drive, OneDrive and the rest itself.)
+                // (Movies picked just now are still being copied in: Files fetches one that
+                // is with a service first.)
+                if pickedMoviesBeingCopied > 0 {
+                    return [menuMessageItem(id: "import_copying", title: pickedMoviesBeingCopied == 1 ? "Copying 1 Movie..." : "Copying \(pickedMoviesBeingCopied) Movies...")]
+                }
+                // (The Files app reaches Dropbox, Google Drive, OneDrive and the rest itself,
+                // and movies or folders of them can be picked there.)
                 return [plainMenuListItem(id: "import_files", title: "Files", trailingText: "...")]
             #else
                 // The folders that Dropbox, Google Drive and the like keep on this computer,
-                // then any folder at all.
+                // then any movies or folders at all.
                 var items = cloudFolders.enumerated().map { index, folder in
                     plainMenuListItem(id: "\(Self.addCloudFolderItemIDPrefix)\(index)", title: folder.name, trailingText: "...")
                 }
-                items.append(plainMenuListItem(id: "media_add_folder", title: "Folder", trailingText: "..."))
+                #if os(macOS)
+                    // (The Mac's chooser takes either.)
+                    items.append(plainMenuListItem(id: "media_add_folder", title: "Files or Folders", trailingText: "..."))
+                #else
+                    // (The choosers here take one or the other.)
+                    items.append(plainMenuListItem(id: "import_files", title: "Files", trailingText: "..."))
+                    items.append(plainMenuListItem(id: "media_add_folder", title: "Folder", trailingText: "..."))
+                #endif
                 return items
             #endif
         case let .library(kind):
@@ -221,12 +234,15 @@ extension MenuView {
         case .importMovies:
             #if os(iOS)
                 // The Files picker comes up over the menu (see `AppShell`).
+                guard item.id == "import_files" else { return }
                 isMovieFilesPickerPresented = true
             #else
                 if item.id == "media_add_folder" {
-                    chooseMediaFolders(.movies)
+                    chooseMediaFolders(.movies, takesMovieFiles: true)
+                } else if item.id == "import_files" {
+                    chooseMovieFiles()
                 } else if let index = Int(item.id.dropFirst(Self.addCloudFolderItemIDPrefix.count)), cloudFolders.indices.contains(index) {
-                    chooseMediaFolders(.movies, in: cloudFolders[index])
+                    chooseMediaFolders(.movies, in: cloudFolders[index], takesMovieFiles: true)
                 }
             #endif
         case let .library(kind):
@@ -294,17 +310,33 @@ extension MenuView {
 
     /// Asks for folders with the system's own chooser, which starts in a cloud service's
     /// folder when it was asked for by name: the folder itself, or any inside it, can be added.
-    private func chooseMediaFolders(_ kind: MediaSources.FolderKind, in cloudFolder: CloudFolders.Folder? = nil) {
+    /// From Movies > Import the Mac's chooser takes movies too (`takesMovieFiles`): a movie is
+    /// then a movie at the top of Movies Folder, a folder a folder.
+    private func chooseMediaFolders(_ kind: MediaSources.FolderKind, in cloudFolder: CloudFolders.Folder? = nil, takesMovieFiles: Bool = false) {
         #if os(macOS)
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true
-            panel.canChooseFiles = false
+            panel.canChooseFiles = takesMovieFiles
             panel.allowsMultipleSelection = true
             panel.prompt = "Add"
-            panel.message = if let cloudFolder {
-                "Choose folders of \(kind.title.lowercased()) in \(cloudFolder.name) for First Row."
+            if takesMovieFiles {
+                let kinds = supportedMovieFileExtensions.sorted()
+                if #available(macOS 11.0, *) {
+                    panel.allowedContentTypes = [.movie] + kinds.compactMap { UTType(filenameExtension: $0) }
+                } else {
+                    panel.allowedFileTypes = kinds
+                }
+                panel.message = if let cloudFolder {
+                    "Choose movies, or folders of movies, in \(cloudFolder.name) for First Row."
+                } else {
+                    "Choose movies, or folders of movies, for First Row."
+                }
             } else {
-                "Choose folders of \(kind.title.lowercased()) for First Row."
+                panel.message = if let cloudFolder {
+                    "Choose folders of \(kind.title.lowercased()) in \(cloudFolder.name) for First Row."
+                } else {
+                    "Choose folders of \(kind.title.lowercased()) for First Row."
+                }
             }
             presentMediaSourcePanel(panel, startingIn: cloudFolder?.url) { [weak self] urls in
                 guard let self, !urls.isEmpty else { return }
@@ -319,6 +351,25 @@ extension MenuView {
                 guard !urls.isEmpty else { return }
                 self.addMediaFolders(urls, kind: kind)
             }
+        #endif
+    }
+
+    /// Movies > Import > Files, on Linux and Windows: asks for movies with the system's own
+    /// chooser. Each is a movie at the top of Movies Folder, where it is.
+    private func chooseMovieFiles() {
+        #if FIRSTROW_PORTABLE
+            guard !isChoosingMediaSource else { return }
+            isChoosingMediaSource = true
+            let kinds = supportedMovieFileExtensions.sorted().joined(separator: ";")
+            PortableFilePicker.chooseFiles(filters: [("Movies", kinds)], allowMany: true) { [weak self] urls in
+                guard let self else { return }
+                self.isChoosingMediaSource = false
+                let movies = urls.filter { self.supportedMovieFileExtensions.contains($0.pathExtension.lowercased()) }
+                guard !movies.isEmpty else { return }
+                self.addMediaFolders(movies, kind: .movies)
+            }
+        #else
+            chooseMediaFolders(.movies, takesMovieFiles: true)
         #endif
     }
 

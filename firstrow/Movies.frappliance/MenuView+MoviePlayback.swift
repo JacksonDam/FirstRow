@@ -164,7 +164,9 @@ extension MenuView {
         return MovieResumeStore.seconds(for: url) ?? 0
     }
 
-    func presentMovieResumePrompt(for url: URL) {
+    /// (`pictureFrom`: where the picture behind the question comes from, when that isn't
+    /// the thing asked about: a folder's first movie.)
+    func presentMovieResumePrompt(for url: URL, pictureFrom pictureSource: URL? = nil) {
         movieResumePromptTargetURL = url.standardizedFileURL
         movieResumePromptResumeSeconds = max(0, movieResumeSeconds(for: url))
         movieResumePromptSelectedIndex = 0
@@ -181,7 +183,7 @@ extension MenuView {
         }
         let requestID = incrementRequestID(&movieResumePromptBackdropRequestID)
         Task.detached(priority: .userInitiated) { [url] in
-            let image = await self.generateMovieThumbnail(for: url, preferredSeconds: 0)
+            let image = await self.generateMovieThumbnail(for: pictureSource ?? url, preferredSeconds: 0)
             await MainActor.run {
                 guard self.movieResumePromptBackdropRequestID == requestID else { return }
                 guard self.isMovieResumePromptVisible else { return }

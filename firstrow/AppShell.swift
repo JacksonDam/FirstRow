@@ -460,31 +460,23 @@ final class FirstRowAppController {
 
     #if os(iOS)
         private func presentFolderPickerIfNeeded() {
-            guard let menu, menu.isMoviesFolderPickerPresented || menu.isMovieFilesPickerPresented, !isPresentingFolderPicker,
+            guard let menu, menu.isMovieFilesPickerPresented, !isPresentingFolderPicker,
                   let presenter = hostView.window?.rootViewController else { return }
             isPresentingFolderPicker = true
-            if menu.isMovieFilesPickerPresented {
-                let kinds = menu.supportedMovieFileExtensions.union(MenuView.subtitleFileExtensions)
-                IOSFolderPicker.presentForFiles(ofKinds: kinds, from: presenter, onPick: { [weak self, weak menu] urls in
-                    self?.isPresentingFolderPicker = false
-                    menu?.isMovieFilesPickerPresented = false
-                    menu?.handleMovieFilesPickedFromFiles(urls)
-                }, onCancel: { [weak self, weak menu] in
-                    self?.isPresentingFolderPicker = false
-                    menu?.isMovieFilesPickerPresented = false
-                })
-                return
-            }
-            IOSFolderPicker.present(from: presenter, onPick: { [weak self, weak menu] url in
+            let kinds = menu.supportedMovieFileExtensions.union(MenuView.subtitleFileExtensions)
+            IOSFolderPicker.presentForMovies(ofKinds: kinds, from: presenter, onPick: { [weak self, weak menu] urls in
                 self?.isPresentingFolderPicker = false
-                menu?.isMoviesFolderPickerPresented = false
-                menu?.handleMoviesFolderPickedFromFiles(url)
+                menu?.isMovieFilesPickerPresented = false
+                menu?.handleMoviesPickedFromFiles(urls)
             }, onCancel: { [weak self, weak menu] in
                 self?.isPresentingFolderPicker = false
-                menu?.isMoviesFolderPickerPresented = false
-                menu?.hasPromptedMoviesFolderPickerThisSession = false
-                // Cancelled: stay where it was asked from.
-                menu?.entersMoviesFolderAfterPicking = false
+                menu?.isMovieFilesPickerPresented = false
+                // Cancelled: stay where it was asked from. (Movies Folder, with nothing in it
+                // yet, asks again the next time it is opened.)
+                if menu?.entersMoviesFolderAfterPicking == true {
+                    menu?.hasPromptedMoviesFolderPickerThisSession = false
+                    menu?.entersMoviesFolderAfterPicking = false
+                }
             })
         }
     #endif

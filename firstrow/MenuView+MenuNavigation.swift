@@ -215,7 +215,7 @@ extension MenuView {
                 return
             }
             guard let currentURL = thirdMenuCurrentURL else {
-                // The list of places movies come from (more than one folder or drive).
+                // The top of Movies Folder.
                 playSound(named: "Exit")
                 exitMoviesThirdMenuToSecondLevelWithSwap()
                 return
@@ -229,18 +229,12 @@ extension MenuView {
                 transitionMenuForFolderSwap {
                     self.loadThirdMenuDirectory(parentURL, resetSelection: true)
                 }
-            } else if !movieLibraryRootURLs.isEmpty {
-                rememberCurrentMoviesFolderSelectionIndex()
-                #if os(macOS) || FIRSTROW_PORTABLE
-                    transitionMenuForFolderSwap {
-                        self.loadMoviesRootSelectorEntries(resetSelection: false)
-                    }
-                #else
-                    exitMoviesThirdMenuToSecondLevelWithSwap()
-                #endif
             } else {
+                // A folder that was opened from the top of Movies Folder: back to the top.
                 rememberCurrentMoviesFolderSelectionIndex()
-                exitMoviesThirdMenuToSecondLevelWithSwap()
+                transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
+                    self.loadMoviesTopLevel(resetSelection: false)
+                }
             }
         default:
             playSound(named: "Exit")
@@ -330,7 +324,8 @@ extension MenuView {
         depth += max(0, youtube.pages.count - 1)
         if isMusicSongsCategoryScoped { depth += 1 }
         if let current = thirdMenuCurrentURL, let root = thirdMenuRootURL {
-            depth += max(0, current.standardizedFileURL.pathComponents.count - root.standardizedFileURL.pathComponents.count)
+            // (A folder of movies is one deeper than the top of Movies Folder it was opened from.)
+            depth += 1 + max(0, current.standardizedFileURL.pathComponents.count - root.standardizedFileURL.pathComponents.count)
         }
         if spotifySongsReturnPages != nil { depth += 1 }
         return depth

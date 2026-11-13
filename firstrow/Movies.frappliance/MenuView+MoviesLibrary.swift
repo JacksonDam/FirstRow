@@ -29,45 +29,6 @@ extension MenuView {
     }
 
     #if os(iOS)
-        var moviesFolderBookmarkDefaultsKey: String {
-            "firstRow.movies.bookmarkedFolder"
-        }
-
-        func resolveBookmarkedMoviesFolderURL() -> URL? {
-            guard let bookmarkData = UserDefaults.standard.data(forKey: moviesFolderBookmarkDefaultsKey) else {
-                return nil
-            }
-            var isStale = false
-            do {
-                let resolvedURL = try URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: [],
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale,
-                )
-                if isStale {
-                    storeBookmarkedMoviesFolderURL(resolvedURL)
-                }
-                return resolvedURL
-            } catch {
-                UserDefaults.standard.removeObject(forKey: moviesFolderBookmarkDefaultsKey)
-                return nil
-            }
-        }
-
-        func storeBookmarkedMoviesFolderURL(_ folderURL: URL) {
-            do {
-                let bookmarkData = try folderURL.bookmarkData(
-                    options: [],
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil,
-                )
-                UserDefaults.standard.set(bookmarkData, forKey: moviesFolderBookmarkDefaultsKey)
-            } catch {
-                print("Unable to bookmark picked Movies folder at path: \(folderURL.path) (\(error.localizedDescription))")
-            }
-        }
-
         func isSupportedMovieFile(url: URL, values: URLResourceValues?) -> Bool {
             let normalizedExtension = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let isSupportedByExtension = supportedMovieFileExtensions.contains(normalizedExtension)
@@ -75,113 +36,99 @@ extension MenuView {
             return isSupportedByExtension || isSupportedByType
         }
 
-        func importMoviesFromFolderIntoDocuments(_ folderURL: URL) {
-            let didStartSecurityScope = folderURL.startAccessingSecurityScopedResource()
-            defer {
-                if didStartSecurityScope {
-                    folderURL.stopAccessingSecurityScopedResource()
+        /// Before 2.4 one folder could be chosen in Files, and its movies were copied in each
+        /// time Movies Folder opened. That folder is now one brought in with Import like any
+        /// other, a folder at the top of Movies Folder; the copies made of its movies stay.
+        func adoptMoviesFolderChosenBefore() {
+            let key = "firstRow.movies.bookmarkedFolder"
+            guard let bookmark = UserDefaults.standard.data(forKey: key) else { return }
+            UserDefaults.standard.removeObject(forKey: key)
+            var isStale = false
+            guard let folder = try? URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale) else { return }
+            let isOpen = folder.startAccessingSecurityScopedResource()
+            MediaSources.shared.addFolder(folder, kind: .movies)
+            if isOpen { folder.stopAccessingSecurityScopedResource() }
+        }
+
+        /// Takes in what was picked in Files (Movies > Import). A folder stays where it is and
+        /// is a folder at the top of Movies Folder. A movie is copied in among First Row's own
+        /// (with the subtitle files picked with it) and is a movie at the top: Files fetches
+        /// one that is still with its service as it is read, which can take a while, so the
+        /// copying is done off to one side and the Import page says so meanwhile.
+        func handleMoviesPickedFromFiles(_ urls: [URL]) {
+            var files: [URL] = []
+            for url in urls {
+                let isOpen = url.startAccessingSecurityScopedResource()
+                let isFolder = url.hasDirectoryPath || (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                if isFolder {
+                    // (Kept by a bookmark, made while Files' leave to read it is in hand.)
+                    MediaSources.shared.addFolder(url, kind: .movies)
+                } else {
+                    files.append(url)
                 }
+                if isOpen { url.stopAccessingSecurityScopedResource() }
             }
-            let fileManager = FileManager.default
-            let documentsDirectory = moviesDocumentsDirectoryURL().standardizedFileURL
-            let resourceKeys = Self.movieScanResourceKeys
-            let urls: [URL]
-            do {
-                urls = try fileManager.contentsOfDirectory(
-                    at: folderURL,
-                    includingPropertiesForKeys: Array(resourceKeys),
-                    options: [.skipsHiddenFiles],
-                )
-            } catch {
-                print("Unable to import movies from picked folder at path: \(folderURL.path) (\(error.localizedDescription))")
+            mediaSourcesRevision &+= 1
+            let kinds = supportedMovieFileExtensions.union(Self.subtitleFileExtensions)
+            files = files.filter { kinds.contains($0.pathExtension.lowercased()) }
+            guard !files.isEmpty else {
+                finishTakingInPickedMovies()
                 return
             }
-            for sourceURL in urls {
-                let values = try? sourceURL.resourceValues(forKeys: resourceKeys)
-                let isDirectory = values?.isDirectory ?? false
-                if isDirectory { continue }
-                guard isSupportedMovieFile(url: sourceURL, values: values) else { continue }
-                let standardizedSource = sourceURL.standardizedFileURL
-                if standardizedSource.path.hasPrefix(documentsDirectory.path + "/") {
-                    continue
+            let documents = moviesDocumentsDirectoryURL().standardizedFileURL
+            pickedMoviesBeingCopied += files.count
+            mediaSourcesRevision &+= 1
+            Task.detached(priority: .userInitiated) {
+                for file in files {
+                    Self.copyPickedMovie(file, into: documents)
+                    await MainActor.run {
+                        self.pickedMoviesBeingCopied = max(0, self.pickedMoviesBeingCopied - 1)
+                        self.mediaSourcesRevision &+= 1
+                    }
                 }
-                // A movie that was removed from First Row stays out, though it is still in the
-                // folder; and one that's here already isn't brought in a second time.
-                if removedMovieNames.contains(sourceURL.lastPathComponent) { continue }
-                let destinationURL = documentsDirectory.appendingPathComponent(sourceURL.lastPathComponent, isDirectory: false)
-                if fileManager.fileExists(atPath: destinationURL.path) { continue }
-                do {
-                    try fileManager.copyItem(at: sourceURL, to: destinationURL)
-                } catch {
-                    print(
-                        "Unable to copy movie from \(sourceURL.lastPathComponent) to Documents (\(error.localizedDescription))",
-                    )
-                }
+                await MainActor.run { self.finishTakingInPickedMovies() }
             }
         }
 
-        func importMoviesFromBookmarkedFolderIfNeeded() {
-            guard let bookmarkedFolderURL = resolveBookmarkedMoviesFolderURL() else { return }
-            importMoviesFromFolderIntoDocuments(bookmarkedFolderURL)
+        /// Copies one picked file in, under its own name where that is free. Read through a
+        /// file coordinator, which has Files fetch it first if it isn't on the device yet.
+        private nonisolated static func copyPickedMovie(_ source: URL, into documents: URL) {
+            let fileManager = FileManager.default
+            try? fileManager.createDirectory(at: documents, withIntermediateDirectories: true)
+            let isOpen = source.startAccessingSecurityScopedResource()
+            defer { if isOpen { source.stopAccessingSecurityScopedResource() } }
+            let base = source.deletingPathExtension().lastPathComponent
+            let kind = source.pathExtension
+            var destination = documents.appendingPathComponent(source.lastPathComponent, isDirectory: false)
+            var copy = 2
+            while fileManager.fileExists(atPath: destination.path) {
+                destination = documents.appendingPathComponent("\(base) \(copy).\(kind)", isDirectory: false)
+                copy += 1
+            }
+            var failure: NSError?
+            NSFileCoordinator().coordinate(readingItemAt: source, options: [], error: &failure) { readable in
+                try? fileManager.copyItem(at: readable, to: destination)
+            }
         }
 
-        func handleMoviesFolderPickedFromFiles(_ selectedFolderURL: URL) {
-            storeBookmarkedMoviesFolderURL(selectedFolderURL)
-            importMoviesFromFolderIntoDocuments(selectedFolderURL)
+        /// Everything picked is in: Movies Folder opens if the picking was asked for from
+        /// there, and the Import page gives way to the Movies menu, where it all now is.
+        private func finishTakingInPickedMovies() {
+            guard pickedMoviesBeingCopied == 0 else { return }
             if entersMoviesFolderAfterPicking {
                 entersMoviesFolderAfterPicking = false
                 enterMoviesFolderMenu()
                 return
             }
-            if thirdMenuMode == .moviesFolder {
-                loadThirdMenuDirectory(moviesRootDirectoryURL(), resetSelection: true)
-            }
-        }
-
-        /// Keeps the movies picked in Files (Settings > Add Movies from Files), and the
-        /// subtitle files picked with them: they are copies the picker made, so they're moved
-        /// in among First Row's own movies, under their own names where those are free.
-        func handleMovieFilesPickedFromFiles(_ urls: [URL]) {
-            let fileManager = FileManager.default
-            let documents = moviesDocumentsDirectoryURL().standardizedFileURL
-            try? fileManager.createDirectory(at: documents, withIntermediateDirectories: true)
-            let kinds = supportedMovieFileExtensions.union(Self.subtitleFileExtensions)
-            // (A movie asked for by name comes back in, though it was removed before.)
-            removedMovieNames.subtract(urls.map(\.lastPathComponent))
-            for source in urls where kinds.contains(source.pathExtension.lowercased()) {
-                let base = source.deletingPathExtension().lastPathComponent
-                let kind = source.pathExtension
-                var destination = documents.appendingPathComponent(source.lastPathComponent, isDirectory: false)
-                var copy = 2
-                while fileManager.fileExists(atPath: destination.path) {
-                    destination = documents.appendingPathComponent("\(base) \(copy).\(kind)", isDirectory: false)
-                    copy += 1
-                }
-                do {
-                    try fileManager.moveItem(at: source, to: destination)
-                } catch {
-                    try? fileManager.copyItem(at: source, to: destination)
-                }
-            }
-            if thirdMenuMode == .moviesFolder {
-                loadThirdMenuDirectory(moviesRootDirectoryURL(), resetSelection: true)
+            if thirdMenuMode == .moviesFolder, thirdMenuCurrentURL == nil, !isShowingContinueWatching {
+                loadMoviesTopLevel(resetSelection: true)
             }
             if thirdMenuMode == .mediaFolders, currentMediaFoldersPage == .importMovies {
-                // (Asked for from Movies > Import: back to the Movies menu, where they now are.)
                 navigateUpInMediaFolders()
             }
         }
 
         // MARK: - Removing movies
-
-        private static let removedMovieNamesDefaultsKey = "moviesRemovedFromFirstRow"
-
-        /// The names of the movies that were deleted here, which the chosen folder is not to
-        /// bring back.
-        var removedMovieNames: Set<String> {
-            get { Set(UserDefaults.standard.stringArray(forKey: Self.removedMovieNamesDefaultsKey) ?? []) }
-            set { UserDefaults.standard.set(newValue.sorted(), forKey: Self.removedMovieNamesDefaultsKey) }
-        }
 
         /// Takes a movie out of First Row: its copy here and the subtitle files that came with
         /// it. Whatever it was copied from is left as it is.
@@ -200,20 +147,19 @@ extension MenuView {
                 guard Self.subtitleFileExtensions.contains(other.pathExtension.lowercased()), otherName == name || otherName.hasPrefix(name + ".") else { continue }
                 try? fileManager.removeItem(at: other)
             }
-            removedMovieNames.insert(file.lastPathComponent)
             return true
         }
 
-        /// With no movies and no folder chosen yet, Movies Folder asks for one first: the Files
-        /// picker comes straight up (iOS moves the menu back behind it), and the folder opens once
-        /// one is chosen. Returns whether it asked.
+        /// With nothing in Movies Folder and nothing brought in yet, Movies Folder asks for
+        /// something first: the Files picker comes straight up (iOS moves the menu back behind
+        /// it), and the folder opens once something is picked. Returns whether it asked.
         func promptForMoviesFolderPickerIfNeeded() -> Bool {
-            guard !hasPromptedMoviesFolderPickerThisSession, resolveBookmarkedMoviesFolderURL() == nil,
-                  movieFileEntries(in: moviesRootDirectoryURL()).isEmpty
+            guard !hasPromptedMoviesFolderPickerThisSession, pickedMoviesBeingCopied == 0,
+                  scanMoviesTopLevelEntries().isEmpty
             else { return false }
             hasPromptedMoviesFolderPickerThisSession = true
             entersMoviesFolderAfterPicking = true
-            isMoviesFolderPickerPresented = true
+            isMovieFilesPickerPresented = true
             return true
         }
     #else
@@ -250,60 +196,115 @@ extension MenuView {
                 }
             #endif
         }
-
-        nonisolated func externalMoviesRootURLs() -> [URL] {
-            MediaSources.shared.folders(.movies) + externalVolumeRootURLs().compactMap { volumeURL in
-                let moviesURL = volumeURL.appendingPathComponent("Movies", isDirectory: true)
-                var isDir: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: moviesURL.path, isDirectory: &isDir),
-                      isDir.boolValue else { return nil }
-                return moviesURL
-            }
-        }
-
-        func allMoviesRootURLs() -> [URL] {
-            [moviesRootDirectoryURL()] + externalMoviesRootURLs()
-        }
-
-        nonisolated func moviesRootDisplayTitle(for url: URL) -> String {
-            #if FIRSTROW_PORTABLE
-                let internalPath: String? = portableUserFolder(named: "Movies", standardName: "Videos", xdgKey: "XDG_VIDEOS_DIR").standardizedFileURL.path
-            #else
-                let internalPath = realUserHomeDirectoryURL()?
-                    .appendingPathComponent("Movies").standardizedFileURL.path
-            #endif
-            if url.standardizedFileURL.path == internalPath {
-                #if FIRSTROW_PORTABLE
-                    return portableComputerTitle
-                #else
-                    return "My Mac"
-                #endif
-            }
-            // Folders chosen in Settings go by their own names; drives by the drive's name.
-            let chosenFolderPaths = MediaSources.shared.folders(.movies).map(\.standardizedFileURL.path)
-            if chosenFolderPaths.contains(url.standardizedFileURL.path) {
-                return CloudFolders.title(ofFolder: url)
-            }
-            return (try? url.resourceValues(forKeys: [.volumeNameKey]))?.volumeName
-                ?? url.lastPathComponent
-        }
-
-        func loadMoviesRootSelectorEntries(resetSelection: Bool) {
-            isLoadingMoviesFolderEntries = false
-            thirdMenuCurrentURL = nil
-            thirdMenuRootURL = nil
-            thirdMenuItems = movieLibraryRootURLs.map { url in
-                MoviesFolderEntry(
-                    id: url.standardizedFileURL.path,
-                    title: moviesRootDisplayTitle(for: url),
-                    url: url,
-                    isDirectory: true,
-                )
-            }
-            if resetSelection { selectedThirdIndex = 0 }
-            refreshDetailPreviewForCurrentContext()
-        }
     #endif
+
+    // MARK: - The top of Movies Folder
+
+    /// The folders whose contents are at the top of Movies Folder: the Movies folder itself
+    /// and, on a computer, every folder called Movies at the top of a drive.
+    func moviesTopLevelFolderURLs() -> [URL] {
+        var folders = [moviesRootDirectoryURL()]
+        #if os(macOS) || FIRSTROW_PORTABLE
+            folders += externalVolumeRootURLs().compactMap { volume in
+                let movies = volume.appendingPathComponent("Movies", isDirectory: true)
+                var isFolder: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: movies.path, isDirectory: &isFolder), isFolder.boolValue else { return nil }
+                return movies
+            }
+        #endif
+        return folders
+    }
+
+    /// The top of Movies Folder: what is in those folders, with what was brought in by
+    /// Movies > Import among it, a file as a movie and a folder as a folder. Movies first,
+    /// then folders, each by name.
+    func scanMoviesTopLevelEntries() -> [MoviesFolderEntry] {
+        #if os(iOS)
+            adoptMoviesFolderChosenBefore()
+        #endif
+        var movies: [MoviesFolderEntry] = []
+        var folders: [MoviesFolderEntry] = []
+        var seen = Set<String>()
+        let topFolders = moviesTopLevelFolderURLs()
+        let topPaths = Set(topFolders.map(\.standardizedFileURL.path))
+        // (What was brought in comes first, so that it is known as brought in where it is
+        // also inside one of those folders.)
+        for url in MediaSources.shared.folders(.movies) {
+            let path = url.standardizedFileURL.path
+            var isFolder: ObjCBool = false
+            guard !topPaths.contains(path), FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), seen.insert(path).inserted else { continue }
+            if isFolder.boolValue, !(Self.playsEveryKindOfMovie && Self.isDiscFolder(url)) {
+                folders.append(MoviesFolderEntry(id: path, title: CloudFolders.title(ofFolder: url), url: url, isDirectory: true, isImported: true))
+            } else if isFolder.boolValue || isSupportedMovieFile(url: url, values: try? url.resourceValues(forKeys: Self.movieScanResourceKeys)) {
+                let title = url.pathExtension.lowercased() == "dvdmedia" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
+                movies.append(MoviesFolderEntry(id: path, title: title, url: url, isDirectory: false, isImported: true))
+            }
+        }
+        for folder in topFolders {
+            for entry in scanMoviesFolderEntries(in: folder) where seen.insert(entry.id).inserted {
+                if entry.isDirectory { folders.append(entry) } else { movies.append(entry) }
+            }
+        }
+        let byName: (MoviesFolderEntry, MoviesFolderEntry) -> Bool = {
+            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+        }
+        return movies.sorted(by: byName) + folders.sorted(by: byName)
+    }
+
+    /// The first few movies there are to show a picture of for Movies Folder: those at its
+    /// top, then those inside the folders brought in.
+    func moviesTopLevelPreviewURLs(limit: Int) -> [URL] {
+        var urls: [URL] = []
+        let entries = scanMoviesTopLevelEntries()
+        for entry in entries where !entry.isDirectory && urls.count < limit && !Self.isDiscFolder(entry.url) {
+            urls.append(entry.url.standardizedFileURL)
+        }
+        for entry in entries where entry.isDirectory && entry.isImported && urls.count < limit {
+            urls += previewMovieFileURLs(in: entry.url, limit: limit - urls.count)
+        }
+        return urls
+    }
+
+    /// Shows the top of Movies Folder. With nothing there at all, the menu goes back to
+    /// Movies and says so.
+    func loadMoviesTopLevel(resetSelection: Bool) {
+        thirdMenuCurrentURL = nil
+        thirdMenuRootURL = nil
+        isLoadingMoviesFolderEntries = true
+        let requestID = incrementRequestID(&moviesFolderEntriesRequestID)
+        Task(priority: .userInitiated) {
+            let entries = scanMoviesTopLevelEntries()
+            await MainActor.run {
+                guard moviesFolderEntriesRequestID == requestID, thirdMenuMode == .moviesFolder, thirdMenuCurrentURL == nil else { return }
+                isLoadingMoviesFolderEntries = false
+                thirdMenuItems = entries
+                let maxIndex = max(0, entries.count - 1)
+                if let remembered = moviesFolderSelectionIndexByDirectoryPath[Self.moviesTopLevelSelectionKey] {
+                    selectedThirdIndex = min(max(0, remembered), maxIndex)
+                } else if resetSelection {
+                    selectedThirdIndex = 0
+                } else {
+                    selectedThirdIndex = min(max(0, selectedThirdIndex), maxIndex)
+                }
+                refreshDetailPreviewForCurrentContext()
+                if entries.isEmpty {
+                    isInThirdMenu = false
+                    thirdMenuMode = .none
+                    thirdMenuOpacity = 0
+                    submenuOpacity = 1
+                    headerText = rootMenuTitle(for: activeRootItemID)
+                    resetThirdMenuDirectoryState()
+                    moviesFolderSelectionIndexByDirectoryPath = [:]
+                    refreshDetailPreviewForCurrentContext()
+                    presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: true)
+                }
+            }
+        }
+    }
+
+    /// What the place in the list at the top of Movies Folder is remembered under (the
+    /// folders are remembered under their paths).
+    static let moviesTopLevelSelectionKey = ""
 
     func moviesDocumentsDirectoryURL() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
@@ -350,7 +351,6 @@ extension MenuView {
 
     func moviesRootDirectoryURL() -> URL {
         #if os(iOS)
-            importMoviesFromBookmarkedFolderIfNeeded()
             let documentsDirectory = moviesDocumentsDirectoryURL()
             let fileManager = FileManager.default
             let legacyfirstRowDirectory = documentsDirectory.appendingPathComponent("Front Row", isDirectory: true)
@@ -563,7 +563,6 @@ extension MenuView {
         thirdMenuItems = []
         thirdMenuCurrentURL = nil
         thirdMenuRootURL = nil
-        movieLibraryRootURLs = []
         isLoadingMoviesFolderEntries = false
         _ = incrementRequestID(&moviesFolderEntriesRequestID)
     }
@@ -580,7 +579,7 @@ extension MenuView {
         guard submenuItems.indices.contains(selectedSubIndex) else { return nil }
         let selectedItem = submenuItems[selectedSubIndex]
         guard selectedItem.id == "movies_folder" else { return nil }
-        return firstMovieFileURL(in: moviesRootDirectoryURL())
+        return moviesTopLevelPreviewURLs(limit: 1).first
     }
 
     /// A movie's menu picture: its embedded cover art, or else a frame from the video.
@@ -670,10 +669,7 @@ extension MenuView {
     func resolveMoviesFolderSubmenuPreviewURLs() -> [URL] {
         guard activeRootItemID == "movies", isInSubmenu, !isInThirdMenu else { return [] }
         guard selectedMoviesSubmenuItemID == "movies_folder" else { return [] }
-        return previewMovieFileURLs(
-            in: moviesRootDirectoryURL(),
-            limit: moviesFolderSubmenuPreviewLoadLimit,
-        )
+        return moviesTopLevelPreviewURLs(limit: moviesFolderSubmenuPreviewLoadLimit)
     }
 
     func moviesFolderSubmenuPreviewIdentityKey(from urls: [URL]) -> String {
@@ -805,12 +801,12 @@ extension MenuView {
     }
 
     func rememberCurrentMoviesFolderSelectionIndex() {
-        guard thirdMenuMode == .moviesFolder else { return }
-        guard let currentURL = thirdMenuCurrentURL else { return }
+        guard thirdMenuMode == .moviesFolder, !isShowingContinueWatching else { return }
         guard !thirdMenuItems.isEmpty else { return }
         let maxIndex = max(0, thirdMenuItems.count - 1)
         let clampedIndex = min(max(0, selectedThirdIndex), maxIndex)
-        let key = moviesFolderDirectorySelectionKey(for: currentURL)
+        // (The top of Movies Folder is no one folder: it has a key of its own.)
+        let key = thirdMenuCurrentURL.map { moviesFolderDirectorySelectionKey(for: $0) } ?? Self.moviesTopLevelSelectionKey
         moviesFolderSelectionIndexByDirectoryPath[key] = clampedIndex
     }
 
@@ -820,7 +816,8 @@ extension MenuView {
     }
 
     func loadThirdMenuDirectory(_ directoryURL: URL, resetSelection: Bool) {
-        if thirdMenuCurrentURL == nil, !movieLibraryRootURLs.isEmpty {
+        // (A folder opened from the top of Movies Folder: Back from it goes back there.)
+        if thirdMenuCurrentURL == nil {
             thirdMenuRootURL = directoryURL.standardizedFileURL
         }
         let standardizedDirectory = directoryURL.standardizedFileURL
@@ -851,15 +848,8 @@ extension MenuView {
                 let isShowingRootDirectory =
                     thirdMenuRootURL?.standardizedFileURL == standardizedDirectory
                 if isShowingRootDirectory, scannedEntries.isEmpty {
-                    isInThirdMenu = false
-                    thirdMenuMode = .none
-                    thirdMenuOpacity = 0
-                    submenuOpacity = 1
-                    headerText = rootMenuTitle(for: activeRootItemID)
-                    resetThirdMenuDirectoryState()
-                    moviesFolderSelectionIndexByDirectoryPath = [:]
-                    refreshDetailPreviewForCurrentContext()
-                    presentNoMoviesLibraryFeatureErrorScreen(afterMenuSwap: true)
+                    // (Its last movie has just been deleted: the top of Movies Folder again.)
+                    loadMoviesTopLevel(resetSelection: false)
                 }
             }
         }
@@ -880,20 +870,7 @@ extension MenuView {
             self.isInThirdMenu = true
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1
-            #if os(macOS) || FIRSTROW_PORTABLE
-                let roots = self.allMoviesRootURLs()
-                self.movieLibraryRootURLs = roots.count > 1 ? roots : []
-                if roots.count > 1 {
-                    self.loadMoviesRootSelectorEntries(resetSelection: true)
-                } else {
-                    self.thirdMenuRootURL = roots[0]
-                    self.loadThirdMenuDirectory(roots[0], resetSelection: true)
-                }
-            #else
-                let rootURL = self.moviesRootDirectoryURL()
-                self.thirdMenuRootURL = rootURL
-                self.loadThirdMenuDirectory(rootURL, resetSelection: true)
-            #endif
+            self.loadMoviesTopLevel(resetSelection: true)
         }
     }
 }
@@ -904,6 +881,9 @@ extension MenuView {
         let title: String
         let url: URL
         let isDirectory: Bool
+        /// Brought in with Movies > Import (or added in Settings > Media Folders): it is at
+        /// the top of Movies Folder because it was asked for, and can be taken out again.
+        var isImported = false
     }
 
     struct MovieGapPreviewDescriptor: Equatable {

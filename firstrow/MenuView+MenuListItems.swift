@@ -78,7 +78,7 @@ extension MenuView {
         #if !os(tvOS)
             if activeRootItemID == "movies" {
                 // Where more movies come from: Dropbox, Google Drive and the like, and files.
-                items.append(SubmenuItemConfig(id: Self.importMoviesItemID, title: "Import", leadsToMenu: true))
+                items.append(SubmenuItemConfig(id: Self.importMoviesItemID, title: "Import...", leadsToMenu: true))
             }
         #endif
         if activeRootItemID == "music",

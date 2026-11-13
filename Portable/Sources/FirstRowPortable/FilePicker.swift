@@ -49,12 +49,17 @@ public enum PortableFilePicker {
 
     /// `filters` are (description, semicolon-separated extensions) pairs, such as ("XML", "xml").
     public static func chooseFile(filters: [(String, String)], completion: @escaping @MainActor ([URL]) -> Void) {
+        chooseFiles(filters: filters, allowMany: false, completion: completion)
+    }
+
+    /// Asks for a file, or for as many as are wanted.
+    public static func chooseFiles(filters: [(String, String)], allowMany: Bool, completion: @escaping @MainActor ([URL]) -> Void) {
         SDL_ShowCursor()
         let request = Request(completion: completion, filters: filters)
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var list = request.filters.map { SDL_DialogFileFilter(name: $0.name, pattern: $0.pattern) }
         list.withUnsafeMutableBufferPointer { buffer in
-            SDL_ShowOpenFileDialog(callback, Unmanaged.passRetained(request).toOpaque(), PortableApplication.windowHandle, buffer.baseAddress, Int32(buffer.count), home, false)
+            SDL_ShowOpenFileDialog(callback, Unmanaged.passRetained(request).toOpaque(), PortableApplication.windowHandle, buffer.baseAddress, Int32(buffer.count), home, allowMany)
         }
     }
 }
