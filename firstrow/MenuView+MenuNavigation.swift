@@ -241,7 +241,9 @@ extension MenuView {
             if let standardizedRoot, standardizedCurrent != standardizedRoot {
                 let parentURL = standardizedCurrent.deletingLastPathComponent()
                 rememberCurrentMoviesFolderSelectionIndex()
-                transitionMenuForFolderSwap {
+                // (The folder is read away from the main thread: its list comes in once it
+                // has been, not with the list just left still in it.)
+                transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
                     self.loadThirdMenuDirectory(parentURL, resetSelection: true)
                 }
             } else {

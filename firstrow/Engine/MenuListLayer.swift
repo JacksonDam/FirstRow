@@ -168,9 +168,13 @@ final class MenuListLayer {
             stickyScrollOffset = menu.menuScrollOffset(contentHeight: contentHeight, selectedIndex: selectedIndex, rowOffsets: rowOffsets, viewportHeight: viewportHeight)
             selectedRowOffset = rowOffsets.indices.contains(selectedIndex) ? rowOffsets[selectedIndex] : 0
         }
-        // While the pointer drives the list, it stays where the pointer left it.
-        if lastScrollOffset == nil || lastIdentity != identity {
-            menu.pointer.listAppears(identity: identity)
+        // While the pointer drives the list, it stays where the pointer left it. One gone back
+        // out of, or chosen from, takes up its usual place once it's out of sight.
+        let appears = lastScrollOffset == nil || lastIdentity != identity
+        if appears || c.visibility == .hidden {
+            menu.pointer.listIsUnseen(identity: identity)
+        }
+        if appears {
             menu.youtubeListAppeared()
         }
         let pinnedScrollOffset = menu.pointer.pinnedScrollOffset(

@@ -160,30 +160,30 @@ final class PointerInputState {
         leftScrollOffsets[identity] = nil
     }
 
-    /// Lists gone back out of, whose scroll is dropped when they next appear (not as they go,
-    /// or they'd jump while fading).
-    private var forgetWhenShownAgain: Set<String> = []
+    /// Lists gone back out of, or chosen from, whose scroll is dropped once they are out of
+    /// sight (not as they go, or they'd jump while fading).
+    private var forgetOnceUnseen: Set<String> = []
 
-    func forgetScrollWhenShownAgain(identity: String) {
-        forgetWhenShownAgain.insert(identity)
+    func forgetScrollOnceUnseen(identity: String) {
+        forgetOnceUnseen.insert(identity)
     }
 
-    /// A list is appearing afresh.
-    func listAppears(identity: String) {
-        if forgetWhenShownAgain.remove(identity) != nil {
+    /// A list is out of sight, or is appearing afresh.
+    func listIsUnseen(identity: String) {
+        if forgetOnceUnseen.remove(identity) != nil {
             forgetScroll(identity: identity)
         }
     }
 
-    /// A list clicked into a player keeps where the wheel left it while the player comes up over
-    /// it, and takes up its usual place once it's out of sight.
+    /// A list chosen from keeps where the wheel left it while a player comes up over it, and
+    /// takes up its usual place once the player covers it.
     var clearsPinOnceCovered = false
 
     func clearPin() {
         clearsPinOnceCovered = false
         pin = nil
         leftScrollOffsets.removeAll()
-        forgetWhenShownAgain.removeAll()
+        forgetOnceUnseen.removeAll()
         tracksFinger = false
     }
 }
@@ -276,7 +276,7 @@ extension MenuView {
             // where the pointer or the finger left it as it fades, and starts afresh the next
             // time it is shown. (Handed back to the arrows as Back was pressed, a list the
             // pointer had moved was seen to jump to where the arrows keep it, on its way out.)
-            pointer.forgetScrollWhenShownAgain(identity: identity)
+            pointer.forgetScrollOnceUnseen(identity: identity)
         } else {
             #if !os(iOS)
                 pointer.clearPin()
@@ -284,17 +284,18 @@ extension MenuView {
         }
     }
 
-    /// After Enter: a player coming up over the list leaves it where the wheel left it until
-    /// the player covers it; anything else hands the list back to the arrows straight away.
+    /// After Enter the list stays where the wheel left it for as long as it is in sight: as a
+    /// player comes up over it, as it fades for the list it opens (which can be a moment after
+    /// Enter, when there is a folder to look in or a movie to open first), and as it stands
+    /// when the row only changes a setting. It takes up its usual place, with the chosen row
+    /// where the arrows keep it, once it is out of sight. (Handed back to the arrows at Enter,
+    /// a list the wheel had moved was seen to jump there on its way out.)
     /// (On iPhone and iPad lists stay where the finger left them.)
     func settlePointerScrollAfterEnter() {
         #if !os(iOS)
-            guard pointer.pin != nil else { return }
-            if isPlayerCoveringMenus(orComing: true) {
-                pointer.clearsPinOnceCovered = true
-            } else {
-                pointer.clearPin()
-            }
+            guard let pin = pointer.pin else { return }
+            pointer.clearsPinOnceCovered = true
+            pointer.forgetScrollOnceUnseen(identity: pin.identity)
         #endif
     }
 
@@ -858,13 +859,9 @@ extension MenuView {
 }
 
 extension MenuView {
-    /// A player (Now Playing, a movie, a slideshow) over the menus; with `orComing`, one on its
-    /// way too, or the movie prompt that comes before one.
-    func isPlayerCoveringMenus(orComing: Bool = false) -> Bool {
+    /// A player (Now Playing, a movie, a slideshow) over the menus, once it has come up.
+    func isPlayerCoveringMenus() -> Bool {
         let scene = activeFullscreenScene.map { $0.key != screenSaverFullscreenKey } ?? false
-        if orComing {
-            return scene || isFullscreenSceneTransitioning || isMoviePlaybackVisible || isMovieTransitioning || isMovieResumePromptVisible
-        }
         return (scene && !isFullscreenSceneTransitioning) || (isMoviePlaybackVisible && !isMovieTransitioning)
     }
 
