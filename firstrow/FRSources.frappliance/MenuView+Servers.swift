@@ -75,7 +75,7 @@ enum MediaServerClients {
             async let upnp = UPnPClient.discover()
             async let plex = LocalNetwork.services(ofType: "_plexmediasvr._tcp")
             async let kodi = LocalNetwork.services(ofType: "_xbmc-jsonrpc-h._tcp")
-            async let shared = SharedFolderClient.isAvailable ? LocalNetwork.services(ofType: "_smb._tcp") : []
+            async let shared = SharedFolderClient.isAvailable ? LocalNetwork.services(ofType: "_smb._tcp", models: true) : []
             var found: [FoundMediaServer] = []
             for server in await plex {
                 found.append(FoundMediaServer(kind: .plex, name: server.name, address: "http://\(server.host):\(server.port)", details: ["asks": "1"]))
@@ -83,8 +83,12 @@ enum MediaServerClients {
             for server in await kodi {
                 found.append(FoundMediaServer(kind: .kodi, name: server.name, address: "http://\(server.host):\(server.port)", details: ["asks": "1"]))
             }
-            for server in await shared {
-                found.append(FoundMediaServer(kind: .sharedFolder, name: server.name, address: server.port == 445 ? server.host : "\(server.host):\(server.port)", details: ["asks": "1"]))
+            // (This computer's own shared folders aren't offered to itself. A Mac is known
+            // as one: it takes a name and password only on a condition, which is said.)
+            for server in await shared where !LocalNetwork.isThisComputer(server.host) {
+                var details = ["asks": "1"]
+                if server.isMac { details["mac"] = "1" }
+                found.append(FoundMediaServer(kind: .sharedFolder, name: server.name, address: server.port == 445 ? server.host : "\(server.host):\(server.port)", details: details))
             }
             // (A Plex server or Kodi that also answers as a UPnP server is listed once, as itself.)
             let named = Set(found.map { $0.name.lowercased() })
@@ -651,19 +655,21 @@ extension MenuView {
     }
 
     /// Finds the server at an address, asking for a name and password if it wants them.
-    private func connectToServer(_ kind: MediaServerKind, typed: String, user: String?, password: String?) {
+    /// (`isMac`: it was found on the network, and says it is a Mac.)
+    private func connectToServer(_ kind: MediaServerKind, typed: String, user: String?, password: String?, isMac: Bool = false) {
         showServerMessage(status: "Connecting...")
         let requestID = servers.requestID
         Task { @MainActor in
             do {
-                let found = try await MediaServerClients.find(kind, at: typed, user: user, password: password)
+                var found = try await MediaServerClients.find(kind, at: typed, user: user, password: password)
                 guard self.servers.requestID == requestID, self.thirdMenuMode == .server else { return }
+                if isMac { found.details["mac"] = "1" }
                 self.showServerMessage()
                 self.keepServer(found, user: user, password: password)
             } catch MediaServerError.signInNeeded where user == nil {
                 guard self.servers.requestID == requestID, self.thirdMenuMode == .server else { return }
                 self.showServerMessage()
-                self.askForServerSignIn(kind, typed: typed)
+                self.askForServerSignIn(kind, typed: typed, isMac: isMac)
             } catch {
                 guard self.servers.requestID == requestID, self.thirdMenuMode == .server else { return }
                 let wrongSignIn = user != nil && (error as? MediaServerError).map { if case .signInNeeded = $0 { true } else { false } } ?? false
@@ -673,14 +679,22 @@ extension MenuView {
         }
     }
 
-    private func askForServerSignIn(_ kind: MediaServerKind, typed: String) {
-        requestTextEntry(title: "User Name", prompt: "Sign in to \(typed).") { [weak self] user in
+    private func askForServerSignIn(_ kind: MediaServerKind, typed: String, isMac: Bool = false) {
+        requestTextEntry(title: "User Name", prompt: Self.signInPrompt(for: typed, isMac: isMac)) { [weak self] user in
             guard let self, let user, !user.isEmpty else { return }
             self.requestTextEntry(title: "Password", prompt: "Enter the password for \(user).", isSecure: true) { [weak self] password in
                 guard let self, let password else { return }
-                self.connectToServer(kind, typed: typed, user: user, password: password)
+                self.connectToServer(kind, typed: typed, user: user, password: password, isMac: isMac)
             }
         }
+    }
+
+    /// What the question for a name says. A Mac takes a name and password from an app like
+    /// this one only for an account that has Windows File Sharing turned on (it keeps no
+    /// password in the form such a sign-in needs otherwise), so that is said where it is asked.
+    private static func signInPrompt(for name: String, isMac: Bool) -> String {
+        guard isMac else { return "Sign in to \(name)." }
+        return "Sign in to \(name). A Mac wants Windows File Sharing turned on for the account first: System Settings, General, Sharing, File Sharing, Options."
     }
 
     /// Signs in to Plex with a code shown here and typed at plex.tv/link, then keeps every
@@ -743,7 +757,7 @@ extension MenuView {
 
     /// Asks who to sign in to a server as, keeps the answer with the server and looks again.
     private func askForSignIn(to record: MediaServerRecord) {
-        requestTextEntry(title: "User Name", prompt: "Sign in to \(record.name).", initialText: record.user ?? "") { [weak self] user in
+        requestTextEntry(title: "User Name", prompt: Self.signInPrompt(for: record.name, isMac: record.details?["mac"] != nil), initialText: record.user ?? "") { [weak self] user in
             guard let self, let user, !user.isEmpty else { return }
             self.requestTextEntry(title: "Password", prompt: "Enter the password for \(user).", isSecure: true) { [weak self] password in
                 guard let self, let password else { return }
@@ -768,7 +782,7 @@ extension MenuView {
         playSound(named: "Selection")
         if server.details["asks"] != nil {
             // (Found by the name it announces: it's asked what it is now.)
-            connectToServer(server.kind, typed: server.address, user: nil, password: nil)
+            connectToServer(server.kind, typed: server.address, user: nil, password: nil, isMac: server.details["mac"] != nil)
             return
         }
         keepServer(server, user: nil, password: nil)
