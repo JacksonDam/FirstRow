@@ -50,6 +50,8 @@ final class FirstRowAppController {
     private(set) var menu: MenuView?
     private var renderer: MenuSceneRenderer?
     private let menuContainer = SceneLayer()
+    /// The menus are being drawn out of sight, a moment before they come in after the intro.
+    private var isBringingMenusIn = false
     private let introLayer = AVPlayerLayer()
     private let quitOverlay = SceneLayer()
     private var introPlayer: AVPlayer?
@@ -228,14 +230,31 @@ final class FirstRowAppController {
     /// The menus come in from black (the movie plays on underneath for the last of its sound):
     /// Classic fades them in, Modern brings them in from a little nearer, as its scenes arrive.
     private func revealMenusAfterIntro() {
-        guard isPlayingIntro || menuContainer.opacity < 1 else { return }
+        guard isPlayingIntro || menuContainer.opacity < 1, !isBringingMenusIn else { return }
         isPlayingIntro = false
-        if AppSettings.theme == .modern, let menu {
-            menuContainer.setOpacity(1, .smooth(duration: 0.5))
-            menu.bringInMenusAfterIntro()
-        } else {
-            menuContainer.setOpacity(1, .easeInOut(duration: Self.launchMenuRevealDuration))
+        func bringIn() {
+            if AppSettings.theme == .modern, let menu {
+                menuContainer.setOpacity(1, .smooth(duration: 0.5))
+                menu.bringInMenusAfterIntro()
+            } else {
+                menuContainer.setOpacity(1, .easeInOut(duration: Self.launchMenuRevealDuration))
+            }
         }
+        #if FIRSTROW_PORTABLE
+            // The first frame the menus are drawn in is the one that puts their pictures on
+            // the graphics card, and it takes as long as that does. So it is drawn before
+            // they start to come in, with them as good as clear over the movie's black, and
+            // every frame of their coming in is then on time.
+            isBringingMenusIn = true
+            withoutLayerActions { menuContainer.opacity = Float(MenuView.asGoodAsClear) }
+            Task { @MainActor [weak self] in
+                try? await firstRowSleep(0.1)
+                self?.isBringingMenusIn = false
+                bringIn()
+            }
+        #else
+            bringIn()
+        #endif
         menu?.resetScreenSaverIdleTimer()
     }
 

@@ -115,6 +115,10 @@ extension MenuView {
         hideTextEntryLayer { self.codeDisplay = nil }
     }
 
+    /// An opacity at which a layer is still drawn (so that what it needs is made ready) and
+    /// nothing of it can be seen.
+    static let asGoodAsClear = 0.002
+
     /// How strongly the menu shows. Under a typing screen that is up it doesn't, whatever
     /// else has brought the menu back in meanwhile (a list that finished changing, say).
     var menuOpacityOnScreen: Double {

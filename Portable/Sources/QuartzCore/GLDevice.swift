@@ -213,14 +213,24 @@ final class GLDevice {
         return program
     }
 
-    /// Destroys the targets nothing has used for a few seconds. A change of screen (a fade, a
+    /// How many bytes of targets nothing is using are kept for when they are wanted again.
+    private let idleTargetBudget = 64 * 1024 * 1024
+
+    /// Destroys the targets nothing has used for a few seconds, the longest unused first,
+    /// while there are more than the budget's worth of them. A change of screen (a fade, a
     /// blur coming in) needs several screen-sized targets for a moment; kept, they were
-    /// tens of megabytes each on a large screen, 24 deep.
+    /// tens of megabytes each on a large screen, 24 deep. But a screen that comes back as it
+    /// left (the menus, after a movie) wants its own again in its first frame, and making
+    /// them all anew then held that frame up: so a budget's worth stays.
     func destroyIdleTargets() {
         guard !targetPool.isEmpty else { return }
+        var total = targetPool.reduce(0) { $0 + $1.width * $1.height * 4 }
+        guard total > idleTargetBudget else { return }
         let now = CACurrentMediaTime()
+        // (The pool is in the order they were handed back.)
         targetPool.removeAll { target in
-            guard now - target.lastUsed > 3 else { return false }
+            guard total > idleTargetBudget, now - target.lastUsed > 3 else { return false }
+            total -= target.width * target.height * 4
             target.destroy()
             return true
         }
@@ -345,7 +355,9 @@ final class GLDevice {
     func releaseTarget(_ target: RenderTarget) {
         target.lastUsed = CACurrentMediaTime()
         targetPool.append(target)
-        if targetPool.count > 24 {
+        // (Enough for the sizes a scene goes through as it comes and goes; what they add
+        // up to is kept in bounds by `destroyIdleTargets`.)
+        if targetPool.count > 64 {
             targetPool.removeFirst().destroy()
         }
     }

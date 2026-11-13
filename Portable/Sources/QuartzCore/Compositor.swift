@@ -866,11 +866,13 @@ public final class Compositor {
         }
         var width = wholePixels?.width ?? max(1, Int(ceil(extent.width * density)))
         var height = wholePixels?.height ?? max(1, Int(ceil(extent.height * density)))
-        // In steps (of 16 to 64 pixels), the area drawn growing by whole pixels to match (what's
-        // added is empty, or more of the layer). A group that's being scaled, or moved by
-        // fractions of a pixel, comes out a few pixels bigger or smaller each frame, and a
-        // target of exactly that size had to be made new each time, which a graphics card
-        // takes its time over. In steps, the target the last frame used fits this one.
+        // In steps (of a tenth of its size or more), the area drawn growing by whole pixels to
+        // match (what's added is empty, or more of the layer). A group that's being scaled,
+        // or moved by fractions of a pixel, comes out a few pixels bigger or smaller each
+        // frame, and a target of exactly that size had to be made new each time, which a
+        // graphics card takes its time over. In steps, the target the last frame used fits
+        // this one, and a scene that comes in a tenth larger than it ends keeps its targets
+        // all the way.
         let steppedWidth = Self.stepped(width), steppedHeight = Self.stepped(height)
         if steppedWidth <= device.maxTextureSize, steppedHeight <= device.maxTextureSize {
             extent.size = CGSize(width: extent.width * CGFloat(steppedWidth) / CGFloat(width),
@@ -965,10 +967,12 @@ public final class Compositor {
         device.releaseTarget(result)
     }
 
-    /// A target's side rounded up to the next step: finer steps for small groups, which
-    /// would otherwise be drawn much bigger than they are.
+    /// A target's side rounded up to the next step: 16 pixels for small groups (which
+    /// would otherwise be drawn much bigger than they are), and for larger ones the power
+    /// of two that is a tenth of the side or more.
     private static func stepped(_ pixels: Int) -> Int {
-        let step = pixels < 256 ? 16 : pixels < 1024 ? 32 : 64
+        var step = 16
+        while step * 10 < pixels { step *= 2 }
         return (pixels + step - 1) / step * step
     }
 

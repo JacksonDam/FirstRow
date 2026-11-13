@@ -386,6 +386,18 @@ extension MenuView {
             lastClosedMovieURL = nil
             lastClosedMovieTimestamp = 0
         }
+        #if FIRSTROW_PORTABLE
+            // The menus are drawn again from here, as good as clear and under the movie, which
+            // has stopped: the frame that puts their pictures back on the graphics card is
+            // one nobody sees, and the frames they come back in are all on time.
+            var unseen = Transaction()
+            unseen.animation = nil
+            withTransaction(unseen) {
+                menuSceneOpacity = Self.asGoodAsClear
+                // (At the size the modern look brings them back from.)
+                if ModernTheme.isActive { menuSceneScale = ModernTheme.sceneNearScale }
+            }
+        #endif
         if ModernTheme.isActive {
             recedeMovieToMenu()
             return
