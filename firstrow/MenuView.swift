@@ -211,10 +211,12 @@ final class MenuView: ObservableObject {
             forName: MediaSources.didChangeNotification,
             object: nil,
             queue: .main,
-        ) { [weak self] _ in
+        ) { [weak self] notification in
+            let folders = notification.userInfo?[MediaSources.changedFoldersKey] as? Set<MediaSources.FolderKind> ?? []
+            let libraries = notification.userInfo?[MediaSources.changedLibrariesKey] as? Set<MediaSources.LibraryKind> ?? []
             Task { @MainActor in
                 self?.mediaSourcesRevision &+= 1
-                self?.reloadMediaAfterSourcesChange()
+                self?.reloadMediaAfterSourcesChange(folders: folders, libraries: libraries)
             }
         }
         #if os(macOS)

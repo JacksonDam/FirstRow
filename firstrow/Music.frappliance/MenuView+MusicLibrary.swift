@@ -513,11 +513,32 @@ extension MenuView {
     #endif
 
     /// Picks up folders and libraries added or removed in Settings, without blocking the menu.
-    func reloadMediaAfterSourcesChange() {
-        requestPhotoSourceAlbumsLoad()
+    /// Only what the kinds that changed hold is read again: a folder of movies is no reason
+    /// to read the music library and the photo albums a second time.
+    func reloadMediaAfterSourcesChange(folders: Set<MediaSources.FolderKind>, libraries: Set<MediaSources.LibraryKind>) {
+        if folders.contains(.photos) || libraries.contains(.iPhoto) {
+            requestPhotoSourceAlbumsLoad()
+        }
+        if folders.contains(.movies) {
+            noteMoviesTopLevelChanged()
+            if activeRootItemID == "tv_shows", isInSubmenu { refreshTVShows() }
+        }
+        guard folders.contains(.music) || libraries.contains(.iTunesXML) else { return }
         guard isStartupMusicLibraryPreloadComplete else { return }
         let requestID = incrementRequestID(&musicStartupPreloadRequestID)
         Task(priority: .userInitiated) {
+            #if canImport(iTunesLibrary)
+                // The Music app's own songs are as they were: only the songs in folders and in
+                // the library file are read again. (Reading the app's again would have its
+                // covers read again too, which takes most of a minute with a large library.)
+                if let songs = await self.musicSongsWithFoldersReadAgain() {
+                    guard self.musicStartupPreloadRequestID == requestID else { return }
+                    self.musicAllSongsCache = songs.sortedSongs
+                    self.musicShuffleSongsCache = songs.shuffleSongs
+                    self.reloadMusicTopLevelCarousel()
+                    return
+                }
+            #endif
             guard let snapshot = try? await self.loadStartupMusicLibrarySnapshot() else { return }
             guard self.musicStartupPreloadRequestID == requestID else { return }
             self.musicAllSongsCache = snapshot.sortedSongs
@@ -528,6 +549,25 @@ extension MenuView {
             self.reloadMusicTopLevelCarousel()
         }
     }
+
+    #if canImport(iTunesLibrary)
+        /// The songs as they are known, with those from folders and from an iTunes library
+        /// file read again. Nil before the library has been read at all.
+        func musicSongsWithFoldersReadAgain() async -> (sortedSongs: [MusicLibrarySongEntry], shuffleSongs: [MusicLibrarySongEntry])? {
+            guard let known = musicShuffleSongsCache else { return nil }
+            let fromMusicApp = musicLibraryItemIndexBySongID
+            var songs = known.filter { fromMusicApp[$0.id] != nil }
+            var knownPaths = Set(songs.compactMap { $0.url?.standardizedFileURL.path })
+            for entry in await fetchExternalMusicSongEntries() where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
+                songs.append(entry)
+            }
+            let xmlEntries = await Task.detached(priority: .userInitiated) { self.iTunesXMLSongEntries() }.value
+            for entry in xmlEntries where entry.url.map({ knownPaths.insert($0.standardizedFileURL.path).inserted }) ?? true {
+                songs.append(entry)
+            }
+            return (sortedSongs: sortedMusicLibraryEntries(songs), shuffleSongs: songs)
+        }
+    #endif
 
     func reloadMusicTopLevelCarousel() {
         _ = incrementRequestID(&musicTopLevelCarouselRequestID)
@@ -2196,9 +2236,11 @@ extension MenuView {
         }
 
         nonisolated func scanExternalMusicFiles(in directoryURL: URL) -> [URL] {
+            // (Sizes and dates come with the list: a file not changed since it was last read
+            // isn't read again, see `fetchExternalMusicSongEntries`.)
             guard let contents = try? FileManager.default.contentsOfDirectory(
                 at: directoryURL,
-                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
                 options: [.skipsHiddenFiles]
             ) else { return [] }
             var results: [URL] = []
@@ -2384,17 +2426,62 @@ extension MenuView {
             "Acid Jazz", "Polka", "Retro", "Musical", "Rock & Roll", "Hard Rock",
         ]
 
+        /// The songs in the music folders. A file that was read before and hasn't changed
+        /// since (the same size and date) is the song it was then: reading a file's tags and
+        /// length takes long enough that a large folder read all over again, each time a
+        /// folder was added or a song copied in, held the new songs back for a long while.
         nonisolated func fetchExternalMusicSongEntries() async -> [MusicLibrarySongEntry] {
             var results: [MusicLibrarySongEntry] = []
             let covers = SharedCovers()
+            var read: [String: FolderSongsRead.Song] = [:]
             for root in externalMusicRootURLs() {
                 for url in scanExternalMusicFiles(in: root) {
-                    if let entry = await makeMusicLibrarySongEntryFromAudioFile(url, covers: covers, in: root) {
-                        results.append(entry)
+                    let path = url.standardizedFileURL.path
+                    let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+                    let size = values?.fileSize
+                    let date = values?.contentModificationDate
+                    if let size, let date, let before = FolderSongsRead.shared.song(at: path, size: size, date: date) {
+                        results.append(before.entry)
+                        read[path] = before
+                        continue
+                    }
+                    guard let entry = await makeMusicLibrarySongEntryFromAudioFile(url, covers: covers, in: root) else { continue }
+                    results.append(entry)
+                    // (One still with its service is told from where it's kept, and read
+                    // properly once it has been fetched.)
+                    if let size, let date, !CloudFolders.isStillInTheCloud(url) {
+                        read[path] = FolderSongsRead.Song(size: size, date: date, entry: entry)
                     }
                 }
             }
+            FolderSongsRead.shared.keep(read)
             return results
+        }
+
+        /// What was read of the music folders' files the last time they were looked through.
+        final class FolderSongsRead: @unchecked Sendable {
+            struct Song {
+                let size: Int
+                let date: Date
+                let entry: MusicLibrarySongEntry
+            }
+
+            static let shared = FolderSongsRead()
+            private let lock = NSLock()
+            private var songs: [String: Song] = [:]
+
+            func song(at path: String, size: Int, date: Date) -> Song? {
+                lock.lock()
+                defer { lock.unlock() }
+                guard let song = songs[path], song.size == size, song.date == date else { return nil }
+                return song
+            }
+
+            func keep(_ read: [String: Song]) {
+                lock.lock()
+                songs = read
+                lock.unlock()
+            }
         }
 
         func fetchMusicLibrarySongsWithItemIndices(

@@ -4,6 +4,10 @@ import Foundation
 final class MediaSources: @unchecked Sendable {
     static let shared = MediaSources()
     static let didChangeNotification = Notification.Name("FirstRowMediaSourcesDidChange")
+    /// In the notification: the kinds of folder (`Set<FolderKind>`) and of library
+    /// (`Set<LibraryKind>`) that changed, so that only what they hold is read again.
+    static let changedFoldersKey = "folders"
+    static let changedLibrariesKey = "libraries"
 
     enum FolderKind: String, CaseIterable {
         case movies
@@ -38,6 +42,8 @@ final class MediaSources: @unchecked Sendable {
     private var resolvedLibraries: [LibraryKind: URL] = [:]
     private var openedScopes: Set<URL> = []
     private var changePending = false
+    private var changedFolders: Set<FolderKind> = []
+    private var changedLibraries: Set<LibraryKind> = []
 
     private init() {}
 
@@ -105,7 +111,7 @@ final class MediaSources: @unchecked Sendable {
         }
         resolvedFolders[kind] = nil
         lock.unlock()
-        postChange()
+        postChange(folders: kind)
     }
 
     func removeFolder(at index: Int, kind: FolderKind) {
@@ -118,7 +124,7 @@ final class MediaSources: @unchecked Sendable {
         resolvedFolders[kind] = nil
         lock.unlock()
         releaseUnusedScopes()
-        postChange()
+        postChange(folders: kind)
     }
 
     func setLibrary(_ url: URL?, kind: LibraryKind) {
@@ -131,7 +137,7 @@ final class MediaSources: @unchecked Sendable {
         resolvedLibraries[kind] = nil
         lock.unlock()
         releaseUnusedScopes()
-        postChange()
+        postChange(library: kind)
     }
 
     // MARK: - Bookmarks
@@ -202,9 +208,11 @@ final class MediaSources: @unchecked Sendable {
         #endif
     }
 
-    /// Coalesces a burst of changes into one notification.
-    private func postChange() {
+    /// Coalesces a burst of changes into one notification, which says what kinds changed.
+    private func postChange(folders: FolderKind? = nil, library: LibraryKind? = nil) {
         lock.lock()
+        if let folders { changedFolders.insert(folders) }
+        if let library { changedLibraries.insert(library) }
         let alreadyPending = changePending
         changePending = true
         lock.unlock()
@@ -212,8 +220,15 @@ final class MediaSources: @unchecked Sendable {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             self.lock.lock()
             self.changePending = false
+            let folders = self.changedFolders
+            let libraries = self.changedLibraries
+            self.changedFolders = []
+            self.changedLibraries = []
             self.lock.unlock()
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: [
+                Self.changedFoldersKey: folders,
+                Self.changedLibrariesKey: libraries,
+            ])
         }
     }
 }
