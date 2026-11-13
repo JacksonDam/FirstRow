@@ -429,7 +429,11 @@ final class MenuSceneRenderer: TransactionRendering {
         lap("lists")
 
         // Movie resume prompt over the scene.
-        resumePrompt.update(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale)
+        // (The display in the scene's points: wider or taller than the scene, where the scene
+        // doesn't fill it.)
+        let fit = max(self.canvasScale, 0.0001)
+        let display = CGRect(x: -canvas.position.x / fit, y: -canvas.position.y / fit, width: containerSize.width / fit, height: containerSize.height / fit)
+        resumePrompt.update(menu: menu, pass: pass, sceneSize: sceneSize, display: display, scale: scale)
         textEntry.update(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale)
 
         // Full-screen layers.

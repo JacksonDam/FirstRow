@@ -67,6 +67,9 @@ extension MenuView {
             case panelPush
             /// Sliding over the rows of a movie's options; lifting changes the one under it.
             case optionSelecting
+            /// On one of a question's two answers, which is picked out under the finger; the
+            /// selection goes with the finger to the other, and lifting over one chooses it.
+            case answerSelecting
             case ignored
         }
 
@@ -92,6 +95,8 @@ extension MenuView {
         /// The row under a sliding finger. The selection walks to it a row a frame, so every
         /// row it passes shows as selected.
         var selectionTarget: (level: MenuListLevel, index: Int)?
+        /// The answer that was picked out before a finger came down on a question's answers.
+        var answerBefore = 0
         /// A preview change put off while a finger slides through the rows.
         var previewRefresh: Task<Void, Never>?
         var pendingPreview: (@MainActor () -> Void)?
@@ -310,6 +315,16 @@ extension MenuView {
             if let control = pointer.hitTester?.touchControl(at: point) {
                 state.mode = .button(control)
                 pointer.hitTester?.highlightTouchControl(control)
+                return
+            }
+            // A question's two answers (to resume or start again, to delete or not): the one
+            // under the finger is picked out at once, as a row of a short list is.
+            if isMovieResumePromptVisible, !isMovieResumePromptConfirming, !isMovieTransitioning,
+               case let .resumeOption(index)? = pointer.hitTester?.pointerTarget(at: point)
+            {
+                state.mode = .answerSelecting
+                state.answerBefore = movieResumePromptSelectedIndex
+                selectResumeOptionFromPointer(index)
                 return
             }
             // A movie's options: the row under the finger is picked out, and follows it.
@@ -537,6 +552,9 @@ extension MenuView {
                 slidePanelTouchSelection(to: point)
             case .optionSelecting:
                 if let hit = pointer.hitTester?.movieOptionsRow(at: point), hit.index >= 0 { pickOutMovieOptionRow(hit.index) }
+            case .answerSelecting:
+                // (Off both answers, the last one it was on stays picked out.)
+                if case let .resumeOption(index)? = pointer.hitTester?.pointerTarget(at: point) { selectResumeOptionFromPointer(index) }
             case .swiping, .panelPush, .ignored:
                 break
             }
@@ -638,6 +656,17 @@ extension MenuView {
                 if let hit = pointer.hitTester?.movieOptionsRow(at: point), hit.index >= 0 {
                     chooseMovieOptionRow(hit.index, backward: hit.backward)
                 }
+            case .answerSelecting:
+                // Lifting over an answer chooses it; anywhere else lets it go, and the answer
+                // picked out before is picked out again.
+                if isMovieResumePromptVisible, !isMovieResumePromptConfirming,
+                   case let .resumeOption(index)? = pointer.hitTester?.pointerTarget(at: point)
+                {
+                    selectResumeOptionFromPointer(index)
+                    pressTouchKey(.enter)
+                } else {
+                    selectResumeOptionFromPointer(state.answerBefore)
+                }
             case .ignored:
                 break
             }
@@ -667,6 +696,9 @@ extension MenuView {
             }
             if state.mode == .panelScrolling {
                 releaseYouTubePanel(velocity: 0)
+            }
+            if state.mode == .answerSelecting {
+                selectResumeOptionFromPointer(state.answerBefore)
             }
             state.panelSelectionTarget = nil
             state.mode = .ignored

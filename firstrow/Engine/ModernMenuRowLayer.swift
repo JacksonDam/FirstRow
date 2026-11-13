@@ -13,11 +13,7 @@ import QuartzCore
 @MainActor
 final class ModernMenuRowLayer: MenuRowLayering {
     let layer = SceneLayer()
-    /// A soft shadow all round each row, centred under it. It's cast by a layer of its own,
-    /// cut out where the capsule is, so it doesn't darken the see-through capsule from inside.
-    private let shadowCaster = SceneLayer()
-    private let shadowCutout = CAShapeLayer()
-    private var shadowSize: CGSize = .zero
+    private let shadow = ModernRowShadow()
     private let capsule = SceneLayer()
     private let content = SceneLayer()
     private let leadingImage = SceneLayer()
@@ -36,16 +32,8 @@ final class ModernMenuRowLayer: MenuRowLayering {
 
     init() {
         capsule.backgroundColor = ModernTheme.rowFill.cgColor
-        shadowCaster.shadowColor = CGColor(gray: 0, alpha: 1)
-        shadowCaster.shadowRadius = 14
-        shadowCaster.shadowOffset = .zero
-        shadowCaster.shadowOpacity = 0.6
-        shadowCutout.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull()]
-        shadowCutout.fillRule = .evenOdd
-        shadowCutout.fillColor = CGColor(gray: 0, alpha: 1)
-        shadowCaster.mask = shadowCutout
         leadingImage.masksToBounds = true
-        layer.addSublayer(shadowCaster)
+        layer.addSublayer(shadow.layer)
         layer.addSublayer(capsule)
         layer.addSublayer(content)
         for sublayer in [leadingImage, light.layer, dark.layer, blueDot] {
@@ -79,24 +67,9 @@ final class ModernMenuRowLayer: MenuRowLayering {
         // The size eases; the colour changes at once, or fades on the way out.
         if focusChanged {
             capsule.set("backgroundColor", to: (focused ? ModernTheme.focusFill : ModernTheme.rowFill).cgColor, unchanged: false, animation: unfocus)
-            shadowCaster.set("shadowOpacity", to: Float(focused ? 0.75 : 0.6), unchanged: false, animation: unfocus ?? growth)
+            shadow.setPickedOut(focused, unfocus ?? growth)
         }
-        // The shadow sits under the row at rest; the focused capsule, grown a little, is opaque
-        // and hides the edge of the cut-out.
-        if restFrame.size != shadowSize {
-            shadowSize = restFrame.size
-            let radius = restFrame.height / 2
-            let shape = CGRect(origin: .zero, size: restFrame.size)
-            shadowCaster.shadowPath = CGPath(roundedRect: shape, cornerWidth: radius, cornerHeight: radius, transform: nil)
-            let reach: CGFloat = 48
-            shadowCutout.frame = shape.insetBy(dx: -reach, dy: -reach)
-            let cutout = CGMutablePath()
-            cutout.addRect(CGRect(x: 0, y: 0, width: shape.width + reach * 2, height: shape.height + reach * 2))
-            let hole = CGRect(x: reach + 0.5, y: reach + 0.5, width: shape.width - 1, height: shape.height - 1)
-            cutout.addPath(CGPath(roundedRect: hole, cornerWidth: radius - 0.5, cornerHeight: radius - 0.5, transform: nil))
-            shadowCutout.path = cutout
-        }
-        shadowCaster.frame = restFrame
+        shadow.place(under: restFrame)
         capsule.setFrame(capsuleFrame, growth)
         capsule.set("cornerRadius", to: capsuleFrame.height * 0.5, unchanged: capsule.cornerRadius == capsuleFrame.height * 0.5, animation: growth)
 
@@ -158,6 +131,51 @@ final class ModernMenuRowLayer: MenuRowLayering {
         var transform = CATransform3DMakeTranslation(center.x, center.y, 0)
         transform = CATransform3DScale(transform, factor, factor, 1)
         return CATransform3DTranslate(transform, -center.x, -center.y, 0)
+    }
+}
+
+/// The soft shadow all round a capsule of the modern look, centred under it. It's cast by a
+/// layer of its own, cut out where the capsule is, so it doesn't darken the see-through capsule
+/// from inside.
+@MainActor
+final class ModernRowShadow {
+    let layer = SceneLayer()
+    private let cutout = CAShapeLayer()
+    private var size: CGSize = .zero
+
+    init() {
+        layer.shadowColor = CGColor(gray: 0, alpha: 1)
+        layer.shadowRadius = 14
+        layer.shadowOffset = .zero
+        layer.shadowOpacity = 0.6
+        cutout.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull()]
+        cutout.fillRule = .evenOdd
+        cutout.fillColor = CGColor(gray: 0, alpha: 1)
+        layer.mask = cutout
+    }
+
+    /// Under a capsule that is at rest in `restFrame`. (Picked out, the capsule has grown a
+    /// little and is opaque: it hides the edge of the cut-out.)
+    func place(under restFrame: CGRect) {
+        if restFrame.size != size {
+            size = restFrame.size
+            let radius = restFrame.height / 2
+            let shape = CGRect(origin: .zero, size: restFrame.size)
+            layer.shadowPath = CGPath(roundedRect: shape, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            let reach: CGFloat = 48
+            cutout.frame = shape.insetBy(dx: -reach, dy: -reach)
+            let path = CGMutablePath()
+            path.addRect(CGRect(x: 0, y: 0, width: shape.width + reach * 2, height: shape.height + reach * 2))
+            let hole = CGRect(x: reach + 0.5, y: reach + 0.5, width: shape.width - 1, height: shape.height - 1)
+            path.addPath(CGPath(roundedRect: hole, cornerWidth: radius - 0.5, cornerHeight: radius - 0.5, transform: nil))
+            cutout.path = path
+        }
+        layer.frame = restFrame
+    }
+
+    /// A little darker under the capsule that is picked out.
+    func setPickedOut(_ isPickedOut: Bool, _ animation: Animation?) {
+        layer.set("shadowOpacity", to: Float(isPickedOut ? 0.75 : 0.6), unchanged: false, animation: animation)
     }
 }
 

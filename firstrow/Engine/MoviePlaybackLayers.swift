@@ -645,6 +645,10 @@ final class MovieControlsLayer {
 /// "Resume Playing / Start from Beginning" over a blurred frame of the movie. The same screen
 /// asks whether to delete a movie (`MenuView.movieRemoval`): the question, and its two answers
 /// side by side.
+///
+/// The classic look has the frame fill the scene, its edges softening into the black around
+/// it. The modern one has it fill the display, enlarged until it does and never pulled out of
+/// shape, however much wider or taller than the scene the display is.
 @MainActor
 final class MovieResumePromptLayer {
     let layer = SceneLayer()
@@ -658,12 +662,15 @@ final class MovieResumePromptLayer {
     private let labels = [SceneLayer(), SceneLayer()]
     private var lastSelectedIndex: Int?
     private var backdropSource: NSImage?
+    private var backdropSize = CGSize.zero
+    private var backdropHasSoftEdges = true
     private var wasVisible = false
     /// The modern look's two options: the menus' own rows, so focus moves between them as it
     /// does in a menu.
     private let modernRows = [ModernMenuRowLayer(), ModernMenuRowLayer()]
     /// The modern look's two answers to the delete question: capsules as wide as their
     /// words want, with the words in their middle.
+    private let answerShadows = [ModernRowShadow(), ModernRowShadow()]
     private let answerCapsules = [SceneLayer(), SceneLayer()]
     private let answerLabels = [SceneLayer(), SceneLayer()]
     /// The two options' rows in scene points, top first.
@@ -687,11 +694,13 @@ final class MovieResumePromptLayer {
         options.addSublayer(selection.layer)
         for label in labels { options.addSublayer(label) }
         for row in modernRows { options.addSublayer(row.layer) }
+        for shadow in answerShadows { options.addSublayer(shadow.layer) }
         for capsule in answerCapsules { options.addSublayer(capsule) }
         for label in answerLabels { options.addSublayer(label) }
     }
 
-    func update(menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat) {
+    /// (`display`: the whole display, in the scene's points.)
+    func update(menu: MenuView, pass: RenderPass, sceneSize: CGSize, display: CGRect, scale: CGFloat) {
         guard menu.isMovieResumePromptVisible else {
             layer.isHidden = true
             layer.opacity = 0
@@ -703,18 +712,21 @@ final class MovieResumePromptLayer {
         wasVisible = true
         layer.isHidden = false
         layer.frame = CGRect(origin: .zero, size: sceneSize)
-        backdrop.frame = layer.bounds
-        dim.frame = layer.bounds
-        if menu.movieResumePromptBackdropImage !== backdropSource {
-            backdropSource = menu.movieResumePromptBackdropImage
-            backdrop.contents = backdropSource.flatMap { BlurredBackdrop.image(for: $0, size: sceneSize) }
-        }
         let isModern = ModernTheme.isActive
+        let pictureBox = isModern && display.width > 0 && display.height > 0 ? display : layer.bounds
+        backdrop.frame = pictureBox
+        dim.frame = pictureBox
+        if menu.movieResumePromptBackdropImage !== backdropSource || pictureBox.size != backdropSize || backdropHasSoftEdges == isModern {
+            backdropSource = menu.movieResumePromptBackdropImage
+            backdropSize = pictureBox.size
+            backdropHasSoftEdges = !isModern
+            backdrop.contents = backdropSource.flatMap { BlurredBackdrop.image(for: $0, size: pictureBox.size, softEdges: !isModern) }
+        }
         for sublayer in [pressed, selection.layer] + labels { sublayer.isHidden = isModern }
         for row in modernRows { row.layer.isHidden = !isModern }
         question.isHidden = menu.movieRemoval == nil
         note.isHidden = menu.movieRemoval?.note == nil
-        for sublayer in answerCapsules + answerLabels { sublayer.isHidden = menu.movieRemoval == nil || !isModern }
+        for sublayer in answerShadows.map(\.layer) + answerCapsules + answerLabels { sublayer.isHidden = menu.movieRemoval == nil || !isModern }
         if let removal = menu.movieRemoval {
             dim.backgroundColor = CGColor(gray: 0, alpha: isModern ? 0.6 : 0.5)
             updateRemoval(removal, menu: menu, pass: pass, sceneSize: sceneSize, scale: scale, appearing: appearing, isModern: isModern)
@@ -761,7 +773,8 @@ final class MovieResumePromptLayer {
     /// Whether to delete a movie: the question and what will happen to the movie, and under
     /// them the two answers side by side. Each answer is a button no wider than its word
     /// wants, with the word in its middle, and the one picked out is drawn as the look draws a
-    /// menu's row that is picked out.
+    /// menu's row that is picked out: in the modern look white and a little larger, its word
+    /// with it, over the shadow every row has.
     private func updateRemoval(_ removal: MovieRemoval, menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat, appearing: Bool, isModern: Bool) {
         let middle = Self.middle(menu, sceneSize)
         let titles = removal.answers
@@ -801,15 +814,20 @@ final class MovieResumePromptLayer {
                 let isPicked = index == selected
                 let rest = CGRect(x: CGFloat(index) * (buttonWidth + gap), y: (buttonHeight - capsuleHeight) * 0.5, width: buttonWidth, height: capsuleHeight)
                 let frame = isPicked ? rest.insetBy(dx: -ModernTheme.focusGrowth.width, dy: -ModernTheme.focusGrowth.height) : rest
+                answerShadows[index].place(under: rest)
+                answerShadows[index].setPickedOut(isPicked, change)
                 let capsule = answerCapsules[index]
                 capsule.setFrame(frame, change)
                 capsule.cornerRadius = frame.height * 0.5
                 capsule.backgroundColor = (isPicked ? ModernTheme.focusFill : ModernTheme.rowFill).cgColor
                 let graphic = TextRenderer.render(TextSpec(text: titles[index], fontName: fontName, size: answerSize, color: isPicked ? ModernTheme.focusedText : ModernTheme.text), scale: scale)
-                answerLabels[index].show(graphic, at: CGPoint(
+                let label = answerLabels[index]
+                label.show(graphic, at: CGPoint(
                     x: (rest.midX - graphic.size.width * 0.5).rounded(),
                     y: (rest.midY - graphic.size.height * 0.5).rounded(),
                 ))
+                let grown = MenuSceneRenderer.scale(ModernTheme.focusedContentScale, about: CGPoint(x: graphic.size.width * 0.5, y: graphic.size.height * 0.5))
+                label.setTransform(isPicked ? grown : CATransform3DIdentity, change)
             }
             return
         }
@@ -886,32 +904,37 @@ final class MovieResumePromptLayer {
 /// A movie frame blurred and slightly desaturated, for behind the resume prompt.
 @MainActor
 enum BlurredBackdrop {
-    private static var cache: [ObjectIdentifier: (NSImage, CGImage)] = [:]
+    private static var cache: [ObjectIdentifier: (source: NSImage, size: CGSize, softEdges: Bool, image: CGImage)] = [:]
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
-    static func image(for source: NSImage, size: CGSize) -> CGImage? {
-        if let cached = cache[ObjectIdentifier(source)], cached.0 === source {
-            return cached.1
+    /// The frame enlarged until it fills `size`, keeping its shape. `softEdges`: its edges
+    /// soften into the black behind it; otherwise it is as full at its edges as in its middle.
+    static func image(for source: NSImage, size: CGSize, softEdges: Bool) -> CGImage? {
+        if let cached = cache[ObjectIdentifier(source)], cached.source === source, cached.size == size, cached.softEdges == softEdges {
+            return cached.image
         }
-        guard let cgImage = LayerImageCache.cgImage(for: source) else { return nil }
-        // Work at half the scene's size: the result is a soft blur either way.
+        guard let cgImage = LayerImageCache.cgImage(for: source), size.width > 0, size.height > 0 else { return nil }
+        // Work at half the size: the result is a soft blur either way.
         let workScale: CGFloat = 0.5
-        let target = CGSize(width: size.width * workScale, height: size.height * workScale)
+        let sigma = 28 * workScale
+        let target = CGSize(width: (size.width * workScale).rounded(), height: (size.height * workScale).rounded())
+        // (For full edges the blur is given some of the frame beyond them to draw on.)
+        let margin: CGFloat = softEdges ? 0 : ceil(sigma * 3)
         var image = CIImage(cgImage: cgImage)
-        let fill = max(target.width / image.extent.width, target.height / image.extent.height)
+        let fill = max((target.width + margin * 2) / image.extent.width, (target.height + margin * 2) / image.extent.height)
         image = image.transformed(by: CGAffineTransform(scaleX: fill, y: fill))
         let crop = CGRect(
-            x: image.extent.midX - target.width * 0.5,
-            y: image.extent.midY - target.height * 0.5,
+            x: (image.extent.midX - target.width * 0.5).rounded(),
+            y: (image.extent.midY - target.height * 0.5).rounded(),
             width: target.width,
             height: target.height,
         )
         image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.92])
-        // Cropped first and blurred without clamping, so the edges soften into the black behind.
-        image = image.cropped(to: crop).applyingGaussianBlur(sigma: 28 * workScale).cropped(to: crop)
+        // Cropped first and blurred without clamping, so soft edges fade into the black behind.
+        image = image.cropped(to: crop.insetBy(dx: -margin, dy: -margin)).applyingGaussianBlur(sigma: sigma).cropped(to: crop)
         guard let blurred = context.createCGImage(image, from: crop, format: .BGRA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)) else { return nil }
         if cache.count > 4 { cache.removeAll() }
-        cache[ObjectIdentifier(source)] = (source, blurred)
+        cache[ObjectIdentifier(source)] = (source, size, softEdges, blurred)
         return blurred
     }
 }
