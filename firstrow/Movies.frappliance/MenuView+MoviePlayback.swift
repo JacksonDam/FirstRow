@@ -134,18 +134,20 @@ extension MenuView {
                 withTransaction(instant) {
                     menuSceneScale = 1
                     movieSceneScale = ModernTheme.sceneNearScale
-                    movieSceneOpacity = 0
                 }
             }
             activateMoviePlayback(from: url, startSeconds: startSeconds, showsPlayGlyphOnStart: false)
-            withTransaction(instant) {
-                movieTransitionOverlayOpacity = 0
-            }
             if isModern {
-                // And the movie comes in from a little nearer.
+                // And the movie comes in from a little nearer, out of the black: it is the black
+                // that lifts off it. (Were the movie to fade in under nothing, the menu's
+                // backdrop would show through it until it had.)
                 withAnimation(.smooth(duration: 0.5)) {
                     movieSceneScale = 1
-                    movieSceneOpacity = 1
+                    movieTransitionOverlayOpacity = 0
+                }
+            } else {
+                withTransaction(instant) {
+                    movieTransitionOverlayOpacity = 0
                 }
             }
             isMovieTransitioning = false

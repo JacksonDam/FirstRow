@@ -35,6 +35,13 @@ final class MoviePlaybackLayers {
     private let waiting = SceneLayer()
     private let pinwheel = SpinnerLayer()
     private var showsPinwheel = false
+    #if !FIRSTROW_PORTABLE
+        /// The player whose first frame the layer is waiting for, its picture out of sight
+        /// meanwhile (see `holdPictureBack`), and when its movie was first found ready.
+        private weak var awaitedPlayer: AVPlayer?
+        private var awaitedReadySince: CFTimeInterval?
+        private let firstFrameClock = FrameClock()
+    #endif
     #if os(iOS)
         /// Bent at the fold: the picture again, dimly, under it (see `MovieReflection`).
         private let reflection = MovieReflection()
@@ -84,6 +91,9 @@ final class MoviePlaybackLayers {
         let systemPlayer = menu.moviePlayer as? AVPlayer
         if playerLayer.player !== systemPlayer, showsPlayer || menu.moviePlayer == nil {
             playerLayer.player = systemPlayer
+            #if !FIRSTROW_PORTABLE
+                if let systemPlayer { holdPictureBack(for: systemPlayer) }
+            #endif
         }
         playerLayer.isHidden = !showsPlayer || systemPlayer == nil
         if !showsPlayer, playerLayer.player != nil, !menu.isMoviePlaybackVisible {
@@ -282,6 +292,46 @@ final class MoviePlaybackLayers {
                     }
                 }
             }
+        }
+    #endif
+
+    #if !FIRSTROW_PORTABLE
+        /// Keeps the layer's picture out of sight until the player it has just been given has
+        /// a first frame of its own ready there. Until then the layer can still hold the last
+        /// frame of the movie before, which would show for a moment as this one starts; and
+        /// on a screen that folds there is a first frame to let pass (see
+        /// `MovieReflection.isSettled`). The black behind the picture shows meanwhile.
+        private func holdPictureBack(for player: AVPlayer) {
+            awaitedPlayer = player
+            awaitedReadySince = nil
+            playerLayer.setOpacity(0, nil)
+            firstFrameClock.onFrame = { [weak self] _ in self?.pictureStaysBack() ?? false }
+            firstFrameClock.run()
+        }
+
+        /// Looks, once a frame, whether the picture can be let out. False once it has been.
+        private func pictureStaysBack() -> Bool {
+            let now = CACurrentMediaTime()
+            if let awaitedPlayer, playerLayer.player === awaitedPlayer {
+                var isReady = playerLayer.isReadyForDisplay
+                #if os(iOS)
+                    if isReady { isReady = reflection.isSettled(at: now) }
+                #endif
+                // (Never kept back for good: a second after the movie is ready to play, the
+                // picture shows whatever the layer says of itself.)
+                if !isReady, awaitedPlayer.currentItem?.status == .readyToPlay {
+                    let since = awaitedReadySince ?? now
+                    awaitedReadySince = since
+                    isReady = now - since > 1
+                }
+                guard isReady else { return true }
+            }
+            // (Or the layer has another player by now, or none: nothing is waited for.)
+            // The modern look brings the picture out of the black; the classic one cuts to it.
+            let isShowing = awaitedPlayer != nil && playerLayer.player === awaitedPlayer
+            awaitedPlayer = nil
+            playerLayer.setOpacity(1, isShowing && ModernTheme.isActive ? .easeOut(duration: 0.25) : nil)
+            return false
         }
     #endif
 

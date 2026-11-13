@@ -27,6 +27,13 @@
         private var outputSize = CGSize.zero
         private let clock = FrameClock()
         private var hasPicture = false
+        /// What `update` was last told, for asking for the frames between two of its calls.
+        private weak var player: AVPlayer?
+        private var pixelsWide: CGFloat = 0
+        private var staysReady = false
+        /// When the frames were asked for, and when the first of them was there.
+        private var askedAt: CFTimeInterval?
+        private var firstFrameAt: CFTimeInterval?
 
         init() {
             picture.contentsGravity = .resize
@@ -56,32 +63,15 @@
         /// still for a fifth of a second while it made room for them, just as the picture was
         /// moving up.
         func update(player: AVPlayer?, under: CGRect?, pixelsWide: CGFloat, staysReady: Bool) {
+            self.player = player
+            self.pixelsWide = pixelsWide
+            self.staysReady = staysReady
             guard let item = player?.currentItem, under != nil || staysReady else {
                 rest()
                 detach()
                 return
             }
-            // Each frame at the size it's drawn over the fold, in the picture's own shape
-            // (known once the movie has loaded, and again when a video changes its shape).
-            if item !== self.item { detach() }
-            let shape = item.presentationSize
-            if shape.width > 1, shape.height > 1, pixelsWide > 1 {
-                let width = (pixelsWide / 2).rounded() * 2
-                let wanted = CGSize(width: width, height: max(2, (width * shape.height / shape.width / 2).rounded() * 2))
-                if output == nil || wanted != outputSize {
-                    detach()
-                    let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
-                        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                        kCVPixelBufferWidthKey as String: Int(wanted.width),
-                        kCVPixelBufferHeightKey as String: Int(wanted.height),
-                        kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
-                    ])
-                    item.add(output)
-                    self.output = output
-                    self.item = item
-                    outputSize = wanted
-                }
-            }
+            askForFrames(of: item)
             guard let under, under.width > 1, under.height > 1 else {
                 rest()
                 return
@@ -105,6 +95,48 @@
                 clock.onFrame = { [weak self] seconds in self?.showNextFrame(after: seconds) ?? false }
             }
             clock.run()
+        }
+
+        /// Asks the player for each frame at the size it's drawn over the fold, in the
+        /// picture's own shape (known once the movie has loaded, and again when a video
+        /// changes its shape).
+        private func askForFrames(of item: AVPlayerItem) {
+            if item !== self.item { detach() }
+            let shape = item.presentationSize
+            guard shape.width > 1, shape.height > 1, pixelsWide > 1 else { return }
+            let width = (pixelsWide / 2).rounded() * 2
+            let wanted = CGSize(width: width, height: max(2, (width * shape.height / shape.width / 2).rounded() * 2))
+            guard output == nil || wanted != outputSize else { return }
+            detach()
+            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: Int(wanted.width),
+                kCVPixelBufferHeightKey as String: Int(wanted.height),
+                kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
+            ])
+            item.add(output)
+            self.output = output
+            self.item = item
+            outputSize = wanted
+            askedAt = CACurrentMediaTime()
+        }
+
+        /// Whether a movie that is starting can let its picture be seen. On a screen that
+        /// folds the frames are asked for as the movie starts, and the first frame the
+        /// player's own layer then shows has been seen drawn at the wrong size: as large as
+        /// the frames asked for, from the layer's corner, for that one frame. So the picture
+        /// is kept out of sight (see `MoviePlaybackLayers.holdPictureBack`) until the first
+        /// of the frames has been there for a moment.
+        func isSettled(at now: CFTimeInterval) -> Bool {
+            guard staysReady, let item = player?.currentItem else { return true }
+            askForFrames(of: item)
+            guard let output, let askedAt else { return false }
+            if firstFrameAt == nil, hasPicture || output.hasNewPixelBuffer(forItemTime: output.itemTime(forHostTime: now)) {
+                firstFrameAt = now
+            }
+            if let firstFrameAt, now - firstFrameAt >= 0.1 { return true }
+            // (Not for ever, should no frame come.)
+            return now - askedAt >= 0.75
         }
 
         private func showNextFrame(after seconds: Double) -> Bool {
@@ -154,6 +186,8 @@
             output = nil
             item = nil
             outputSize = .zero
+            askedAt = nil
+            firstFrameAt = nil
         }
     }
 #endif
