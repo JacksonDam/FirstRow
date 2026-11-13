@@ -52,6 +52,7 @@ extension MenuView {
             refreshITunesTopCarouselForCurrentContext(.tvEpisodes)
         case "music":
             refreshMusicPreviewForCurrentContext()
+            refreshMusicRowCoverForCurrentContext()
             refreshMusicTopLevelCarouselForCurrentContext()
             refreshITunesTopPreviewForCurrentContext(.songs)
             refreshITunesTopCarouselForCurrentContext(.songs)
@@ -80,6 +81,7 @@ extension MenuView {
         if isExitingMusicThirdMenu {
             isMusicSongsShuffleMode = false
             isMusicSongsCategoryScoped = false
+            musicArtistsReturn = nil
             activeMusicCategoryKind = nil
             activeMusicCategoryMenuTitle = ""
             lastSelectedMusicCategoryIndex = 0
@@ -175,6 +177,13 @@ extension MenuView {
                 self.submenuOpacity = 0
                 self.thirdMenuOpacity = 1
             }
+            return
+        }
+
+        // (From an artist's albums, back is the artists.)
+        if thirdMenuMode == .musicCategories, musicArtistsReturn != nil {
+            playSound(named: "Exit")
+            _ = returnToMusicArtistsFromAlbums()
             return
         }
 
@@ -329,6 +338,7 @@ extension MenuView {
         depth += max(0, spotifyMenuPages.count - 1) + max(0, mediaFoldersPages.count - 1) + max(0, jellyfin.pages.count - 1)
         depth += max(0, youtube.pages.count - 1)
         if isMusicSongsCategoryScoped { depth += 1 }
+        if musicArtistsReturn != nil { depth += 1 }
         if let current = thirdMenuCurrentURL, let root = thirdMenuRootURL {
             // (A folder of movies is one deeper than the top of Movies Folder it was opened from.)
             depth += 1 + max(0, current.standardizedFileURL.pathComponents.count - root.standardizedFileURL.pathComponents.count)

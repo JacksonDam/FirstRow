@@ -589,6 +589,7 @@ extension MenuView {
         selectedThirdIndex = 0
         isMusicSongsShuffleMode = shuffleMode
         isMusicSongsCategoryScoped = false
+        musicArtistsReturn = nil
         activeMusicCategoryKind = categoryKind
         activeMusicCategoryMenuTitle = categoryTitle
         lastSelectedMusicCategoryIndex = 0
@@ -609,6 +610,7 @@ extension MenuView {
     func resetMusicThirdMenuStateForSecondLevelExit() {
         isMusicSongsShuffleMode = false
         isMusicSongsCategoryScoped = false
+        musicArtistsReturn = nil
         activeMusicCategoryKind = nil
         activeMusicCategoryMenuTitle = ""
         lastSelectedMusicCategoryIndex = 0
@@ -632,9 +634,15 @@ extension MenuView {
         thirdMenuMode == .musicCategories && activeMusicCategoryKind == .playlists
     }
 
-    /// Albums, artists and playlists show a cover beside their rows.
+    /// Genres and composers: their rows' picture is made of their albums' covers, as a
+    /// playlist's is.
+    var isShowingMusicGenresOrComposersList: Bool {
+        thirdMenuMode == .musicCategories && (activeMusicCategoryKind == .genres || activeMusicCategoryKind == .composers)
+    }
+
+    /// Every list of the library's categories shows a cover beside its rows.
     var isShowingMusicCategoryCovers: Bool {
-        isShowingMusicAlbumsList || isShowingMusicArtistsList || isShowingMusicPlaylistsList
+        isShowingMusicAlbumsList || isShowingMusicArtistsList || isShowingMusicPlaylistsList || isShowingMusicGenresOrComposersList
     }
 
     func resolveMusicPreviewTargetSong() -> MusicLibrarySongEntry? {
@@ -644,14 +652,17 @@ extension MenuView {
         }
         if isShowingMusicAlbumsList {
             guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
-            let albumSongs = musicCategoryThirdMenuItems[selectedThirdIndex].songs
-            return albumSongs.first { $0.artwork != nil || $0.artworkAlbumKey != nil || $0.url != nil } ?? albumSongs.first
+            let album = musicCategoryThirdMenuItems[selectedThirdIndex]
+            if album.id.hasPrefix(Self.musicArtistAllSongsIDPrefix) {
+                return musicPlaylistCoverStandIn(for: album)
+            }
+            return album.songs.first { $0.artwork != nil || $0.artworkAlbumKey != nil || $0.url != nil } ?? album.songs.first
         }
         if isShowingMusicArtistsList {
             guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
             return musicArtistCoverSong(for: musicCategoryThirdMenuItems[selectedThirdIndex])
         }
-        if isShowingMusicPlaylistsList {
+        if isShowingMusicPlaylistsList || isShowingMusicGenresOrComposersList {
             guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
             return musicPlaylistCoverStandIn(for: musicCategoryThirdMenuItems[selectedThirdIndex])
         }
@@ -692,15 +703,20 @@ extension MenuView {
         )
     }
 
-    /// A playlist's first songs from different albums (four at most), in its own order: their
-    /// covers make its cover when it has none of its own.
+    /// How many albums a playlist, a genre and the rest offer for their picture: more than
+    /// the four it takes, as some have no cover.
+    nonisolated static let musicCoverCandidateCount = 8
+
+    /// A playlist's first songs from different albums, in its own order: the covers of the
+    /// first four that have one make its cover when it has none of its own.
     nonisolated func musicPlaylistCoverSongs(from songsInOrder: [MusicLibrarySongEntry]) -> [MusicLibrarySongEntry] {
+        let count = Self.musicCoverCandidateCount
         var albumsSeen: Set<String> = []
         var coverSongs: [MusicLibrarySongEntry] = []
         for song in songsInOrder {
-            guard albumsSeen.insert(song.artworkAlbumKey ?? "\(song.artist)|\(song.album)").inserted else { continue }
+            guard albumsSeen.insert(song.artworkAlbumKey ?? "\(song.listedArtist)|\(song.album)").inserted else { continue }
             coverSongs.append(song)
-            if coverSongs.count == 4 { break }
+            if coverSongs.count == count { break }
         }
         return coverSongs
     }
@@ -712,44 +728,226 @@ extension MenuView {
     func resolveMusicPlaylistCover(standIn: MusicLibrarySongEntry, cacheKey: String) async -> NSImage? {
         let playlistID = String(standIn.id.dropFirst(Self.musicPlaylistCoverIDPrefix.count))
         guard let playlist = musicCategoryThirdMenuItems.first(where: { $0.id == playlistID }) else { return nil }
-        var covers: [CGImage] = []
-        for song in playlist.coverSongs {
-            var cover = song.artwork
-            if cover == nil, let songKey = musicArtworkCacheKey(for: song) {
-                cover = await resolveMusicArtworkImage(for: song, cacheKey: songKey)
-            }
-            if let cgImage = LayerImageCache.cgImage(for: cover) {
-                covers.append(cgImage)
-            }
-        }
+        let covers = await musicCovers(of: playlist.coverSongs)
         followWithMusicPlaylistOwnCover(for: playlist, standInID: standIn.id, cacheKey: cacheKey)
         return await Task.detached(priority: .userInitiated) { Self.musicPlaylistMosaic(of: covers) }.value
     }
 
     /// Four covers as one, two by two; fewer than four, the first as it is.
     nonisolated static func musicPlaylistMosaic(of covers: [CGImage]) -> NSImage? {
-        guard let first = covers.first else { return nil }
+        picturesAsOne(covers, width: 800, height: 800)
+    }
+
+    /// Four pictures as one of this size, two by two; fewer than four, the first as it is.
+    nonisolated static func picturesAsOne(_ pictures: [CGImage], width: Int, height: Int) -> NSImage? {
+        guard let first = pictures.first else { return nil }
         let whole = NSImage(cgImage: first, size: NSSize(width: first.width, height: first.height))
-        guard covers.count >= 4 else { return whole }
-        let side = 800
-        let half = side / 2
+        guard pictures.count >= 4 else { return whole }
+        let halfWidth = width / 2
+        let halfHeight = height / 2
         guard let context = CGContext(
-            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: ScreenColorSpace.current ?? CGColorSpaceCreateDeviceRGB(), bitmapInfo: layerBitmapInfo,
         ) else { return whole }
         context.interpolationQuality = .high
-        for (index, cover) in covers.prefix(4).enumerated() {
-            // The first is at the top left. Each fills its square, cut about its middle.
-            let square = CGRect(x: (index % 2) * half, y: (1 - index / 2) * half, width: half, height: half)
-            let scale = max(CGFloat(half) / CGFloat(max(1, cover.width)), CGFloat(half) / CGFloat(max(1, cover.height)))
-            let size = CGSize(width: CGFloat(cover.width) * scale, height: CGFloat(cover.height) * scale)
+        for (index, picture) in pictures.prefix(4).enumerated() {
+            // The first is at the top left. Each fills its quarter, cut about its middle.
+            let quarter = CGRect(x: (index % 2) * halfWidth, y: (1 - index / 2) * halfHeight, width: halfWidth, height: halfHeight)
+            let scale = max(CGFloat(halfWidth) / CGFloat(max(1, picture.width)), CGFloat(halfHeight) / CGFloat(max(1, picture.height)))
+            let size = CGSize(width: CGFloat(picture.width) * scale, height: CGFloat(picture.height) * scale)
             context.saveGState()
-            context.clip(to: square)
-            context.draw(cover, in: CGRect(x: square.midX - size.width / 2, y: square.midY - size.height / 2, width: size.width, height: size.height))
+            context.clip(to: quarter)
+            context.draw(picture, in: CGRect(x: quarter.midX - size.width / 2, y: quarter.midY - size.height / 2, width: size.width, height: size.height))
             context.restoreGState()
         }
         guard let made = context.makeImage() else { return whole }
-        return NSImage(cgImage: made, size: NSSize(width: side, height: side))
+        return NSImage(cgImage: made, size: NSSize(width: width, height: height))
+    }
+
+    // MARK: - Rows of Music that show what they hold
+
+    /// The picture beside one of Music's rows, and the row it is of.
+    struct MusicRowCover {
+        let rowID: String
+        let image: NSImage
+    }
+
+    /// Music Videos, Playlists or Audiobooks, when it is the row chosen in Music: its
+    /// picture is made of what it holds (the first four together, or the first alone).
+    var selectedMusicRowWithCover: String? {
+        guard let row = selectedMusicSubmenuItemID, ["music_music_videos", "music_playlists", "music_audiobooks"].contains(row) else { return nil }
+        return row
+    }
+
+    /// The chosen row's picture, once it is made. (Until then, and for a row with nothing
+    /// to show, Music's own picture stays.)
+    var shownMusicRowCover: NSImage? {
+        guard let row = selectedMusicRowWithCover, let cover = musicRowCover, cover.rowID == row else { return nil }
+        return cover.image
+    }
+
+    func refreshMusicRowCoverForCurrentContext() {
+        guard let row = selectedMusicRowWithCover, musicRowCover?.rowID != row else { return }
+        if let known = musicRowCovers[row] {
+            // (Made before. A row that had nothing to show is asked again when the library changes.)
+            guard let known else { return }
+            withAnimation(.easeInOut(duration: 0.18)) {
+                musicRowCover = MusicRowCover(rowID: row, image: known)
+            }
+            return
+        }
+        guard musicRowCoversBeingMade.insert(row).inserted else { return }
+        requestMusicLibraryAuthorization { isAuthorized in
+            guard isAuthorized else {
+                self.musicRowCoversBeingMade.remove(row)
+                return
+            }
+            Task { @MainActor in
+                // (Only for a row that is stayed on: one passed on the way to another isn't
+                // worth reading the library for.)
+                try? await firstRowSleep(0.25)
+                guard self.selectedMusicRowWithCover == row else {
+                    self.musicRowCoversBeingMade.remove(row)
+                    return
+                }
+                let made = await self.makeMusicRowCover(forRow: row)
+                self.musicRowCoversBeingMade.remove(row)
+                self.musicRowCovers.updateValue(made, forKey: row)
+                guard let made, self.selectedMusicRowWithCover == row else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    self.musicRowCover = MusicRowCover(rowID: row, image: made)
+                }
+            }
+        }
+    }
+
+    /// The library has changed: the rows' pictures are made again as each is next chosen
+    /// (the one showing, now).
+    func remakeMusicRowCovers() {
+        musicRowCovers.removeAll()
+        guard let shown = musicRowCover else { return }
+        guard selectedMusicRowWithCover == shown.rowID else {
+            musicRowCover = nil
+            return
+        }
+        guard !musicRowCoversBeingMade.contains(shown.rowID) else { return }
+        // (The one on screen stays up until the new one is made.)
+        musicRowCoversBeingMade.insert(shown.rowID)
+        Task { @MainActor in
+            let made = await self.makeMusicRowCover(forRow: shown.rowID)
+            self.musicRowCoversBeingMade.remove(shown.rowID)
+            self.musicRowCovers.updateValue(made, forKey: shown.rowID)
+            guard self.musicRowCover?.rowID == shown.rowID else { return }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                self.musicRowCover = made.map { MusicRowCover(rowID: shown.rowID, image: $0) }
+            }
+        }
+    }
+
+    private func makeMusicRowCover(forRow row: String) async -> NSImage? {
+        #if os(macOS) && !FIRSTROW_PORTABLE
+            // (With a library file chosen as well, its playlists are among the Music app's:
+            // the list is made as Playlists makes it.)
+            if row != "music_playlists" || MediaSources.shared.library(.iTunesXML) == nil,
+               let made = await Task.detached(priority: .userInitiated, operation: { Self.musicAppRowCover(forRow: row) }).value
+            {
+                return made
+            }
+        #endif
+        let inOrder: [MusicLibrarySongEntry]
+        switch row {
+        case "music_playlists":
+            // Each playlist's first cover before any playlist's others: with four playlists
+            // or more, the picture is of four of them.
+            let playlists = await libraryPlaylistsNow()
+            inOrder = playlists.compactMap(\.coverSongs.first) + playlists.flatMap { $0.coverSongs.dropFirst() }
+        case "music_music_videos":
+            inOrder = await (try? fetchMusicLibraryEntries(for: .musicVideos, includeArtwork: false)) ?? []
+        case "music_audiobooks":
+            inOrder = await (try? fetchMusicLibraryEntries(for: .audiobooks, includeArtwork: false)) ?? []
+        default:
+            return nil
+        }
+        let covers = await musicCovers(of: musicPlaylistCoverSongs(from: inOrder))
+        return await Task.detached(priority: .userInitiated) { Self.musicPlaylistMosaic(of: covers) }.value
+    }
+
+    #if os(macOS) && !FIRSTROW_PORTABLE
+        /// The Mac's row pictures come straight from the Music library, read on another
+        /// thread: making the row's whole list to find its first four covers would hold
+        /// everything on screen still as the row was reached (the library is read on the
+        /// main thread for the lists, a tenth of a second and more). Nil if the library
+        /// can't be read; no picture (a nil within) for a row with nothing to show.
+        nonisolated static func musicAppRowCover(forRow row: String) -> NSImage?? {
+            guard !FirstRowHarness.isActive, let library = try? ITLibrary(apiVersion: "1.0") else { return nil }
+            func byName(_ a: String?, _ b: String?) -> Bool {
+                (a ?? "").localizedCaseInsensitiveCompare(b ?? "") == .orderedAscending
+            }
+            var inOrder: [ITLibMediaItem]
+            switch row {
+            case "music_playlists":
+                // As Playlists lists them: the user's own, by name, those with a song.
+                let playlists = library.allPlaylists.filter { playlist in
+                    guard playlist.isVisible, playlist.kind != .folder, !playlist.isMaster else { return false }
+                    if #available(macOS 12.0, *), playlist.isPrimary { return false }
+                    return true
+                }.sorted { byName($0.name, $1.name) }
+                var firsts: [ITLibMediaItem] = []
+                var others: [ITLibMediaItem] = []
+                for playlist in playlists {
+                    let songs = playlist.items.lazy.filter { $0.mediaKind == .kindSong && !$0.isUserDisabled }.prefix(musicCoverCandidateCount)
+                    guard let first = songs.first else { continue }
+                    firsts.append(first)
+                    others += songs.dropFirst()
+                    // (Each playlist's first cover before any playlist's others: four
+                    // playlists make the picture where there are four.)
+                    if firsts.count == musicCoverCandidateCount { break }
+                }
+                inOrder = firsts + others
+            case "music_music_videos", "music_audiobooks":
+                let kind: ITLibMediaItemMediaKind = row == "music_music_videos" ? .kindMusicVideo : .kindAudiobook
+                inOrder = library.allMediaItems.filter { $0.mediaKind == kind && !$0.isUserDisabled }.sorted { byName($0.title, $1.title) }
+            default:
+                return .some(nil)
+            }
+            var albumsSeen: Set<String> = []
+            var asked = 0
+            var covers: [CGImage] = []
+            for item in inOrder {
+                let album = item.album.persistentID.stringValue
+                let key = album.isEmpty || album == "0" ? "\(item.album.albumArtist ?? item.artist?.name ?? "")|\(item.album.title ?? "")" : album
+                guard albumsSeen.insert(key).inserted else { continue }
+                asked += 1
+                guard asked <= musicCoverCandidateCount else { break }
+                guard let data = item.artwork?.imageData as Data?,
+                      let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      let cover = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                          kCGImageSourceCreateThumbnailFromImageAlways: true,
+                          kCGImageSourceCreateThumbnailWithTransform: true,
+                          kCGImageSourceThumbnailMaxPixelSize: 800,
+                      ] as CFDictionary) else { continue }
+                covers.append(cover)
+                if covers.count == 4 { break }
+            }
+            return .some(musicPlaylistMosaic(of: covers))
+        }
+    #endif
+
+    /// The covers of these songs, as far as the fourth: what a picture of several is made of.
+    func musicCovers(of songs: [MusicLibrarySongEntry]) async -> [CGImage] {
+        var covers: [CGImage] = []
+        for song in songs {
+            var cover = song.artwork
+            if cover == nil, let songKey = musicArtworkCacheKey(for: song) {
+                cover = await resolveMusicArtworkImage(for: song, cacheKey: songKey)
+            }
+            // (The same picture again, from another song of an album: once is enough.)
+            if let cgImage = LayerImageCache.cgImage(for: cover), !covers.contains(where: { $0 === cgImage }) {
+                covers.append(cgImage)
+                if covers.count == 4 { break }
+            }
+        }
+        return covers
     }
 
     /// Apple Music's own cover for a playlist, in place of the one made from its albums. Asked
@@ -1024,7 +1222,17 @@ extension MenuView {
                 forProperty: MPMediaItemPropertyPersistentID,
                 comparisonType: .equalTo,
             ))
-            let item = query.items?.first ?? PlaylistItems.item(persistentID)
+            var item = query.items?.first ?? PlaylistItems.item(persistentID)
+            if item == nil {
+                // (An audiobook or a music video isn't among the songs: among everything.)
+                let everything = MPMediaQuery()
+                everything.addFilterPredicate(MPMediaPropertyPredicate(
+                    value: NSNumber(value: id),
+                    forProperty: MPMediaItemPropertyPersistentID,
+                    comparisonType: .equalTo,
+                ))
+                item = everything.items?.first
+            }
             return item?.artwork?.image(at: CGSize(width: 800, height: 800))
         }
 
@@ -1668,7 +1876,9 @@ extension MenuView {
         case .albums:
             song.album
         case .artists:
-            song.artist
+            // By the album's artist, so that an album is under one name: by each song's own,
+            // an artist was there once for everyone they had made a song with.
+            song.listedArtist
         case .genres:
             song.genre
         case .composers:
@@ -1691,7 +1901,11 @@ extension MenuView {
         categoryEntries.reserveCapacity(groupedSongs.count)
         for (categoryTitle, groupedCategorySongs) in groupedSongs {
             let sortedCategorySongs: [MusicLibrarySongEntry]
-            if kind == .albums {
+            // (An artist with one album in the library: its songs, in its order.)
+            let firstAlbum = groupedCategorySongs.first.map { musicCategoryValue(for: $0, kind: .albums) }
+            let isOneAlbum = kind == .albums
+                || (kind == .artists && !groupedCategorySongs.contains { musicCategoryValue(for: $0, kind: .albums) != firstAlbum })
+            if isOneAlbum {
                 sortedCategorySongs = groupedCategorySongs.sorted {
                     if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
                     if $0.trackNumber != $1.trackNumber { return $0.trackNumber < $1.trackNumber }
@@ -1702,13 +1916,16 @@ extension MenuView {
                     $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
                 }
             }
-            categoryEntries.append(
-                MusicCategoryEntry(
-                    id: "\(kind.rawValue)::\(categoryTitle.lowercased())",
-                    title: categoryTitle,
-                    songs: sortedCategorySongs,
-                ),
+            var entry = MusicCategoryEntry(
+                id: "\(kind.rawValue)::\(categoryTitle.lowercased())",
+                title: categoryTitle,
+                songs: sortedCategorySongs,
             )
+            if kind == .genres || kind == .composers {
+                // Its picture: the covers of its first four albums (by name), or its first.
+                entry.coverSongs = musicPlaylistCoverSongs(from: musicSongsByAlbum(groupedCategorySongs))
+            }
+            categoryEntries.append(entry)
         }
         categoryEntries.sort {
             $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
@@ -1790,17 +2007,89 @@ extension MenuView {
         }
     }
 
+    /// What the row of an artist's albums that holds all of the artist's songs is known by
+    /// (the artist's own name for the list follows it).
+    static let musicArtistAllSongsIDPrefix = "albums::all songs of::"
+
+    /// Songs by album (by name, as the Albums list has them), each album's in its own order.
+    nonisolated func musicSongsByAlbum(_ songs: [MusicLibrarySongEntry]) -> [MusicLibrarySongEntry] {
+        songs.sorted {
+            let albums = $0.album.localizedCaseInsensitiveCompare($1.album)
+            if albums != .orderedSame { return albums == .orderedAscending }
+            if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
+            return $0.trackNumber < $1.trackNumber
+        }
+    }
+
+    /// The artists an artist's albums were opened from: their rows, the row that was chosen,
+    /// the list's heading and the artist.
+    struct MusicArtistsReturn {
+        var artists: [MusicCategoryEntry]
+        var index: Int
+        let title: String
+        let artistID: String
+    }
+
+    /// An artist's albums, as a list of albums is shown: "All Songs" first, then each album
+    /// by name. Back from it is the artists again (`musicArtistsReturn`).
+    private func enterAlbums(of artist: MusicCategoryEntry, albums: [MusicCategoryEntry], artistIndex: Int) {
+        transitionMenuForFolderSwap {
+            self.musicArtistsReturn = MusicArtistsReturn(
+                artists: self.musicCategoryThirdMenuItems, index: artistIndex, title: self.activeMusicCategoryMenuTitle, artistID: artist.id,
+            )
+            var everySong = MusicCategoryEntry(id: Self.musicArtistAllSongsIDPrefix + artist.id, title: "All Songs", songs: artist.songs)
+            // (Its picture is made of the artist's albums' covers.)
+            everySong.coverSongs = self.musicPlaylistCoverSongs(from: self.musicSongsByAlbum(artist.songs))
+            self.musicCategoryThirdMenuItems = [everySong] + albums
+            self.activeMusicCategoryKind = .albums
+            self.activeMusicCategoryMenuTitle = artist.title
+            self.selectedThirdIndex = 0
+            self.headerText = artist.title
+            self.refreshDetailPreviewForCurrentContext()
+            self.submenuOpacity = 0
+            self.thirdMenuOpacity = 1
+        }
+    }
+
+    /// Back from an artist's albums to the artists, on the artist they were opened from.
+    /// False if the list showing isn't an artist's albums.
+    func returnToMusicArtistsFromAlbums() -> Bool {
+        guard thirdMenuMode == .musicCategories, let back = musicArtistsReturn else { return false }
+        transitionMenuForFolderSwap {
+            self.musicArtistsReturn = nil
+            self.activeMusicCategoryKind = .artists
+            self.musicCategoryThirdMenuItems = back.artists
+            self.activeMusicCategoryMenuTitle = back.title
+            self.headerText = back.title.isEmpty ? self.rootMenuTitle(for: self.activeRootItemID) : back.title
+            self.selectedThirdIndex = min(back.index, max(0, back.artists.count - 1))
+            self.refreshDetailPreviewForCurrentContext()
+            self.submenuOpacity = 0
+            self.thirdMenuOpacity = 1
+        }
+        return true
+    }
+
     func enterSongsForSelectedMusicCategory() {
         guard thirdMenuMode == .musicCategories else { return }
         guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return }
         let categoryEntry = musicCategoryThirdMenuItems[selectedThirdIndex]
         let categoryIndex = selectedThirdIndex
+        // An artist leads to their albums, and an album to its songs. (With one album there
+        // is nothing to choose between, and "All" is every artist's songs.)
+        let songs = categoryEntry.songs
+        if activeMusicCategoryKind == .artists, musicArtistsReturn == nil, categoryEntry.id != "\(MusicCategoryKind.artists.rawValue)::all" {
+            let albums = buildMusicCategoryEntries(from: categoryEntry.songs, kind: .albums)
+            if albums.count > 1 {
+                enterAlbums(of: categoryEntry, albums: albums, artistIndex: categoryIndex)
+                return
+            }
+        }
         transitionMenuForFolderSwap {
             self.thirdMenuMode = .musicSongs
             self.isMusicSongsCategoryScoped = true
             self.isMusicSongsShuffleMode = false
             self.lastSelectedMusicCategoryIndex = categoryIndex
-            self.musicSongsThirdMenuItems = categoryEntry.songs
+            self.musicSongsThirdMenuItems = songs
             self.selectedThirdIndex = 0
             self.activeMusicLibraryMediaType = .songs
             let shouldShowShuffleAction = switch self.activeMusicCategoryKind {
@@ -1811,7 +2100,7 @@ extension MenuView {
             }
             self.musicSongsShowsShuffleAction = shouldShowShuffleAction
             self.isLoadingMusicSongs = false
-            self.musicSongsLoadError = categoryEntry.songs.isEmpty ? "No Songs in Category" : nil
+            self.musicSongsLoadError = songs.isEmpty ? "No Songs in Category" : nil
             self.headerText = self.activeMusicCategoryMenuTitle.isEmpty
                 ? self.rootMenuTitle(for: self.activeRootItemID)
                 : self.activeMusicCategoryMenuTitle
@@ -1991,30 +2280,58 @@ extension MenuView {
                     .first?.stringValue.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .flatMap { $0.isEmpty ? nil : $0 }
             }
-            let title = firstCommonString(.commonKeyTitle)
-            let artist = firstCommonString(.commonKeyArtist)
-            let albumName = firstCommonString(.commonKeyAlbumName)
+            var title = firstCommonString(.commonKeyTitle)
+            var artist = firstCommonString(.commonKeyArtist)
+            var albumName = firstCommonString(.commonKeyAlbumName)
             let artworkData = AVMetadataItem.metadataItems(
                 from: commonMetadata, withKey: AVMetadataKey.commonKeyArtwork, keySpace: .common
             ).first?.dataValue
             var genre = "Unknown Genre"
             var composer = "Unknown Composer"
+            var albumArtist = ""
             var trackNumber = 0
             var discNumber = 1
+            // The rest is in each kind of file's own tags: an MP3's (id3), an MP4's (itsk)
+            // and a FLAC's (vorb).
             for item in metadata {
-                switch item.identifier {
-                case .id3MetadataContentType:
-                    genre = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? genre
-                case .id3MetadataComposer:
-                    composer = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? composer
-                case .id3MetadataTrackNumber:
-                    if let s = item.stringValue?.components(separatedBy: "/").first, let n = Int(s) {
-                        trackNumber = n
+                guard let tag = item.identifier.map({ Self.plainMusicTagName($0.rawValue) }) else { continue }
+                let words = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let text: String? = words.isEmpty ? nil : words
+                // A number as "3" or "3 of 12" ("3/12"), or as an MP4 holds it: in its third
+                // and fourth bytes.
+                var number: Int? {
+                    if let text { return Int(text.components(separatedBy: "/")[0].trimmingCharacters(in: .whitespaces)) }
+                    guard let bytes = item.dataValue, bytes.count >= 4 else { return nil }
+                    return Int(bytes[bytes.startIndex + 2]) << 8 | Int(bytes[bytes.startIndex + 3])
+                }
+                switch tag {
+                case "id3/TPE2", "itsk/aART", "vorb/ALBUMARTIST", "vorb/ALBUM ARTIST":
+                    albumArtist = text ?? albumArtist
+                case "id3/TCON", "itsk/©gen", "vorb/GENRE":
+                    genre = text ?? genre
+                case "itsk/gnre":
+                    // (One of the genres every player knows, by its number: one more than
+                    // its place among them.)
+                    if let text {
+                        genre = text
+                    } else if let bytes = item.dataValue, bytes.count >= 2 {
+                        let place = (Int(bytes[bytes.startIndex]) << 8 | Int(bytes[bytes.startIndex + 1])) - 1
+                        if Self.numberedMusicGenres.indices.contains(place) { genre = Self.numberedMusicGenres[place] }
                     }
-                case .id3MetadataPartOfASet:
-                    if let s = item.stringValue?.components(separatedBy: "/").first, let n = Int(s) {
-                        discNumber = n
-                    }
+                case "id3/TCOM", "itsk/©wrt", "vorb/COMPOSER":
+                    composer = text ?? composer
+                case "id3/TRCK", "itsk/trkn", "vorb/TRACKNUMBER":
+                    trackNumber = number ?? trackNumber
+                case "id3/TPOS", "itsk/disk", "vorb/DISCNUMBER":
+                    discNumber = number ?? discNumber
+                // (A FLAC's name, artist and album aren't among what every kind of file has
+                // in common, where the system reads them.)
+                case "vorb/TITLE":
+                    title = title ?? text
+                case "vorb/ARTIST":
+                    artist = artist ?? text
+                case "vorb/ALBUM":
+                    albumName = albumName ?? text
                 default:
                     break
                 }
@@ -2024,7 +2341,7 @@ extension MenuView {
             let resolvedAlbum = albumName ?? "Unknown Album"
             let durationSeconds = max(0, CMTimeGetSeconds(duration))
             let artwork = artworkData.flatMap { data in covers.map { $0.image(for: data, inFile: url) } ?? NSImage(data: data) }
-            return MusicLibrarySongEntry(
+            var song = MusicLibrarySongEntry(
                 id: "ext::\(url.standardizedFileURL.path)",
                 title: resolvedTitle,
                 artist: resolvedArtist,
@@ -2034,11 +2351,35 @@ extension MenuView {
                 durationSeconds: durationSeconds,
                 trackNumber: trackNumber,
                 discNumber: discNumber,
-                artworkAlbumKey: artwork != nil ? "\(resolvedArtist):::\(resolvedAlbum)" : nil,
+                // (By the album's artist where the file says: the songs of an album made
+                // with other people are still one album, with one cover.)
+                artworkAlbumKey: artwork != nil ? "\(albumArtist.isEmpty ? resolvedArtist : albumArtist):::\(resolvedAlbum)" : nil,
                 url: url,
                 artwork: artwork,
             )
+            song.albumArtist = albumArtist
+            return song
         }
+
+        /// A tag's name, the same however it is written: an MP4's "©gen" comes as
+        /// "%A9gen" from the system, and a FLAC's as "vorb/" or "vorbis/".
+        nonisolated static func plainMusicTagName(_ name: String) -> String {
+            var plain = name.replacingOccurrences(of: "%A9", with: "©")
+            if plain.hasPrefix("vorbis/") { plain = "vorb/" + plain.dropFirst("vorbis/".count) }
+            return plain
+        }
+
+        /// The genres an MP4 can name by number alone, in their order.
+        nonisolated static let numberedMusicGenres = [
+            "Blues", "Classic Rock", "Country", "Dance", "Disco", "Funk", "Grunge", "Hip-Hop", "Jazz", "Metal", "New Age", "Oldies",
+            "Other", "Pop", "R&B", "Rap", "Reggae", "Rock", "Techno", "Industrial", "Alternative", "Ska", "Death Metal", "Pranks",
+            "Soundtrack", "Euro-Techno", "Ambient", "Trip-Hop", "Vocal", "Jazz+Funk", "Fusion", "Trance", "Classical", "Instrumental",
+            "Acid", "House", "Game", "Sound Clip", "Gospel", "Noise", "AlternRock", "Bass", "Soul", "Punk", "Space", "Meditative",
+            "Instrumental Pop", "Instrumental Rock", "Ethnic", "Gothic", "Darkwave", "Techno-Industrial", "Electronic", "Pop-Folk",
+            "Eurodance", "Dream", "Southern Rock", "Comedy", "Cult", "Gangsta", "Top 40", "Christian Rap", "Pop/Funk", "Jungle",
+            "Native American", "Cabaret", "New Wave", "Psychedelic", "Rave", "Showtunes", "Trailer", "Lo-Fi", "Tribal", "Acid Punk",
+            "Acid Jazz", "Polka", "Retro", "Musical", "Rock & Roll", "Hard Rock",
+        ]
 
         nonisolated func fetchExternalMusicSongEntries() async -> [MusicLibrarySongEntry] {
             var results: [MusicLibrarySongEntry] = []
@@ -2328,7 +2669,7 @@ extension MenuView {
 
     #if canImport(iTunesLibrary)
         nonisolated func iTunesXMLSongEntry(_ track: ITunesLibraryXML.Track) -> MusicLibrarySongEntry {
-            MusicLibrarySongEntry(
+            var song = MusicLibrarySongEntry(
                 id: "xml::\(track.persistentID)",
                 title: track.title,
                 artist: track.artist,
@@ -2342,6 +2683,8 @@ extension MenuView {
                 url: track.url,
                 artwork: nil,
             )
+            song.albumArtist = track.albumArtist
+            return song
         }
 
         nonisolated func iTunesXMLSongEntries() -> [MusicLibrarySongEntry] {
@@ -2386,7 +2729,7 @@ extension MenuView {
             let album = normalizedMusicLibraryText(item.albumTitle, fallback: "Unknown Album")
             let genre = normalizedMusicLibraryText(item.genre, fallback: "Unknown Genre")
             let composer = normalizedMusicLibraryText(item.composer, fallback: "Unknown Composer")
-            return MusicLibrarySongEntry(
+            var song = MusicLibrarySongEntry(
                 id: "\(item.persistentID)",
                 title: title,
                 artist: artist,
@@ -2401,6 +2744,8 @@ extension MenuView {
                 artwork: includeArtwork ? item.artwork?.image(at: CGSize(width: 800, height: 800)) : nil,
                 prefersSystemMusicPlayerPlayback: locationURL == nil,
             )
+            song.albumArtist = normalizedMusicLibraryText(item.albumArtist, fallback: "")
+            return song
         }
     #endif
     #if canImport(iTunesLibrary)
@@ -2492,7 +2837,7 @@ extension MenuView {
             let album = normalizedMusicLibraryText(item.album.title, fallback: "Unknown Album")
             let genre = normalizedMusicLibraryText(item.genre, fallback: "Unknown Genre")
             let composer = normalizedMusicLibraryText(item.composer, fallback: "Unknown Composer")
-            return MusicLibrarySongEntry(
+            var song = MusicLibrarySongEntry(
                 id: "\(item.persistentID)",
                 title: title,
                 artist: artist,
@@ -2508,6 +2853,8 @@ extension MenuView {
                 prefersSystemMusicPlayerPlayback: isAppleMusicCatalogLibraryItem(item) || item.isDRMProtected,
                 sourcePlaylistPersistentIDHex: sourcePlaylistPersistentIDHex,
             )
+            song.albumArtist = normalizedMusicLibraryText(item.album.albumArtist, fallback: "")
+            return song
         }
     #endif
     #if os(tvOS)
@@ -2536,12 +2883,14 @@ extension MenuView {
             // Off the main thread: a song's details are read from the library as each is asked
             // for, which for a few hundred songs held First Row up as it started.
             return await Task.detached(priority: .userInitiated) {
+                let albumArtists = await Self.musicKitAlbumArtists()
                 var songs: [MusicLibrarySongEntry] = []
                 songs.reserveCapacity(items.count)
                 for song in items {
-                    guard let entry = await self.makeMusicLibrarySongEntry(from: song, includeArtwork: includeArtwork) else {
+                    guard var entry = await self.makeMusicLibrarySongEntry(from: song, includeArtwork: includeArtwork) else {
                         continue
                     }
+                    entry.albumArtist = albumArtists[entry.album] ?? ""
                     songs.append(entry)
                 }
                 // A song that's in a playlist and nowhere else is a song too: the system's
@@ -2549,12 +2898,40 @@ extension MenuView {
                 var known = Set(songs.map(\.id))
                 var alike = Set(songs.map(Self.musicSongLikeness))
                 for playlist in await (try? self.fetchMusicKitPlaylists()) ?? [] {
-                    for song in playlist.songs where known.insert(song.id).inserted && alike.insert(Self.musicSongLikeness(song)).inserted {
+                    for var song in playlist.songs where known.insert(song.id).inserted && alike.insert(Self.musicSongLikeness(song)).inserted {
+                        song.albumArtist = albumArtists[song.album] ?? ""
                         songs.append(song)
                     }
                 }
                 return shouldSort ? self.sortedMusicLibraryEntries(songs) : songs
             }.value
+        }
+
+        /// Whose album each of the library's albums is, by the album's name: a song here
+        /// says what its album is called and no more. Two albums of one name by different
+        /// artists can't be told apart from a song, and are left out (their songs stay
+        /// under their own artists).
+        @available(tvOS 16.0, *)
+        nonisolated static func musicKitAlbumArtists() async -> [String: String] {
+            var request = MusicLibraryRequest<Album>()
+            request.limit = 5000
+            guard let albums = try? await request.response().items else { return [:] }
+            var artists: [String: String] = [:]
+            var sharedNames: Set<String> = []
+            for album in albums {
+                let title = album.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                let artist = album.artistName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty, !artist.isEmpty else { continue }
+                if let known = artists[title], known != artist {
+                    sharedNames.insert(title)
+                } else {
+                    artists[title] = artist
+                }
+            }
+            for title in sharedNames {
+                artists[title] = nil
+            }
+            return artists
         }
 
         nonisolated func makeMusicLibrarySongEntry(from song: Song, includeArtwork: Bool = true) async -> MusicLibrarySongEntry? {
@@ -3319,6 +3696,14 @@ extension MenuView {
         #if os(tvOS)
             let musicKitSong: Song?
         #endif
+        /// Whose album the song is on, where the library or the file says (empty where it
+        /// doesn't): a song two people made together is still on one of their albums.
+        var albumArtist = ""
+
+        /// The artist the song is listed under in Artists: its album's, or else its own.
+        var listedArtist: String {
+            albumArtist.isEmpty ? artist : albumArtist
+        }
 
         #if os(tvOS)
             init(

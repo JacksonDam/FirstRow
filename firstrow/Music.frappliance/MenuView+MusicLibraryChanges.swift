@@ -197,6 +197,11 @@ extension MenuView {
             }
         }
         musicLibraryMark = mark
+        #if os(tvOS)
+            if newSongs != nil { remakeMusicRowCovers() }
+        #else
+            remakeMusicRowCovers()
+        #endif
         // The playlists as they now are, read once for whichever has need of them: the list
         // being played, the list on screen.
         var playlists: [MusicCategoryEntry]?
@@ -207,7 +212,7 @@ extension MenuView {
         remakeShownMusicList(newSongs: newSongs, oldSongs: oldSongs, playlists: playlists)
     }
 
-    private func libraryPlaylistsNow() async -> [MusicCategoryEntry] {
+    func libraryPlaylistsNow() async -> [MusicCategoryEntry] {
         #if os(iOS)
             // (Off the main thread: the library can say it has changed as often as a song
             // is played.)
@@ -242,6 +247,15 @@ extension MenuView {
         }
         // Playlists, Artists, Albums and the rest, or the songs of one of them.
         guard thirdMenuMode == .musicCategories || (thirdMenuMode == .musicSongs && isMusicSongsCategoryScoped) else { return }
+        if let back = musicArtistsReturn {
+            // One artist's albums stay as they were until they're left (the list is theirs,
+            // not every album's). The artists to go back to are as the library now has them.
+            guard let newSongs else { return }
+            let artists = buildMusicCategoryEntries(from: newSongs, kind: .artists)
+            let index = artists.firstIndex { $0.id == back.artistID } ?? min(back.index, max(0, artists.count - 1))
+            musicArtistsReturn = MusicArtistsReturn(artists: artists, index: index, title: back.title, artistID: back.artistID)
+            return
+        }
         let categories: [MusicCategoryEntry]
         if kind == .playlists {
             categories = playlists ?? []
@@ -280,6 +294,12 @@ extension MenuView {
         if isMusicSongsCategoryScoped {
             guard let kind = activeMusicCategoryKind, musicCategoryThirdMenuItems.indices.contains(lastSelectedMusicCategoryIndex) else { return nil }
             let id = musicCategoryThirdMenuItems[lastSelectedMusicCategoryIndex].id
+            if let artists = musicArtistsReturn {
+                // One artist's albums: all of their songs are the artist's own list. (One of
+                // their albums is no list of the library's: an album there is everyone's.)
+                guard id.hasPrefix(Self.musicArtistAllSongsIDPrefix) else { return nil }
+                return MusicQueueOrigin(category: .init(kind: .artists, id: artists.artistID), isShuffled: isMusicSongsShuffleMode)
+            }
             return MusicQueueOrigin(category: .init(kind: kind, id: id), isShuffled: isMusicSongsShuffleMode)
         }
         guard activeMusicCategoryKind == nil else { return nil }

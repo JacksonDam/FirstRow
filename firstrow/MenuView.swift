@@ -307,6 +307,8 @@ final class MenuView: ObservableObject {
     @Published var iTunesTopMusicVideos: [ITunesTopMusicVideoEntry] = []
     @Published var iTunesTopStateByKind: [ITunesTopCarouselKind: ITunesTopKindState] = ITunesTopCarouselKind.defaultStateMap
     @Published var tvShowsSortMode: TVShowsSortMode = .show
+    /// While the list is one artist's albums: the artists it was opened from, to go back to.
+    var musicArtistsReturn: MusicArtistsReturn?
     /// The TV shows found among the movie files (see `TVShowLibrary`), the show whose list
     /// the third menu is showing, and the rows of TV Shows as last worked out.
     @Published var tvLibrary = TVShowLibrary()
@@ -498,6 +500,8 @@ final class MenuView: ObservableObject {
     @Published var moviePreviewImage: NSImage?
     @Published var moviePreviewRequestID = 0
     @Published var moviePreviewCache: [String: NSImage] = [:]
+    /// The movies each folder's picture in `moviePreviewCache` was made from.
+    var moviesFolderPictureSources: [String: [String]] = [:]
     @Published var moviesFolderSelectionIndexByDirectoryPath: [String: Int] = [:]
     @Published var moviesFolderSubmenuPreviewDescriptors: [MovieGapPreviewDescriptor] = []
     @Published var moviesFolderSubmenuPreviewIdentity: String = ""
@@ -507,6 +511,12 @@ final class MenuView: ObservableObject {
 
     // MARK: - Music preview/carousel state
 
+    /// The picture up beside Music Videos, Playlists or Audiobooks in Music (and the row it
+    /// is of), the pictures made so far (nil for a row with nothing to show) and the rows
+    /// whose pictures are being made.
+    @Published var musicRowCover: MusicRowCover?
+    var musicRowCovers: [String: NSImage?] = [:]
+    var musicRowCoversBeingMade: Set<String> = []
     @Published var musicPreviewTargetSongID: String?
     @Published var musicPreviewImage: NSImage?
     @Published var musicPreviewDisplayedSong: MusicLibrarySongEntry?

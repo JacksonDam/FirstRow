@@ -583,8 +583,8 @@ extension MenuView {
         if isInThirdMenu {
             guard thirdMenuMode == .moviesFolder else { return nil }
             guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
-            let entry = thirdMenuItems[selectedThirdIndex]
-            return entry.isDirectory ? nil : entry.url
+            // (A folder's picture is made of its first movies': `moviesFolderPicture`.)
+            return thirdMenuItems[selectedThirdIndex].url
         }
         let submenuItems = currentSubmenuItems()
         guard submenuItems.indices.contains(selectedSubIndex) else { return nil }
@@ -786,6 +786,10 @@ extension MenuView {
             return
         }
         let cacheKey = resolvedTarget.path
+        if activeRootItemID == "movies", isInThirdMenu, selectedMoviesFolderEntry?.isDirectory == true {
+            refreshMoviesFolderPicture(of: resolvedTarget, cacheKey: cacheKey, requestID: requestID)
+            return
+        }
         if let cached = moviePreviewCache[cacheKey] {
             withAnimation(.easeInOut(duration: 0.18)) {
                 moviePreviewImage = cached
@@ -802,9 +806,93 @@ extension MenuView {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         self.moviePreviewImage = generatedThumbnail
                     }
+                } else {
+                    // (No picture to be had of it: not the last movie's in its place.)
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        self.moviePreviewImage = nil
+                    }
                 }
             }
         }
+    }
+
+    // MARK: - A folder's picture
+
+    /// A folder's row shows the folder's first movies: four of their pictures together when
+    /// it has four to show, the first alone with fewer. The picture made before is up at
+    /// once, and made again if the folder's first movies are no longer the same; until one
+    /// is made, and for a folder with no movie to show, the row has the plain picture.
+    private func refreshMoviesFolderPicture(of folder: URL, cacheKey: String, requestID: Int) {
+        let known = moviePreviewCache[cacheKey]
+        withAnimation(.easeInOut(duration: 0.18)) {
+            moviePreviewImage = known
+        }
+        let madeFrom = known == nil ? nil : moviesFolderPictureSources[cacheKey]
+        let movieExtensions = supportedMovieFileExtensions
+        let discsPlay = Self.playsEveryKindOfMovie
+        Task.detached(priority: .userInitiated) {
+            // (Only for a folder that is stayed on: one passed on the way to another isn't
+            // worth reading four movies for. Nor is one left while they are being read.)
+            let isStillChosen = { await MainActor.run { self.moviePreviewRequestID == requestID } }
+            try? await firstRowSleep(0.2)
+            guard await isStillChosen() else { return }
+            let sources = Self.moviesFolderPictureSources(in: folder, movieExtensions: movieExtensions, discsPlay: discsPlay, limit: 6)
+            let names = sources.map(\.path)
+            guard names != madeFrom else { return }
+            var pictures: [CGImage] = []
+            for source in sources {
+                guard await isStillChosen() else { return }
+                guard let picture = await self.generateMoviePreviewImage(for: source),
+                      let cgImage = await MainActor.run(body: { LayerImageCache.cgImage(for: picture) }) else { continue }
+                pictures.append(cgImage)
+                if pictures.count == 4 { break }
+            }
+            let made = Self.picturesAsOne(pictures, width: 1280, height: 720)
+            await MainActor.run {
+                self.moviesFolderPictureSources[cacheKey] = names
+                self.moviePreviewCache[cacheKey] = made
+                guard self.moviePreviewRequestID == requestID, self.moviePreviewTargetURL?.standardizedFileURL == folder else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    self.moviePreviewImage = made
+                }
+            }
+        }
+    }
+
+    /// The movies a folder's picture is made of: those of its first rows, as its list has
+    /// them (movies by name, then folders by name), a folder's row giving the first movie
+    /// to be found in it. Episodes of TV shows aren't among them: they aren't in the list.
+    nonisolated static func moviesFolderPictureSources(
+        in folder: URL, movieExtensions: Set<String>, discsPlay: Bool, limit: Int, level: Int = 0,
+    ) -> [URL] {
+        let keys = TVShowScanner.scanKeys
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles],
+        ) else { return [] }
+        var movies: [URL] = []
+        var folders: [URL] = []
+        for url in contents {
+            let values = try? url.resourceValues(forKeys: keys)
+            if values?.isDirectory == true {
+                if discsPlay, isDiscFolder(url) {
+                    movies.append(url)
+                } else {
+                    folders.append(url)
+                }
+            } else if TVShowScanner.isMovie(url, values, movieExtensions), TVShowNames.episode(at: url) == nil {
+                movies.append(url)
+            }
+        }
+        let byName: (URL, URL) -> Bool = {
+            $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending
+        }
+        var sources = Array(movies.sorted(by: byName).prefix(limit)).map(\.standardizedFileURL)
+        // (Two folders down at most: a row's picture isn't worth reading a whole drive for.)
+        guard level < 2 else { return sources }
+        for inner in folders.sorted(by: byName) where sources.count < limit {
+            sources += moviesFolderPictureSources(in: inner, movieExtensions: movieExtensions, discsPlay: discsPlay, limit: 1, level: level + 1)
+        }
+        return sources
     }
 
     func moviesFolderDirectorySelectionKey(for directoryURL: URL) -> String {

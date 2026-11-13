@@ -351,7 +351,7 @@ enum TVShowScanner {
         return look(in: folder, level: 0) && episodes > 0
     }
 
-    private static var scanKeys: Set<URLResourceKey> {
+    static var scanKeys: Set<URLResourceKey> {
         #if canImport(UniformTypeIdentifiers)
             if #available(macOS 11.0, iOS 14.0, tvOS 14.0, *) {
                 return [.isDirectoryKey, .isRegularFileKey, .contentTypeKey]
@@ -376,7 +376,7 @@ enum TVShowScanner {
         #endif
     }
 
-    private static func isMovie(_ url: URL, _ values: URLResourceValues?, _ movieExtensions: Set<String>) -> Bool {
+    static func isMovie(_ url: URL, _ values: URLResourceValues?, _ movieExtensions: Set<String>) -> Bool {
         if movieExtensions.contains(url.pathExtension.lowercased()) { return true }
         #if os(iOS)
             return values?.contentType?.conforms(to: .movie) ?? false

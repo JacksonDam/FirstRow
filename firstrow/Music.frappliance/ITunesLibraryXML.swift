@@ -7,6 +7,7 @@ final class ITunesLibraryXML: @unchecked Sendable {
         let persistentID: String
         let title: String
         let artist: String
+        let albumArtist: String
         let album: String
         let genre: String
         let composer: String
@@ -115,6 +116,7 @@ final class ITunesLibraryXML: @unchecked Sendable {
             persistentID: entry["Persistent ID"] as? String ?? "\(trackID)",
             title: text("Name", url.deletingPathExtension().lastPathComponent),
             artist: text("Artist", text("Album Artist", "Unknown Artist")),
+            albumArtist: text("Album Artist", ""),
             album: text("Album", "Unknown Album"),
             genre: text("Genre", "Unknown Genre"),
             composer: text("Composer", "Unknown Composer"),

@@ -572,9 +572,12 @@ extension MenuView {
             let showsVideosCarousel = shouldShowITunesTopCarouselContent(.musicVideos)
             let song = selectedMusicSongForPreview
             let showsSongMetadata = shouldUseMusicSongMetadataPreview && song != nil
+            // (Music Videos, Playlists and Audiobooks: a picture of what the row holds.)
+            let rowCover = rootID == "music" ? shownMusicRowCover : nil
             let showsClassicPreview = shouldShowITunesTopSongPreviewContent || shouldShowMusicNowPlayingGapPreview || (shouldShowMusicPreviewContent && !showsSongMetadata)
+                || rowCover != nil
             let showsAnyITunesPreview = shouldShowITunesTopSongPreviewContent || shouldShowITunesTopMusicVideoPreviewContent
-            let hidesIcon = shouldShowMusicPreviewContent || shouldShowMusicNowPlayingGapPreview || showsAnyITunesPreview ||
+            let hidesIcon = rowCover != nil || shouldShowMusicPreviewContent || shouldShowMusicNowPlayingGapPreview || showsAnyITunesPreview ||
                 showsMusicCarousel || shouldUseMusicTopLevelCarouselSlot || shouldUseITunesTopSongsCarouselSlot || shouldUseITunesTopMusicVideosCarouselSlot
             let iconAnimation = pass.animation(hidesIcon ? nil : .easeInOut(duration: 0.18), when: memo.hidesMusicRootIcon != nil && memo.hidesMusicRootIcon != hidesIcon)
             memo.hidesMusicRootIcon = hidesIcon
@@ -601,6 +604,9 @@ extension MenuView {
                     currentITunesTopPreviewImage(.songs) ?? musicFallbackImage
                 } else if shouldShowMusicNowPlayingGapPreview {
                     musicNowPlayingArtwork ?? musicFallbackImage ?? image
+                } else if rootID == "music", !isInThirdMenu, let held = musicRowCover?.image {
+                    // (Still the row's as it fades, once another row is chosen.)
+                    held
                 } else {
                     musicPreviewImage ?? musicFallbackImage
                 }
