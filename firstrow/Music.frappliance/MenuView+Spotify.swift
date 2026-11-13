@@ -125,6 +125,9 @@ extension MenuView {
             self.resetMusicPreviewState()
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1
+            // (Signed in already, the first row's picture is asked for now: nothing else
+            // changes to ask for it.)
+            self.refreshDetailPreviewForCurrentContext()
         }
     }
 
@@ -388,8 +391,72 @@ extension MenuView {
         )
     }
 
+    // MARK: - The rows' pictures
+
+    /// Liked Songs, Playlists, Albums or Artists, when it is the row chosen in Spotify's own
+    /// menu: its picture is made of what it holds (the first four together, or the first
+    /// alone), as the rows of Music's are.
+    var selectedSpotifyRowWithCover: String? {
+        guard thirdMenuMode == .spotify, currentSpotifyMenuPage == .home, SpotifySession.shared.status == .signedIn else { return nil }
+        let items = spotifyMenuListItems()
+        guard items.indices.contains(selectedThirdIndex) else { return nil }
+        let row = items[selectedThirdIndex].id
+        return ["spotify_liked", "spotify_playlists", "spotify_albums", "spotify_artists"].contains(row) ? row : nil
+    }
+
+    static let spotifyRowCoverIDPrefix = "spotify-row|"
+
+    /// The chosen row's picture is asked for the way a song's cover is, through this stand-in
+    /// for it (whose account it is is part of its name: another's has other pictures).
+    func spotifyRowCoverStandIn() -> MusicLibrarySongEntry? {
+        guard let row = selectedSpotifyRowWithCover else { return nil }
+        let id = Self.spotifyRowCoverIDPrefix + SpotifySession.shared.username + "|" + row
+        return MusicLibrarySongEntry(
+            id: id, title: "", artist: "", album: "", genre: "", composer: "", durationSeconds: 0,
+            trackNumber: 0, discNumber: 0, artworkAlbumKey: id, url: nil, artwork: nil,
+        )
+    }
+
+    /// A row's picture: the first four different pictures of what it holds as one, or the
+    /// first alone when there are fewer. Nil for a row that holds nothing with a picture.
+    func resolveSpotifyRowCover(standInID: String) async -> NSImage? {
+        // (Only for a row that is stayed on: Spotify isn't asked about one passed on the way
+        // to another.)
+        try? await firstRowSleep(0.25)
+        guard musicPreviewTargetSongID == standInID, let row = standInID.split(separator: "|").last else { return nil }
+        let session = SpotifySession.shared
+        let addresses: [URL]
+        do {
+            switch row {
+            case "spotify_liked": addresses = try await session.firstLikedSongs().compactMap(\.imageURL)
+            case "spotify_playlists": addresses = try await session.playlists().compactMap(\.imageURL)
+            case "spotify_albums": addresses = try await session.firstSavedAlbums().compactMap(\.imageURL)
+            case "spotify_artists": addresses = try await session.firstFollowedArtists().compactMap(\.imageURL)
+            default: return nil
+            }
+        } catch {
+            return nil
+        }
+        var asked: Set<URL> = []
+        var covers: [CGImage] = []
+        for address in addresses where asked.insert(address).inserted {
+            // (A few more than the four it takes are tried, as some don't come.)
+            guard asked.count <= Self.musicCoverCandidateCount else { break }
+            guard let picture = await spotifyPicture(at: address, cacheKey: Self.spotifyArtworkKey(for: address)),
+                  let cgImage = LayerImageCache.cgImage(for: picture) else { continue }
+            covers.append(cgImage)
+            if covers.count == 4 { break }
+        }
+        return await Task.detached(priority: .userInitiated) { Self.musicPlaylistMosaic(of: covers) }.value
+    }
+
     func loadSpotifyArtwork(for song: MusicLibrarySongEntry, cacheKey: String) async -> NSImage? {
         guard let url = song.spotify?.imageURL else { return nil }
+        return await spotifyPicture(at: url, cacheKey: cacheKey)
+    }
+
+    /// One of Spotify's pictures, fetched and kept under `cacheKey`.
+    func spotifyPicture(at url: URL, cacheKey: String) async -> NSImage? {
         if let cached = cachedDecodedDisplayArtworkImage(sourceKey: cacheKey, maxPixelSize: 900) {
             return cached
         }

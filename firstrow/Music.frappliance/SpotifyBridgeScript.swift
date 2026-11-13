@@ -235,20 +235,21 @@ let spotifyBridgeScript = #"""
       return out;
     },
 
-    // Saved albums ("Albums") or followed artists ("Artists").
+    // Saved albums ("Albums") or followed artists ("Artists"): all of them, or the first
+    // `limit` (for the picture beside their row).
     library: async args => {
       const rows = await allPages(async (offset, limit) => {
         const page = await service('LibraryAPI').getContents({ filters: [args.filter], offset, limit });
         return { rows: page.items || [], total: page.totalLength || 0 };
-      }, 50, 2000);
+      }, 50, args.limit || 2000);
       return rows.map(item => collection(item, item.artists ? names(item.artists).join(', ') : '')).filter(Boolean);
     },
 
-    likedSongs: async () => {
+    likedSongs: async args => {
       const rows = await allPages(async (offset, limit) => {
         const page = await service('LibraryAPI').getTracks({ offset, limit });
         return { rows: page.items || [], total: page.totalLength || 0 };
-      }, 50, 10000);
+      }, 50, args.limit || 10000);
       return rows.map(item => track(item)).filter(Boolean);
     },
 

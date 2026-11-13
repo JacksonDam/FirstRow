@@ -184,8 +184,14 @@ extension MenuView {
     var shouldShowMusicPreviewContent: Bool {
         isMusicLibraryContext &&
             isInThirdMenu &&
-            (thirdMenuMode == .musicSongs || isShowingMusicCategoryCovers || isShowingSpotifyCollectionCovers) &&
+            (thirdMenuMode == .musicSongs || isShowingMusicCategoryCovers || isShowingSpotifyCollectionCovers || isShowingSpotifyRowCover) &&
             musicPreviewTargetSongID != nil
+    }
+
+    /// One of the rows of Spotify's own menu has its picture up (Music's own picture stays
+    /// until it is made, and for a row with nothing to show).
+    var isShowingSpotifyRowCover: Bool {
+        selectedSpotifyRowWithCover != nil && musicPreviewImage != nil
     }
 
     var shouldShowMusicNowPlayingGapPreview: Bool {

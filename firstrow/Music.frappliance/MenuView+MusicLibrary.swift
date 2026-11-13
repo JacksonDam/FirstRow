@@ -648,7 +648,7 @@ extension MenuView {
     func resolveMusicPreviewTargetSong() -> MusicLibrarySongEntry? {
         guard isMusicLibraryContext, isInSubmenu, isInThirdMenu else { return nil }
         if thirdMenuMode == .spotify {
-            return spotifyCollectionPreviewEntry()
+            return spotifyCollectionPreviewEntry() ?? spotifyRowCoverStandIn()
         }
         if isShowingMusicAlbumsList {
             guard musicCategoryThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
@@ -1153,6 +1153,9 @@ extension MenuView {
     ) async -> NSImage? {
         if song.id.hasPrefix(Self.musicPlaylistCoverIDPrefix) {
             return await resolveMusicPlaylistCover(standIn: song, cacheKey: cacheKey)
+        }
+        if song.id.hasPrefix(Self.spotifyRowCoverIDPrefix) {
+            return await resolveSpotifyRowCover(standInID: song.id)
         }
         if song.spotify != nil {
             return await loadSpotifyArtwork(for: song, cacheKey: cacheKey)

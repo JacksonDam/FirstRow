@@ -307,6 +307,20 @@ final class SpotifySession {
         try Self.tracks(from: await call("likedSongs"))
     }
 
+    /// The first of the account's liked songs, saved albums and followed artists (a page of
+    /// them: what the picture beside their row is made of).
+    func firstLikedSongs() async throws -> [SpotifyTrack] {
+        try Self.tracks(from: await call("likedSongs", ["limit": 50]))
+    }
+
+    func firstSavedAlbums() async throws -> [SpotifyCollection] {
+        try Self.collections(from: await call("library", ["filter": "Albums", "limit": 50]), kind: .album)
+    }
+
+    func firstFollowedArtists() async throws -> [SpotifyCollection] {
+        try Self.collections(from: await call("library", ["filter": "Artists", "limit": 50]), kind: .artist)
+    }
+
     func tracks(in collection: SpotifyCollection) async throws -> [SpotifyTrack] {
         switch collection.kind {
         case .playlist: try Self.tracks(from: await call("playlistTracks", ["uri": collection.uri]))
