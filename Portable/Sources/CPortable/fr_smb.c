@@ -129,6 +129,36 @@ int fr_smb_list(const char *server, const char *share, const char *path, const c
     return count;
 }
 
+// Whether a file or a folder of a share that has been signed in to opens: a computer lists
+// things it then keeps to itself, and pointers to files it holds somewhere else.
+int fr_smb_reachable(const char *server, const char *share, const char *path, int isFolder, const char *user, const char *password) {
+    (void)user; (void)password;
+    wchar_t host[512], wideShare[256], widePath[2048], whole[4096];
+    if (!fr_wide(server, host, 512) || !fr_wide(share, wideShare, 256) || !fr_wide(path, widePath, 2048)) return 0;
+    wchar_t *port = wcsrchr(host, L':');
+    if (port && !wcschr(host, L']') && wcschr(host, L':') == port) *port = 0;
+    for (wchar_t *letter = widePath; *letter; letter++) {
+        if (*letter == L'/') *letter = L'\\';
+    }
+    swprintf(whole, 4096, L"\\\\%ls\\%ls\\%ls", host, wideShare, widePath);
+    if (isFolder) {
+        // Looked in the way it is listed when it is opened. (Opened as a file is, a folder has
+        // to be asked for as a backup would ask, and whoever runs the other computer is then
+        // let into the folders that are kept from them.)
+        wchar_t pattern[4200];
+        swprintf(pattern, 4200, L"%ls\\*", whole);
+        WIN32_FIND_DATAW entry;
+        HANDLE search = FindFirstFileW(pattern, &entry);
+        if (search == INVALID_HANDLE_VALUE) return GetLastError() == ERROR_FILE_NOT_FOUND;
+        FindClose(search);
+        return 1;
+    }
+    HANDLE opened = CreateFileW(whole, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+    if (opened == INVALID_HANDLE_VALUE) return 0;
+    CloseHandle(opened);
+    return 1;
+}
+
 void *fr_smb_open(const char *server, const char *share, const char *path, const char *user, const char *password) { return NULL; }
 long long fr_smb_read(void *file, char *buffer, unsigned long long count) { return -1; }
 long long fr_smb_seek(void *file, long long offset) { return -1; }
@@ -263,6 +293,33 @@ int fr_smb_list(const char *server, const char *share, const char *path, const c
     return count;
 }
 
+// Whether a file or a folder of a share opens: a computer lists things it then keeps to
+// itself, and pointers to files it holds somewhere else.
+int fr_smb_reachable(const char *server, const char *share, const char *path, int isFolder, const char *user, const char *password) {
+    int reached = 0;
+    pthread_mutex_lock(&fr_smb_lock);
+    if (fr_smb_ready()) {
+        fr_smb_sign_in(user, password);
+        char address[4096];
+        fr_smb_address(address, sizeof(address), server, share, path);
+        if (isFolder) {
+            int folder = fr_smbc_opendir(address);
+            if (folder >= 0) {
+                fr_smbc_closedir(folder);
+                reached = 1;
+            }
+        } else {
+            int descriptor = fr_smbc_open(address, O_RDONLY, 0);
+            if (descriptor >= 0) {
+                fr_smbc_close(descriptor);
+                reached = 1;
+            }
+        }
+    }
+    pthread_mutex_unlock(&fr_smb_lock);
+    return reached;
+}
+
 struct fr_smb_file {
     int descriptor;
     long long size;
@@ -320,6 +377,7 @@ void fr_smb_close(void *opened) {
 int fr_smb_available(void) { return 0; }
 int fr_smb_connect(const char *server, const char *share, const char *user, const char *password) { return -1; }
 int fr_smb_list(const char *server, const char *share, const char *path, const char *user, const char *password, char *out, int capacity) { return -3; }
+int fr_smb_reachable(const char *server, const char *share, const char *path, int isFolder, const char *user, const char *password) { return 0; }
 void *fr_smb_open(const char *server, const char *share, const char *path, const char *user, const char *password) { return NULL; }
 long long fr_smb_read(void *file, char *buffer, unsigned long long count) { return -1; }
 long long fr_smb_seek(void *file, long long offset) { return -1; }

@@ -68,14 +68,27 @@ struct SharedFolderClient: MediaServerClient {
             try await list(share: nil, path: "").map(\.name)
         }
 
-        private func contents(share: String, path: String) async throws -> [(name: String, isFolder: Bool)] {
-            try await list(share: share, path: path)
+        /// What a folder holds, without what the computer lists and then won't open: each
+        /// folder, and each file of the `kinds` First Row would open, is opened and closed
+        /// again (for four seconds at most: what is left then is listed untried).
+        private func contents(share: String, path: String, opening kinds: Set<String>) async throws -> [(name: String, isFolder: Bool)] {
+            let listed = try await list(share: share, path: path)
+            let server = server, user = user ?? "", password = password ?? ""
+            return await Task.detached(priority: .userInitiated) {
+                let started = Date()
+                return listed.filter { entry in
+                    guard entry.isFolder || kinds.contains((entry.name as NSString).pathExtension.lowercased()),
+                          Date().timeIntervalSince(started) < 4 else { return true }
+                    return fr_smb_reachable(server, share, path.isEmpty ? entry.name : path + "/" + entry.name, entry.isFolder ? 1 : 0, user, password) != 0
+                }
+            }.value
         }
     #else
         private static func ask(_ question: String, _ details: [String: Any]) async throws -> [String: Any] {
             let answer = await MediaEngine.ask(question, details)
             if let error = answer[MediaEngineKey.error] as? String {
                 if (answer[MediaEngineKey.needsSignIn] as? Bool) == true { throw MediaServerError.signInNeeded }
+                if (answer[MediaEngineKey.isUnreachable] as? Bool) == true { throw MediaServerError.unreachable }
                 throw MediaServerError.unsupported(error.count > 60 ? "Can't Open the Shared Folder" : error)
             }
             return answer
@@ -93,8 +106,11 @@ struct SharedFolderClient: MediaServerClient {
             return (answer[MediaEngineKey.names] as? [String]) ?? []
         }
 
-        private func contents(share: String, path: String) async throws -> [(name: String, isFolder: Bool)] {
-            let answer = try await Self.ask(MediaEngineQuestion.sharedFolderContents, details([MediaEngineKey.share: share, MediaEngineKey.path: path]))
+        private func contents(share: String, path: String, opening kinds: Set<String>) async throws -> [(name: String, isFolder: Bool)] {
+            let answer = try await Self.ask(
+                MediaEngineQuestion.sharedFolderContents,
+                details([MediaEngineKey.share: share, MediaEngineKey.path: path, MediaEngineKey.opens: Array(kinds)]),
+            )
             return ((answer[MediaEngineKey.entries] as? [[String: Any]]) ?? []).compactMap { entry in
                 guard let name = entry[MediaEngineKey.name] as? String else { return nil }
                 return (name, (entry[MediaEngineKey.isFolder] as? Bool) == true)
@@ -128,9 +144,11 @@ struct SharedFolderClient: MediaServerClient {
     func children(of item: ServerItem) async throws -> [ServerItem] {
         guard let share = item.details["share"] else { return [] }
         let path = item.details["path"] ?? ""
-        let entries = try await contents(share: share, path: path)
-        let names = entries.map(\.name)
         let movieKinds = await MainActor.run { MenuView.furtherMovieFileExtensions.union(["mov", "mp4", "m4v", "mkv", "avi", "mpg", "mpeg", "ts", "m2ts", "wmv", "webm"]) }
+        // (Only what can be reached: the folders and movies the computer lists and then
+        // won't open are left out.)
+        let entries = try await contents(share: share, path: path, opening: movieKinds)
+        let names = entries.map(\.name)
         var folders: [ServerItem] = []
         var movies: [ServerItem] = []
         for entry in entries {

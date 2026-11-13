@@ -82,9 +82,10 @@ public final class Engine: NSObject, MediaEngineProviding {
             // What a folder on one of them holds.
             let share = (details[MediaEngineKey.share] as? String) ?? ""
             let path = (details[MediaEngineKey.path] as? String) ?? ""
+            let opens = (details[MediaEngineKey.opens] as? [String]).map(Set.init)
             Task.detached(priority: .userInitiated) {
                 let found = await SharedFolders.answer {
-                    [MediaEngineKey.entries: try await SharedFolders.contents(server: server, share: share, path: path, user: user, password: password)]
+                    [MediaEngineKey.entries: try await SharedFolders.contents(server: server, share: share, path: path, user: user, password: password, opening: opens)]
                 }
                 await MainActor.run { answer(found) }
             }

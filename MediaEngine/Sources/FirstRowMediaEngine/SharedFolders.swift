@@ -53,17 +53,44 @@ enum SharedFolders {
         }
     }
 
+    /// How long the things in one folder are tried for, at most (a folder of thousands, on a
+    /// slow line): what is left then is listed untried.
+    private static let tryingSeconds: TimeInterval = 4
+
     /// What a folder of a share holds: each thing's name, whether it's a folder, and its size.
-    static func contents(server: String, share: String, path: String, user: String?, password: String?) async throws -> [[String: Any]] {
+    ///
+    /// With `kinds` (the endings of the names of the files First Row would open), only what
+    /// can be reached: a computer lists things it then won't open. A Mac shows the Desktop,
+    /// Documents and Downloads of a home folder and refuses them, a pointer to a file or a
+    /// folder kept somewhere else is listed as a file that can't be read, and anything may be
+    /// kept from whoever has signed in. So each folder, and each file of those kinds, is
+    /// opened and closed again (one question and answer each), and left out if it can't be.
+    static func contents(server: String, share: String, path: String, user: String?, password: String?, opening kinds: Set<String>? = nil) async throws -> [[String: Any]] {
         let client = try await signIn(server: server, user: user, password: password)
         do {
             try await client.connectShare(share)
-            let found = try await client.listDirectory(path: path)
+            var found = try await client.listDirectory(path: path)
+                .filter { $0.name != "." && $0.name != ".." && !$0.isHidden && !$0.name.hasPrefix(".") }
+            if let kinds {
+                let started = Date()
+                var reached: [File] = []
+                for entry in found {
+                    let isTried = entry.isDirectory || kinds.contains((entry.name as NSString).pathExtension.lowercased())
+                    if isTried, Date().timeIntervalSince(started) < tryingSeconds {
+                        do {
+                            _ = try await client.fileStat(path: path.isEmpty ? entry.name : path + "/" + entry.name)
+                        } catch is ErrorResponse {
+                            // (The computer's own no. Anything else is the line going: that is said.)
+                            continue
+                        }
+                    }
+                    reached.append(entry)
+                }
+                found = reached
+            }
             _ = try? await client.disconnectShare()
             await signOut(client)
-            return found
-                .filter { $0.name != "." && $0.name != ".." && !$0.isHidden && !$0.name.hasPrefix(".") }
-                .map { [MediaEngineKey.name: $0.name, MediaEngineKey.isFolder: $0.isDirectory, MediaEngineKey.size: Double($0.size)] }
+            return found.map { [MediaEngineKey.name: $0.name, MediaEngineKey.isFolder: $0.isDirectory, MediaEngineKey.size: Double($0.size)] }
         } catch {
             await signOut(client)
             throw error
@@ -101,7 +128,12 @@ enum SharedFolders {
             let isSignIn = status == 0xC000_006D || status == 0xC000_0022 || status == 0xC000_006E || status == 0xC000_0072
             return [MediaEngineKey.error: refusal.errorDescription ?? "The computer refused.", MediaEngineKey.needsSignIn: isSignIn]
         } catch {
-            return [MediaEngineKey.error: (error as? LocalizedError)?.errorDescription ?? "\(error)"]
+            if let words = (error as? LocalizedError)?.errorDescription {
+                return [MediaEngineKey.error: words]
+            }
+            // (The line itself: refused, timed out, no such computer. What the system calls
+            // that isn't for a menu.)
+            return [MediaEngineKey.error: "The computer can't be reached.", MediaEngineKey.isUnreachable: true]
         }
     }
 }

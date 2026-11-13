@@ -84,15 +84,23 @@
         static let entries = "entries"
         static let isFolder = "isFolder"
         static let size = "size"
+        /// In a question about what a folder holds: the kinds of file First Row would open
+        /// (the endings of their names, in small letters). Those and the folders are tried,
+        /// and what the computer won't open is left out of the answer: a folder it keeps to
+        /// itself, a file that only points to one somewhere else.
+        static let opens = "opens"
         /// True in an answer that failed because a name and password are wanted.
         static let needsSignIn = "needsSignIn"
+        /// True in an answer that failed because the computer couldn't be reached at all.
+        static let isUnreachable = "isUnreachable"
     }
 
     /// What can be asked of the engine by name (see `MediaEngineProviding.ask`).
     enum MediaEngineQuestion {
         /// The folders a computer shares: `server`, and `user` and `password` if it wants them.
         static let sharedFolders = "sharedFolders"
-        /// What a shared folder holds: `server`, `share`, `path`, and `user` and `password`.
+        /// What a shared folder holds: `server`, `share`, `path`, and `user` and `password`,
+        /// and `opens` to have only what can be opened.
         static let sharedFolderContents = "sharedFolderContents"
     }
 

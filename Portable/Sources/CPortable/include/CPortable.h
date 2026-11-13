@@ -85,6 +85,8 @@ int fr_move_to_trash(const char* path);
 int fr_smb_available(void);
 int fr_smb_list(const char* server, const char* share, const char* path, const char* user, const char* password, char* out, int capacity);
 int fr_smb_connect(const char* server, const char* share, const char* user, const char* password);
+/* 1 if a file or a folder of a share opens, 0 if the computer lists it and won't open it. */
+int fr_smb_reachable(const char* server, const char* share, const char* path, int isFolder, const char* user, const char* password);
 void* fr_smb_open(const char* server, const char* share, const char* path, const char* user, const char* password);
 long long fr_smb_read(void* file, char* buffer, unsigned long long count);
 long long fr_smb_seek(void* file, long long offset);
