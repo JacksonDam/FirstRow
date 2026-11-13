@@ -8,8 +8,13 @@ import Foundation
 #endif
 
 extension MenuView {
+    /// Movies or TV Shows is the section: its third menu can be a list of movie files.
+    var isInSectionOfMovieFiles: Bool {
+        activeRootItemID == "movies" || activeRootItemID == "tv_shows"
+    }
+
     var selectedMoviesFolderEntry: MoviesFolderEntry? {
-        guard activeRootItemID == "movies",
+        guard isInSectionOfMovieFiles,
               isInThirdMenu,
               thirdMenuMode == .moviesFolder,
               thirdMenuItems.indices.contains(selectedThirdIndex)
@@ -27,12 +32,13 @@ extension MenuView {
             }
             return moviePreviewTargetURL != nil && moviePreviewImage != nil
         }
-        if activeRootItemID == "tv_shows",
-           isInThirdMenu,
-           thirdMenuMode == .tvITunesTopEpisodes
-        {
-            return currentITunesTopPreviewTargetID(.tvEpisodes) != nil &&
-                currentITunesTopPreviewImage(.tvEpisodes) != nil
+        if activeRootItemID == "tv_shows" {
+            if isInThirdMenu, thirdMenuMode == .tvITunesTopEpisodes {
+                return currentITunesTopPreviewTargetID(.tvEpisodes) != nil &&
+                    currentITunesTopPreviewImage(.tvEpisodes) != nil
+            }
+            // (A show's or an episode's row: a picture from the movie file.)
+            return moviePreviewTargetURL != nil && moviePreviewImage != nil
         }
         return false
     }
@@ -126,7 +132,7 @@ extension MenuView {
             )
         }
 
-        if activeRootItemID == "movies",
+        if isInSectionOfMovieFiles,
            isInThirdMenu,
            thirdMenuMode == .moviesFolder,
            thirdMenuItems.indices.contains(selectedThirdIndex),

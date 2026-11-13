@@ -307,6 +307,12 @@ final class MenuView: ObservableObject {
     @Published var iTunesTopMusicVideos: [ITunesTopMusicVideoEntry] = []
     @Published var iTunesTopStateByKind: [ITunesTopCarouselKind: ITunesTopKindState] = ITunesTopCarouselKind.defaultStateMap
     @Published var tvShowsSortMode: TVShowsSortMode = .show
+    /// The TV shows found among the movie files (see `TVShowLibrary`), the show whose list
+    /// the third menu is showing, and the rows of TV Shows as last worked out.
+    @Published var tvLibrary = TVShowLibrary()
+    @Published var tvShowListing: TVShowListing?
+    var tvLibraryRequestID = 0
+    var tvSubmenuRowsMemo: (mode: TVShowsSortMode, rows: [SubmenuItemConfig])?
 
     // MARK: - Music library state
 

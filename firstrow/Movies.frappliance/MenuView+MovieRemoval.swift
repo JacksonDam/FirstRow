@@ -91,7 +91,7 @@ extension MenuView {
     /// The movie in a row of the list that is showing, if it is one that can be taken out
     /// (or the folder, if it is one that was brought in).
     func movieRemoval(forThirdMenuRow index: Int) -> MovieRemoval? {
-        guard activeRootItemID == "movies", isInThirdMenu, thirdMenuMode == .moviesFolder,
+        guard activeRootItemID == "movies" || tvShowListing != nil, isInThirdMenu, thirdMenuMode == .moviesFolder,
               activeFullscreenScene == nil, !isMovieTransitioning, !isMenuFolderSwapTransitioning, !isMovieResumePromptVisible,
               !isMoviePlaybackVisible, !isLoadingMoviesFolderEntries, thirdMenuItems.indices.contains(index)
         else { return nil }
@@ -105,13 +105,15 @@ extension MenuView {
             return MovieRemoval(url: entry.url, title: entry.title, kind: .imported(isFolder: entry.isDirectory))
         }
         guard !entry.isDirectory else { return nil }
+        // (An episode is asked about by its show and its name: its row has only its number.)
+        let title = tvShowListing == nil ? entry.title : tvLibrary.episode(at: entry.url)?.titleWithShow ?? entry.title
         #if os(iOS)
             // (Only what First Row keeps itself: nothing in a folder of someone else's.)
             let own = moviesDocumentsDirectoryURL().standardizedFileURL.path
             guard entry.url.standardizedFileURL.path.hasPrefix(own + "/") else { return nil }
-            return MovieRemoval(url: entry.url, title: entry.title, kind: .ownCopy)
+            return MovieRemoval(url: entry.url, title: title, kind: .ownCopy)
         #elseif os(macOS) || FIRSTROW_PORTABLE
-            return MovieRemoval(url: entry.url, title: entry.title, kind: .ownFile)
+            return MovieRemoval(url: entry.url, title: title, kind: .ownFile)
         #else
             return nil
         #endif
@@ -226,6 +228,8 @@ extension MenuView {
     private func leaveMovieRemoval(showing failed: MovieRemoval?) {
         if isShowingContinueWatching {
             refreshContinueWatchingIfShown()
+        } else if tvShowListing != nil {
+            tvEpisodeWasRemoved()
         } else if thirdMenuMode == .moviesFolder {
             if let folder = thirdMenuCurrentURL {
                 loadThirdMenuDirectory(folder, resetSelection: false)

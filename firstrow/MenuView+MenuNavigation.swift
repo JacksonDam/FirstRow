@@ -47,6 +47,7 @@ extension MenuView {
             refreshITunesTopPreviewForCurrentContext(.movies)
             refreshITunesTopCarouselForCurrentContext(.movies)
         case "tv_shows":
+            refreshMoviePreviewForCurrentContext()
             refreshITunesTopPreviewForCurrentContext(.tvEpisodes)
             refreshITunesTopCarouselForCurrentContext(.tvEpisodes)
         case "music":
@@ -214,6 +215,11 @@ extension MenuView {
                 exitMoviesThirdMenuToSecondLevelWithSwap()
                 return
             }
+            if tvShowListing != nil {
+                playSound(named: "Exit")
+                navigateUpInTVShowListing()
+                return
+            }
             guard let currentURL = thirdMenuCurrentURL else {
                 // The top of Movies Folder.
                 playSound(named: "Exit")
@@ -328,6 +334,8 @@ extension MenuView {
             depth += 1 + max(0, current.standardizedFileURL.pathComponents.count - root.standardizedFileURL.pathComponents.count)
         }
         if spotifySongsReturnPages != nil { depth += 1 }
+        // (A season's episodes are one deeper than the show's seasons.)
+        if let listing = tvShowListing, listing.hasSeasons, listing.season != nil { depth += 1 }
         return depth
     }
 

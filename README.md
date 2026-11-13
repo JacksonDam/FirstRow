@@ -39,6 +39,7 @@ There are two looks. **Classic** is the original, down to the pixel. **Modern** 
 ## What's in it
 
 - **Movies** from your Movies folder, external drives and network shares (anything in a `Movies` folder at the top of a volume), all together in Movies Folder, plus what you bring in with Movies > Import: a movie shows there as a movie, a folder as a folder. Hold the button that chooses on a movie to delete it, or on something you brought in to take it out of First Row again. Besides MP4, MOV and M4V it plays MKV, AVI, WMV, FLV, WebM, MPEG, transport streams and most other kinds of movie file, DVDs and Blu-rays kept as a folder or a disc image among them, with the subtitles and audio tracks inside them, subtitle files kept beside them, and their chapters. Movies remember where you stopped, even after quitting, and show up in Continue Watching. Press `Down` while one plays for subtitles, audio track, chapter and speed.
+- **TV Shows** found among those movies: a file named the way episodes are (`Show Name S01E02`, `Show.Name.1x02.Title`) or kept the way they are (`Show Name/Season 1/02 Title`) is listed under TV Shows instead of in Movies Folder. Sort them by show, each show leading to its seasons and episodes, or by date, with the newest episode first.
 - **DVD** at the top of the main menu while there's a DVD to play: a disc in a drive (a built-in one, a USB SuperDrive or any other), or a disc image that's open. A DVD that isn't protected against copying plays in First Row. One that is protected opens in the DVD player that comes with the Mac, or in a Windows PC's own DVD player app if it has one; on Linux it plays where the system is set up for such discs.
 - **Music** from your library and Apple Music, or folders and an iTunes library file you add in Settings (macOS), with a Now Playing screen that shows lyrics, lists the songs around the one playing and slowly flips the player round to protect the screen from burn-in.
 - **Spotify** under Music: your Liked Songs, playlists, albums and artists, playing in the same Now Playing screen. You sign in once on Spotify's own page.
@@ -85,7 +86,7 @@ firstrow/
 ├── Engine/                             The Core Animation renderer: menus, carousels, previews, players
 ├── MenuConfiguration.swift             The list of top-level menus
 ├── Movies.frappliance/                 Movies, Continue Watching and iTunes Top Movies
-├── TV.frappliance/                     iTunes Top TV Episodes
+├── TV.frappliance/                     TV Shows: the episodes among the movie files, and iTunes Top TV Episodes
 ├── Music.frappliance/                  Music library, Spotify, Now Playing
 ├── Podcasts.frappliance/               Podcasts
 ├── Photos.frappliance/                 Photos and slideshows

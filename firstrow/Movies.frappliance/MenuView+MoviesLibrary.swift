@@ -120,7 +120,7 @@ extension MenuView {
                 enterMoviesFolderMenu()
                 return
             }
-            if thirdMenuMode == .moviesFolder, thirdMenuCurrentURL == nil, !isShowingContinueWatching {
+            if thirdMenuMode == .moviesFolder, thirdMenuCurrentURL == nil, !isShowingContinueWatching, tvShowListing == nil {
                 loadMoviesTopLevel(resetSelection: true)
             }
             if thirdMenuMode == .mediaFolders, currentMediaFoldersPage == .importMovies {
@@ -229,12 +229,17 @@ extension MenuView {
         let topPaths = Set(topFolders.map(\.standardizedFileURL.path))
         // (What was brought in comes first, so that it is known as brought in where it is
         // also inside one of those folders.)
+        let movieExtensions = supportedMovieFileExtensions
         for url in MediaSources.shared.folders(.movies) {
             let path = url.standardizedFileURL.path
             var isFolder: ObjCBool = false
             guard !topPaths.contains(path), FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), seen.insert(path).inserted else { continue }
             if isFolder.boolValue, !(Self.playsEveryKindOfMovie && Self.isDiscFolder(url)) {
+                // (A folder of nothing but TV episodes is under TV Shows, as an episode is.)
+                if TVShowScanner.holdsOnlyEpisodes(url, movieExtensions: movieExtensions) { continue }
                 folders.append(MoviesFolderEntry(id: path, title: CloudFolders.title(ofFolder: url), url: url, isDirectory: true, isImported: true))
+            } else if !isFolder.boolValue, TVShowNames.episode(at: url) != nil {
+                continue
             } else if isFolder.boolValue || isSupportedMovieFile(url: url, values: try? url.resourceValues(forKeys: Self.movieScanResourceKeys)) {
                 let title = url.pathExtension.lowercased() == "dvdmedia" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
                 movies.append(MoviesFolderEntry(id: path, title: title, url: url, isDirectory: false, isImported: true))
@@ -455,10 +460,11 @@ extension MenuView {
         for url in urls {
             let values = try? url.resourceValues(forKeys: resourceKeys)
             if values?.isDirectory == true {
+                if TVShowScanner.holdsOnlyEpisodes(url, movieExtensions: supportedMovieFileExtensions) { continue }
                 return true
             }
             guard values?.isRegularFile == true else { continue }
-            if isSupportedMovieFile(url: url, values: values) {
+            if isSupportedMovieFile(url: url, values: values), TVShowNames.episode(at: url) == nil {
                 return true
             }
         }
@@ -485,10 +491,13 @@ extension MenuView {
         }
         var directoryEntries: [MoviesFolderEntry] = []
         var movieEntries: [MoviesFolderEntry] = []
+        let movieExtensions = supportedMovieFileExtensions
         for url in urls {
             let values = try? url.resourceValues(forKeys: resourceKeys)
             let isDirectory = values?.isDirectory ?? false
             if isDirectory {
+                // (Episodes of TV shows, and folders of nothing else, are under TV Shows.)
+                if !Self.isDiscFolder(url), TVShowScanner.holdsOnlyEpisodes(url, movieExtensions: movieExtensions) { continue }
                 if Self.playsEveryKindOfMovie, Self.isDiscFolder(url) {
                     movieEntries.append(
                         MoviesFolderEntry(
@@ -510,7 +519,7 @@ extension MenuView {
                 )
                 continue
             }
-            if isSupportedMovieFile(url: url, values: values) {
+            if isSupportedMovieFile(url: url, values: values), TVShowNames.episode(at: url) == nil {
                 movieEntries.append(
                     MoviesFolderEntry(
                         id: url.standardizedFileURL.path,
@@ -552,7 +561,7 @@ extension MenuView {
             let values = try? url.resourceValues(forKeys: resourceKeys)
             if values?.isDirectory == true { continue }
             guard values?.isRegularFile == true else { continue }
-            guard isSupportedMovieFile(url: url, values: values) else { continue }
+            guard isSupportedMovieFile(url: url, values: values), TVShowNames.episode(at: url) == nil else { continue }
             resolved.append(url.standardizedFileURL)
         }
         return resolved
@@ -560,6 +569,7 @@ extension MenuView {
 
     func resetThirdMenuDirectoryState() {
         isShowingContinueWatching = false
+        tvShowListing = nil
         thirdMenuItems = []
         thirdMenuCurrentURL = nil
         thirdMenuRootURL = nil
@@ -568,6 +578,7 @@ extension MenuView {
     }
 
     func resolveMoviePreviewTargetURL() -> URL? {
+        if activeRootItemID == "tv_shows", isInSubmenu { return tvPreviewTargetURL() }
         guard activeRootItemID == "movies", isInSubmenu else { return nil }
         if isInThirdMenu {
             guard thirdMenuMode == .moviesFolder else { return nil }
@@ -801,7 +812,7 @@ extension MenuView {
     }
 
     func rememberCurrentMoviesFolderSelectionIndex() {
-        guard thirdMenuMode == .moviesFolder, !isShowingContinueWatching else { return }
+        guard thirdMenuMode == .moviesFolder, !isShowingContinueWatching, tvShowListing == nil else { return }
         guard !thirdMenuItems.isEmpty else { return }
         let maxIndex = max(0, thirdMenuItems.count - 1)
         let clampedIndex = min(max(0, selectedThirdIndex), maxIndex)

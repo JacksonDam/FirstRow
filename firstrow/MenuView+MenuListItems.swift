@@ -72,6 +72,10 @@ extension MenuView {
                 )
             }
         }
+        if activeRootItemID == "tv_shows" {
+            // The shows found among the movie files, under iTunes Top TV Episodes.
+            items += tvShowsSubmenuItems()
+        }
         if activeRootItemID == "movies", !MovieResumeStore.entries().isEmpty {
             items.insert(SubmenuItemConfig(id: Self.continueWatchingItemID, title: "Continue Watching", leadsToMenu: true), at: 0)
         }

@@ -133,6 +133,7 @@ extension MenuView {
             return true
         }
         tvShowsSortMode = nextMode
+        tvShowsSortDidChange()
         playSound(named: "SelectionChange")
         return true
     }
@@ -200,6 +201,8 @@ extension MenuView {
         activeRootItemID = chosenRootItem.id
         if chosenRootItem.id == "tv_shows" {
             tvShowsSortMode = .show
+            tvSubmenuRowsMemo = nil
+            refreshTVShows()
         }
         let submenuItems = MenuConfiguration.submenuItems(forRootID: chosenRootItem.id)
         let shouldDefaultToNowPlayingInMusic =
@@ -415,6 +418,9 @@ extension MenuView {
             enterITunesTopMenu(.tvEpisodes, title: item.title)
             return
         }
+        if activeRootItemID == "tv_shows", triggerTVShowsItem(item) {
+            return
+        }
         if activeRootItemID == "music", item.id == "music_itunes_top_songs" {
             playSound(named: "Selection")
             enterITunesTopMenu(.songs, title: item.title)
@@ -561,7 +567,9 @@ extension MenuView {
         case .moviesFolder:
             guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return }
             let item = thirdMenuItems[selectedThirdIndex]
-            if item.isDirectory {
+            if tvShowListing != nil {
+                triggerTVShowListingRow(item)
+            } else if item.isDirectory {
                 requestMoviesFolderDirectoryOpenIfNotEmpty(item)
             } else {
                 startMoviePlayback(from: item.url)
