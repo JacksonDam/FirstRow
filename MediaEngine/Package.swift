@@ -13,8 +13,10 @@ let package = Package(
     dependencies: [
         // One exact version: the engine is what plays the movies, so a new one is taken on purpose.
         .package(url: "https://github.com/superuser404notfound/AetherEngine", exact: "7.63.0"),
-        // What reads shared folders, as the engine itself uses it: here for listing what a share holds.
-        .package(url: "https://github.com/kishikawakatsumi/SMBClient", .upToNextMinor(from: "0.3.1")),
+        // What reads shared folders, as the engine itself uses it: here for listing what a share
+        // holds. It is the copy build.sh keeps in Vendor/ (SMBClient 0.3.1 with Kerberos sign-in
+        // added, see SMBClient/), which the engine's own use of the library is built with too.
+        .package(path: "Vendor/SMBClient"),
     ],
     targets: [
         .target(

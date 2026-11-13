@@ -14,6 +14,27 @@ cd "$here"
 mkdir -p Sources/FirstRowMediaEngine/Shared
 cp ../firstrow/Movies.frappliance/MediaEngineInterface.swift Sources/FirstRowMediaEngine/Shared/MediaEngineInterface.swift
 
+# The library that reads shared folders is built with First Row's addition to it (Kerberos, for
+# signing in to a Mac: see SMBClient/). It is fetched at the version the engine is made for,
+# changed, and kept in Vendor/SMBClient, where Package.swift looks for it.
+smb_commit=e636c2b2458930770932a36d311ec9d478575b90
+vendor="$here/Vendor/SMBClient"
+stamp="$smb_commit $(cat SMBClient/kerberos.patch SMBClient/Kerberos.swift | shasum -a 256 | cut -d' ' -f1)"
+if [ "$(cat "$vendor/.first-row" 2> /dev/null)" != "$stamp" ]; then
+    echo "Fetching SMBClient..."
+    rm -rf "$vendor" && mkdir -p "$vendor"
+    (
+        cd "$vendor"
+        git init -q
+        git fetch -q --depth 1 https://github.com/kishikawakatsumi/SMBClient "$smb_commit"
+        git checkout -q FETCH_HEAD
+        rm -rf .git
+        patch -p1 -s < "$here/SMBClient/kerberos.patch"
+        cp "$here/SMBClient/Kerberos.swift" Sources/SMBClient/Auth/Kerberos.swift
+    ) || { echo "build.sh: SMBClient couldn't be fetched and changed" >&2; exit 1; }
+    printf '%s' "$stamp" > "$vendor/.first-row"
+fi
+
 [ $# -gt 0 ] || set -- macos ios ios-simulator tvos tvos-simulator
 
 for system in "$@"; do
@@ -72,7 +93,7 @@ for system in "$@"; do
     cp "$checkouts/FFmpegBuild/LICENSES/libzvbi-ure.MIT.txt" "$licenses/libzvbi-ure.MIT.txt"
     cp "$checkouts/FFmpegBuild/LICENSES/README.md" "$licenses/FFmpeg-parts.md"
     cp "$checkouts/LibDovi/LICENSE" "$licenses/libdovi.txt"
-    cp "$checkouts/SMBClient/LICENSE" "$licenses/SMBClient.txt"
+    cp "$vendor/LICENSE" "$licenses/SMBClient.txt"
     cp "$here/README.md" "$licenses/README.md"
     # The engine finds its own libraries beside itself, wherever the two are put.
     if [ -d "$out/FirstRowMediaEngine.framework/Versions/A" ]; then

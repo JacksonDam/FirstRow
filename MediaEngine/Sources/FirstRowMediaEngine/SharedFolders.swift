@@ -36,13 +36,15 @@ enum SharedFolders {
     }
 
     /// The names of the folders a computer shares (not its printers, nor the hidden ones).
+    /// Among them are the ones a Mac offers to whoever has signed in, for as long as they
+    /// are signed in: their own home folder, and its disks if they run the Mac.
     static func shares(server: String, user: String?, password: String?) async throws -> [String] {
         let client = try await signIn(server: server, user: user, password: password)
         do {
             let found = try await client.listShares()
             await signOut(client)
             return found
-                .filter { $0.type == .diskTree && !$0.name.hasSuffix("$") }
+                .filter { $0.type.subtracting(.temporary) == .diskTree && !$0.name.hasSuffix("$") }
                 .map(\.name)
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         } catch {

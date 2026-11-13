@@ -689,12 +689,18 @@ extension MenuView {
         }
     }
 
-    /// What the question for a name says. A Mac takes a name and password from an app like
-    /// this one only for an account that has Windows File Sharing turned on (it keeps no
-    /// password in the form such a sign-in needs otherwise), so that is said where it is asked.
+    /// What the question for a name says. A Mac is signed in to as another Mac signs in to
+    /// it (Kerberos, which the system does on a Mac, an iPhone and an iPad: see the media
+    /// engine's SMBClient folder), with an account's name and password as they are. The
+    /// Apple TV's system has no such thing, and what it can send, a Mac takes only for an
+    /// account that has Windows File Sharing turned on: there, that is said where it is asked.
     private static func signInPrompt(for name: String, isMac: Bool) -> String {
-        guard isMac else { return "Sign in to \(name)." }
-        return "Sign in to \(name). A Mac wants Windows File Sharing turned on for the account first: System Settings, General, Sharing, File Sharing, Options."
+        #if os(tvOS)
+            if isMac {
+                return "Sign in to \(name). A Mac wants Windows File Sharing turned on for the account first: System Settings, General, Sharing, File Sharing, Options."
+            }
+        #endif
+        return "Sign in to \(name)."
     }
 
     /// Signs in to Plex with a code shown here and typed at plex.tv/link, then keeps every

@@ -1,5 +1,5 @@
 {
-  "originHash" : "9ca500a67351e258b8e69de1a236297e3f5fa3514b5ff7c1b5df94c86994864f",
+  "originHash" : "4a8fd016c15ba26ff8387364fb98f861647fafb1c695721f9aaaabe2460063bd",
   "pins" : [
     {
       "identity" : "aetherengine",
@@ -26,15 +26,6 @@
       "state" : {
         "revision" : "caff700968700467c089a3f38c8b4180620518b5",
         "version" : "2.2.0"
-      }
-    },
-    {
-      "identity" : "smbclient",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/kishikawakatsumi/SMBClient",
-      "state" : {
-        "revision" : "e636c2b2458930770932a36d311ec9d478575b90",
-        "version" : "0.3.1"
       }
     }
   ],

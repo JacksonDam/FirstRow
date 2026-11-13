@@ -51,6 +51,18 @@ the network the first time, to fetch AetherEngine and its prebuilt FFmpeg. What 
 in `MediaEngine/build/<sdk>/`. The app's own build copies the engine for the system it's
 building for into the app, if it finds it there, and signs it with the app.
 
+### Signing in to a Mac's shared folders
+
+SMBClient signs in with NTLM, which a Mac takes only from an account that has Windows File
+Sharing turned on (a Mac keeps no NTLM form of a password otherwise). So `build.sh` fetches
+SMBClient at the version the engine is made for into `MediaEngine/Vendor/SMBClient`, applies
+`SMBClient/kerberos.patch` and adds `SMBClient/Kerberos.swift`, and the engine is built with that
+copy (SwiftPM says the copy and the engine's own mention of the library are the same package,
+which is the point). With the addition, a server that offers it (a Mac) is signed in to with
+Kerberos carried inside the sign-in, through the system's GSS framework, as one Mac signs in
+to another: an account's name and password as they are. The Apple TV has no GSS framework,
+so there the addition is left out and a Mac still wants Windows File Sharing for the account.
+
 ### The engine for older systems
 
 ```sh
@@ -74,7 +86,7 @@ files, or in `OLDER_BUILD_DIR` if that is set.
 | [zimg](https://github.com/sekrit-twc/zimg) | WTFPL | a framework of its own |
 | [libzvbi](https://github.com/zapping-vbi/zvbi) | LGPL-2.0 or later | a framework of its own |
 | [libdovi](https://github.com/quietvoid/dovi_tool) (from [LibDovi](https://github.com/superuser404notfound/LibDovi)) | MIT, © quietvoid | compiled in |
-| [SMBClient](https://github.com/kishikawakatsumi/SMBClient) | MIT, © Kishikawa Katsumi | compiled in |
+| [SMBClient](https://github.com/kishikawakatsumi/SMBClient) 0.3.1, with First Row's addition to it (`MediaEngine/SMBClient/`) | MIT, © Kishikawa Katsumi | compiled in |
 | [Anime4K](https://github.com/bloc97/Anime4K) (a scaler in AetherEngine) | MIT, © bloc97 | compiled in |
 
 The engine for older systems has one part that isn't First Row's own:
