@@ -463,7 +463,7 @@ final class YouTubePanelLayer {
         let contentHeight = max(0, y - gap) + headroom
 
         // Under the rows (or in their place): that more is on its way, or why there are none.
-        let note = content.isLoading ? "Loading..." : (content.rows.isEmpty ? (content.note ?? "") : "")
+        let note = content.isLoading ? L("Loading...") : (content.rows.isEmpty ? (content.note ?? "") : "")
         message.isHidden = note.isEmpty
         if !note.isEmpty {
             let graphic = TextRenderer.render(TextSpec(text: note, fontName: look.regular, size: 30, color: RGBA(white: 1, alpha: 0.6), wrapWidth: column), scale: scale)

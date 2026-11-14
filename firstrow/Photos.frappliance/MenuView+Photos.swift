@@ -114,7 +114,7 @@ extension MenuView {
     var photosLastImportAlbum: PhotoLibraryAlbumEntry {
         PhotoLibraryAlbumEntry(
             id: "photos_last_import_album",
-            title: "Last Import",
+            title: L("Last Import"),
             count: 0,
             assetLocalIdentifiers: [],
             coverAssetLocalIdentifier: nil,
@@ -438,7 +438,7 @@ extension MenuView {
                 self.photosDateAlbumMenuItems = []
                 self.photosLastTwelveMonthsAlbum = nil
                 self.photoLibraryHasLoadedAtLeastOnce = true
-                self.photoLibraryLoadError = "Photos library access denied"
+                self.photoLibraryLoadError = L("Photos library access denied")
                 self.refreshPhotosCarouselForCurrentContext()
                 return
             }
@@ -1181,7 +1181,7 @@ extension MenuView {
         let assets = PHAsset.fetchAssets(with: .image, options: fetchOptions)
         let calendar = Calendar.current
         let monthFormatter = DateFormatter()
-        monthFormatter.locale = Locale(identifier: "en_US_POSIX")
+        monthFormatter.locale = AppLanguage.current.locale
         monthFormatter.dateFormat = "MMM"
         func ordinalSuffix(for day: Int) -> String {
             let remainder = day % 100
@@ -1204,6 +1204,8 @@ extension MenuView {
             let day = components.day ?? 0
             let year = components.year ?? 0
             let month = monthFormatter.string(from: date)
+            // ("Nov 14th, 2026", and in German "14. Nov. 2026".)
+            if AppLanguage.current == .german { return "\(day). \(month) \(year)" }
             return "\(month) \(day)\(ordinalSuffix(for: day)), \(year)"
         }
         let thresholdDate = calendar.date(byAdding: .month, value: -12, to: Date()) ?? .distantPast
@@ -1240,7 +1242,7 @@ extension MenuView {
         }
         let lastTwelveMonthsAlbum = PhotoLibraryAlbumEntry(
             id: "photos_last_12_months_album",
-            title: "Last 12 Months",
+            title: L("Last 12 Months"),
             count: lastTwelveMonthIDs.count,
             assetLocalIdentifiers: lastTwelveMonthIDs,
             coverAssetLocalIdentifier: lastTwelveMonthIDs.first,

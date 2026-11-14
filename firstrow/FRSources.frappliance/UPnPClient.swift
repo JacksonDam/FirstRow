@@ -92,7 +92,7 @@ struct UPnPClient: MediaServerClient {
         let name = reader.name.trimmingCharacters(in: .whitespacesAndNewlines)
         return FoundMediaServer(
             kind: .upnp,
-            name: name.isEmpty ? (location.host ?? "Media Server") : name,
+            name: name.isEmpty ? (location.host ?? L("Media Server")) : name,
             address: controlURL.absoluteString,
             details: ["control": controlURL.absoluteString],
         )
@@ -293,7 +293,7 @@ struct UPnPClient: MediaServerClient {
         }
 
         private func finish(_ item: inout ServerItem) {
-            if item.title.isEmpty { item.title = "Untitled" }
+            if item.title.isEmpty { item.title = L("Untitled") }
             if isFolder {
                 if kindOfThing.contains("musicAlbum") {
                     item.kind = .album

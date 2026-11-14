@@ -153,7 +153,7 @@ enum SpotifySessionSupport {
     }
 
     func spotifyPageHostUnavailableReason() -> String {
-        "Spotify Isn't Available Here"
+        L("Spotify Isn't Available Here")
     }
 #endif
 
@@ -258,7 +258,7 @@ final class SpotifySession {
         guard let host else { return }
         playerState = nil
         playerStateHandler?(nil)
-        failPendingCalls("Signed out of Spotify")
+        failPendingCalls(L("Signed out of Spotify"))
         signedOutRechecksLeft = 0
         recheckTask?.cancel()
         status = .loading
@@ -275,7 +275,7 @@ final class SpotifySession {
 
     func call(_ name: String, _ arguments: [String: Any] = [:]) async throws -> Any? {
         guard let host, status == .signedIn || name == "account" else {
-            throw SpotifyError(message: "Spotify isn't signed in")
+            throw SpotifyError(message: L("Spotify isn't signed in"))
         }
         let id = nextCallID
         nextCallID += 1
@@ -286,7 +286,7 @@ final class SpotifySession {
             host.evaluate("window.firstRowSpotify && window.firstRowSpotify.call(\(id), \(nameText), \(argumentText))")
             Task { @MainActor [weak self] in
                 try? await firstRowSleep(60)
-                self?.finishCall(id, .failure(SpotifyError(message: "Spotify didn't answer")))
+                self?.finishCall(id, .failure(SpotifyError(message: L("Spotify didn't answer"))))
             }
         }
     }
@@ -402,10 +402,10 @@ final class SpotifySession {
             if message["ok"] as? Bool == true {
                 finishCall(id, .success(message["value"] is NSNull ? nil : message["value"]))
             } else {
-                finishCall(id, .failure(SpotifyError(message: message["error"] as? String ?? "Spotify failed")))
+                finishCall(id, .failure(SpotifyError(message: message["error"] as? String ?? L("Spotify failed"))))
             }
         case "failed":
-            handleHostFailure(message["error"] as? String ?? "Spotify did not load")
+            handleHostFailure(message["error"] as? String ?? L("Spotify did not load"))
         case "playerError":
             spotifyDebugLog("player error: \(message["error"] ?? "")")
         default:
@@ -432,7 +432,7 @@ final class SpotifySession {
         loadTimeoutTask = Task { @MainActor [weak self] in
             try? await firstRowSleep(45)
             guard !Task.isCancelled, let self, self.status == .loading, !self.isSigningIn else { return }
-            self.handleHostFailure("Spotify did not load. Check your internet connection.")
+            self.handleHostFailure(L("Spotify did not load. Check your internet connection."))
         }
     }
 
@@ -472,7 +472,7 @@ final class SpotifySession {
     }
 
     private static func tracks(from value: Any?) throws -> [SpotifyTrack] {
-        guard let rows = value as? [[String: Any]] else { throw SpotifyError(message: "Spotify sent no songs") }
+        guard let rows = value as? [[String: Any]] else { throw SpotifyError(message: L("Spotify sent no songs")) }
         return rows.map { row in
             SpotifyTrack(
                 uri: string(row["uri"]),
@@ -489,7 +489,7 @@ final class SpotifySession {
     }
 
     private static func collections(from value: Any?, kind: SpotifyCollection.Kind) throws -> [SpotifyCollection] {
-        guard let rows = value as? [[String: Any]] else { throw SpotifyError(message: "Spotify sent nothing") }
+        guard let rows = value as? [[String: Any]] else { throw SpotifyError(message: L("Spotify sent nothing")) }
         return rows.compactMap { row in
             let uri = string(row["uri"])
             guard !uri.isEmpty else { return nil }

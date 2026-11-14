@@ -242,9 +242,9 @@ extension MenuView {
     var onboardingTitle: String {
         switch onboardingStep {
         case .guide:
-            "Getting Around"
+            L("Getting Around")
         default:
-            "Welcome to First Row"
+            L("Welcome to First Row")
         }
     }
 
@@ -253,7 +253,7 @@ extension MenuView {
         case .guide:
             onboardingGuideSubtitle
         default:
-            "Choose how First Row looks. You can change this later in Settings."
+            L("Choose how First Row looks. You can change this later in Settings.")
         }
     }
 
@@ -268,20 +268,20 @@ extension MenuView {
 
     private var onboardingGuideSubtitle: String {
         #if os(iOS)
-            "With touch"
+            L("With touch")
         #elseif os(tvOS)
-            "With the Siri Remote"
+            L("With the Siri Remote")
         #else
-            "With the mouse, the keyboard or a remote"
+            L("With the mouse, the keyboard or a remote")
         #endif
     }
 
     /// How to quit, in this system's keys.
     private static var quitShortcutText: String {
         #if os(macOS)
-            "Press Command-Esc to quit"
+            L("Press Command-Esc to quit")
         #else
-            "Press Ctrl-Esc or Ctrl-Q to quit"
+            L("Press Ctrl-Esc or Ctrl-Q to quit")
         #endif
     }
 
@@ -289,26 +289,26 @@ extension MenuView {
     var onboardingTips: [OnboardingTip] {
         #if os(iOS)
             return [
-                OnboardingTip(symbol: "hand.tap.fill", text: "Tap a row to open it"),
-                OnboardingTip(symbol: "arrow.up.and.down", text: "Drag a list to scroll it; hold and slide to move through it"),
-                OnboardingTip(symbol: "chevron.left", text: "Tap Back at the top left, or swipe in from the left edge, to go back"),
-                OnboardingTip(symbol: "music.note.list", text: "In Now Playing, swipe in from the right edge for the song list"),
-                OnboardingTip(symbol: "play.fill", text: "In a movie, tap to show its controls"),
+                OnboardingTip(symbol: "hand.tap.fill", text: L("Tap a row to open it")),
+                OnboardingTip(symbol: "arrow.up.and.down", text: L("Drag a list to scroll it; hold and slide to move through it")),
+                OnboardingTip(symbol: "chevron.left", text: L("Tap Back at the top left, or swipe in from the left edge, to go back")),
+                OnboardingTip(symbol: "music.note.list", text: L("In Now Playing, swipe in from the right edge for the song list")),
+                OnboardingTip(symbol: "play.fill", text: L("In a movie, tap to show its controls")),
             ]
         #elseif os(tvOS)
             return [
-                OnboardingTip(symbol: "hand.draw.fill", text: "Swipe or click the edges of the clickpad to move"),
-                OnboardingTip(symbol: "circle.fill", text: "Click the centre to choose"),
-                OnboardingTip(symbol: "chevron.left", text: "Press Back to go back"),
-                OnboardingTip(symbol: "playpause.fill", text: "Press Play/Pause to play or pause"),
-                OnboardingTip(symbol: "captions.bubble", text: "In a movie, swipe down for subtitles, audio and speed"),
+                OnboardingTip(symbol: "hand.draw.fill", text: L("Swipe or click the edges of the clickpad to move")),
+                OnboardingTip(symbol: "circle.fill", text: L("Click the centre to choose")),
+                OnboardingTip(symbol: "chevron.left", text: L("Press Back to go back")),
+                OnboardingTip(symbol: "playpause.fill", text: L("Press Play/Pause to play or pause")),
+                OnboardingTip(symbol: "captions.bubble", text: L("In a movie, swipe down for subtitles, audio and speed")),
             ]
         #else
             return [
-                OnboardingTip(symbol: "cursorarrow", text: "Click a row, or move with the arrows and choose with Return"),
-                OnboardingTip(symbol: "chevron.left", text: "Click Back, or press Esc or the remote's Menu, to go back"),
-                OnboardingTip(symbol: "playpause.fill", text: "Space or Play/Pause to play or pause"),
-                OnboardingTip(symbol: "arrow.left.and.right", text: "Left and right to skip, or hold to scrub"),
+                OnboardingTip(symbol: "cursorarrow", text: L("Click a row, or move with the arrows and choose with Return")),
+                OnboardingTip(symbol: "chevron.left", text: L("Click Back, or press Esc or the remote's Menu, to go back")),
+                OnboardingTip(symbol: "playpause.fill", text: L("Space or Play/Pause to play or pause")),
+                OnboardingTip(symbol: "arrow.left.and.right", text: L("Left and right to skip, or hold to scrub")),
                 OnboardingTip(symbol: "xmark", text: Self.quitShortcutText),
             ]
         #endif

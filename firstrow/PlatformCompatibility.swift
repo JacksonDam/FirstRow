@@ -40,9 +40,9 @@ var bundledResourceFolderURL: URL? {
     /// What the computer's own media folders are called in lists of sources.
     var portableComputerTitle: String {
         #if os(Windows)
-            "My PC"
+            L("My PC")
         #else
-            "My Computer"
+            L("My Computer")
         #endif
     }
 

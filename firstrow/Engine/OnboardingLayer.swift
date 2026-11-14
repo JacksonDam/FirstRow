@@ -306,7 +306,7 @@ final class OnboardingLayer {
             let spill = local.height / 75
             chrome.buttonSelection.update(frame: local.insetBy(dx: -40 * spill, dy: -29 * spill), selectionBoxHeight: local.height, animation: nil)
         }
-        let labelGraphic = TextRenderer.render(TextSpec(text: "Get Started", fontName: fonts.medium, size: 38, color: isModern ? ModernTheme.focusedText : .white), scale: pixelScale)
+        let labelGraphic = TextRenderer.render(TextSpec(text: L("Get Started"), fontName: fonts.medium, size: 38, color: isModern ? ModernTheme.focusedText : .white), scale: pixelScale)
         chrome.buttonLabel.show(labelGraphic, at: CGPoint(x: ((local.width - labelGraphic.size.width) / 2).rounded(), y: ((local.height - labelGraphic.size.height) / 2).rounded()))
     }
 
@@ -460,7 +460,7 @@ final class OnboardingLayer {
         let headingLayer = SceneLayer()
         headingLayer.show(heading, at: CGPoint(x: (listLeft + (listWidth - heading.size.width) / 2).rounded(), y: 118))
         root.addSublayer(headingLayer)
-        for (index, name) in ["Movies", "TV Shows", "Music", "Podcasts", "Photos", "Settings", "Sources"].enumerated() {
+        for (index, name) in [L("Movies"), L("TV Shows"), L("Music"), L("Podcasts"), L("Photos"), L("Settings"), L("Sources")].enumerated() {
             let focused = index == 0
             let top = firstTop + CGFloat(index) * pitch
             var frame = CGRect(x: listLeft, y: top, width: listWidth, height: capsuleHeight)

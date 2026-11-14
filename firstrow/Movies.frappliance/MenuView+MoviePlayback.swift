@@ -35,7 +35,7 @@ extension MenuView {
             startAudioOnlyPlayback(
                 from: normalizedURL,
                 title: normalizedURL.deletingPathExtension().lastPathComponent,
-                artist: "Unknown Artist",
+                artist: L("Unknown Artist"),
                 album: "",
                 artwork: musicFallbackImage,
             )
@@ -943,7 +943,7 @@ extension MenuView {
             }
             guard !self.isMoviePlaybackVisible, self.activeFullscreenScene == nil else { return }
             self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
-                "header": "This video can't be played.",
+                "header": L("This video can't be played."),
                 "subcaption": Self.whyMovieCouldNotBePlayed(url),
             ])
         }
@@ -952,18 +952,18 @@ extension MenuView {
     /// Why, for the screen that says a movie couldn't be played.
     static func whyMovieCouldNotBePlayed(_ url: URL?) -> String {
         if let url, url.isFileURL, DiscWatch.shared.protectedDisc == url.standardizedFileURL {
-            return "It's protected against copying."
+            return L("It's protected against copying.")
         }
         #if !FIRSTROW_PORTABLE
             let kind = url?.pathExtension.lowercased() ?? ""
             if !MediaEngine.isAvailable, !kind.isEmpty, !MediaEngine.systemPlayerExtensions.contains(kind) {
                 // (A kind of file the system's own player doesn't open, and nothing else here to open it.)
                 return MediaEngine.isSystemNewEnough
-                    ? "This copy of First Row has no player for this kind of file."
-                    : "This kind of file needs \(MediaEngine.systemNeeded) or later."
+                    ? L("This copy of First Row has no player for this kind of file.")
+                    : L("This kind of file needs %@ or later.", MediaEngine.systemNeeded)
             }
         #endif
-        return "First Row couldn't open it."
+        return L("First Row couldn't open it.")
     }
 
     func clearMoviePlaybackControlState() {

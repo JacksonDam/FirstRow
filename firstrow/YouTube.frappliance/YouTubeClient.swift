@@ -218,12 +218,12 @@ enum YouTubeList: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .music: "Music"
-        case .trailers: "Trailers"
-        case .gaming: "Gaming"
-        case .news: "News"
-        case .sports: "Sports"
-        case .live: "Live"
+        case .music: L("Music")
+        case .trailers: L("Trailers")
+        case .gaming: L("Gaming")
+        case .news: L("News")
+        case .sports: L("Sports")
+        case .live: L("Live")
         case let .channel(_, name): name
         }
     }
@@ -238,11 +238,11 @@ enum YouTubeError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unreachable: "Can't Reach YouTube"
-        case let .badResponse(code): "YouTube Error (\(code))"
-        case .unexpectedAnswer: "YouTube Gave an Answer First Row Can't Read"
+        case .unreachable: L("Can't Reach YouTube")
+        case let .badResponse(code): L("YouTube Error (%@)", code)
+        case .unexpectedAnswer: L("YouTube Gave an Answer First Row Can't Read")
         case let .notPlayable(reason): reason
-        case .refused: "YouTube Isn't Playing Videos on This Network Right Now"
+        case .refused: L("YouTube Isn't Playing Videos on This Network Right Now")
         }
     }
 }
@@ -689,7 +689,7 @@ actor YouTubeClient {
             let isRightVideo = details["videoId"].string == videoID
             if status["status"].string == "OK", isRightVideo {
                 guard let manifest = answer["streamingData"]["hlsManifestUrl"].string.flatMap({ URL(string: $0) }) else {
-                    throw YouTubeError.notPlayable("This video can't be played in First Row.")
+                    throw YouTubeError.notPlayable(L("This video can't be played in First Row."))
                 }
                 let listed = answer["captions"]["playerCaptionsTracklistRenderer"]["captionTracks"].array.compactMap { track -> YouTubeCaptionTrack? in
                     guard let url = track["baseUrl"].string.flatMap({ URL(string: $0) }) else { return nil }
@@ -722,7 +722,7 @@ actor YouTubeClient {
                 continue
             }
             if doubtsVisitor { throw YouTubeError.refused }
-            throw YouTubeError.notPlayable(reason.isEmpty ? "This video can't be played in First Row." : reason)
+            throw YouTubeError.notPlayable(reason.isEmpty ? L("This video can't be played in First Row.") : reason)
         }
         throw YouTubeError.refused
     }
@@ -732,7 +732,7 @@ actor YouTubeClient {
     /// language's own name or its code: "Chinese (Simplified) - Chinese (Simplified)",
     /// "English - en", "Indonesian - Indonesian [id]".
     static func captionName(_ name: String, languageCode: String) -> String {
-        guard let dash = name.range(of: " - ") else { return name.isEmpty ? "Captions" : name }
+        guard let dash = name.range(of: " - ") else { return name.isEmpty ? L("Captions") : name }
         let language = name[..<dash.lowerBound].trimmingCharacters(in: .whitespaces)
         var given = name[dash.upperBound...].trimmingCharacters(in: .whitespaces)
         if given.hasSuffix("]"), let bracket = given.lastIndex(of: "[") {
@@ -910,7 +910,7 @@ actor YouTubeClient {
         while packed.count % 4 != 0 { packed += "=" }
         let note = Data(base64Encoded: packed).map { String(decoding: $0, as: UTF8.self) } ?? ""
         let isOriginal = note.contains("original") || (note.isEmpty && name.lowercased().contains("original"))
-        return YouTubeAudioTrack(id: fields["YT-EXT-AUDIO-CONTENT-ID"] ?? name, name: name.isEmpty ? "Audio" : name, isOriginal: isOriginal)
+        return YouTubeAudioTrack(id: fields["YT-EXT-AUDIO-CONTENT-ID"] ?? name, name: name.isEmpty ? L("Audio") : name, isOriginal: isOriginal)
     }
 
     /// The sounds a video comes with, the one it was made with first. (One, for most.)

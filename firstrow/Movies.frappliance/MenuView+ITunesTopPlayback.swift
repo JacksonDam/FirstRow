@@ -335,7 +335,7 @@ extension MenuView {
                 let playbackEntry = MusicLibrarySongEntry(
                     id: song.id,
                     title: song.title,
-                    artist: "iTunes Top Songs",
+                    artist: L("iTunes Top Songs"),
                     album: "",
                     genre: "",
                     composer: "",
@@ -351,7 +351,7 @@ extension MenuView {
                 let playbackEntry = MusicLibrarySongEntry(
                     id: song.id,
                     title: song.title,
-                    artist: "iTunes Top Songs",
+                    artist: L("iTunes Top Songs"),
                     album: "",
                     genre: "",
                     composer: "",

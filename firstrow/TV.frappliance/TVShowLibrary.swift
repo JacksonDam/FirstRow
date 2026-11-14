@@ -27,12 +27,12 @@ struct TVEpisode: Equatable, Sendable {
 
     /// What the episode is called in its show's list: "2. Its Title", or "Episode 2".
     var numberedTitle: String {
-        title.map { "\(episode). \($0)" } ?? "Episode \(episode)"
+        title.map { "\(episode). \($0)" } ?? L("Episode %@", episode)
     }
 
     /// What it is called in a list of episodes of every show.
     var titleWithShow: String {
-        "\(show): \(title ?? "\(TVShow.name(ofSeason: season)), Episode \(episode)")"
+        "\(show): \(title ?? "\(TVShow.name(ofSeason: season)), \(L("Episode %@", episode))")"
     }
 }
 
@@ -51,7 +51,7 @@ struct TVShow: Equatable, Sendable {
     }
 
     static func name(ofSeason season: Int) -> String {
-        season == 0 ? "Specials" : "Season \(season)"
+        season == 0 ? L("Specials") : L("Season %@", season)
     }
 }
 

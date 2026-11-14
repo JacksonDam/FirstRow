@@ -226,35 +226,40 @@ extension MenuView {
 
     func normalizedMusicMetadataValue(_ rawValue: String) -> String {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "Unknown" }
+        guard !trimmed.isEmpty else { return L("Unknown") }
         let unknownTokens: Set<String> = [
             "unknown",
             "unknown artist",
             "unknown album",
             "unknown genre",
             "unknown composer",
+            // (And as First Row itself names what a song doesn't say, in the language in use.)
+            L("Unknown Artist").lowercased(),
+            L("Unknown Album").lowercased(),
+            L("Unknown Genre").lowercased(),
+            L("Unknown Composer").lowercased(),
         ]
         if unknownTokens.contains(trimmed.lowercased()) {
-            return "Unknown"
+            return L("Unknown")
         }
         return trimmed
     }
 
     func musicSongMetadataLines(for song: MusicLibrarySongEntry) -> [MetadataPreviewSpec.Line] {
         var lines: [MetadataPreviewSpec.Line] = [
-            .init(label: "Album", value: normalizedMusicMetadataValue(song.album)),
-            .init(label: "Artist", value: normalizedMusicMetadataValue(song.artist)),
+            .init(label: L("Album"), value: normalizedMusicMetadataValue(song.album)),
+            .init(label: L("Artist"), value: normalizedMusicMetadataValue(song.artist)),
         ]
         // Spotify doesn't give songs a genre.
         if song.spotify == nil {
-            lines.append(.init(label: "Genre", value: normalizedMusicMetadataValue(song.genre)))
+            lines.append(.init(label: L("Genre"), value: normalizedMusicMetadataValue(song.genre)))
         }
-        lines.append(.init(label: "Length", value: musicSongMetadataLengthText(song.durationSeconds)))
+        lines.append(.init(label: L("Length"), value: musicSongMetadataLengthText(song.durationSeconds)))
         return lines
     }
 
     func musicSongMetadataLengthText(_ durationSeconds: Double) -> String {
-        guard durationSeconds.isFinite, durationSeconds > 0 else { return "Unknown" }
+        guard durationSeconds.isFinite, durationSeconds > 0 else { return L("Unknown") }
         return formatfirstRowPlaybackTime(durationSeconds)
     }
 
@@ -688,8 +693,8 @@ extension MenuView {
                         title: series.title,
                         description: nil,
                         lines: [
-                            .init(label: "Number of Episodes", value: "\(series.episodes.count)"),
-                            .init(label: "Most Recent", value: podcastEpisodeAiredText(for: mostRecent)),
+                            .init(label: L("Number of Episodes"), value: "\(series.episodes.count)"),
+                            .init(label: L("Most Recent"), value: podcastEpisodeAiredText(for: mostRecent)),
                         ],
                         baseIconSize: iconSize,
                         offsetX: musicGapPreviewHorizontalOffset - 56,
@@ -701,8 +706,8 @@ extension MenuView {
                 ))
             }
             if let episode {
-                let description = normalizedPodcastText(episode.description) ?? normalizedPodcastText(series?.description) ?? "No description available."
-                let artist = normalizedPodcastText(episode.artist) ?? normalizedPodcastText(series?.artist) ?? "Unknown Artist"
+                let description = normalizedPodcastText(episode.description) ?? normalizedPodcastText(series?.description) ?? L("No description available.")
+                let artist = normalizedPodcastText(episode.artist) ?? normalizedPodcastText(series?.artist) ?? L("Unknown Artist")
                 items.append(GapItemSpec(
                     key: "podcast_episode_metadata:\(episode.id)",
                     kind: .metadata(MetadataPreviewSpec(
@@ -713,9 +718,9 @@ extension MenuView {
                         title: episode.title,
                         description: description,
                         lines: [
-                            .init(label: "Artist", value: artist),
-                            .init(label: "Length", value: podcastEpisodeLengthText(for: episode.durationSeconds)),
-                            .init(label: "Aired", value: podcastEpisodeAiredText(for: episode.airedDate)),
+                            .init(label: L("Artist"), value: artist),
+                            .init(label: L("Length"), value: podcastEpisodeLengthText(for: episode.durationSeconds)),
+                            .init(label: L("Aired"), value: podcastEpisodeAiredText(for: episode.airedDate)),
                         ],
                         baseIconSize: iconSize,
                         offsetX: musicGapPreviewHorizontalOffset - 56,

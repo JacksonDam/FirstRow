@@ -857,9 +857,9 @@ final class ScreenSaverToastLayer {
         artwork.backgroundColor = image == nil ? CGColor(gray: 0, alpha: 0.35) : nil
         artwork.frame = CGRect(x: 18, y: (size.height - artworkSize) * 0.5, width: artworkSize, height: artworkSize)
         let textWidth = size.width - 36 - artworkSize - 16
-        let titleGraphic = TextRenderer.render(TextSpec(text: menu.normalizedScreenSaverToastText(menu.musicNowPlayingTitle, fallback: "Unknown Song"), fontName: firstRowBoldFontName, size: 30, maxWidth: textWidth), scale: scale)
-        let albumGraphic = TextRenderer.render(TextSpec(text: menu.normalizedScreenSaverToastText(menu.musicNowPlayingAlbum, fallback: "Unknown Album"), fontName: firstRowRegularFontName, size: 24, color: RGBA(white: 1, alpha: 0.9), maxWidth: textWidth), scale: scale)
-        let artistGraphic = TextRenderer.render(TextSpec(text: menu.normalizedScreenSaverToastText(menu.musicNowPlayingArtist, fallback: "Unknown Artist"), fontName: firstRowRegularFontName, size: 24, color: RGBA(white: 1, alpha: 0.9), maxWidth: textWidth), scale: scale)
+        let titleGraphic = TextRenderer.render(TextSpec(text: menu.normalizedScreenSaverToastText(menu.musicNowPlayingTitle, fallback: L("Unknown Song")), fontName: firstRowBoldFontName, size: 30, maxWidth: textWidth), scale: scale)
+        let albumGraphic = TextRenderer.render(TextSpec(text: menu.normalizedScreenSaverToastText(menu.musicNowPlayingAlbum, fallback: L("Unknown Album")), fontName: firstRowRegularFontName, size: 24, color: RGBA(white: 1, alpha: 0.9), maxWidth: textWidth), scale: scale)
+        let artistGraphic = TextRenderer.render(TextSpec(text: menu.normalizedScreenSaverToastText(menu.musicNowPlayingArtist, fallback: L("Unknown Artist")), fontName: firstRowRegularFontName, size: 24, color: RGBA(white: 1, alpha: 0.9), maxWidth: textWidth), scale: scale)
         let blockHeight = titleGraphic.size.height + albumGraphic.size.height + artistGraphic.size.height + 12
         var y = (size.height - blockHeight) * 0.5
         let x = 18 + artworkSize + 16

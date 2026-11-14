@@ -599,11 +599,11 @@ extension MenuView {
                 // Where it is in the list being played: that list is not always the one on
                 // screen (the song may have been started from another).
                 if let row = activeMusicPlaybackQueue.firstIndex(where: { $0.id == song.id }) {
-                    musicNowPlayingTrackPositionText = "\(row + 1) of \(activeMusicPlaybackQueue.count)"
+                    musicNowPlayingTrackPositionText = L("%@ of %@", row + 1, activeMusicPlaybackQueue.count)
                 } else {
                     musicNowPlayingTrackPositionText = musicSongsThirdMenuItems.isEmpty
                         ? ""
-                        : "\(songIndex + 1) of \(musicSongsThirdMenuItems.count)"
+                        : L("%@ of %@", songIndex + 1, musicSongsThirdMenuItems.count)
                 }
                 musicNowPlayingShowsShuffleGlyph = isMusicSongsShuffleMode
                 clearMusicSongSwitchTransitionState()
@@ -695,7 +695,7 @@ extension MenuView {
             guard iTunesTopSongs.indices.contains(selectedThirdIndex) else { return }
             let selectedSong = iTunesTopSongs[selectedThirdIndex]
             if activeMusicPlaybackSongID == selectedSong.id, hasActiveMusicPlaybackSession() {
-                musicNowPlayingTrackPositionText = "1 of 1"
+                musicNowPlayingTrackPositionText = L("%@ of %@", 1, 1)
                 musicNowPlayingShowsShuffleGlyph = false
                 clearMusicSongSwitchTransitionState()
                 presentFullscreenScene(key: musicNowPlayingFullscreenKey)

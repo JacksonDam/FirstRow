@@ -7,8 +7,8 @@ enum InterfaceTheme: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .classic: "Classic"
-        case .modern: "Modern"
+        case .classic: L("Classic")
+        case .modern: L("Modern")
         }
     }
 }
@@ -107,12 +107,12 @@ enum AppSettings {
     static let screenSaverDelayChoices: [TimeInterval] = [0, 60, 120, 300, 600, 900, 1800, 3600]
 
     static func screenSaverDelayTitle(_ seconds: TimeInterval) -> String {
-        guard seconds > 0 else { return "Never" }
+        guard seconds > 0 else { return L("Never") }
         if seconds >= 3600 {
             let hours = Int((seconds / 3600).rounded())
-            return hours == 1 ? "1 Hour" : "\(hours) Hours"
+            return hours == 1 ? L("1 Hour") : L("%@ Hours", hours)
         }
         let minutes = Int((seconds / 60).rounded())
-        return minutes == 1 ? "1 Minute" : "\(minutes) Minutes"
+        return minutes == 1 ? L("1 Minute") : L("%@ Minutes", minutes)
     }
 }

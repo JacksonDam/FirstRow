@@ -41,7 +41,7 @@ extension MenuView {
                 plainMenuListItem(id: "media_kind_\(kind.rawValue)", title: kind.title, leadsToMenu: true, trailingText: "(\(sources.folderEntries(kind).count))")
             }
             for (index, kind) in MediaSources.LibraryKind.allCases.enumerated() {
-                let name = sources.library(kind) == nil ? "Off" : "On"
+                let name = sources.library(kind) == nil ? L("Off") : L("On")
                 items.append(.init(
                     id: "media_library_\(kind.rawValue)",
                     title: kind.title,
@@ -64,12 +64,12 @@ extension MenuView {
                     id: "media_folder_\(index)",
                     title: CloudFolders.title(ofFolder: entry.url ?? URL(fileURLWithPath: entry.displayPath)),
                     leadsToMenu: true,
-                    trailingText: entry.url == nil ? "Not Found" : nil,
+                    trailingText: entry.url == nil ? L("Not Found") : nil,
                 )
             }
             items.append(.init(
                 id: "media_add_folder",
-                title: "Add Folder",
+                title: L("Add Folder"),
                 leadsToMenu: false,
                 leadingImageAssetName: nil,
                 leadingImage: nil,
@@ -82,21 +82,21 @@ extension MenuView {
             ))
             // The folders that Dropbox, Google Drive and the like keep on this computer.
             for (index, folder) in cloudFolders.enumerated() {
-                items.append(plainMenuListItem(id: "\(Self.addCloudFolderItemIDPrefix)\(index)", title: "Add from \(folder.name)", trailingText: "..."))
+                items.append(plainMenuListItem(id: "\(Self.addCloudFolderItemIDPrefix)\(index)", title: L("Add from %@", folder.name), trailingText: "..."))
             }
             return items
         case .folder:
-            return [plainMenuListItem(id: "media_remove_folder", title: "Remove from First Row")]
+            return [plainMenuListItem(id: "media_remove_folder", title: L("Remove from First Row"))]
         case .importMovies:
             #if os(iOS)
                 // (Movies picked just now are still being copied in: Files fetches one that
                 // is with a service first.)
                 if pickedMoviesBeingCopied > 0 {
-                    return [menuMessageItem(id: "import_copying", title: pickedMoviesBeingCopied == 1 ? "Copying 1 Movie..." : "Copying \(pickedMoviesBeingCopied) Movies...")]
+                    return [menuMessageItem(id: "import_copying", title: pickedMoviesBeingCopied == 1 ? L("Copying 1 Movie...") : L("Copying %@ Movies...", pickedMoviesBeingCopied))]
                 }
                 // (The Files app reaches Dropbox, Google Drive, OneDrive and the rest itself,
                 // and movies or folders of them can be picked there.)
-                return [plainMenuListItem(id: "import_files", title: "Files", trailingText: "...")]
+                return [plainMenuListItem(id: "import_files", title: L("Files"), trailingText: "...")]
             #else
                 // The folders that Dropbox, Google Drive and the like keep on this computer,
                 // then any movies or folders at all.
@@ -105,11 +105,11 @@ extension MenuView {
                 }
                 #if os(macOS)
                     // (The Mac's chooser takes either.)
-                    items.append(plainMenuListItem(id: "media_add_folder", title: "Files or Folders", trailingText: "..."))
+                    items.append(plainMenuListItem(id: "media_add_folder", title: L("Files or Folders"), trailingText: "..."))
                 #else
                     // (The choosers here take one or the other.)
-                    items.append(plainMenuListItem(id: "import_files", title: "Files", trailingText: "..."))
-                    items.append(plainMenuListItem(id: "media_add_folder", title: "Folder", trailingText: "..."))
+                    items.append(plainMenuListItem(id: "import_files", title: L("Files"), trailingText: "..."))
+                    items.append(plainMenuListItem(id: "media_add_folder", title: L("Folder"), trailingText: "..."))
                 #endif
                 return items
             #endif
@@ -117,7 +117,7 @@ extension MenuView {
             if sources.library(kind) != nil {
                 return [
                     plainMenuListItem(id: "media_choose_library", title: kind.chooseAnotherTitle, trailingText: "..."),
-                    plainMenuListItem(id: "media_clear_library", title: "Stop Using This Library"),
+                    plainMenuListItem(id: "media_clear_library", title: L("Stop Using This Library")),
                 ]
             }
             return [plainMenuListItem(id: "media_choose_library", title: kind.chooseTitle, trailingText: "...")]
@@ -127,17 +127,17 @@ extension MenuView {
     func mediaFoldersHeaderTitle(for page: MediaFoldersPage) -> String {
         switch page {
         case .overview:
-            "Media Folders"
+            L("Media Folders")
         case let .folders(kind):
-            "\(kind.title) Folders"
+            kind.foldersTitle
         case let .folder(kind, index):
             truncatedHeaderTitle(MediaSources.shared.folderEntries(kind).indices.contains(index)
                 ? CloudFolders.title(ofFolder: URL(fileURLWithPath: MediaSources.shared.folderEntries(kind)[index].displayPath))
-                : "\(kind.title) Folder", fallback: "\(kind.title) Folder")
+                : kind.folderTitle, fallback: kind.folderTitle)
         case let .library(kind):
             kind.title
         case .importMovies:
-            "Import"
+            L("Import")
         }
     }
 
@@ -318,7 +318,7 @@ extension MenuView {
             panel.canChooseDirectories = true
             panel.canChooseFiles = takesMovieFiles
             panel.allowsMultipleSelection = true
-            panel.prompt = "Add"
+            panel.prompt = L("Add")
             if takesMovieFiles {
                 let kinds = supportedMovieFileExtensions.sorted()
                 if #available(macOS 11.0, *) {
@@ -327,15 +327,15 @@ extension MenuView {
                     panel.allowedFileTypes = kinds
                 }
                 panel.message = if let cloudFolder {
-                    "Choose movies, or folders of movies, in \(cloudFolder.name) for First Row."
+                    L("Choose movies, or folders of movies, in %@ for First Row.", cloudFolder.name)
                 } else {
-                    "Choose movies, or folders of movies, for First Row."
+                    L("Choose movies, or folders of movies, for First Row.")
                 }
             } else {
                 panel.message = if let cloudFolder {
-                    "Choose folders of \(kind.title.lowercased()) in \(cloudFolder.name) for First Row."
+                    kind.chooseMessage(in: cloudFolder.name)
                 } else {
-                    "Choose folders of \(kind.title.lowercased()) for First Row."
+                    kind.chooseMessage
                 }
             }
             presentMediaSourcePanel(panel, startingIn: cloudFolder?.url) { [weak self] urls in
@@ -361,7 +361,7 @@ extension MenuView {
             guard !isChoosingMediaSource else { return }
             isChoosingMediaSource = true
             let kinds = supportedMovieFileExtensions.sorted().joined(separator: ";")
-            PortableFilePicker.chooseFiles(filters: [("Movies", kinds)], allowMany: true) { [weak self] urls in
+            PortableFilePicker.chooseFiles(filters: [(L("Movies"), kinds)], allowMany: true) { [weak self] urls in
                 guard let self else { return }
                 self.isChoosingMediaSource = false
                 let movies = urls.filter { self.supportedMovieFileExtensions.contains($0.pathExtension.lowercased()) }
@@ -386,14 +386,14 @@ extension MenuView {
                 } else {
                     panel.allowedFileTypes = ["xml"]
                 }
-                panel.message = "Choose an iTunes library file (iTunes Music Library.xml or iTunes Library.xml). In iTunes or Music, File > Library > Export Library makes one."
+                panel.message = L("Choose an iTunes library file (iTunes Music Library.xml or iTunes Library.xml). In iTunes or Music, File > Library > Export Library makes one.")
             case .iPhoto:
                 panel.canChooseFiles = true
                 panel.canChooseDirectories = true
                 panel.treatsFilePackagesAsDirectories = false
-                panel.message = "Choose your iPhoto Library."
+                panel.message = L("Choose your iPhoto Library.")
             }
-            panel.prompt = "Choose"
+            panel.prompt = L("Choose")
             presentMediaSourcePanel(panel) { [weak self] urls in
                 guard let self, let url = urls.first else { return }
                 MediaSources.shared.setLibrary(url, kind: kind)
@@ -413,7 +413,7 @@ extension MenuView {
             }
             switch kind {
             case .iTunesXML:
-                PortableFilePicker.chooseFile(filters: [("iTunes library file", "xml")], completion: finish)
+                PortableFilePicker.chooseFile(filters: [(L("iTunes library file"), "xml")], completion: finish)
             case .iPhoto:
                 PortableFilePicker.chooseFolders(allowMany: false, completion: finish)
             }
@@ -454,22 +454,22 @@ extension MenuView {
 extension MediaSources.LibraryKind {
     var title: String {
         switch self {
-        case .iTunesXML: "iTunes Library"
-        case .iPhoto: "iPhoto Library"
+        case .iTunesXML: L("iTunes Library")
+        case .iPhoto: L("iPhoto Library")
         }
     }
 
     var chooseTitle: String {
         switch self {
-        case .iTunesXML: "Choose Library File"
-        case .iPhoto: "Choose Library"
+        case .iTunesXML: L("Choose Library File")
+        case .iPhoto: L("Choose Library")
         }
     }
 
     var chooseAnotherTitle: String {
         switch self {
-        case .iTunesXML: "Choose Another File"
-        case .iPhoto: "Choose Another Library"
+        case .iTunesXML: L("Choose Another File")
+        case .iPhoto: L("Choose Another Library")
         }
     }
 }

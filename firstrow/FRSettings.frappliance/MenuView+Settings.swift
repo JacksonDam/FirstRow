@@ -13,11 +13,11 @@ extension MenuView {
     /// What a Settings row shows on its right, or nil for rows that keep their own.
     func settingsTrailingText(forItemID id: String) -> String? {
         switch id {
-        case Self.settingsSoundEffectsItemID: isUISoundEffectsEnabled ? "On" : "Off"
+        case Self.settingsSoundEffectsItemID: isUISoundEffectsEnabled ? L("On") : L("Off")
         case Self.settingsScreenSaverItemID: AppSettings.screenSaverDelayTitle(AppSettings.screenSaverDelay)
         case Self.settingsThemeItemID: AppSettings.theme.title
-        case Self.settingsIntroMovieItemID: AppSettings.playsIntroMovieAtLaunch ? "On" : "Off"
-        case Self.settingsYouTubeItemID: AppSettings.showsYouTube ? "On" : "Off"
+        case Self.settingsIntroMovieItemID: AppSettings.playsIntroMovieAtLaunch ? L("On") : L("Off")
+        case Self.settingsYouTubeItemID: AppSettings.showsYouTube ? L("On") : L("Off")
         default: nil
         }
     }
@@ -78,7 +78,7 @@ extension MenuView {
             let current = choices.firstIndex(of: AppSettings.screenSaverDelay) ?? 0
             // The rows are Preview, then one per choice.
             self.selectedThirdIndex = current + 1
-            self.headerText = "Screen Saver"
+            self.headerText = L("Screen Saver")
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1
         }
@@ -86,9 +86,9 @@ extension MenuView {
 
     func screenSaverSettingsListItems() -> [MenuListItemConfig] {
         let current = AppSettings.screenSaverDelay
-        var items = [plainMenuListItem(id: Self.screenSaverPreviewItemID, title: "Preview")]
+        var items = [plainMenuListItem(id: Self.screenSaverPreviewItemID, title: L("Preview"))]
         for (index, seconds) in AppSettings.screenSaverDelayChoices.enumerated() {
-            let title = seconds > 0 ? "Start After \(AppSettings.screenSaverDelayTitle(seconds))" : "Never Start"
+            let title = seconds > 0 ? L("Start After %@", AppSettings.screenSaverDelayTitle(seconds)) : L("Never Start")
             items.append(plainMenuListItem(
                 id: Self.screenSaverChoicePrefix + String(Int(seconds)),
                 title: title,

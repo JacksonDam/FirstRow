@@ -95,7 +95,7 @@
         /// Asks the engine something by name (see `MediaEngineQuestion`). Without an engine the
         /// answer is an error.
         static func ask(_ question: String, _ details: [String: Any]) async -> [String: Any] {
-            guard let engine = shared else { return [MediaEngineKey.error: "This needs \(systemNeeded) or later."] }
+            guard let engine = shared else { return [MediaEngineKey.error: L("This needs %@ or later.", systemNeeded)] }
             return await withCheckedContinuation { continuation in
                 engine.ask(question, details: details) { continuation.resume(returning: $0) }
             }
@@ -304,7 +304,7 @@
             return engine.chapters.enumerated().compactMap { index, entry in
                 guard let start = entry[MediaEngineKey.start] as? Double else { return nil }
                 let title = ((entry[MediaEngineKey.title] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                return MovieChapter(title: title.isEmpty ? "Chapter \(index + 1)" : title, start: max(0, start))
+                return MovieChapter(title: title.isEmpty ? L("Chapter %@", index + 1) : title, start: max(0, start))
             }
         }
 

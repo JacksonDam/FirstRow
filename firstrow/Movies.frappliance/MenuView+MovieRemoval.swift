@@ -40,23 +40,23 @@ struct MovieRemoval: Equatable {
 
     var question: String {
         switch kind {
-        case .continueWatching: "Remove “\(title)” from Continue Watching?"
-        case .imported: "Remove “\(title)” from First Row?"
-        case .ownCopy, .ownFile: "Delete “\(title)”?"
+        case .continueWatching: L("Remove “%@” from Continue Watching?", title)
+        case .imported: L("Remove “%@” from First Row?", title)
+        case .ownCopy, .ownFile: L("Delete “%@”?", title)
         }
     }
 
     /// What will happen, under the question.
     var note: String? {
         switch kind {
-        case .ownCopy: "It will be removed from First Row."
+        case .ownCopy: L("It will be removed from First Row.")
         case .continueWatching: nil
-        case let .imported(isFolder): isFolder ? "The folder and what is in it stay where they are." : "The file stays where it is."
+        case let .imported(isFolder): isFolder ? L("The folder and what is in it stay where they are.") : L("The file stays where it is.")
         case .ownFile:
             #if os(Windows)
-                "It will be moved to the Recycle Bin."
+                L("It will be moved to the Recycle Bin.")
             #else
-                "It will be moved to the Trash."
+                L("It will be moved to the Trash.")
             #endif
         }
     }
@@ -64,8 +64,8 @@ struct MovieRemoval: Equatable {
     /// The two answers, in their order on the screen.
     var answers: [String] {
         switch kind {
-        case .continueWatching, .imported: ["Remove", "Cancel"]
-        case .ownCopy, .ownFile: ["Delete", "Cancel"]
+        case .continueWatching, .imported: [L("Remove"), L("Cancel")]
+        case .ownCopy, .ownFile: [L("Delete"), L("Cancel")]
         }
     }
 
@@ -73,9 +73,9 @@ struct MovieRemoval: Equatable {
     var failure: (header: String, subcaption: String) {
         switch kind {
         case .imported:
-            ("“\(title)” couldn't be removed.", "First Row has lost track of it. It can be taken out in Settings, under Media Folders.")
+            (L("“%@” couldn't be removed.", title), L("First Row has lost track of it. It can be taken out in Settings, under Media Folders."))
         case .continueWatching, .ownCopy, .ownFile:
-            ("“\(title)” couldn't be deleted.", "First Row isn't allowed to change it where it is.")
+            (L("“%@” couldn't be deleted.", title), L("First Row isn't allowed to change it where it is."))
         }
     }
 }

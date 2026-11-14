@@ -111,10 +111,10 @@ struct KodiClient: MediaServerClient {
         }
         // (Kodi must answer the first of these at least: the rest may fail one by one.)
         let foundMovies = try await movies
-        if has(foundMovies, "movies") { items.append(ServerItem(id: "kodi:movies", kind: .folder, title: "Movies", details: ["list": "movies"])) }
-        if has(try? await shows, "tvshows") { items.append(ServerItem(id: "kodi:shows", kind: .folder, title: "TV Shows", details: ["list": "shows"])) }
-        if has(try? await artists, "artists") { items.append(ServerItem(id: "kodi:music", kind: .folder, title: "Music", details: ["list": "artists"])) }
-        if has(try? await folders, "sources") { items.append(ServerItem(id: "kodi:files", kind: .folder, title: "Folders", details: ["list": "sources"])) }
+        if has(foundMovies, "movies") { items.append(ServerItem(id: "kodi:movies", kind: .folder, title: L("Movies"), details: ["list": "movies"])) }
+        if has(try? await shows, "tvshows") { items.append(ServerItem(id: "kodi:shows", kind: .folder, title: L("TV Shows"), details: ["list": "shows"])) }
+        if has(try? await artists, "artists") { items.append(ServerItem(id: "kodi:music", kind: .folder, title: L("Music"), details: ["list": "artists"])) }
+        if has(try? await folders, "sources") { items.append(ServerItem(id: "kodi:files", kind: .folder, title: L("Folders"), details: ["list": "sources"])) }
         return items
     }
 
@@ -128,7 +128,7 @@ struct KodiClient: MediaServerClient {
             let answer = try await call("VideoLibrary.GetTVShows", ["properties": ["title", "year", "plot", "thumbnail", "episode", "watchedepisodes"], "sort": byTitle])
             return ((answer["tvshows"] as? [[String: Any]]) ?? []).compactMap { entry in
                 guard let id = Self.number(entry["tvshowid"]).map({ Int($0) }) else { return nil }
-                var show = ServerItem(id: "kodi:show:\(id)", kind: .show, title: Self.text(entry["title"]) ?? Self.text(entry["label"]) ?? "Untitled", details: ["list": "seasons", "show": "\(id)"])
+                var show = ServerItem(id: "kodi:show:\(id)", kind: .show, title: Self.text(entry["title"]) ?? Self.text(entry["label"]) ?? L("Untitled"), details: ["list": "seasons", "show": "\(id)"])
                 show.year = Self.number(entry["year"]).map { Int($0) }.flatMap { $0 > 0 ? $0 : nil }
                 show.overview = Self.text(entry["plot"])
                 show.imageURL = picture(Self.text(entry["thumbnail"]))
@@ -157,7 +157,7 @@ struct KodiClient: MediaServerClient {
             let answer = try await call("AudioLibrary.GetArtists", ["albumartistsonly": true, "properties": ["thumbnail"], "sort": ["method": "artist", "order": "ascending", "ignorearticle": true]])
             return ((answer["artists"] as? [[String: Any]]) ?? []).compactMap { entry in
                 guard let id = Self.number(entry["artistid"]).map({ Int($0) }) else { return nil }
-                var artist = ServerItem(id: "kodi:artist:\(id)", kind: .artist, title: Self.text(entry["artist"]) ?? Self.text(entry["label"]) ?? "Unknown Artist", details: ["list": "albums", "artist": "\(id)"])
+                var artist = ServerItem(id: "kodi:artist:\(id)", kind: .artist, title: Self.text(entry["artist"]) ?? Self.text(entry["label"]) ?? L("Unknown Artist"), details: ["list": "albums", "artist": "\(id)"])
                 artist.imageURL = picture(Self.text(entry["thumbnail"]))
                 return artist
             }
@@ -166,7 +166,7 @@ struct KodiClient: MediaServerClient {
             let answer = try await call("AudioLibrary.GetAlbums", ["filter": ["artistid": artist], "properties": ["title", "year", "thumbnail", "artist"], "sort": ["method": "year", "order": "ascending"]])
             return ((answer["albums"] as? [[String: Any]]) ?? []).compactMap { entry in
                 guard let id = Self.number(entry["albumid"]).map({ Int($0) }) else { return nil }
-                var album = ServerItem(id: "kodi:album:\(id)", kind: .album, title: Self.text(entry["title"]) ?? Self.text(entry["label"]) ?? "Unknown Album", details: ["list": "songs", "album": "\(id)"])
+                var album = ServerItem(id: "kodi:album:\(id)", kind: .album, title: Self.text(entry["title"]) ?? Self.text(entry["label"]) ?? L("Unknown Album"), details: ["list": "songs", "album": "\(id)"])
                 album.year = Self.number(entry["year"]).map { Int($0) }.flatMap { $0 > 0 ? $0 : nil }
                 album.artist = (entry["artist"] as? [String])?.first
                 album.imageURL = picture(Self.text(entry["thumbnail"]))
@@ -177,7 +177,7 @@ struct KodiClient: MediaServerClient {
             let answer = try await call("AudioLibrary.GetSongs", ["filter": ["albumid": album], "properties": ["title", "artist", "album", "duration", "track", "disc", "file", "thumbnail"], "sort": ["method": "track", "order": "ascending"]])
             return ((answer["songs"] as? [[String: Any]]) ?? []).compactMap { entry in
                 guard let id = Self.number(entry["songid"]).map({ Int($0) }), let path = Self.text(entry["file"]), let url = file(path) else { return nil }
-                var song = ServerItem(id: "kodi:song:\(id)", kind: .song, title: Self.text(entry["title"]) ?? Self.text(entry["label"]) ?? "Untitled")
+                var song = ServerItem(id: "kodi:song:\(id)", kind: .song, title: Self.text(entry["title"]) ?? Self.text(entry["label"]) ?? L("Untitled"))
                 song.artist = (entry["artist"] as? [String])?.first
                 song.album = Self.text(entry["album"])
                 song.durationSeconds = Self.number(entry["duration"]) ?? 0
@@ -216,7 +216,7 @@ struct KodiClient: MediaServerClient {
     private func video(_ entry: [String: Any], kind: ServerItem.Kind, idKey: String) -> ServerItem? {
         guard let path = Self.text(entry["file"]) else { return nil }
         let id = Self.number(entry[idKey]).map { Int($0) }
-        var item = ServerItem(id: "kodi:\(kind.rawValue):\(id.map(String.init) ?? path)", kind: kind, title: Self.text(entry["title"]) ?? Self.text(entry["label"]) ?? "Untitled")
+        var item = ServerItem(id: "kodi:\(kind.rawValue):\(id.map(String.init) ?? path)", kind: kind, title: Self.text(entry["title"]) ?? Self.text(entry["label"]) ?? L("Untitled"))
         item.details["file"] = path
         if let id { item.details["id"] = "\(id)" }
         item.year = Self.number(entry["year"]).map { Int($0) }.flatMap { $0 > 0 ? $0 : nil }

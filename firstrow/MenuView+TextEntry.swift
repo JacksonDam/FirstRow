@@ -58,11 +58,11 @@ enum TextEntryKey: Equatable {
         switch self {
         case let .character(value): shifted ? value.uppercased() : value
         case let .text(value): value
-        case .space: "Space"
-        case .delete: "Delete"
+        case .space: L("Space")
+        case .delete: L("Delete")
         case .shift: shifted ? "abc" : "ABC"
-        case .done: "Done"
-        case .cancel: "Cancel"
+        case .done: L("Done")
+        case .cancel: L("Cancel")
         }
     }
 
@@ -317,11 +317,11 @@ extension MenuView {
                     field.clearButtonMode = .whileEditing
                 }
             }
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            alert.addAction(UIAlertAction(title: L("Cancel"), style: .cancel) { _ in
                 completion(nil)
                 NotificationCenter.default.post(name: .firstRowTextEntryDidEnd, object: nil)
             })
-            alert.addAction(UIAlertAction(title: "Done", style: .default) { [weak alert] _ in
+            alert.addAction(UIAlertAction(title: L("Done"), style: .default) { [weak alert] _ in
                 completion(alert?.textFields?.first?.text ?? "")
                 NotificationCenter.default.post(name: .firstRowTextEntryDidEnd, object: nil)
             })

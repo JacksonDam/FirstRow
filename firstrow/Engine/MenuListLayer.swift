@@ -632,7 +632,7 @@ final class MenuRowLayer: MenuRowLayering {
         let resolvedTrailingText = item.trailingText == "..." ? "•••" : item.trailingText
         let isDotTrail = resolvedTrailingText == "•••"
         let resolvedLeadingImage = spec.dynamicLeadingImage ?? item.leadingImage ?? item.leadingImageAssetName.flatMap { menu.cachedMenuRowLeadingImage(named: $0) }
-        let isSharedPhotosDotsRow = spec.isPhotosRoot && !spec.isPhotosThirdMenu && showsArrow && isDotTrail && item.title == "Shared Photos"
+        let isSharedPhotosDotsRow = spec.isPhotosRoot && !spec.isPhotosThirdMenu && showsArrow && isDotTrail && item.title == L("Shared Photos")
         let effectiveArrowXOffset = isSharedPhotosDotsRow ? -10 : arrow.xOffset
         let trailingFontSize: CGFloat = isDotTrail ? 17 : 32
         let trailingToArrowSpacing: CGFloat = isDotTrail ? -0.2 : 6

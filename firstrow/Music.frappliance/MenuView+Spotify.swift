@@ -44,21 +44,21 @@ extension MenuView {
         case let .unavailable(reason):
             return [
                 menuMessageItem(id: "spotify_message", title: reason),
-                plainMenuListItem(id: "spotify_retry", title: "Try Again", showsTopDivider: true),
+                plainMenuListItem(id: "spotify_retry", title: L("Try Again"), showsTopDivider: true),
             ]
         case .signedOut:
-            return [plainMenuListItem(id: "spotify_sign_in", title: "Sign In", trailingText: "...")]
+            return [plainMenuListItem(id: "spotify_sign_in", title: L("Sign In"), trailingText: "...")]
         case .signedIn:
             break
         }
         switch currentSpotifyMenuPage {
         case .home:
             return [
-                plainMenuListItem(id: "spotify_liked", title: "Liked Songs", leadsToMenu: true),
-                plainMenuListItem(id: "spotify_playlists", title: "Playlists", leadsToMenu: true),
-                plainMenuListItem(id: "spotify_albums", title: "Albums", leadsToMenu: true),
-                plainMenuListItem(id: "spotify_artists", title: "Artists", leadsToMenu: true),
-                plainMenuListItem(id: "spotify_sign_out", title: "Sign Out", showsTopDivider: true),
+                plainMenuListItem(id: "spotify_liked", title: L("Liked Songs"), leadsToMenu: true),
+                plainMenuListItem(id: "spotify_playlists", title: L("Playlists"), leadsToMenu: true),
+                plainMenuListItem(id: "spotify_albums", title: L("Albums"), leadsToMenu: true),
+                plainMenuListItem(id: "spotify_artists", title: L("Artists"), leadsToMenu: true),
+                plainMenuListItem(id: "spotify_sign_out", title: L("Sign Out"), showsTopDivider: true),
             ]
         case let .collections(kind):
             if isLoadingSpotifyMenu, spotifyCollections.isEmpty {
@@ -90,17 +90,17 @@ extension MenuView {
     static func spotifyTitle(for page: SpotifyMenuPage) -> String {
         switch page {
         case .home: "Spotify"
-        case .collections(.playlist): "Playlists"
-        case .collections(.album): "Albums"
-        case .collections(.artist): "Artists"
+        case .collections(.playlist): L("Playlists")
+        case .collections(.album): L("Albums")
+        case .collections(.artist): L("Artists")
         }
     }
 
     static func spotifyEmptyTitle(for kind: SpotifyCollection.Kind) -> String {
         switch kind {
-        case .playlist: "No Playlists"
-        case .album: "No Saved Albums"
-        case .artist: "No Followed Artists"
+        case .playlist: L("No Playlists")
+        case .album: L("No Saved Albums")
+        case .artist: L("No Followed Artists")
         }
     }
 
@@ -275,7 +275,7 @@ extension MenuView {
             session.signOut()
         case "spotify_liked":
             let contextURI = session.username.isEmpty ? nil : "spotify:user:\(session.username):collection"
-            openSpotifySongs(title: "Liked Songs", contextURI: contextURI) {
+            openSpotifySongs(title: L("Liked Songs"), contextURI: contextURI) {
                 try await session.likedSongs()
             }
         case "spotify_playlists":
@@ -327,7 +327,7 @@ extension MenuView {
                     guard self.spotifyMenuRequestID == requestID, self.thirdMenuMode == .musicSongs else { return }
                     let songs = self.spotifySongEntries(tracks, contextURI: contextURI)
                     self.musicSongsThirdMenuItems = songs
-                    self.musicSongsLoadError = songs.isEmpty ? "No Songs" : nil
+                    self.musicSongsLoadError = songs.isEmpty ? L("No Songs") : nil
                 } catch {
                     guard self.spotifyMenuRequestID == requestID, self.thirdMenuMode == .musicSongs else { return }
                     self.musicSongsLoadError = error.localizedDescription
@@ -343,7 +343,7 @@ extension MenuView {
             guard track.isPlayable, !track.uri.isEmpty else { return nil }
             return MusicLibrarySongEntry(
                 id: "spotify|\(index)|\(track.uri)",
-                title: track.name.isEmpty ? "Unknown Song" : track.name,
+                title: track.name.isEmpty ? L("Unknown Song") : track.name,
                 artist: track.artist,
                 album: track.album,
                 genre: "",
@@ -593,7 +593,7 @@ extension MenuView {
         if !spotifyShowsAdvert {
             spotifyShowsAdvert = true
             withAnimation(.easeInOut(duration: 0.18)) {
-                musicNowPlayingTitle = "Advertisement"
+                musicNowPlayingTitle = L("Advertisement")
                 musicNowPlayingArtist = state.advertiser.isEmpty ? "Spotify" : state.advertiser
                 musicNowPlayingAlbum = ""
                 musicNowPlayingArtwork = musicFallbackImage

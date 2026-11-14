@@ -22,8 +22,8 @@ enum MediaServerKind: String, Codable, Sendable, CaseIterable {
         switch self {
         case .plex: "Plex"
         case .kodi: "Kodi"
-        case .upnp: "Media Server (UPnP)"
-        case .sharedFolder: "Shared Folder"
+        case .upnp: L("Media Server (UPnP)")
+        case .sharedFolder: L("Shared Folder")
         }
     }
 }
@@ -62,18 +62,18 @@ enum MediaServerError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unreachable: "Can't Reach the Server"
+        case .unreachable: L("Can't Reach the Server")
         case let .notAServer(kind):
             switch kind {
-            case .plex: "Not a Plex Server"
-            case .kodi: "Not Kodi (Is Its Remote Control Turned On?)"
-            case .upnp: "Not a Media Server"
-            case .sharedFolder: "No Shared Folders There"
+            case .plex: L("Not a Plex Server")
+            case .kodi: L("Not Kodi (Is Its Remote Control Turned On?)")
+            case .upnp: L("Not a Media Server")
+            case .sharedFolder: L("No Shared Folders There")
             }
-        case .signInNeeded: "A Name and Password Are Needed"
-        case .signInFailed: "Wrong Name or Password"
-        case let .badAnswer(code): "Server Error (\(code))"
-        case .nothingPlayable: "Can't Play This"
+        case .signInNeeded: L("A Name and Password Are Needed")
+        case .signInFailed: L("Wrong Name or Password")
+        case let .badAnswer(code): L("Server Error (%@)", code)
+        case .nothingPlayable: L("Can't Play This")
         case let .unsupported(why): why
         }
     }

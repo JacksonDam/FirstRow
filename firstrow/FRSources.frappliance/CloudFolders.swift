@@ -117,7 +117,7 @@ enum CloudFolders {
                 found.append(Candidate(service: "OneDrive", detail: "", url: URL(fileURLWithPath: personal)))
             }
             if let work = environment["OneDriveCommercial"], isFolder(URL(fileURLWithPath: work)) {
-                found.append(Candidate(service: "OneDrive", detail: "Work", url: URL(fileURLWithPath: work)))
+                found.append(Candidate(service: "OneDrive", detail: L("Work"), url: URL(fileURLWithPath: work)))
             }
             let iCloud = home.appendingPathComponent("iCloudDrive", isDirectory: true)
             if isFolder(iCloud) {
@@ -151,7 +151,7 @@ enum CloudFolders {
                 guard let path = (accounts[account] as? [String: Any])?["path"] as? String,
                       isFolder(URL(fileURLWithPath: path))
                 else { return nil }
-                return Candidate(service: "Dropbox", detail: account == "business" ? "Work" : "Personal", url: URL(fileURLWithPath: path, isDirectory: true))
+                return Candidate(service: "Dropbox", detail: account == "business" ? L("Work") : L("Personal"), url: URL(fileURLWithPath: path, isDirectory: true))
             }
         }
     #endif

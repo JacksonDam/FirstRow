@@ -86,7 +86,7 @@ extension MenuView {
 
     var nowPlayingQueueCount: Int {
         if isPodcastAudioNowPlaying { return activePodcastPlaybackEpisodes().count }
-        if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == "iTunes Top Songs" { return 0 }
+        if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == L("iTunes Top Songs") { return 0 }
         return resolvedActiveMusicPlaybackQueue().count
     }
 
@@ -120,7 +120,7 @@ extension MenuView {
         #if os(macOS)
             if let restoredMusicQueueTitle, !isPodcastAudioNowPlaying { return restoredMusicQueueTitle }
         #endif
-        return isPodcastAudioNowPlaying ? "Episodes" : "Songs"
+        return isPodcastAudioNowPlaying ? L("Episodes") : L("Songs")
     }
 
     /// The songs on screen, by name, when they are those of one album, playlist, genre,
@@ -138,7 +138,7 @@ extension MenuView {
         guard kind == .artists else { return chosen.title }
         // (Every artist's songs: "Songs", as the list of them all is called.)
         guard chosen.id != "\(MusicCategoryKind.artists.rawValue)::all" else { return nil }
-        guard let album = chosen.songs.first?.album, album != "Unknown Album",
+        guard let album = chosen.songs.first?.album, album != L("Unknown Album"),
               !chosen.songs.contains(where: { $0.album != album }) else { return chosen.title }
         return album
     }
@@ -196,7 +196,7 @@ extension MenuView {
             activeMusicQueueOrigin = recovered.origin
             musicQueueDepartedSongID = nil
             restoredMusicQueueTitle = recovered.title
-            musicNowPlayingTrackPositionText = "\(index + 1) of \(recovered.songs.count)"
+            musicNowPlayingTrackPositionText = L("%@ of %@", index + 1, recovered.songs.count)
             musicNowPlayingShowsShuffleGlyph = recovered.isShuffled
         }
     #endif

@@ -44,8 +44,8 @@ extension MenuView {
                 self.playSound(named: "Limit")
                 let unreachable = (error as? JellyfinError).map { if case .unreachable = $0 { true } else { false } } ?? false
                 self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
-                    "header": "This video can't be played.",
-                    "subcaption": unreachable ? "The server can't be reached." : "The server couldn't prepare it for playing here.",
+                    "header": L("This video can't be played."),
+                    "subcaption": unreachable ? L("The server can't be reached.") : L("The server couldn't prepare it for playing here."),
                 ])
                 return
             }

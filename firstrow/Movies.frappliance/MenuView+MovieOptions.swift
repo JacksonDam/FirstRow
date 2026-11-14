@@ -128,7 +128,7 @@ extension MenuView {
 
     private func speedRow() -> MovieOptionRow {
         let index = Self.movieSpeeds.firstIndex(of: movieSpeed) ?? Self.movieSpeeds.firstIndex(of: 1) ?? 0
-        return MovieOptionRow(kind: .speed, title: "Speed", values: Self.movieSpeeds.map(Self.speedTitle), selected: index)
+        return MovieOptionRow(kind: .speed, title: L("Speed"), values: Self.movieSpeeds.map(Self.speedTitle), selected: index)
     }
 
     /// Fills in the subtitle, audio and chapter rows from the file, and says when it has.
@@ -150,18 +150,18 @@ extension MenuView {
             if !subtitles.isEmpty {
                 state.subtitleIDs = [nil] + subtitles.map(\.id)
                 let selected = subtitles.firstIndex(where: \.isChosen).map { $0 + 1 } ?? 0
-                rows.append(MovieOptionRow(kind: .subtitles, title: "Subtitles", values: ["Off"] + subtitles.map(\.title), selected: selected))
+                rows.append(MovieOptionRow(kind: .subtitles, title: L("Subtitles"), values: [L("Off")] + subtitles.map(\.title), selected: selected))
             }
             if audio.count > 1 {
                 state.audioIDs = audio.map(\.id)
-                rows.append(MovieOptionRow(kind: .audio, title: "Audio", values: audio.map(\.title), selected: audio.firstIndex(where: \.isChosen) ?? 0))
+                rows.append(MovieOptionRow(kind: .audio, title: L("Audio"), values: audio.map(\.title), selected: audio.firstIndex(where: \.isChosen) ?? 0))
             }
             if chapters.count > 1 {
                 state.chapterStarts = chapters.map(\.start)
                 // (The chapter the movie is in: the last to have started.)
                 let now = self.moviePlaybackCurrentSeconds + 0.25
                 let current = chapters.lastIndex { $0.start <= now } ?? 0
-                rows.append(MovieOptionRow(kind: .chapters, title: "Chapter", values: chapters.map(\.title), selected: current))
+                rows.append(MovieOptionRow(kind: .chapters, title: L("Chapter"), values: chapters.map(\.title), selected: current))
             }
             let focusedKind = state.preferredKind ?? (state.rows.indices.contains(state.focusedRow) ? state.rows[state.focusedRow].kind : .speed)
             state.rows = rows + state.rows.filter { $0.kind == .speed }

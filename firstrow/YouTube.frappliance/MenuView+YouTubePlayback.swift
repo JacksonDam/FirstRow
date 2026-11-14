@@ -148,7 +148,7 @@ extension MenuView {
                 var reason = error.localizedDescription
                 if !reason.hasSuffix(".") { reason += "." }
                 self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
-                    "header": "This video can't be played.",
+                    "header": L("This video can't be played."),
                     "subcaption": reason,
                 ])
             }
@@ -318,22 +318,22 @@ extension MenuView {
         let tracks = session.playback.captions
         if !tracks.isEmpty {
             state.captionTracks = [nil] + tracks.indices.map { $0 }
-            rows.append(MovieOptionRow(kind: .subtitles, title: "Subtitles", values: ["Off"] + tracks.map(\.name), selected: session.captionTrack.map { $0 + 1 } ?? 0))
+            rows.append(MovieOptionRow(kind: .subtitles, title: L("Subtitles"), values: [L("Off")] + tracks.map(\.name), selected: session.captionTrack.map { $0 + 1 } ?? 0))
         }
         let heights = youtubeOfferedHeights(session)
         if !heights.isEmpty {
             state.pictureHeights = [nil] + heights
             let chosen = YouTubeStore.shared.maximumHeight.flatMap { limit in heights.firstIndex { $0 <= limit } }
-            rows.append(MovieOptionRow(kind: .quality, title: "Quality", values: ["Auto"] + heights.map { "\($0)p" }, selected: chosen.map { $0 + 1 } ?? 0))
+            rows.append(MovieOptionRow(kind: .quality, title: L("Quality"), values: [L("Auto")] + heights.map { "\($0)p" }, selected: chosen.map { $0 + 1 } ?? 0))
         }
         // The video's sounds, where it has more than its own: the picture described, a dubbing.
         if session.audioTracks.count > 1 {
             let chosen = session.audioTracks.firstIndex { $0.id == session.audioTrackID } ?? 0
-            rows.append(MovieOptionRow(kind: .audio, title: "Audio", values: session.audioTracks.map(\.name), selected: chosen))
+            rows.append(MovieOptionRow(kind: .audio, title: L("Audio"), values: session.audioTracks.map(\.name), selected: chosen))
         }
         rows += state.rows.filter { $0.kind == .speed }
-        rows.append(MovieOptionRow(kind: .info, title: "Info", values: ["View"], selected: 0, opensMore: true))
-        rows.append(MovieOptionRow(kind: .comments, title: "Comments", values: ["View"], selected: 0, opensMore: true))
+        rows.append(MovieOptionRow(kind: .info, title: L("Info"), values: [L("View")], selected: 0, opensMore: true))
+        rows.append(MovieOptionRow(kind: .comments, title: L("Comments"), values: [L("View")], selected: 0, opensMore: true))
         let focusedKind = state.preferredKind ?? (state.rows.indices.contains(state.focusedRow) ? state.rows[state.focusedRow].kind : .speed)
         state.rows = rows
         state.focusedRow = state.hasMoved ? (rows.firstIndex { $0.kind == focusedKind } ?? 0) : 0

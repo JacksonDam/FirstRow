@@ -19,9 +19,9 @@ enum MovieResumeStore {
             if minutes >= 60 {
                 let hours = minutes / 60
                 let rest = minutes % 60
-                return rest == 0 ? "\(hours) hr left" : "\(hours) hr \(rest) min left"
+                return rest == 0 ? L("%@ hr left", hours) : L("%@ hr %@ min left", hours, rest)
             }
-            return "\(minutes) min left"
+            return L("%@ min left", minutes)
         }
     }
 
@@ -119,7 +119,7 @@ extension MenuView {
             }
             self.continueWatchingRemainingText = Dictionary(uniqueKeysWithValues: entries.map { ("continue|\($0.path)", $0.remainingText ?? "") })
             self.selectedThirdIndex = 0
-            self.headerText = "Continue Watching"
+            self.headerText = L("Continue Watching")
             self.isInThirdMenu = true
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1

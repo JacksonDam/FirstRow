@@ -86,9 +86,9 @@ struct YouTubePanelState {
 
     var title: String {
         switch kind {
-        case .comments: "Comments"
-        case .replies: "Replies"
-        case .info: "Info"
+        case .comments: L("Comments")
+        case .replies: L("Replies")
+        case .info: L("Info")
         }
     }
 }
@@ -329,16 +329,16 @@ extension MenuView {
         var shown = comment
         if !leadsToReplies { shown.repliesToken = nil }
         var when = comment.publishedText
-        if comment.isPinned { when = when.isEmpty ? "Pinned" : "Pinned, " + when }
+        if comment.isPinned { when = when.isEmpty ? L("Pinned") : L("Pinned, %@", when) }
         var words = comment.text
         if words.count > 700 { words = String(words.prefix(700)) + "…" }
         var parts: [String] = []
         // (A comment nobody has liked comes with a space for its count.)
         let likes = comment.likesText.trimmingCharacters(in: .whitespaces)
         let replies = comment.replyCountText.trimmingCharacters(in: .whitespaces)
-        if !likes.isEmpty { parts.append(likes == "1" ? "1 like" : "\(likes) likes") }
-        if !replies.isEmpty { parts.append(replies == "1" ? "1 reply" : "\(replies) replies") }
-        if comment.isHearted { parts.append("liked by the creator") }
+        if !likes.isEmpty { parts.append(likes == "1" ? L("1 like") : L("%@ likes", likes)) }
+        if !replies.isEmpty { parts.append(replies == "1" ? L("1 reply") : L("%@ replies", replies)) }
+        if comment.isHearted { parts.append(L("liked by the creator")) }
         return YouTubePanelRow(
             id: id ?? "comment:" + comment.id,
             role: .comment(shown),
@@ -363,7 +363,7 @@ extension MenuView {
                 guard let token else {
                     self.changeYouTubePanel(videoID, .comments) {
                         $0.isLoading = false
-                        $0.note = "Comments are turned off."
+                        $0.note = L("Comments are turned off.")
                     }
                     return
                 }
@@ -373,7 +373,7 @@ extension MenuView {
                     state.countText = page.totalText?.split(separator: " ").first.map(String.init)
                     state.rows = page.comments.map { Self.youtubeCommentRow($0) }
                     state.continuation = page.continuation
-                    if page.comments.isEmpty { state.note = "No comments yet." }
+                    if page.comments.isEmpty { state.note = L("No comments yet.") }
                 }
             } catch {
                 self.changeYouTubePanel(videoID, .comments) {
@@ -476,7 +476,7 @@ extension MenuView {
             } else if self.youtube.details[videoID] == nil {
                 self.changeYouTubePanel(videoID, .info) {
                     $0.isLoading = false
-                    $0.note = "Can't Reach YouTube"
+                    $0.note = L("Can't Reach YouTube")
                 }
             }
         }

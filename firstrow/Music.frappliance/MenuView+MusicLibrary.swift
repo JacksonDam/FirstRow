@@ -1623,7 +1623,7 @@ extension MenuView {
                 throw NSError(
                     domain: "firstRowMusicLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
+                    userInfo: [NSLocalizedDescriptionKey: L("Music library access not authorized")],
                 )
             }
             // Album by album rather than song by song, and off the main thread: reading the
@@ -1649,7 +1649,7 @@ extension MenuView {
                 throw NSError(
                     domain: "firstRowMusicLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
+                    userInfo: [NSLocalizedDescriptionKey: L("Music library access not authorized")],
                 )
             }
             guard #available(tvOS 16.0, *) else {
@@ -1744,7 +1744,7 @@ extension MenuView {
             var albumIndex = 0
             var pageSources: [MusicCarouselArtworkSource] = []
             for song in songs {
-                let albumIdentity = song.album == "Unknown Album"
+                let albumIdentity = song.album == L("Unknown Album")
                     ? "song::\(song.id)"
                     : "\(song.album.lowercased())::\(song.artist.lowercased())"
                 guard seenAlbums.insert(albumIdentity).inserted else { continue }
@@ -1981,7 +1981,7 @@ extension MenuView {
         }
         let allArtistsEntry = MusicCategoryEntry(
             id: "\(kind.rawValue)::all",
-            title: "All",
+            title: L("All"),
             songs: allSongs,
         )
         return [allArtistsEntry] + categoryEntries
@@ -2080,7 +2080,7 @@ extension MenuView {
             self.musicArtistsReturn = MusicArtistsReturn(
                 artists: self.musicCategoryThirdMenuItems, index: artistIndex, title: self.activeMusicCategoryMenuTitle, artistID: artist.id,
             )
-            var everySong = MusicCategoryEntry(id: Self.musicArtistAllSongsIDPrefix + artist.id, title: "All Songs", songs: artist.songs)
+            var everySong = MusicCategoryEntry(id: Self.musicArtistAllSongsIDPrefix + artist.id, title: L("All Songs"), songs: artist.songs)
             // (Its picture is made of the artist's albums' covers.)
             everySong.coverSongs = self.musicPlaylistCoverSongs(from: self.musicSongsByAlbum(artist.songs))
             self.musicCategoryThirdMenuItems = [everySong] + albums
@@ -2143,7 +2143,7 @@ extension MenuView {
             }
             self.musicSongsShowsShuffleAction = shouldShowShuffleAction
             self.isLoadingMusicSongs = false
-            self.musicSongsLoadError = songs.isEmpty ? "No Songs in Category" : nil
+            self.musicSongsLoadError = songs.isEmpty ? L("No Songs in Category") : nil
             self.headerText = self.activeMusicCategoryMenuTitle.isEmpty
                 ? self.rootMenuTitle(for: self.activeRootItemID)
                 : self.activeMusicCategoryMenuTitle
@@ -2163,7 +2163,7 @@ extension MenuView {
                 throw NSError(
                     domain: "firstRowMusicLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
+                    userInfo: [NSLocalizedDescriptionKey: L("Music library access not authorized")],
                 )
             }
             let mediaItems = MPMediaQuery.songs().items ?? []
@@ -2285,15 +2285,15 @@ extension MenuView {
                 let above = root.standardizedFileURL.pathComponents
                 folders = folders.starts(with: above) ? Array(folders.dropFirst(above.count)) : []
             }
-            let album = folders.last ?? "Unknown Album"
-            let artist = folders.count > 1 ? folders[folders.count - 2] : "Unknown Artist"
+            let album = folders.last ?? L("Unknown Album")
+            let artist = folders.count > 1 ? folders[folders.count - 2] : L("Unknown Artist")
             return MusicLibrarySongEntry(
                 id: "ext::\(url.standardizedFileURL.path)",
                 title: title,
                 artist: artist,
                 album: album,
-                genre: "Unknown Genre",
-                composer: "Unknown Composer",
+                genre: L("Unknown Genre"),
+                composer: L("Unknown Composer"),
                 durationSeconds: 0,
                 trackNumber: trackNumber,
                 discNumber: discNumber,
@@ -2331,8 +2331,8 @@ extension MenuView {
             let artworkData = AVMetadataItem.metadataItems(
                 from: commonMetadata, withKey: AVMetadataKey.commonKeyArtwork, keySpace: .common
             ).first?.dataValue
-            var genre = "Unknown Genre"
-            var composer = "Unknown Composer"
+            var genre = L("Unknown Genre")
+            var composer = L("Unknown Composer")
             var albumArtist = ""
             var trackNumber = 0
             var discNumber = 1
@@ -2382,8 +2382,8 @@ extension MenuView {
                 }
             }
             let resolvedTitle = title ?? url.deletingPathExtension().lastPathComponent
-            let resolvedArtist = artist ?? "Unknown Artist"
-            let resolvedAlbum = albumName ?? "Unknown Album"
+            let resolvedArtist = artist ?? L("Unknown Artist")
+            let resolvedAlbum = albumName ?? L("Unknown Album")
             let durationSeconds = max(0, CMTimeGetSeconds(duration))
             let artwork = artworkData.flatMap { data in covers.map { $0.image(for: data, inFile: url) } ?? NSImage(data: data) }
             var song = MusicLibrarySongEntry(
@@ -2610,7 +2610,7 @@ extension MenuView {
                 throw NSError(
                     domain: "firstRowMusicLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
+                    userInfo: [NSLocalizedDescriptionKey: L("Music library access not authorized")],
                 )
             }
             // A big library takes seconds to read and turn into entries: well away from the main
@@ -2687,7 +2687,7 @@ extension MenuView {
                 throw NSError(
                     domain: "firstRowMusicLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
+                    userInfo: [NSLocalizedDescriptionKey: L("Music library access not authorized")],
                 )
             }
             return mediaLibraryPlaylists()
@@ -2700,7 +2700,7 @@ extension MenuView {
                     if #available(macOS 12.0, *) {
                         guard !playlist.isPrimary else { return nil }
                     }
-                    let title = normalizedMusicLibraryText(playlist.name, fallback: "Untitled Playlist")
+                    let title = normalizedMusicLibraryText(playlist.name, fallback: L("Untitled Playlist"))
                     let playlistPersistentIDHex = musicPersistentIDHexString(for: playlist.persistentID)
                     let songsInOrder = playlist.items.compactMap { item -> MusicLibrarySongEntry? in
                         guard musicLibraryMediaKindMatches(item.mediaKind, requested: .songs) else { return nil }
@@ -2738,7 +2738,7 @@ extension MenuView {
             let collections = MPMediaQuery.playlists().collections ?? []
             let playlists: [MusicCategoryEntry] = collections.compactMap { collection in
                 let playlist = collection as? MPMediaPlaylist
-                let title = normalizedMusicLibraryText(playlist?.name, fallback: "Untitled Playlist")
+                let title = normalizedMusicLibraryText(playlist?.name, fallback: L("Untitled Playlist"))
                 let persistentID = playlist.map { "\($0.persistentID)" } ?? title.lowercased()
                 // (In the playlist's own order, not by title.)
                 PlaylistItems.remember(collection.items)
@@ -2813,12 +2813,12 @@ extension MenuView {
             if locationURL == nil, item.mediaType.contains(.anyVideo) { return nil }
             let title = normalizedMusicLibraryText(
                 item.title,
-                fallback: locationURL?.deletingPathExtension().lastPathComponent ?? "Unknown Song",
+                fallback: locationURL?.deletingPathExtension().lastPathComponent ?? L("Unknown Song"),
             )
-            let artist = normalizedMusicLibraryText(item.artist, fallback: "Unknown Artist")
-            let album = normalizedMusicLibraryText(item.albumTitle, fallback: "Unknown Album")
-            let genre = normalizedMusicLibraryText(item.genre, fallback: "Unknown Genre")
-            let composer = normalizedMusicLibraryText(item.composer, fallback: "Unknown Composer")
+            let artist = normalizedMusicLibraryText(item.artist, fallback: L("Unknown Artist"))
+            let album = normalizedMusicLibraryText(item.albumTitle, fallback: L("Unknown Album"))
+            let genre = normalizedMusicLibraryText(item.genre, fallback: L("Unknown Genre"))
+            let composer = normalizedMusicLibraryText(item.composer, fallback: L("Unknown Composer"))
             var song = MusicLibrarySongEntry(
                 id: "\(item.persistentID)",
                 title: title,
@@ -2921,12 +2921,12 @@ extension MenuView {
             let locationURL = resolvedMusicLibraryPlaybackURL(for: item)
             let title = normalizedMusicLibraryText(
                 item.title,
-                fallback: locationURL?.deletingPathExtension().lastPathComponent ?? "Unknown Song",
+                fallback: locationURL?.deletingPathExtension().lastPathComponent ?? L("Unknown Song"),
             )
-            let artist = normalizedMusicLibraryText(item.artist?.name, fallback: "Unknown Artist")
-            let album = normalizedMusicLibraryText(item.album.title, fallback: "Unknown Album")
-            let genre = normalizedMusicLibraryText(item.genre, fallback: "Unknown Genre")
-            let composer = normalizedMusicLibraryText(item.composer, fallback: "Unknown Composer")
+            let artist = normalizedMusicLibraryText(item.artist?.name, fallback: L("Unknown Artist"))
+            let album = normalizedMusicLibraryText(item.album.title, fallback: L("Unknown Album"))
+            let genre = normalizedMusicLibraryText(item.genre, fallback: L("Unknown Genre"))
+            let composer = normalizedMusicLibraryText(item.composer, fallback: L("Unknown Composer"))
             var song = MusicLibrarySongEntry(
                 id: "\(item.persistentID)",
                 title: title,
@@ -2956,7 +2956,7 @@ extension MenuView {
                 throw NSError(
                     domain: "firstRowMusicLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
+                    userInfo: [NSLocalizedDescriptionKey: L("Music library access not authorized")],
                 )
             }
             guard #available(tvOS 16.0, *) else {
@@ -3035,11 +3035,11 @@ extension MenuView {
             let composer = (song.composerName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return MusicLibrarySongEntry(
                 id: song.id.rawValue,
-                title: title.isEmpty ? "Unknown Song" : title,
-                artist: artist.isEmpty ? "Unknown Artist" : artist,
-                album: album.isEmpty ? "Unknown Album" : album,
-                genre: genre.isEmpty ? "Unknown Genre" : genre,
-                composer: composer.isEmpty ? "Unknown Composer" : composer,
+                title: title.isEmpty ? L("Unknown Song") : title,
+                artist: artist.isEmpty ? L("Unknown Artist") : artist,
+                album: album.isEmpty ? L("Unknown Album") : album,
+                genre: genre.isEmpty ? L("Unknown Genre") : genre,
+                composer: composer.isEmpty ? L("Unknown Composer") : composer,
                 durationSeconds: max(0, song.duration ?? 0),
                 trackNumber: song.trackNumber ?? 0,
                 discNumber: song.discNumber ?? 1,
@@ -3144,7 +3144,7 @@ extension MenuView {
                 throw NSError(
                     domain: "firstRowMusicLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Music library access not authorized"],
+                    userInfo: [NSLocalizedDescriptionKey: L("Music library access not authorized")],
                 )
             }
             guard #available(tvOS 16.0, *) else { return [] }
@@ -3174,7 +3174,7 @@ extension MenuView {
                     guard !songs.isEmpty else { continue }
                     entries.append(MusicCategoryEntry(
                         id: "playlist::tvos::\(playlist.id.rawValue)",
-                        title: self.normalizedMusicLibraryText(playlist.name, fallback: "Untitled Playlist"),
+                        title: self.normalizedMusicLibraryText(playlist.name, fallback: L("Untitled Playlist")),
                         songs: songs,
                         coverSongs: self.musicPlaylistCoverSongs(from: songs),
                     ))
@@ -3243,7 +3243,7 @@ extension MenuView {
                 self.isLoadingMusicSongs = false
                 self.musicSongsThirdMenuItems = []
                 self.selectedThirdIndex = 0
-                self.musicSongsLoadError = "Music library access denied"
+                self.musicSongsLoadError = L("Music library access denied")
                 self.refreshMusicPreviewForCurrentContext()
                 return
             }
@@ -3340,7 +3340,7 @@ extension MenuView {
                 self.isLoadingMusicSongs = false
                 self.musicCategoryThirdMenuItems = []
                 self.selectedThirdIndex = 0
-                self.musicSongsLoadError = "Music library access denied"
+                self.musicSongsLoadError = L("Music library access denied")
                 self.refreshMusicPreviewForCurrentContext()
                 return
             }
@@ -3450,7 +3450,7 @@ extension MenuView {
             deferNowPlayingMenuItemUntilAfterFadeOut = false
             musicSongsThirdMenuItems = []
             selectedThirdIndex = 0
-            musicSongsLoadError = "No Songs in Music Library"
+            musicSongsLoadError = L("No Songs in Music Library")
             return
         }
         musicSongsThirdMenuItems = shuffledSongs
@@ -3507,7 +3507,7 @@ extension MenuView {
                 self.isLoadingMusicSongs = false
                 self.musicSongsThirdMenuItems = []
                 self.selectedThirdIndex = 0
-                self.musicSongsLoadError = "Music library access denied"
+                self.musicSongsLoadError = L("Music library access denied")
                 return
             }
             #if canImport(iTunesLibrary)
@@ -3520,7 +3520,7 @@ extension MenuView {
                                 self.isLoadingMusicSongs = false
                                 self.musicSongsThirdMenuItems = []
                                 self.selectedThirdIndex = 0
-                                self.musicSongsLoadError = "No Songs in Music Library"
+                                self.musicSongsLoadError = L("No Songs in Music Library")
                             }
                             return
                         }
@@ -3545,7 +3545,7 @@ extension MenuView {
                             ) { seededQueue in
                                 guard self.activeMusicPlaybackSongID == seedSong.id else { return }
                                 self.musicSongsThirdMenuItems = seededQueue
-                                self.musicNowPlayingTrackPositionText = seededQueue.isEmpty ? "" : "1 of \(seededQueue.count)"
+                                self.musicNowPlayingTrackPositionText = seededQueue.isEmpty ? "" : L("%@ of %@", 1, seededQueue.count)
                                 self.refreshMusicPreviewForCurrentContext()
                             }
                         }
@@ -3627,10 +3627,10 @@ extension MenuView {
         #if os(tvOS) || os(iOS)
             let nsError = error as NSError
             if nsError.domain == "ICError", nsError.code == -7013 {
-                return "Music library access is unavailable for this build."
+                return L("Music library access is unavailable for this build.")
             }
         #endif
-        return "Unable to access Music library"
+        return L("Unable to access Music library")
     }
 
     func musicLibraryEmptyErrorKind(for mediaType: MusicLibraryMediaType) -> FeatureErrorKind {
@@ -3888,11 +3888,11 @@ extension MenuView {
         case playlists
         var emptyLibraryMessage: String {
             switch self {
-            case .albums: "No Albums in Music Library"
-            case .artists: "No Artists in Music Library"
-            case .genres: "No Genres in Music Library"
-            case .composers: "No Composers in Music Library"
-            case .playlists: "No Playlists in Music Library"
+            case .albums: L("No Albums in Music Library")
+            case .artists: L("No Artists in Music Library")
+            case .genres: L("No Genres in Music Library")
+            case .composers: L("No Composers in Music Library")
+            case .playlists: L("No Playlists in Music Library")
             }
         }
     }
@@ -3903,9 +3903,9 @@ extension MenuView {
         case audiobooks
         var emptyLibraryMessage: String {
             switch self {
-            case .songs: "No Songs in Music Library"
-            case .musicVideos: "No Music Videos in Music Library"
-            case .audiobooks: "No Audiobooks in Music Library"
+            case .songs: L("No Songs in Music Library")
+            case .musicVideos: L("No Music Videos in Music Library")
+            case .audiobooks: L("No Audiobooks in Music Library")
             }
         }
     }

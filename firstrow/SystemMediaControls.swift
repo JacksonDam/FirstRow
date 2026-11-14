@@ -175,7 +175,7 @@
                 if let series = item.seriesName, !series.isEmpty { return "\(series): \(name)" }
                 return name
             }
-            guard let url = currentMoviePlaybackURL else { return "Movie" }
+            guard let url = currentMoviePlaybackURL else { return L("Movie") }
             return url.deletingPathExtension().lastPathComponent
         }
 

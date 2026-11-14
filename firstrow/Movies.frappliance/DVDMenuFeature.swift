@@ -15,7 +15,7 @@ import Foundation
 /// DVD: an item that heads the main menu while there is a DVD to play, a disc in a drive or a
 /// picture of one opened as a disc, and plays it.
 struct DVDMenuFeature: MenuFeatureConfiguration {
-    let rootItem = RootMenuItemConfig(id: "dvd", title: "DVD", iconAssetName: "dvd", leadsToMenu: false, actionID: nil)
+    let rootItem = RootMenuItemConfig(id: "dvd", title: L("DVD"), iconAssetName: "dvd", leadsToMenu: false, actionID: nil)
     let submenuItems: [SubmenuItemConfig] = []
 }
 
@@ -406,8 +406,8 @@ extension MenuView {
                     if !self.openInSystemDVDPlayer(disc) {
                         self.playSound(named: "Limit")
                         self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
-                            "header": "This disc can't be played.",
-                            "subcaption": isProtected ? "It's protected against copying." : MenuView.whyMovieCouldNotBePlayed(disc.appendingPathComponent("VIDEO_TS.VOB")),
+                            "header": L("This disc can't be played."),
+                            "subcaption": isProtected ? L("It's protected against copying.") : MenuView.whyMovieCouldNotBePlayed(disc.appendingPathComponent("VIDEO_TS.VOB")),
                         ])
                     }
                     return
@@ -425,8 +425,8 @@ extension MenuView {
                     #endif
                     self.playSound(named: "Limit")
                     self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
-                        "header": "This disc can't be played.",
-                        "subcaption": "It's protected against copying.",
+                        "header": L("This disc can't be played."),
+                        "subcaption": L("It's protected against copying."),
                     ])
                     return
                 }

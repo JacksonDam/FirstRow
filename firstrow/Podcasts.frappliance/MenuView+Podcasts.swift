@@ -55,7 +55,7 @@ extension MenuView {
 
     func podcastTrackPositionText(trackIndex: Int, trackCount: Int) -> String {
         guard trackCount > 0, trackIndex >= 0, trackIndex < trackCount else { return "" }
-        return "\(trackIndex + 1) of \(trackCount)"
+        return L("%@ of %@", trackIndex + 1, trackCount)
     }
 
     func podcastTrackPositionText(forEpisodeID episodeID: String?, inSeriesID seriesID: String?) -> String {
@@ -109,7 +109,7 @@ extension MenuView {
         normalizedPodcastText(plainText)
             ?? strippedHTMLText(htmlText)
             ?? normalizedPodcastText(fallback)
-            ?? "No description available."
+            ?? L("No description available.")
     }
 
     nonisolated var podcastArtworkRequestSize: CGSize {
@@ -300,7 +300,7 @@ extension MenuView {
         guard isPodcastAudioNowPlaying else { return baseItems }
         return [.init(
             id: podcastsNowPlayingSubmenuItemID,
-            title: "Now Playing",
+            title: L("Now Playing"),
             actionID: podcastsNowPlayingSubmenuItemID,
             leadsToMenu: true,
         )] + baseItems
@@ -360,7 +360,7 @@ extension MenuView {
                 self.podcastEpisodesThirdMenuItems = []
                 self.activePodcastSeriesID = nil
                 self.podcastsHasLoadedAtLeastOnce = true
-                self.podcastsLoadError = "Podcasts library access denied"
+                self.podcastsLoadError = L("Podcasts library access denied")
                 guard !self.isInSubmenu, !self.isEnteringSubmenu else { return }
                 self.beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
                 return
@@ -421,7 +421,7 @@ extension MenuView {
                 self.podcastEpisodesThirdMenuItems = []
                 self.activePodcastSeriesID = nil
                 self.podcastsHasLoadedAtLeastOnce = true
-                self.podcastsLoadError = "Podcasts library access denied"
+                self.podcastsLoadError = L("Podcasts library access denied")
                 return
             }
             Task(priority: .userInitiated) {
@@ -467,9 +467,9 @@ extension MenuView {
     func podcastsLibraryErrorMessage(for error: Error) -> String {
         let nsError = error as NSError
         if nsError.domain == NSCocoaErrorDomain, nsError.code == NSUserCancelledError {
-            return "Podcasts library access denied"
+            return L("Podcasts library access denied")
         }
-        return "Unable to access Podcasts library"
+        return L("Unable to access Podcasts library")
     }
 
     func requestPodcastsLibraryAuthorization(_ completion: @escaping (Bool) -> Void) {
@@ -500,7 +500,7 @@ extension MenuView {
                 throw NSError(
                     domain: "firstRowPodcastsLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Podcasts library access not authorized"],
+                    userInfo: [NSLocalizedDescriptionKey: L("Podcasts library access not authorized")],
                 )
             }
             let collections = MPMediaQuery.podcasts().collections ?? []
@@ -511,9 +511,9 @@ extension MenuView {
                 guard !downloadedItems.isEmpty else { continue }
                 let seriesTitle = downloadedItems.lazy.compactMap { self.normalizedPodcastText($0.albumTitle) }.first
                     ?? normalizedPodcastText(downloadedItems.first?.artist)
-                    ?? "Unknown Podcast"
+                    ?? L("Unknown Podcast")
                 let seriesArtist = downloadedItems.lazy.compactMap { self.normalizedPodcastText($0.artist) }.first
-                    ?? "Unknown Artist"
+                    ?? L("Unknown Artist")
                 var seriesArtwork = downloadedItems.lazy.compactMap { $0.artwork?.image(at: self.podcastArtworkRequestSize) }.first
                 var episodes: [PodcastEpisodeEntry] = []
                 episodes.reserveCapacity(downloadedItems.count)
@@ -628,8 +628,8 @@ extension MenuView {
                     guard let mediaURL = item.location else { continue }
                     let seriesTitle = normalizedPodcastText(item.album.title)
                         ?? normalizedPodcastText(item.title)
-                        ?? "Unknown Podcast"
-                    let seriesArtist = normalizedPodcastText(item.artist?.name) ?? "Unknown Artist"
+                        ?? L("Unknown Podcast")
+                    let seriesArtist = normalizedPodcastText(item.artist?.name) ?? L("Unknown Artist")
                     let seriesKey = "\(seriesTitle.lowercased())::\(seriesArtist.lowercased())"
                     let seriesID = "mac::itunes::\(seriesKey)"
                     let episodeTitle = normalizedPodcastText(item.title)
@@ -677,8 +677,8 @@ extension MenuView {
                 seriesEntries.reserveCapacity(groupedEpisodes.count)
                 for (seriesKey, episodes) in groupedEpisodes {
                     guard !episodes.isEmpty else { continue }
-                    let title = groupedTitles[seriesKey] ?? "Unknown Podcast"
-                    let artist = groupedArtists[seriesKey] ?? "Unknown Artist"
+                    let title = groupedTitles[seriesKey] ?? L("Unknown Podcast")
+                    let artist = groupedArtists[seriesKey] ?? L("Unknown Artist")
                     let description = groupedDescriptions[seriesKey] ?? ""
                     let seriesArtwork = groupedArtwork[seriesKey]
                     let seriesID = "mac::itunes::\(seriesKey)"
@@ -1065,10 +1065,10 @@ extension MenuView {
                 }
                 let seriesTitle = rawSeriesTitle
                     ?? episodeAuthor
-                    ?? "Unknown Podcast"
+                    ?? L("Unknown Podcast")
                 let seriesArtist = rawSeriesAuthor
                     ?? episodeAuthor
-                    ?? "Unknown Artist"
+                    ?? L("Unknown Artist")
                 let seriesKey = podcastUUID ?? "\(seriesTitle.lowercased())::\(seriesArtist.lowercased())"
                 let seriesID = "mac::podcasts_app::\(seriesKey)"
                 let episodeTitle = rawEpisodeTitle
@@ -1128,8 +1128,8 @@ extension MenuView {
                 guard !episodes.isEmpty else { continue }
                 let seriesArtwork = groupedArtwork[seriesKey]
                 let seriesID = "mac::podcasts_app::\(seriesKey)"
-                let title = groupedTitles[seriesKey] ?? "Unknown Podcast"
-                let artist = groupedArtists[seriesKey] ?? "Unknown Artist"
+                let title = groupedTitles[seriesKey] ?? L("Unknown Podcast")
+                let artist = groupedArtists[seriesKey] ?? L("Unknown Artist")
                 let description = groupedDescriptions[seriesKey] ?? ""
                 let normalizedEpisodes = episodes.map { episode in
                     PodcastEpisodeEntry(
@@ -1198,7 +1198,7 @@ extension MenuView {
 
     func truncatedPodcastSeriesHeaderTitle(_ title: String) -> String {
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedTitle.isEmpty else { return "Podcasts" }
+        guard !normalizedTitle.isEmpty else { return L("Podcasts") }
         let maxWidth: CGFloat = 720
         #if FIRSTROW_PORTABLE
             func measuredWidth(_ value: String) -> CGFloat {
@@ -1235,7 +1235,7 @@ extension MenuView {
         guard let date else { return "--/--" }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "M/d"
+        formatter.dateFormat = AppLanguage.current == .german ? "d.M." : "M/d"
         return formatter.string(from: date)
     }
 

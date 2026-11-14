@@ -96,7 +96,7 @@
                     backing: .buffered,
                     defer: false,
                 )
-                panel.title = "Sign In to Spotify"
+                panel.title = L("Sign In to Spotify")
                 panel.isReleasedWhenClosed = false
                 panel.hidesOnDeactivate = false
                 panel.level = .modalPanel

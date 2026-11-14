@@ -69,7 +69,7 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
         guard let currentLookupID, !currentLookupID.isEmpty else { return }
         let resolvedTitle = currentMovieName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackTitle = currentFallbackTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = (resolvedTitle?.isEmpty == false ? resolvedTitle : fallbackTitle) ?? "Unknown Movie"
+        let title = (resolvedTitle?.isEmpty == false ? resolvedTitle : fallbackTitle) ?? L("Unknown Movie")
         let entryName = currentEntryName?.trimmingCharacters(in: .whitespacesAndNewlines)
         entries.append(
             ITunesTopMoviesFeedEntry(
@@ -228,12 +228,12 @@ extension MenuView {
     nonisolated func iTunesTopErrorMessage(for error: Error, label: String) -> String {
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCannotFindHost {
-            return "Unable to resolve \(label) host"
+            return L("Unable to resolve %@ host", label)
         }
         if nsError.domain == NSURLErrorDomain {
-            return "Unable to reach \(label)"
+            return L("Unable to reach %@", label)
         }
-        return "Unable to load \(label)"
+        return L("Unable to load %@", label)
     }
 
     private nonisolated func fetchData(from url: URL) async throws -> Data {
@@ -364,7 +364,7 @@ extension MenuView {
     nonisolated func fetchITunesTopMovies() async throws -> [ITunesTopMovieEntry] {
         try await mapITunesTopFeedEntries(from: iTunesTopMoviesFeedURLString) { entry in
             let normalizedSummary = normalizedITunesTopMovieSummary(entry.summary)
-                ?? "No description available."
+                ?? L("No description available.")
             return ITunesTopMovieEntry(
                 id: "itunes_top_movie_\(entry.lookupID)",
                 rank: entry.rank,
@@ -397,7 +397,7 @@ extension MenuView {
     nonisolated func fetchITunesTopTVEpisodes() async throws -> [ITunesTopTVEpisodeEntry] {
         try await mapITunesTopFeedEntries(from: iTunesTopTVEpisodesFeedURLString) { entry in
             let normalizedSummary = normalizedITunesTopMovieSummary(entry.summary)
-                ?? "No description available."
+                ?? L("No description available.")
             return ITunesTopTVEpisodeEntry(
                 id: "itunes_top_tv_episode_\(entry.lookupID)",
                 rank: entry.rank,
@@ -429,7 +429,7 @@ extension MenuView {
     nonisolated func fetchITunesTopMusicVideos() async throws -> [ITunesTopMusicVideoEntry] {
         try await mapITunesTopFeedEntries(from: iTunesTopMusicVideosFeedURLString) { entry in
             let normalizedSummary = normalizedITunesTopMovieSummary(entry.summary)
-                ?? "No description available."
+                ?? L("No description available.")
             return ITunesTopMusicVideoEntry(
                 id: "itunes_top_music_video_\(entry.lookupID)",
                 rank: entry.rank,
@@ -1186,19 +1186,19 @@ extension MenuView {
 
         var emptyLoadMessage: String {
             switch self {
-            case .movies: "No iTunes Top Movies Available"
-            case .tvEpisodes: "No iTunes Top TV Episodes Available"
-            case .songs: "No iTunes Top Songs Available"
-            case .musicVideos: "No iTunes Top Music Videos Available"
+            case .movies: L("No iTunes Top Movies Available")
+            case .tvEpisodes: L("No iTunes Top TV Episodes Available")
+            case .songs: L("No iTunes Top Songs Available")
+            case .musicVideos: L("No iTunes Top Music Videos Available")
             }
         }
 
         var errorLabel: String {
             switch self {
-            case .movies: "iTunes Top Movies"
-            case .tvEpisodes: "iTunes Top TV Episodes"
-            case .songs: "iTunes Top Songs"
-            case .musicVideos: "iTunes Top Music Videos"
+            case .movies: L("iTunes Top Movies")
+            case .tvEpisodes: L("iTunes Top TV Episodes")
+            case .songs: L("iTunes Top Songs")
+            case .musicVideos: L("iTunes Top Music Videos")
             }
         }
 

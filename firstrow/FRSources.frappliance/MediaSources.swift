@@ -16,9 +16,45 @@ final class MediaSources: @unchecked Sendable {
 
         var title: String {
             switch self {
-            case .movies: "Movies"
-            case .music: "Music"
-            case .photos: "Photos"
+            case .movies: L("Movies")
+            case .music: L("Music")
+            case .photos: L("Photos")
+            }
+        }
+
+        /// The heading of this kind's folders in Settings > Media Folders.
+        var foldersTitle: String {
+            switch self {
+            case .movies: L("Movies Folders")
+            case .music: L("Music Folders")
+            case .photos: L("Photos Folders")
+            }
+        }
+
+        /// What the system's chooser says when folders of this kind are asked for.
+        var chooseMessage: String {
+            switch self {
+            case .movies: L("Choose folders of movies for First Row.")
+            case .music: L("Choose folders of music for First Row.")
+            case .photos: L("Choose folders of photos for First Row.")
+            }
+        }
+
+        /// The same, asked for inside a cloud service's folder.
+        func chooseMessage(in service: String) -> String {
+            switch self {
+            case .movies: L("Choose folders of movies in %@ for First Row.", service)
+            case .music: L("Choose folders of music in %@ for First Row.", service)
+            case .photos: L("Choose folders of photos in %@ for First Row.", service)
+            }
+        }
+
+        /// What one of them is called when its own name can't be had.
+        var folderTitle: String {
+            switch self {
+            case .movies: L("Movies Folder")
+            case .music: L("Music Folder")
+            case .photos: L("Photos Folder")
             }
         }
     }
@@ -72,7 +108,7 @@ final class MediaSources: @unchecked Sendable {
                 }
                 entries.append(FolderEntry(url: url, displayPath: url.path))
             } else {
-                entries.append(FolderEntry(url: nil, displayPath: Self.storedPath(of: bookmark) ?? "Unavailable folder"))
+                entries.append(FolderEntry(url: nil, displayPath: Self.storedPath(of: bookmark) ?? L("Unavailable folder")))
             }
         }
         if refreshed {

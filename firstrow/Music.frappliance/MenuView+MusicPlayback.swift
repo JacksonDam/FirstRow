@@ -550,7 +550,7 @@ extension MenuView {
         musicAppleScriptCurrentTrackPersistentIDHex = nil
         musicAppleScriptDidHandleTrackBoundary = false
         let resolvedTrackCount = playbackQueue?.count ?? trackCount
-        musicNowPlayingTrackPositionText = resolvedTrackCount > 0 ? "\(trackIndex + 1) of \(resolvedTrackCount)" : ""
+        musicNowPlayingTrackPositionText = resolvedTrackCount > 0 ? L("%@ of %@", trackIndex + 1, resolvedTrackCount) : ""
         musicNowPlayingTitle = song.title
         musicNowPlayingArtist = song.artist
         musicNowPlayingAlbum = song.album
@@ -1287,8 +1287,8 @@ extension MenuView {
                 title: snapshot.title.isEmpty ? musicNowPlayingTitle : snapshot.title,
                 artist: snapshot.artist.isEmpty ? musicNowPlayingArtist : snapshot.artist,
                 album: snapshot.album.isEmpty ? musicNowPlayingAlbum : snapshot.album,
-                genre: "Unknown Genre",
-                composer: "Unknown Composer",
+                genre: L("Unknown Genre"),
+                composer: L("Unknown Composer"),
                 durationSeconds: max(0, snapshot.durationSeconds),
                 trackNumber: 0,
                 discNumber: 1,
@@ -1678,7 +1678,7 @@ extension MenuView {
                     self.musicNowPlayingElapsedSeconds = self.musicNowPlayingDurationSeconds
                     self.stopMusicScrubbing(showPauseGlyph: false)
                     self.musicNowPlayingLeadingGlyphState = nil
-                    if self.musicNowPlayingArtist == "iTunes Top Songs" {
+                    if self.musicNowPlayingArtist == L("iTunes Top Songs") {
                         if self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey {
                             self.dismissFullscreenScene(preserveMusicPlayback: false)
                         } else {
@@ -1762,7 +1762,7 @@ extension MenuView {
     private func nextMusicFileToQueue() -> (song: MusicLibrarySongEntry, url: URL)? {
         // (Only a list that was started as a list: a song played alone goes by the menu's
         // list at its end, which may be another by then.)
-        guard !isPodcastAudioNowPlaying, musicNowPlayingArtist != "iTunes Top Songs", !activeMusicPlaybackQueue.isEmpty,
+        guard !isPodcastAudioNowPlaying, musicNowPlayingArtist != L("iTunes Top Songs"), !activeMusicPlaybackQueue.isEmpty,
               let playingID = activeMusicPlaybackSongID,
               let index = activeMusicPlaybackQueue.firstIndex(where: { $0.id == playingID }),
               activeMusicPlaybackQueue.indices.contains(index + 1)
@@ -1932,7 +1932,7 @@ extension MenuView {
                 let usesLibrary = fromLibrary
                 func getReady() async -> Error? {
                     guard await SystemMusicPlayerCalls.run({ self.setMediaPlayerQueue(for: song, fromLibrary: usesLibrary) }) else {
-                        return NSError(domain: "firstRowMusicLibrary", code: 3, userInfo: [NSLocalizedDescriptionKey: "This song can't be played."])
+                        return NSError(domain: "firstRowMusicLibrary", code: 3, userInfo: [NSLocalizedDescriptionKey: L("This song can't be played.")])
                     }
                     return await SystemMusicPlayerCalls.prepareToPlay()
                 }
@@ -2439,7 +2439,7 @@ extension MenuView {
         if isPodcastAudioNowPlaying {
             return activePodcastPlaybackEpisodes().count > 1
         }
-        if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == "iTunes Top Songs" {
+        if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == L("iTunes Top Songs") {
             return false
         }
         return resolvedActiveMusicPlaybackQueue().count > 1
@@ -2542,7 +2542,7 @@ extension MenuView {
             }
             return
         }
-        if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == "iTunes Top Songs" {
+        if thirdMenuMode == .musicITunesTopSongs || musicNowPlayingArtist == L("iTunes Top Songs") {
             return
         }
         let playbackQueue = resolvedActiveMusicPlaybackQueue()
@@ -2619,8 +2619,8 @@ extension MenuView {
     }
 
     func clearMusicNowPlayingDisplayState() {
-        musicNowPlayingTitle = "Unknown Song"
-        musicNowPlayingArtist = "Unknown Artist"
+        musicNowPlayingTitle = L("Unknown Song")
+        musicNowPlayingArtist = L("Unknown Artist")
         musicNowPlayingAlbum = ""
         musicNowPlayingTrackPositionText = ""
         musicNowPlayingArtwork = nil

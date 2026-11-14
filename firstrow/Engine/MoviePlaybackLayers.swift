@@ -814,7 +814,7 @@ final class MovieResumePromptLayer {
         selection.layer.isHidden = menu.movieResumePromptSolidBlackSelected
         pressed.setFrame(CGRect(x: 12, y: selectedOffset, width: max(0, optionWidth - 12), height: optionHeight), slide)
         selection.update(frame: CGRect(x: visualXOffset, y: selectedOffset + visualYOffset, width: visualWidth, height: visualHeight), selectionBoxHeight: menu.selectionBoxHeight, animation: slide)
-        for (index, title) in ["Resume Playing", "Start from Beginning"].enumerated() {
+        for (index, title) in [L("Resume Playing"), L("Start from Beginning")].enumerated() {
             let isSelected = index == menu.movieResumePromptSelectedIndex
             let hidden = (menu.movieResumePromptSolidBlackSelected && isSelected) || (menu.movieResumePromptHideUnselected && !isSelected)
             let graphic = TextRenderer.render(TextSpec(text: title, fontName: firstRowBoldFontName, size: 45, maxWidth: optionWidth, minimumScaleFactor: 0.72), scale: scale)
@@ -928,7 +928,7 @@ final class MovieResumePromptLayer {
         let selected = menu.movieResumePromptSelectedIndex
         lastSelectedIndex = selected
         ModernMenuRowLayer.focusAnimation = .smooth(duration: ModernTheme.focusDuration)
-        for (index, title) in ["Resume Playing", "Start from Beginning"].enumerated() {
+        for (index, title) in [L("Resume Playing"), L("Start from Beginning")].enumerated() {
             let row = modernRows[index]
             row.layer.frame = CGRect(x: 0, y: CGFloat(index) * pitch, width: width, height: rowHeight)
             let item = MenuListItemConfig(

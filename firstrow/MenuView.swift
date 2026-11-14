@@ -650,8 +650,8 @@ final class MenuView: ObservableObject {
         var restoredMusicQueueTitle: String?
     #endif
     @Published var activeMusicPlaybackSongID: String?
-    @Published var musicNowPlayingTitle = "Unknown Song"
-    @Published var musicNowPlayingArtist = "Unknown Artist"
+    @Published var musicNowPlayingTitle = L("Unknown Song")
+    @Published var musicNowPlayingArtist = L("Unknown Artist")
     @Published var musicNowPlayingAlbum = ""
     @Published var musicNowPlayingTrackPositionText = ""
     @Published var musicNowPlayingArtwork: NSImage?

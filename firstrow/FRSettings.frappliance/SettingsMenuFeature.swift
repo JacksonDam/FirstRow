@@ -14,7 +14,7 @@ enum FirstRowVersion {
 }
 
 struct SettingsMenuFeature: MenuFeatureConfiguration {
-    let rootItem = RootMenuItemConfig(id: "settings", title: "Settings", iconAssetName: "settings")
+    let rootItem = RootMenuItemConfig(id: "settings", title: L("Settings"), iconAssetName: "settings")
     var submenuItems: [SubmenuItemConfig]
     init() {
         #if os(macOS)
@@ -25,16 +25,16 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
             let deviceName = UIDevice.current.name
         #endif
         submenuItems = [
-            .init(id: "settings_name", title: "Name", trailingText: deviceName),
-            .init(id: "settings_swversion", title: "SW Version", trailingText: FirstRowVersion.current),
-            .init(id: "settings_screensaver", title: "Screen Saver", leadsToMenu: true, trailingText: "1 Minute"),
-            .init(id: "settings_soundeffects", title: "Sound Effects", trailingText: "On"),
-            .init(id: "settings_theme", title: "Theme", trailingText: "Classic"),
-            .init(id: "settings_intromovie", title: "Intro Movie", trailingText: "On"),
-            .init(id: "settings_youtube", title: "YouTube", trailingText: "Off"),
+            .init(id: "settings_name", title: L("Name"), trailingText: deviceName),
+            .init(id: "settings_swversion", title: L("SW Version"), trailingText: FirstRowVersion.current),
+            .init(id: "settings_screensaver", title: L("Screen Saver"), leadsToMenu: true, trailingText: L("1 Minute")),
+            .init(id: "settings_soundeffects", title: L("Sound Effects"), trailingText: L("On")),
+            .init(id: "settings_theme", title: L("Theme"), trailingText: L("Classic")),
+            .init(id: "settings_intromovie", title: L("Intro Movie"), trailingText: L("On")),
+            .init(id: "settings_youtube", title: L("YouTube"), trailingText: L("Off")),
         ]
         #if os(macOS) || FIRSTROW_PORTABLE
-            submenuItems.append(.init(id: "settings_media_folders", title: "Media Folders", trailingText: "..."))
+            submenuItems.append(.init(id: "settings_media_folders", title: L("Media Folders"), trailingText: "..."))
         #endif
     }
 }

@@ -54,8 +54,8 @@ struct SharedFolderClient: MediaServerClient {
                 return (count, count > 0 ? String(cString: buffer) : "")
             }.value
             if count == -2 { throw MediaServerError.signInNeeded }
-            if count == -3 { throw MediaServerError.unsupported("Shared Folders Can't Be Read Here") }
-            if count == -4 { throw MediaServerError.unsupported("Windows Is Signed In There as Someone Else") }
+            if count == -3 { throw MediaServerError.unsupported(L("Shared Folders Can't Be Read Here")) }
+            if count == -4 { throw MediaServerError.unsupported(L("Windows Is Signed In There as Someone Else")) }
             if count < 0 { throw MediaServerError.unreachable }
             return text.split(separator: "\n").compactMap { line in
                 let parts = line.split(separator: "\t", maxSplits: 1)
@@ -89,7 +89,7 @@ struct SharedFolderClient: MediaServerClient {
             if let error = answer[MediaEngineKey.error] as? String {
                 if (answer[MediaEngineKey.needsSignIn] as? Bool) == true { throw MediaServerError.signInNeeded }
                 if (answer[MediaEngineKey.isUnreachable] as? Bool) == true { throw MediaServerError.unreachable }
-                throw MediaServerError.unsupported(error.count > 60 ? "Can't Open the Shared Folder" : error)
+                throw MediaServerError.unsupported(error.count > 60 ? L("Can't Open the Shared Folder") : error)
             }
             return answer
         }

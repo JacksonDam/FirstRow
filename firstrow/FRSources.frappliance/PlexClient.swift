@@ -116,7 +116,7 @@ struct PlexClient: MediaServerClient {
                 do {
                     root = try await client.container("/", timeout: 8)
                 } catch MediaServerError.signInNeeded {
-                    throw MediaServerError.unsupported("This Server Needs You to Sign In to Plex")
+                    throw MediaServerError.unsupported(L("This Server Needs You to Sign In to Plex"))
                 }
                 var address = candidate.absoluteString
                 while address.hasSuffix("/") { address.removeLast() }
@@ -137,7 +137,7 @@ struct PlexClient: MediaServerClient {
         async let playlists = container("/playlists", [("playlistType", "audio"), ("X-Plex-Container-Size", "1"), ("X-Plex-Container-Start", "0")])
         var items: [ServerItem] = []
         if let deck = try? await onDeck, !Self.entries(deck).isEmpty {
-            items.append(ServerItem(id: "plex:ondeck", kind: .folder, title: "Continue Watching", details: ["path": "/library/onDeck"]))
+            items.append(ServerItem(id: "plex:ondeck", kind: .folder, title: L("Continue Watching"), details: ["path": "/library/onDeck"]))
         }
         for section in try await Self.entries(sections) {
             guard let key = Self.text(section["key"]), let title = Self.text(section["title"]) else { continue }
@@ -153,7 +153,7 @@ struct PlexClient: MediaServerClient {
             items.append(item)
         }
         if let lists = try? await playlists, !Self.entries(lists).isEmpty {
-            items.append(ServerItem(id: "plex:playlists", kind: .folder, title: "Playlists", details: ["path": "/playlists", "playlists": "audio"]))
+            items.append(ServerItem(id: "plex:playlists", kind: .folder, title: L("Playlists"), details: ["path": "/playlists", "playlists": "audio"]))
         }
         return items
     }

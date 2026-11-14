@@ -4,7 +4,7 @@ import Foundation
 #endif
 
 struct SourcesMenuFeature: MenuFeatureConfiguration {
-    let rootItem = RootMenuItemConfig(id: "sources", title: "Sources", iconAssetName: "sources")
+    let rootItem = RootMenuItemConfig(id: "sources", title: L("Sources"), iconAssetName: "sources")
     let submenuItems: [SubmenuItemConfig]
     init() {
         #if os(macOS)

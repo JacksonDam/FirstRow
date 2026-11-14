@@ -38,7 +38,7 @@ extension MenuView {
             songsItems.insert(
                 plainMenuListItem(
                     id: musicSongsShuffleActionItemID,
-                    title: "Shuffle Songs",
+                    title: L("Shuffle Songs"),
                     trailingSymbolName: "shuffle",
                 ),
                 at: 0,
@@ -77,12 +77,12 @@ extension MenuView {
             items += tvShowsSubmenuItems()
         }
         if activeRootItemID == "movies", !MovieResumeStore.entries().isEmpty {
-            items.insert(SubmenuItemConfig(id: Self.continueWatchingItemID, title: "Continue Watching", leadsToMenu: true), at: 0)
+            items.insert(SubmenuItemConfig(id: Self.continueWatchingItemID, title: L("Continue Watching"), leadsToMenu: true), at: 0)
         }
         #if !os(tvOS)
             if activeRootItemID == "movies" {
                 // Where more movies come from: Dropbox, Google Drive and the like, and files.
-                items.append(SubmenuItemConfig(id: Self.importMoviesItemID, title: "Import...", leadsToMenu: true))
+                items.append(SubmenuItemConfig(id: Self.importMoviesItemID, title: L("Import..."), leadsToMenu: true))
             }
         #endif
         if activeRootItemID == "music",
@@ -91,7 +91,7 @@ extension MenuView {
             items.insert(
                 SubmenuItemConfig(
                     id: "music_now_playing",
-                    title: "Now Playing",
+                    title: L("Now Playing"),
                     actionID: "music_now_playing",
                     leadsToMenu: true,
                 ),
@@ -328,7 +328,7 @@ extension MenuView {
                 return [
                     menuMessageItem(
                         id: "podcasts_episodes_empty",
-                        title: "No Downloaded Episodes",
+                        title: L("No Downloaded Episodes"),
                     ),
                 ]
             }

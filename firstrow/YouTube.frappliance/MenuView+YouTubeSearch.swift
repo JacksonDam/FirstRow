@@ -18,8 +18,8 @@ enum YouTubeSearchKey: Equatable {
     func label(showsSymbols: Bool) -> String {
         switch self {
         case let .character(value): value
-        case .space: "Space"
-        case .delete: "Delete"
+        case .space: L("Space")
+        case .delete: L("Delete")
         case .symbols: showsSymbols ? "abc" : "#=+"
         }
     }
@@ -81,9 +81,9 @@ extension MenuView {
     /// What the search screen says over its field: how many videos there are so far.
     var youtubeSearchResultsText: String {
         guard let pad = youtubeSearchPad, !pad.text.trimmingCharacters(in: .whitespaces).isEmpty else { return "" }
-        if pad.isSearching { return "Searching..." }
+        if pad.isSearching { return L("Searching...") }
         let count = currentYouTubePage?.videos.count ?? 0
-        return count == 1 ? "1 Result" : "\(count) Results"
+        return count == 1 ? L("1 Result") : L("%@ Results", count)
     }
 
     func enterYouTubeSearchPad() {
@@ -98,7 +98,7 @@ extension MenuView {
             self.youtube.error = nil
             self.youtube.status = nil
             self.selectedThirdIndex = 0
-            self.headerText = "Search"
+            self.headerText = L("Search")
             self.clearYouTubePreview()
             self.submenuOpacity = 0
             self.thirdMenuOpacity = 1

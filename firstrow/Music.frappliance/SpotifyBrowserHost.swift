@@ -15,9 +15,9 @@
 
     func spotifyPageHostUnavailableReason() -> String {
         #if os(Windows)
-            "Spotify Needs Microsoft Edge or Google Chrome"
+            L("Spotify Needs Microsoft Edge or Google Chrome")
         #else
-            "Spotify Needs Google Chrome or Chromium"
+            L("Spotify Needs Google Chrome or Chromium")
         #endif
     }
 
@@ -291,7 +291,7 @@
             do {
                 try process.run()
             } catch {
-                failureHandler?("Spotify's browser could not start")
+                failureHandler?(L("Spotify's browser could not start"))
                 return
             }
             self.process = process
@@ -425,7 +425,7 @@
                 return
             }
             guard let opened else {
-                failureHandler?("Spotify's browser did not answer")
+                failureHandler?(L("Spotify's browser did not answer"))
                 return
             }
             let socket = opened.socket

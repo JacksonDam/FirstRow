@@ -43,12 +43,12 @@ enum JellyfinError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unreachable: "Can't Reach the Server"
-        case .notJellyfin: "Not a Jellyfin or Emby Server"
-        case let .badResponse(code): code == 401 ? "Signed Out by the Server" : "Server Error (\(code))"
-        case .signInFailed: "Wrong User Name or Password"
-        case .quickConnectDisabled: "Quick Connect Is Turned Off"
-        case .nothingPlayable: "Can't Play This"
+        case .unreachable: L("Can't Reach the Server")
+        case .notJellyfin: L("Not a Jellyfin or Emby Server")
+        case let .badResponse(code): code == 401 ? L("Signed Out by the Server") : L("Server Error (%@)", code)
+        case .signInFailed: L("Wrong User Name or Password")
+        case .quickConnectDisabled: L("Quick Connect Is Turned Off")
+        case .nothingPlayable: L("Can't Play This")
         }
     }
 }
@@ -225,7 +225,7 @@ struct JellyfinItem: Decodable, Equatable, Sendable {
 
     var title: String {
         let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Untitled" : trimmed
+        return trimmed.isEmpty ? L("Untitled") : trimmed
     }
 
     var durationSeconds: Double {

@@ -130,18 +130,18 @@
             let appItem = NSMenuItem()
             mainMenu.addItem(appItem)
             let appMenu = NSMenu(title: "First Row")
-            appMenu.addItem(withTitle: "About First Row", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+            appMenu.addItem(withTitle: L("About First Row"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
             appMenu.addItem(.separator())
-            let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
+            let settings = NSMenuItem(title: L("Settings…"), action: #selector(showSettings(_:)), keyEquivalent: ",")
             settings.target = self
             appMenu.addItem(settings)
             appMenu.addItem(.separator())
-            appMenu.addItem(withTitle: "Hide First Row", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-            let quitWithFade = NSMenuItem(title: "Quit First Row", action: #selector(requestQuit(_:)), keyEquivalent: "\u{1b}")
+            appMenu.addItem(withTitle: L("Hide First Row"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+            let quitWithFade = NSMenuItem(title: L("Quit First Row"), action: #selector(requestQuit(_:)), keyEquivalent: "\u{1b}")
             quitWithFade.keyEquivalentModifierMask = [.command]
             quitWithFade.target = self
             appMenu.addItem(quitWithFade)
-            appMenu.addItem(withTitle: "Quit Now", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            appMenu.addItem(withTitle: L("Quit Now"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
             appItem.submenu = appMenu
             return mainMenu
         }

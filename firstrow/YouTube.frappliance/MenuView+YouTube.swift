@@ -23,8 +23,8 @@ enum YouTubeMenuPage: Equatable {
         switch self {
         case let .list(list): list.title
         case let .search(query): query
-        case .history: "History"
-        case .related: "Related Videos"
+        case .history: L("History")
+        case .related: L("Related Videos")
         case let .playlist(playlist): playlist.title
         case let .channelPlaylists(_, name): name
         }
@@ -32,11 +32,11 @@ enum YouTubeMenuPage: Equatable {
 
     var emptyTitle: String {
         switch self {
-        case .search: "No Videos Found"
-        case .history: "Nothing Watched Yet"
-        case .channelPlaylists: "No Playlists"
-        case .playlist: "No Videos in This Playlist"
-        default: "No Videos"
+        case .search: L("No Videos Found")
+        case .history: L("Nothing Watched Yet")
+        case .channelPlaylists: L("No Playlists")
+        case .playlist: L("No Videos in This Playlist")
+        default: L("No Videos")
         }
     }
 }
@@ -121,8 +121,8 @@ extension MenuView {
         for list in [YouTubeList.music, .trailers, .gaming, .news, .sports, .live] {
             items.append(SubmenuItemConfig(id: "youtube_list_\(Self.youtubeListToken(list))", title: list.title, leadsToMenu: true))
         }
-        items.append(SubmenuItemConfig(id: "youtube_history", title: "History", leadsToMenu: true))
-        items.append(SubmenuItemConfig(id: "youtube_search", title: "Search", trailingText: "..."))
+        items.append(SubmenuItemConfig(id: "youtube_history", title: L("History"), leadsToMenu: true))
+        items.append(SubmenuItemConfig(id: "youtube_search", title: L("Search"), trailingText: "..."))
         return items
     }
 
@@ -247,7 +247,7 @@ extension MenuView {
         }
         // A channel's playlists have a row before its videos.
         if case .list(.channel) = state.page {
-            items.append(plainMenuListItem(id: Self.youtubeChannelPlaylistsRowID, title: "Playlists", leadsToMenu: true))
+            items.append(plainMenuListItem(id: Self.youtubeChannelPlaylistsRowID, title: L("Playlists"), leadsToMenu: true))
         }
         if state.videos.isEmpty, state.playlists.isEmpty, youtube.error == nil {
             return items + [menuMessageItem(id: "youtube_empty", title: state.page.emptyTitle)]
@@ -267,11 +267,11 @@ extension MenuView {
                 id: Self.youtubeVideoRowPrefix + String(index),
                 title: video.title,
                 leadingImage: youtube.rowPictures[video.id],
-                trailingText: video.isLive ? "Live" : video.durationText,
+                trailingText: video.isLive ? L("Live") : video.durationText,
             )
             item.media = MenuRowMedia(
                 byline: video.channel,
-                length: video.isLive ? "Live" : (video.durationText ?? ""),
+                length: video.isLive ? L("Live") : (video.durationText ?? ""),
                 count: video.viewsText ?? video.publishedText ?? "",
             )
             items.append(item)
@@ -654,7 +654,7 @@ extension MenuView {
     }
 
     private func askForYouTubeSearch() {
-        requestTextEntry(title: "Search YouTube", prompt: "Type what to look for.", isSearch: true) { [weak self] text in
+        requestTextEntry(title: L("Search YouTube"), prompt: L("Type what to look for."), isSearch: true) { [weak self] text in
             guard let self, let query = text?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty else { return }
             self.enterYouTube(.search(query))
         }
@@ -797,17 +797,17 @@ extension MenuView {
         guard let video, let image else { return items }
         let details = youtube.details[video.id]
         var lines: [MetadataPreviewSpec.Line] = []
-        if !video.channel.isEmpty { lines.append(.init(label: "From", value: video.channel)) }
-        if let added = details?.dateText ?? video.publishedText, !added.isEmpty { lines.append(.init(label: "Added", value: added)) }
+        if !video.channel.isEmpty { lines.append(.init(label: L("From"), value: video.channel)) }
+        if let added = details?.dateText ?? video.publishedText, !added.isEmpty { lines.append(.init(label: L("Added"), value: added)) }
         if video.isLive {
-            lines.append(.init(label: "Length", value: "Live"))
+            lines.append(.init(label: L("Length"), value: L("Live")))
         } else if let length = video.durationText, !length.isEmpty {
-            lines.append(.init(label: "Length", value: length))
+            lines.append(.init(label: L("Length"), value: length))
         }
         if let views = details?.viewsText ?? video.viewsText, !views.isEmpty {
-            lines.append(.init(label: "Views", value: Self.youtubeCountOnly(views)))
+            lines.append(.init(label: L("Views"), value: Self.youtubeCountOnly(views)))
         }
-        if let likes = details?.likesText, !likes.isEmpty { lines.append(.init(label: "Likes", value: likes)) }
+        if let likes = details?.likesText, !likes.isEmpty { lines.append(.init(label: L("Likes"), value: likes)) }
         let description = Self.youtubePreviewDescription(details?.description ?? video.summary)
         items.append(GapItemSpec(
             key: "youtube_metadata",

@@ -30,28 +30,28 @@ enum JellyfinList: Equatable {
 
     var title: String {
         switch self {
-        case .resume: "Continue Watching"
-        case .nextUp: "Next Up"
+        case .resume: L("Continue Watching")
+        case .nextUp: L("Next Up")
         case let .movies(_, title), let .shows(_, title), let .music(_, title), let .folder(_, title),
              let .seasons(_, title), let .episodes(_, _, title), let .albums(_, _, title):
             title
-        case .artists: "Artists"
-        case .playlists: "Playlists"
+        case .artists: L("Artists")
+        case .playlists: L("Playlists")
         }
     }
 
     var emptyTitle: String {
         switch self {
-        case .resume: "Nothing to Continue"
-        case .nextUp: "No Episodes Up Next"
-        case .movies: "No Movies"
-        case .shows: "No Shows"
-        case .music, .folder: "Nothing Here"
-        case .artists: "No Artists"
-        case .albums: "No Albums"
-        case .playlists: "No Playlists"
-        case .seasons: "No Seasons"
-        case .episodes: "No Episodes"
+        case .resume: L("Nothing to Continue")
+        case .nextUp: L("No Episodes Up Next")
+        case .movies: L("No Movies")
+        case .shows: L("No Shows")
+        case .music, .folder: L("Nothing Here")
+        case .artists: L("No Artists")
+        case .albums: L("No Albums")
+        case .playlists: L("No Playlists")
+        case .seasons: L("No Seasons")
+        case .episodes: L("No Episodes")
         }
     }
 }
@@ -129,7 +129,7 @@ extension MenuView {
         items += others
         items.append(SubmenuItemConfig(
             id: Self.addServerItemID,
-            title: "Add Server",
+            title: L("Add Server"),
             trailingText: "...",
             showsTopDivider: JellyfinStore.shared.servers.isEmpty && others.isEmpty,
         ))
@@ -186,35 +186,35 @@ extension MenuView {
                 items.append(plainMenuListItem(id: "jellyfin_found_\(index)", title: server.name, trailingText: "..."))
             }
             if jellyfin.isDiscovering, jellyfin.discovered.isEmpty, jellyfin.status == nil {
-                items.append(menuMessageItem(id: "jellyfin_searching", title: "Looking for Servers..."))
+                items.append(menuMessageItem(id: "jellyfin_searching", title: L("Looking for Servers...")))
             } else if !jellyfin.isDiscovering {
-                items.append(plainMenuListItem(id: "jellyfin_search_again", title: jellyfin.discovered.isEmpty ? "No Servers Found: Look Again" : "Look Again", showsTopDivider: !jellyfin.discovered.isEmpty))
+                items.append(plainMenuListItem(id: "jellyfin_search_again", title: jellyfin.discovered.isEmpty ? L("No Servers Found: Look Again") : L("Look Again"), showsTopDivider: !jellyfin.discovered.isEmpty))
             }
-            items.append(plainMenuListItem(id: "jellyfin_enter_address", title: "Enter Address", trailingText: "...", showsTopDivider: jellyfin.isDiscovering && !jellyfin.discovered.isEmpty))
+            items.append(plainMenuListItem(id: "jellyfin_enter_address", title: L("Enter Address"), trailingText: "...", showsTopDivider: jellyfin.isDiscovering && !jellyfin.discovered.isEmpty))
         case let .signIn(info):
             if !info.isEmby {
-                items.append(plainMenuListItem(id: "jellyfin_quick_connect", title: "Quick Connect", trailingText: "..."))
+                items.append(plainMenuListItem(id: "jellyfin_quick_connect", title: L("Quick Connect"), trailingText: "..."))
             }
-            items.append(plainMenuListItem(id: "jellyfin_password", title: "User Name and Password", trailingText: "..."))
+            items.append(plainMenuListItem(id: "jellyfin_password", title: L("User Name and Password"), trailingText: "..."))
         case .home:
             guard state.isLoaded else { return items }
             if state.hasResume {
-                items.append(plainMenuListItem(id: "jellyfin_resume", title: "Continue Watching", leadsToMenu: true))
+                items.append(plainMenuListItem(id: "jellyfin_resume", title: L("Continue Watching"), leadsToMenu: true))
             }
             if state.hasNextUp {
-                items.append(plainMenuListItem(id: "jellyfin_next_up", title: "Next Up", leadsToMenu: true))
+                items.append(plainMenuListItem(id: "jellyfin_next_up", title: L("Next Up"), leadsToMenu: true))
             }
             for (index, view) in state.items.enumerated() {
                 items.append(plainMenuListItem(id: "jellyfin_view_\(index)", title: view.title, leadsToMenu: true, showsTopDivider: index == 0 && (state.hasResume || state.hasNextUp)))
             }
-            items.append(plainMenuListItem(id: "jellyfin_sign_out", title: "Sign Out", showsTopDivider: true))
+            items.append(plainMenuListItem(id: "jellyfin_sign_out", title: L("Sign Out"), showsTopDivider: true))
         case let .list(_, list):
             if case .music = list {
                 return items + [
-                    plainMenuListItem(id: "jellyfin_music_artists", title: "Artists", leadsToMenu: true),
-                    plainMenuListItem(id: "jellyfin_music_albums", title: "Albums", leadsToMenu: true),
-                    plainMenuListItem(id: "jellyfin_music_songs", title: "Songs", leadsToMenu: true),
-                    plainMenuListItem(id: "jellyfin_music_playlists", title: "Playlists", leadsToMenu: true),
+                    plainMenuListItem(id: "jellyfin_music_artists", title: L("Artists"), leadsToMenu: true),
+                    plainMenuListItem(id: "jellyfin_music_albums", title: L("Albums"), leadsToMenu: true),
+                    plainMenuListItem(id: "jellyfin_music_songs", title: L("Songs"), leadsToMenu: true),
+                    plainMenuListItem(id: "jellyfin_music_playlists", title: L("Playlists"), leadsToMenu: true),
                 ]
             }
             guard state.isLoaded else { return items }
@@ -276,9 +276,9 @@ extension MenuView {
     func jellyfinTitle(for page: JellyfinPage) -> String {
         switch page {
         case .addServer:
-            return "Add Server"
+            return L("Add Server")
         case let .signIn(info):
-            return truncatedHeaderTitle(info.name, fallback: "Sign In")
+            return truncatedHeaderTitle(info.name, fallback: L("Sign In"))
         case let .home(key):
             return truncatedHeaderTitle(JellyfinStore.shared.server(withKey: key)?.serverName ?? "Jellyfin", fallback: "Jellyfin")
         case let .list(_, list):
@@ -611,10 +611,10 @@ extension MenuView {
             if case let .music(libraryID, _) = list {
                 switch id {
                 case "jellyfin_music_artists": pushJellyfinPage(.list(serverKey: key, .artists(libraryID: libraryID)))
-                case "jellyfin_music_albums": pushJellyfinPage(.list(serverKey: key, .albums(libraryID: libraryID, artistID: nil, title: "Albums")))
+                case "jellyfin_music_albums": pushJellyfinPage(.list(serverKey: key, .albums(libraryID: libraryID, artistID: nil, title: L("Albums"))))
                 case "jellyfin_music_playlists": pushJellyfinPage(.list(serverKey: key, .playlists))
                 case "jellyfin_music_songs":
-                    openJellyfinSongs(title: "Songs", serverKey: key) { client in
+                    openJellyfinSongs(title: L("Songs"), serverKey: key) { client in
                         try await client.children(of: libraryID, types: "Audio", recursive: true, sortBy: "AlbumArtist,Album,ParentIndexNumber,IndexNumber,SortName")
                     }
                 default: playLimitSoundOnceForCurrentHold()
@@ -689,7 +689,7 @@ extension MenuView {
         transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMusicSongs }) {
             self.prepareMusicLibraryThirdMenu(
                 mode: .musicSongs,
-                title: self.truncatedHeaderTitle(title, fallback: "Songs"),
+                title: self.truncatedHeaderTitle(title, fallback: L("Songs")),
                 categoryKind: nil,
                 categoryTitle: "",
                 shuffleMode: false,
@@ -704,7 +704,7 @@ extension MenuView {
                     guard self.jellyfin.requestID == requestID, self.thirdMenuMode == .musicSongs else { return }
                     let songs = self.jellyfinSongEntries(items, client: client, serverKey: key)
                     self.musicSongsThirdMenuItems = songs
-                    self.musicSongsLoadError = songs.isEmpty ? "No Songs" : nil
+                    self.musicSongsLoadError = songs.isEmpty ? L("No Songs") : nil
                 } catch {
                     guard self.jellyfin.requestID == requestID, self.thirdMenuMode == .musicSongs else { return }
                     self.musicSongsLoadError = error.localizedDescription
@@ -758,8 +758,8 @@ extension MenuView {
 
     private func askForJellyfinAddress() {
         requestTextEntry(
-            title: "Server Address",
-            prompt: "Type the Jellyfin or Emby server's address, like 192.168.1.20 or media.example.com.",
+            title: L("Server Address"),
+            prompt: L("Type the Jellyfin or Emby server's address, like 192.168.1.20 or media.example.com."),
         ) { [weak self] text in
             guard let self, let text, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
             self.connectToJellyfinServer(typedOrFound: text, knownInfo: nil)
@@ -770,7 +770,7 @@ extension MenuView {
     private func connectToJellyfinServer(typedOrFound address: String, knownInfo: JellyfinServerInfo?) {
         let candidates = JellyfinClient.candidateURLs(for: address)
         guard !candidates.isEmpty else { return }
-        showJellyfinMessage(status: "Connecting...")
+        showJellyfinMessage(status: L("Connecting..."))
         let requestID = jellyfin.requestID
         Task { @MainActor in
             var found: JellyfinServerInfo?
@@ -779,7 +779,7 @@ extension MenuView {
                 if let info = try? await client.publicInfo(), let id = info.id {
                     var urlText = url.absoluteString
                     while urlText.hasSuffix("/") { urlText.removeLast() }
-                    found = JellyfinServerInfo(id: id, name: info.serverName ?? knownInfo?.name ?? url.host ?? "Server", url: urlText, isEmby: info.isEmby)
+                    found = JellyfinServerInfo(id: id, name: info.serverName ?? knownInfo?.name ?? url.host ?? L("Server"), url: urlText, isEmby: info.isEmby)
                     break
                 }
             }
@@ -795,9 +795,9 @@ extension MenuView {
     }
 
     private func askForJellyfinCredentials(_ info: JellyfinServerInfo) {
-        requestTextEntry(title: "User Name", prompt: "Sign in to \(info.name).") { [weak self] user in
+        requestTextEntry(title: L("User Name"), prompt: L("Sign in to %@.", info.name)) { [weak self] user in
             guard let self, let user, !user.isEmpty else { return }
-            self.requestTextEntry(title: "Password", prompt: "Enter the password for \(user).", isSecure: true) { [weak self] password in
+            self.requestTextEntry(title: L("Password"), prompt: L("Enter the password for %@.", user), isSecure: true) { [weak self] password in
                 guard let self, let password else { return }
                 self.signInToJellyfin(info, user: user, password: password)
             }
@@ -806,7 +806,7 @@ extension MenuView {
 
     private func signInToJellyfin(_ info: JellyfinServerInfo, user: String, password: String) {
         guard let url = URL(string: info.url) else { return }
-        showJellyfinMessage(status: "Signing In...")
+        showJellyfinMessage(status: L("Signing In..."))
         let requestID = jellyfin.requestID
         Task { @MainActor in
             let client = JellyfinClient(baseURL: url)
@@ -846,10 +846,10 @@ extension MenuView {
             }
             guard self.jellyfin.quickConnectRequestID == requestID else { return }
             self.presentCodeDisplay(CodeDisplayState(
-                title: "Quick Connect",
-                message: "On a device signed in to \(info.name), open Quick Connect in your profile and enter this code.",
+                title: L("Quick Connect"),
+                message: L("On a device signed in to %@, open Quick Connect in your profile and enter this code.", info.name),
                 code: start.code,
-                status: "Waiting for approval...",
+                status: L("Waiting for approval..."),
             )) {
                 self.jellyfin.quickConnectRequestID &+= 1
             }
@@ -860,7 +860,7 @@ extension MenuView {
                 guard let state = try? await client.quickConnectState(secret: start.secret) else { continue }
                 guard self.jellyfin.quickConnectRequestID == requestID else { return }
                 if state.authenticated {
-                    self.updateCodeDisplayStatus("Signing In...")
+                    self.updateCodeDisplayStatus(L("Signing In..."))
                     do {
                         let result = try await client.authenticate(quickConnectSecret: start.secret)
                         guard self.jellyfin.quickConnectRequestID == requestID else { return }
@@ -877,7 +877,7 @@ extension MenuView {
             }
             guard self.jellyfin.quickConnectRequestID == requestID else { return }
             self.dismissCodeDisplay()
-            self.showJellyfinMessage(error: "The Code Ran Out")
+            self.showJellyfinMessage(error: L("The Code Ran Out"))
         }
     }
 
@@ -1012,22 +1012,22 @@ extension MenuView {
         var lines: [MetadataPreviewSpec.Line] = []
         switch item.type ?? "" {
         case "Episode":
-            if let label = item.episodeLabel { lines.append(.init(label: "Episode", value: label)) }
-            if item.overview == nil { lines.append(.init(label: "Title", value: item.title)) }
+            if let label = item.episodeLabel { lines.append(.init(label: L("Episode"), value: label)) }
+            if item.overview == nil { lines.append(.init(label: L("Title"), value: item.title)) }
         case "MusicAlbum":
-            if let artist = item.albumArtist { lines.append(.init(label: "Artist", value: artist)) }
+            if let artist = item.albumArtist { lines.append(.init(label: L("Artist"), value: artist)) }
         case "Series":
-            if let count = item.childCount { lines.append(.init(label: "Seasons", value: "\(count)")) }
+            if let count = item.childCount { lines.append(.init(label: L("Seasons"), value: "\(count)")) }
         default:
             break
         }
-        if let year = item.productionYear { lines.append(.init(label: "Year", value: "\(year)")) }
+        if let year = item.productionYear { lines.append(.init(label: L("Year"), value: "\(year)")) }
         if item.durationSeconds > 0, item.isVideo {
-            lines.append(.init(label: "Length", value: formatfirstRowPlaybackTime(item.durationSeconds)))
+            lines.append(.init(label: L("Length"), value: formatfirstRowPlaybackTime(item.durationSeconds)))
         }
-        if let rating = item.officialRating, !rating.isEmpty { lines.append(.init(label: "Rated", value: rating)) }
+        if let rating = item.officialRating, !rating.isEmpty { lines.append(.init(label: L("Rated"), value: rating)) }
         if item.resumeSeconds > 1, item.isVideo {
-            lines.append(.init(label: "Stopped At", value: formatfirstRowPlaybackTime(item.resumeSeconds)))
+            lines.append(.init(label: L("Stopped At"), value: formatfirstRowPlaybackTime(item.resumeSeconds)))
         }
         return lines
     }

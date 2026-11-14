@@ -796,7 +796,7 @@ enum TVShowsSortPillRenderer {
             context.strokePath()
 
             // Labels (Core Text draws with y up, so flip back around each one).
-            for (index, label) in ["Date", "Show"].enumerated() {
+            for (index, label) in [L("Date"), L("Show")].enumerated() {
                 let selected = (index == 0) == usesDate
                 let font = FontMetrics.font("Lucida Grande", size: 20)
                 let line = CTLineCreateWithAttributedString(FontMetrics.attributed(label, font: font, color: selected ? .white : RGBA(white: 1, alpha: 0.56)))
@@ -837,7 +837,7 @@ enum TVShowsSortPillRenderer {
             context.addPath(CGPath(roundedRect: chosen, cornerWidth: chosen.height * 0.5, cornerHeight: chosen.height * 0.5, transform: nil))
             context.setFillColor(ModernTheme.focusFill.cgColor)
             context.fillPath()
-            for (index, label) in ["Date", "Show"].enumerated() {
+            for (index, label) in [L("Date"), L("Show")].enumerated() {
                 let selected = (index == 0) == usesDate
                 let font = FontMetrics.font(ModernTheme.mediumFontName, size: 26)
                 let line = CTLineCreateWithAttributedString(FontMetrics.attributed(label, font: font, color: selected ? ModernTheme.focusedText : ModernTheme.text))

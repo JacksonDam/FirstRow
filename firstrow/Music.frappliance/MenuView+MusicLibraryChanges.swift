@@ -403,7 +403,7 @@ extension MenuView {
         // (What follows the song playing may be another song now: see `queueNextMusicFile`.)
         queueNextMusicFile()
         if let row = queue.firstIndex(where: { $0.id == playingID }) {
-            musicNowPlayingTrackPositionText = "\(row + 1) of \(queue.count)"
+            musicNowPlayingTrackPositionText = L("%@ of %@", row + 1, queue.count)
             prefetchMusicArtworkAroundTrackIndex(row, activeSongID: playingID)
         }
         #if os(macOS)

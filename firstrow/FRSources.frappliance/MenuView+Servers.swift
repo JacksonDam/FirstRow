@@ -176,26 +176,26 @@ extension MenuView {
         switch state.page {
         case .add:
             for (index, server) in servers.found.enumerated() {
-                let kind = server.details["jellyfin"] != nil ? "Jellyfin or Emby" : server.kind == .upnp ? "UPnP" : server.kind.title
+                let kind = server.details["jellyfin"] != nil ? L("Jellyfin or Emby") : server.kind == .upnp ? "UPnP" : server.kind.title
                 items.append(plainMenuListItem(id: "server_found_\(index)", title: server.name, trailingText: kind))
             }
             if servers.isLooking, servers.found.isEmpty, servers.status == nil {
-                items.append(menuMessageItem(id: "server_looking", title: "Looking for Servers..."))
+                items.append(menuMessageItem(id: "server_looking", title: L("Looking for Servers...")))
             }
-            items.append(plainMenuListItem(id: "server_kind_jellyfin", title: "Jellyfin or Emby", trailingText: "...", showsTopDivider: !items.isEmpty))
+            items.append(plainMenuListItem(id: "server_kind_jellyfin", title: L("Jellyfin or Emby"), trailingText: "...", showsTopDivider: !items.isEmpty))
             for kind in MediaServerClients.kinds {
                 items.append(plainMenuListItem(id: "server_kind_\(kind.rawValue)", title: kind.title, trailingText: "..."))
             }
             if !servers.isLooking {
-                items.append(plainMenuListItem(id: "server_look_again", title: "Look Again", showsTopDivider: true))
+                items.append(plainMenuListItem(id: "server_look_again", title: L("Look Again"), showsTopDivider: true))
             }
         case .plex:
-            items.append(plainMenuListItem(id: "server_plex_sign_in", title: "Sign In to Plex", trailingText: "..."))
-            items.append(plainMenuListItem(id: "server_plex_address", title: "Enter the Server's Address", trailingText: "..."))
+            items.append(plainMenuListItem(id: "server_plex_sign_in", title: L("Sign In to Plex"), trailingText: "..."))
+            items.append(plainMenuListItem(id: "server_plex_address", title: L("Enter the Server's Address"), trailingText: "..."))
         case .top, .list:
             guard state.isLoaded else { return items }
             if state.items.isEmpty, servers.error == nil {
-                items.append(menuMessageItem(id: "server_empty", title: "Nothing Here"))
+                items.append(menuMessageItem(id: "server_empty", title: L("Nothing Here")))
             }
             for (index, item) in state.items.enumerated() {
                 items.append(plainMenuListItem(
@@ -207,7 +207,7 @@ extension MenuView {
                 ))
             }
             if case .top = state.page {
-                items.append(plainMenuListItem(id: "server_remove", title: "Remove This Server", showsTopDivider: true))
+                items.append(plainMenuListItem(id: "server_remove", title: L("Remove This Server"), showsTopDivider: true))
             }
         }
         return items
@@ -234,13 +234,13 @@ extension MenuView {
     func serverTitle(for page: ServerPage) -> String {
         switch page {
         case .add:
-            return "Add Server"
+            return L("Add Server")
         case .plex:
             return "Plex"
         case let .top(id):
-            return truncatedHeaderTitle(MediaServerStore.shared.server(withID: id)?.name ?? "Server", fallback: "Server")
+            return truncatedHeaderTitle(MediaServerStore.shared.server(withID: id)?.name ?? L("Server"), fallback: L("Server"))
         case let .list(_, item):
-            return truncatedHeaderTitle(item.title, fallback: "Server")
+            return truncatedHeaderTitle(item.title, fallback: L("Server"))
         }
     }
 
@@ -577,7 +577,7 @@ extension MenuView {
         guard let client = serverClient(withID: serverID) else { return }
         servers.requestID &+= 1
         let requestID = servers.requestID
-        showServerMessage(status: "Opening...")
+        showServerMessage(status: L("Opening..."))
         Task { @MainActor in
             do {
                 let found = try await client.children(of: item)
@@ -596,7 +596,7 @@ extension MenuView {
                 self.transitionMenuForFolderSwap {
                     self.prepareMusicLibraryThirdMenu(
                         mode: .musicSongs,
-                        title: self.truncatedHeaderTitle(item.title, fallback: "Songs"),
+                        title: self.truncatedHeaderTitle(item.title, fallback: L("Songs")),
                         categoryKind: nil,
                         categoryTitle: "",
                         shuffleMode: false,
@@ -643,12 +643,12 @@ extension MenuView {
 
     private func askForServerAddress(_ kind: MediaServerKind) {
         let prompt = switch kind {
-        case .plex: "Type the Plex server's address, like 192.168.1.20."
-        case .kodi: "Type the address of the computer running Kodi, like 192.168.1.20. Kodi's remote control over HTTP has to be turned on in its settings."
-        case .upnp: "Type the media server's address, like 192.168.1.20."
-        case .sharedFolder: "Type the name or address of the computer or network drive, like nas.local or 192.168.1.20."
+        case .plex: L("Type the Plex server's address, like 192.168.1.20.")
+        case .kodi: L("Type the address of the computer running Kodi, like 192.168.1.20. Kodi's remote control over HTTP has to be turned on in its settings.")
+        case .upnp: L("Type the media server's address, like 192.168.1.20.")
+        case .sharedFolder: L("Type the name or address of the computer or network drive, like nas.local or 192.168.1.20.")
         }
-        requestTextEntry(title: kind == .sharedFolder ? "Computer or Drive" : "Server Address", prompt: prompt) { [weak self] text in
+        requestTextEntry(title: kind == .sharedFolder ? L("Computer or Drive") : L("Server Address"), prompt: prompt) { [weak self] text in
             guard let self, let text, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
             self.connectToServer(kind, typed: text, user: nil, password: nil)
         }
@@ -657,7 +657,7 @@ extension MenuView {
     /// Finds the server at an address, asking for a name and password if it wants them.
     /// (`isMac`: it was found on the network, and says it is a Mac.)
     private func connectToServer(_ kind: MediaServerKind, typed: String, user: String?, password: String?, isMac: Bool = false) {
-        showServerMessage(status: "Connecting...")
+        showServerMessage(status: L("Connecting..."))
         let requestID = servers.requestID
         Task { @MainActor in
             do {
@@ -680,9 +680,9 @@ extension MenuView {
     }
 
     private func askForServerSignIn(_ kind: MediaServerKind, typed: String, isMac: Bool = false) {
-        requestTextEntry(title: "User Name", prompt: Self.signInPrompt(for: typed, isMac: isMac)) { [weak self] user in
+        requestTextEntry(title: L("User Name"), prompt: Self.signInPrompt(for: typed, isMac: isMac)) { [weak self] user in
             guard let self, let user, !user.isEmpty else { return }
-            self.requestTextEntry(title: "Password", prompt: "Enter the password for \(user).", isSecure: true) { [weak self] password in
+            self.requestTextEntry(title: L("Password"), prompt: L("Enter the password for %@.", user), isSecure: true) { [weak self] password in
                 guard let self, let password else { return }
                 self.connectToServer(kind, typed: typed, user: user, password: password, isMac: isMac)
             }
@@ -697,16 +697,16 @@ extension MenuView {
     private static func signInPrompt(for name: String, isMac: Bool) -> String {
         #if os(tvOS)
             if isMac {
-                return "Sign in to \(name). A Mac wants Windows File Sharing turned on for the account first: System Settings, General, Sharing, File Sharing, Options."
+                return L("Sign in to %@. A Mac wants Windows File Sharing turned on for the account first: System Settings, General, Sharing, File Sharing, Options.", name)
             }
         #endif
-        return "Sign in to \(name)."
+        return L("Sign in to %@.", name)
     }
 
     /// Signs in to Plex with a code shown here and typed at plex.tv/link, then keeps every
     /// server the account can use.
     private func signInToPlex() {
-        showServerMessage(status: "Asking Plex for a Code...")
+        showServerMessage(status: L("Asking Plex for a Code..."))
         servers.requestID &+= 1
         let requestID = servers.requestID
         let caller = PlexCaller.current
@@ -716,17 +716,17 @@ extension MenuView {
                 code = try await PlexAccount.requestCode(caller: caller)
             } catch {
                 guard self.servers.requestID == requestID else { return }
-                self.showServerMessage(error: "Can't Reach Plex")
+                self.showServerMessage(error: L("Can't Reach Plex"))
                 self.playSound(named: "Limit")
                 return
             }
             guard self.servers.requestID == requestID, self.thirdMenuMode == .server else { return }
             self.showServerMessage()
             self.presentCodeDisplay(CodeDisplayState(
-                title: "Sign In to Plex",
-                message: "On a phone or computer, go to plex.tv/link, sign in and enter this code.",
+                title: L("Sign In to Plex"),
+                message: L("On a phone or computer, go to plex.tv/link, sign in and enter this code."),
                 code: code.code,
-                status: "Waiting for the code...",
+                status: L("Waiting for the code..."),
             )) {
                 self.servers.requestID &+= 1
             }
@@ -736,12 +736,12 @@ extension MenuView {
                 guard self.servers.requestID == requestID else { return }
                 guard let token = await PlexAccount.token(for: code, caller: caller) else { continue }
                 guard self.servers.requestID == requestID else { return }
-                self.updateCodeDisplayStatus("Finding Your Servers...")
+                self.updateCodeDisplayStatus(L("Finding Your Servers..."))
                 let found = (try? await PlexAccount.servers(token: token, caller: caller)) ?? []
                 guard self.servers.requestID == requestID else { return }
                 self.dismissCodeDisplay()
                 guard !found.isEmpty else {
-                    self.showServerMessage(error: "No Plex Servers Could Be Reached")
+                    self.showServerMessage(error: L("No Plex Servers Could Be Reached"))
                     self.playSound(named: "Limit")
                     return
                 }
@@ -757,15 +757,15 @@ extension MenuView {
             }
             guard self.servers.requestID == requestID else { return }
             self.dismissCodeDisplay()
-            self.showServerMessage(error: "The Code Ran Out")
+            self.showServerMessage(error: L("The Code Ran Out"))
         }
     }
 
     /// Asks who to sign in to a server as, keeps the answer with the server and looks again.
     private func askForSignIn(to record: MediaServerRecord) {
-        requestTextEntry(title: "User Name", prompt: Self.signInPrompt(for: record.name, isMac: record.details?["mac"] != nil), initialText: record.user ?? "") { [weak self] user in
+        requestTextEntry(title: L("User Name"), prompt: Self.signInPrompt(for: record.name, isMac: record.details?["mac"] != nil), initialText: record.user ?? "") { [weak self] user in
             guard let self, let user, !user.isEmpty else { return }
-            self.requestTextEntry(title: "Password", prompt: "Enter the password for \(user).", isSecure: true) { [weak self] password in
+            self.requestTextEntry(title: L("Password"), prompt: L("Enter the password for %@.", user), isSecure: true) { [weak self] password in
                 guard let self, let password else { return }
                 var signedIn = record
                 signedIn.user = user
@@ -835,8 +835,8 @@ extension MenuView {
                 self.playSound(named: "Limit")
                 let unreachable = (error as? MediaServerError).map { if case .unreachable = $0 { true } else { false } } ?? false
                 self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
-                    "header": "This video can't be played.",
-                    "subcaption": unreachable ? "The server can't be reached." : "The server gave nothing to play.",
+                    "header": L("This video can't be played."),
+                    "subcaption": unreachable ? L("The server can't be reached.") : L("The server gave nothing to play."),
                 ])
                 return
             }
@@ -972,11 +972,11 @@ extension MenuView {
         guard let item, let image else { return items }
         let isSquare = [.album, .artist, .playlist, .song].contains(item.kind)
         var lines: [MetadataPreviewSpec.Line] = []
-        if let artist = item.artist, !artist.isEmpty, isSquare { lines.append(.init(label: "Artist", value: artist)) }
-        if let year = item.year { lines.append(.init(label: "Year", value: "\(year)")) }
-        if item.durationSeconds > 0, item.isVideo { lines.append(.init(label: "Length", value: formatfirstRowPlaybackTime(item.durationSeconds))) }
-        if let rating = item.rating, !rating.isEmpty { lines.append(.init(label: "Rated", value: rating)) }
-        if item.resumeSeconds > 1, item.isVideo { lines.append(.init(label: "Stopped At", value: formatfirstRowPlaybackTime(item.resumeSeconds))) }
+        if let artist = item.artist, !artist.isEmpty, isSquare { lines.append(.init(label: L("Artist"), value: artist)) }
+        if let year = item.year { lines.append(.init(label: L("Year"), value: "\(year)")) }
+        if item.durationSeconds > 0, item.isVideo { lines.append(.init(label: L("Length"), value: formatfirstRowPlaybackTime(item.durationSeconds))) }
+        if let rating = item.rating, !rating.isEmpty { lines.append(.init(label: L("Rated"), value: rating)) }
+        if item.resumeSeconds > 1, item.isVideo { lines.append(.init(label: L("Stopped At"), value: formatfirstRowPlaybackTime(item.resumeSeconds))) }
         let overview = item.overview?.trimmingCharacters(in: .whitespacesAndNewlines)
         items.append(GapItemSpec(
             key: "server_metadata",

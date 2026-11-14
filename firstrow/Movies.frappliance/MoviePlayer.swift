@@ -114,7 +114,7 @@ extension MoviePlayer {
                 parts.append(name)
             }
             var title = parts.joined(separator: ": ")
-            if title.isEmpty { title = "Track \(position + 1)" }
+            if title.isEmpty { title = L("Track %@", position + 1) }
             if let layout = channelLayout(channels), !title.localizedCaseInsensitiveContains(layout) {
                 title += " (\(layout))"
             }
@@ -132,8 +132,8 @@ extension MoviePlayer {
 
         private static func channelLayout(_ channels: Int) -> String? {
             switch channels {
-            case 1: "Mono"
-            case 2: "Stereo"
+            case 1: L("Mono")
+            case 2: L("Stereo")
             case 6: "5.1"
             case 7: "6.1"
             case 8: "7.1"
@@ -213,7 +213,7 @@ extension MoviePlayer {
         }
 
         func chapters() async -> [MovieChapter] {
-            chapterList().enumerated().map { MovieChapter(title: $0.element.title.isEmpty ? "Chapter \($0.offset + 1)" : $0.element.title, start: $0.element.start) }
+            chapterList().enumerated().map { MovieChapter(title: $0.element.title.isEmpty ? L("Chapter %@", $0.offset + 1) : $0.element.title, start: $0.element.start) }
         }
     }
 #else
@@ -361,7 +361,7 @@ extension MoviePlayer {
                     }
                 }
                 let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                chapters.append(MovieChapter(title: trimmed.isEmpty ? "Chapter \(index + 1)" : trimmed, start: max(0, start)))
+                chapters.append(MovieChapter(title: trimmed.isEmpty ? L("Chapter %@", index + 1) : trimmed, start: max(0, start)))
             }
             return chapters
         }
