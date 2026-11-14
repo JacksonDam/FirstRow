@@ -51,6 +51,7 @@
                 controller.start()
                 return
             }
+            if TigerTheme.isActive { TigerDesktop.capture() }
             lockWindowToScreen()
             installScreenObservers()
             applyImmersivePresentationOptions()

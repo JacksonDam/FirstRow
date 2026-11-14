@@ -120,7 +120,8 @@ final class FullscreenSceneLayer {
         foreground.place(CGRect(origin: .zero, size: bounds.size))
         let depth = ModernTheme.isActive ? menu.fullscreenSceneScale : 1
         foreground.setTransform(MenuSceneRenderer.scale(depth, about: CGPoint(x: bounds.midX, y: bounds.midY)), pass.animation)
-        guard let scene = menu.activeFullscreenScene else {
+        // (In the Tiger look Now Playing and messages are pages of the menus, drawn there.)
+        guard let scene = menu.activeFullscreenScene, !menu.tigerIsPageScene(scene.key) else {
             if content != nil {
                 content?.tearDown()
                 content?.layer.removeFromSuperlayer()

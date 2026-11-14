@@ -53,7 +53,9 @@ final class MenuView: ObservableObject {
     static func shownRootItems() -> [RootMenuItemConfig] {
         // (YouTube where it's turned on; DVD, at the head, while there is a disc.)
         MenuConfiguration.rootItems.filter { item in
-            switch item.id {
+            // (The Tiger look's ring always has its four.)
+            if TigerTheme.isActive { return true }
+            return switch item.id {
             case "youtube": AppSettings.showsYouTube
             case "dvd": DiscWatch.shared.disc != nil
             default: true
@@ -119,9 +121,9 @@ final class MenuView: ObservableObject {
     // MARK: - Duration constants
 
     /// The modern look has no icon flight: the next menu slides in while the last one leaves.
-    var iconFlightAnimationDuration: Double { ModernTheme.isActive ? 0.14 : 0.5 }
+    var iconFlightAnimationDuration: Double { TigerTheme.isActive ? TigerTheme.iconFlightDuration : ModernTheme.isActive ? 0.14 : 0.5 }
     let submenuBackgroundIconTransitionDuration: Double = 0.5
-    var submenuBackgroundIconReturnDuration: Double { ModernTheme.isActive ? 0.14 : 0.5 }
+    var submenuBackgroundIconReturnDuration: Double { TigerTheme.isActive ? TigerTheme.backgroundIconReturnDuration : ModernTheme.isActive ? 0.14 : 0.5 }
     let movieEntryFadeDuration: Double = 0.48
     let movieEntryBlackHoldDuration: Double = 1.0
     let movieExitFreezeHoldDuration: Double = 0.5
@@ -207,6 +209,7 @@ final class MenuView: ObservableObject {
 
     init() {
         MenuStateWatch.willChange = { [weak self] in self?.objectWillChange.send() }
+        tigerPrepare()
         mediaSourcesObserver = NotificationCenter.default.addObserver(
             forName: MediaSources.didChangeNotification,
             object: nil,
@@ -253,6 +256,8 @@ final class MenuView: ObservableObject {
     // MARK: - Navigation state
 
     @Published var selectedIndex = 0
+    /// The Tiger look's own state (see `TigerMenuState`).
+    @Published var tiger = TigerMenuState()
     @Published var selectedSubIndex = 0
     @Published var activeRootItemID: String?
     @Published var isIconAnimated = false

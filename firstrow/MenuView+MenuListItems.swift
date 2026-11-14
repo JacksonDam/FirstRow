@@ -50,6 +50,7 @@ extension MenuView {
 
     func currentSubmenuItems() -> [SubmenuItemConfig] {
         guard let activeRootItemID else { return [] }
+        if TigerTheme.isActive { return tigerSubmenuItems() }
         if activeRootItemID == "podcasts" {
             return podcastsSubmenuItems()
         }

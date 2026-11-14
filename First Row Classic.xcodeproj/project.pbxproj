@@ -187,6 +187,14 @@
 		608488864D9C1915D4C0F678 /* MainPhotosSelection.aif in Resources */ = {isa = PBXBuildFile; fileRef = 7D8EA9C7AE91109A645D1E77 /* MainPhotosSelection.aif */; };
 		F86249FF459CDBFE83E2BE93 /* MainTransitionFrom.aif in Resources */ = {isa = PBXBuildFile; fileRef = 2B69F85E4CAFEDAB51549362 /* MainTransitionFrom.aif */; };
 		24FDC7797CEF90DA66D074A2 /* MainVideosSelection.aif in Resources */ = {isa = PBXBuildFile; fileRef = EA9FE0FBA04F9C9DD0E37740 /* MainVideosSelection.aif */; };
+		D83E1166B9126BB6B41B5F62 /* MenuView+Tiger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A9EBB51D45F5E67D646EAD /* MenuView+Tiger.swift */; };
+		55B8D67E58D7C4925DBA5404 /* TigerMenuFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F71D1A76EEB086138AA2039 /* TigerMenuFeatures.swift */; };
+		C28431CC1291C8133C6AE781 /* TigerMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 404CF727BE3D23335713E57A /* TigerMotion.swift */; };
+		D9C2D81023135F41EE510F70 /* TigerPageLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E35899E69F18D3703927662 /* TigerPageLayer.swift */; };
+		35AAD12201CF1281A43E2C6A /* TigerPreviewLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 064B6A795F3B960BB44A0FE0 /* TigerPreviewLayers.swift */; };
+		323C637811B626A6455F2A98 /* TigerRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B801ECE85A7A342179B913 /* TigerRing.swift */; };
+		5DC80E908D05E106F01C1CDB /* TigerSceneLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C646A5BA9B300334F79BC534 /* TigerSceneLayer.swift */; };
+		D616A2CDBDB31D472B404B8C /* TigerTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A200FF5894046B302C3CA1B /* TigerTheme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -390,6 +398,14 @@
 		7D8EA9C7AE91109A645D1E77 /* MainPhotosSelection.aif */ = {isa = PBXFileReference; lastKnownFileType = file; path = MainPhotosSelection.aif; sourceTree = "<group>"; };
 		2B69F85E4CAFEDAB51549362 /* MainTransitionFrom.aif */ = {isa = PBXFileReference; lastKnownFileType = file; path = MainTransitionFrom.aif; sourceTree = "<group>"; };
 		EA9FE0FBA04F9C9DD0E37740 /* MainVideosSelection.aif */ = {isa = PBXFileReference; lastKnownFileType = file; path = MainVideosSelection.aif; sourceTree = "<group>"; };
+		E3A9EBB51D45F5E67D646EAD /* MenuView+Tiger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuView+Tiger.swift"; sourceTree = "<group>"; };
+		1F71D1A76EEB086138AA2039 /* TigerMenuFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerMenuFeatures.swift; sourceTree = "<group>"; };
+		404CF727BE3D23335713E57A /* TigerMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerMotion.swift; sourceTree = "<group>"; };
+		9E35899E69F18D3703927662 /* TigerPageLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerPageLayer.swift; sourceTree = "<group>"; };
+		064B6A795F3B960BB44A0FE0 /* TigerPreviewLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerPreviewLayers.swift; sourceTree = "<group>"; };
+		35B801ECE85A7A342179B913 /* TigerRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerRing.swift; sourceTree = "<group>"; };
+		C646A5BA9B300334F79BC534 /* TigerSceneLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerSceneLayer.swift; sourceTree = "<group>"; };
+		2A200FF5894046B302C3CA1B /* TigerTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerTheme.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -732,6 +748,14 @@
 		DEF009E85FF0392CEE07D783 /* Tiger */ = {
 			isa = PBXGroup;
 			children = (
+				E3A9EBB51D45F5E67D646EAD /* MenuView+Tiger.swift */,
+				1F71D1A76EEB086138AA2039 /* TigerMenuFeatures.swift */,
+				404CF727BE3D23335713E57A /* TigerMotion.swift */,
+				9E35899E69F18D3703927662 /* TigerPageLayer.swift */,
+				064B6A795F3B960BB44A0FE0 /* TigerPreviewLayers.swift */,
+				35B801ECE85A7A342179B913 /* TigerRing.swift */,
+				C646A5BA9B300334F79BC534 /* TigerSceneLayer.swift */,
+				2A200FF5894046B302C3CA1B /* TigerTheme.swift */,
 			);
 			path = Tiger;
 			sourceTree = "<group>";
@@ -1001,6 +1025,14 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				D616A2CDBDB31D472B404B8C /* TigerTheme.swift in Sources */,
+				5DC80E908D05E106F01C1CDB /* TigerSceneLayer.swift in Sources */,
+				323C637811B626A6455F2A98 /* TigerRing.swift in Sources */,
+				35AAD12201CF1281A43E2C6A /* TigerPreviewLayers.swift in Sources */,
+				D9C2D81023135F41EE510F70 /* TigerPageLayer.swift in Sources */,
+				C28431CC1291C8133C6AE781 /* TigerMotion.swift in Sources */,
+				55B8D67E58D7C4925DBA5404 /* TigerMenuFeatures.swift in Sources */,
+				D83E1166B9126BB6B41B5F62 /* MenuView+Tiger.swift in Sources */,
 				C39525D2D9B144FC073D22A4 /* German.swift in Sources */,
 				4ABB88D59DBE81E3373AA38F /* Localization.swift in Sources */,
 				F9B4C5DA6511BA63BFEE6615 /* StyledCaptions.swift in Sources */,

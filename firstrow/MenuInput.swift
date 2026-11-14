@@ -86,6 +86,13 @@ extension MenuView {
 
     /// Called once the menus are on screen.
     func start() {
+        if TigerTheme.isActive {
+            // The ring rises into place; there are no first-launch screens and no screen saver.
+            beginStartupMusicLibraryPreloadIfNeeded()
+            preloadITunesTopChartsInBackground()
+            tigerStart(backdrop: TigerDesktop.picture, skipsOpening: FirstRowHarness.startsAtMenus)
+            return
+        }
         beginOnboardingIfNeeded()
         beginStartupMusicLibraryPreloadIfNeeded()
         preloadITunesTopChartsInBackground()

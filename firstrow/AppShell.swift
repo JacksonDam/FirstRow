@@ -149,8 +149,9 @@ final class FirstRowAppController {
     func start() {
         beginLaunchToggleWindow()
         // After the first-launch screens the intro plays anyway (see MenuView.finishOnboarding).
-        let playsIntro = AppSettings.playsIntroMovieAtLaunch && AppSettings.hasCompletedOnboarding && IntroMovie.url != nil && !FirstRowHarness.startsAtMenus
-        showMenu(fadingIn: !playsIntro)
+        // (The Tiger look has an opening of its own: the ring rising as the desktop draws back.)
+        let playsIntro = !TigerTheme.isActive && AppSettings.playsIntroMovieAtLaunch && AppSettings.hasCompletedOnboarding && IntroMovie.url != nil && !FirstRowHarness.startsAtMenus
+        showMenu(fadingIn: !playsIntro && !TigerTheme.isActive)
         if playsIntro {
             withoutLayerActions { menuContainer.opacity = 0 }
             playIntro()
@@ -637,6 +638,8 @@ final class FirstRowAppController {
 
     private func beginQuitTransition() {
         guard !isQuitting else { return }
+        // From the Tiger look's ring First Row leaves as it came, the desktop coming back.
+        if let menu, menu.tigerBeginExit(then: { Self.endApplication() }) { return }
         isQuitting = true
         #if os(iOS) || os(macOS) || os(tvOS)
             if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *) {
@@ -657,6 +660,14 @@ final class FirstRowAppController {
 }
 
 extension FirstRowAppController {
+    fileprivate static func endApplication() {
+        #if os(macOS)
+            NSApplication.shared.terminate(nil)
+        #elseif FIRSTROW_PORTABLE
+            PortableApplication.quit()
+        #endif
+    }
+
     /// A mouse or trackpad event from the window.
     func handlePointer(_ event: PointerEvent) {
         if takesIntroInput(event) { return }

@@ -51,6 +51,10 @@ extension MenuView {
     ) {
         guard activeFullscreenScene == nil else { return }
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
+        if tigerIsPageScene(key) {
+            presentTigerPageScene(key: key, payload: payload)
+            return
+        }
         if key == musicNowPlayingFullscreenKey {
             clearMusicSongSwitchTransitionState()
             resetNowPlayingExtras()
@@ -173,6 +177,10 @@ extension MenuView {
     func dismissFullscreenScene(preserveMusicPlayback: Bool = false) {
         guard activeFullscreenScene != nil else { return }
         guard !isFullscreenSceneTransitioning else { return }
+        if tigerIsPageScene(activeFullscreenScene?.key) {
+            dismissTigerPageScene(preserveMusicPlayback: preserveMusicPlayback)
+            return
+        }
         let dismissedKey = activeFullscreenScene?.key
         if dismissedKey == screenSaverFullscreenKey {
             clearScreenSaverNowPlayingToast()

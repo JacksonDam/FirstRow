@@ -1,7 +1,7 @@
 import Foundation
 
 enum MenuConfiguration {
-    private static let catalog = MenuCatalog(features: [
+    private static let catalog = MenuCatalog(features: TigerTheme.isActive ? TigerMenus.features : [
         DVDMenuFeature(),
         MoviesMenuFeature(),
         TVShowsMenuFeature(),

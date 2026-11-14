@@ -87,7 +87,7 @@ enum AppLanguage: String {
 func L(_ english: String) -> String {
     switch AppLanguage.current {
     case .english: english
-    case .german: German.words[english] ?? english
+    case .german: German.words[english] ?? TigerMenus.german[english] ?? english
     }
 }
 

@@ -272,6 +272,10 @@ extension MenuView {
             swapModernMenu(revealWhen: revealWhen, maxRevealWait: maxRevealWait, update)
             return
         }
+        if TigerTheme.isActive, isInSubmenu, !(useOverlayFade && thirdMenuMode == .photosDateAlbums) {
+            swapTigerMenu(revealWhen: revealWhen, maxRevealWait: maxRevealWait, update)
+            return
+        }
         isMenuFolderSwapTransitioning = true
         if useOverlayFade {
             menuSceneOpacity = 1

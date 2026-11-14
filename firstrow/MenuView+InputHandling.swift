@@ -24,6 +24,7 @@ extension MenuView {
             NotificationCenter.default.post(name: .firstRowQuitRequested, object: nil)
             return
         }
+        if TigerTheme.isActive, tigerHandleKeyInput(key, isRepeat: isRepeat) { return }
         notePointerAwareKey(key)
         defer { if key == .enter { settlePointerScrollAfterEnter() } }
         if deferForStartupMusicLibraryPreload(key) { return }
@@ -150,6 +151,12 @@ extension MenuView {
             triggerRootAction(chosenRootItem)
             return
         }
+        if TigerTheme.isActive, chosenRootItem.id == "dvd", DiscWatch.shared.disc != nil {
+            // (With a disc in, DVD plays it; without one its page says so.)
+            playSound(named: TigerTheme.selectionSound(forRootID: chosenRootItem.id))
+            playDisc()
+            return
+        }
         if chosenRootItem.id == "podcasts" {
             handlePodcastsRootMenuSelection(chosenRootItem)
             return
@@ -223,6 +230,7 @@ extension MenuView {
         }
         isEnteringSubmenu = true
         isIconAnimated = true
+        if TigerTheme.isActive { tigerSectionWillOpen(chosenRootItem) }
         submenuTitleOpacity = 0
         submenuOpacity = 0
         detailContentOpacity = 0
@@ -231,7 +239,7 @@ extension MenuView {
             headerOpacity = 0
         }
         if playSelectionSound {
-            playSound(named: "Selection")
+            playSound(named: TigerTheme.isActive ? TigerTheme.selectionSound(forRootID: chosenRootItem.id) : "Selection")
         }
         submenuEntryWorkItem = Task {
             try? await firstRowSleep(iconFlightAnimationDuration)
@@ -315,6 +323,7 @@ extension MenuView {
         _ = incrementRequestID(&musicPreviewRequestID)
 
         isIconAnimated = false
+        if TigerTheme.isActive { tigerSectionWillClose() }
         withAnimation(.easeInOut(duration: submenuExitFadeDuration)) {
             submenuTitleOpacity = 0
             submenuOpacity = 0
@@ -325,7 +334,7 @@ extension MenuView {
             isEnteringSubmenu = false
         }
         if playExitSound {
-            playSound(named: "Exit")
+            playSound(named: TigerTheme.isActive ? "MainTransitionFrom" : "Exit")
         }
         Task {
             try? await firstRowSleep(rootRevealDelay)
@@ -364,6 +373,12 @@ extension MenuView {
             headerText = "First Row"
             isInSubmenu = false
             activeRootItemID = nil
+            if TigerTheme.isActive {
+                withTransaction(.instant) {
+                    isReturningToRoot = false
+                    tigerSectionDidClose()
+                }
+            }
             withAnimation(.easeInOut(duration: 0.32)) {
                 rootMenuOpacity = 1
                 headerOpacity = 1
@@ -380,6 +395,7 @@ extension MenuView {
             selectedSubIndex = clampedSubIndex
         }
         let item = submenuItems[clampedSubIndex]
+        if TigerTheme.isActive, tigerTriggerSubmenuItem(item) { return }
         if activeRootItemID == "music", item.id == "music_now_playing" {
             guard hasActiveMusicPlaybackSession(), !isPodcastAudioNowPlaying else { return }
             clearMusicSongSwitchTransitionState()

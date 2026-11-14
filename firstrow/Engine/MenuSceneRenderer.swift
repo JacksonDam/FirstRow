@@ -41,6 +41,8 @@ final class MenuSceneRenderer: TransactionRendering {
     /// YouTube's search screen: its field and keys, where the carousel or the card would be.
     private let youtubeSearchPad = YouTubeSearchPadLayer()
     private let textEntry = TextEntryLayer()
+    /// The Tiger look's menus, which stand in for all of the above.
+    private let tigerScene = TigerSceneLayer()
 
     // Full-screen layers, sized to the window.
     private let playback = MoviePlaybackLayers()
@@ -110,6 +112,7 @@ final class MenuSceneRenderer: TransactionRendering {
         flushObserver?.invalidate()
         flushObserver = nil
         RenderScheduler.unregister(self)
+        tigerScene.tearDown()
         fullscreenScene.tearDown()
         volumeOverlay.tearDown()
         detailContent.tearDown()
@@ -122,6 +125,10 @@ final class MenuSceneRenderer: TransactionRendering {
         rootLayer.addSublayer(modernBackground.layer)
         rootLayer.addSublayer(canvas)
         canvas.addSublayer(sceneContent)
+        if TigerTheme.isActive {
+            sceneContent.isHidden = true
+            canvas.addSublayer(tigerScene.layer)
+        }
         sceneContent.addSublayer(carouselBox)
         sceneContent.addSublayer(modernCard.layer)
         modernCard.layer.isHidden = true
@@ -321,6 +328,9 @@ final class MenuSceneRenderer: TransactionRendering {
         menuGroup.setTransform(CATransform3DMakeTranslation(isModern ? menu.modernSwapOffset : 0, 0, 0), pass.animation)
 
         lap("setup")
+        if TigerTheme.isActive {
+            tigerScene.update(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale)
+        }
         updateHeaders(pass, sceneSize: sceneSize, frames: frames, scale: scale)
         lap("headers")
 
@@ -403,7 +413,7 @@ final class MenuSceneRenderer: TransactionRendering {
         detailContent.update(
             menu: menu,
             pass: pass,
-            visible: menu.isInSubmenu && !isModern,
+            visible: menu.isInSubmenu && !isModern && !TigerTheme.isActive,
             opacity: menu.detailContentVisibilityOpacity,
             opacityAnimation: pass.animation(.easeInOut(duration: 0.22), when: memo.hidesPodcastsChrome != nil && memo.hidesPodcastsChrome != hidesChrome),
             // The scene as the box's own points see it.
@@ -433,7 +443,9 @@ final class MenuSceneRenderer: TransactionRendering {
         // doesn't fill it.)
         let fit = max(self.canvasScale, 0.0001)
         let display = CGRect(x: -canvas.position.x / fit, y: -canvas.position.y / fit, width: containerSize.width / fit, height: containerSize.height / fit)
-        resumePrompt.update(menu: menu, pass: pass, sceneSize: sceneSize, display: display, scale: scale)
+        if !TigerTheme.isActive {
+            resumePrompt.update(menu: menu, pass: pass, sceneSize: sceneSize, display: display, scale: scale)
+        }
         textEntry.update(menu: menu, pass: pass, sceneSize: sceneSize, scale: scale)
 
         // Full-screen layers.
@@ -487,6 +499,7 @@ final class MenuSceneRenderer: TransactionRendering {
     }
 
     private func updateCarousel() {
+        if TigerTheme.isActive { return }
         let sceneSize = menu.activeMenuVirtualSceneSize
         var configuration = menu.rootCarouselConfiguration(sceneSize: sceneSize)
         // On screens wider than the scene there is room left of it; icons leave past the screen's edge.
@@ -516,6 +529,7 @@ final class MenuSceneRenderer: TransactionRendering {
     }
 
     private func updateHeaders(_ pass: RenderPass, sceneSize: CGSize, frames: MenuSceneFrames, scale: CGFloat) {
+        if TigerTheme.isActive { return }
         let showsSubmenuHeader = menu.isInSubmenu && menu.activeRootItemID != nil
         let switched = memo.showsSubmenuHeader != nil && memo.showsSubmenuHeader != showsSubmenuHeader
         let transition = switched ? pass.animation : nil
@@ -551,6 +565,7 @@ final class MenuSceneRenderer: TransactionRendering {
     }
 
     private func updateLists(_ pass: RenderPass, sceneSize: CGSize, frames: MenuSceneFrames, scale: CGFloat) {
+        if TigerTheme.isActive { return }
         let menu = menu
         let menuWidth = frames.menuFrame.width
         let arrow = menu.menuArrowAppearance
