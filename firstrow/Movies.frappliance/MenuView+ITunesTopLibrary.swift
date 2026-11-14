@@ -894,6 +894,8 @@ extension MenuView {
     }
 
     func refreshITunesTopPreviewForCurrentContext(_ kind: ITunesTopCarouselKind) {
+        // (The Tiger look has nothing beside this list to get ready, but a song's cover for when it is played.)
+        if TigerTheme.isActive, kind != .songs { return }
         let selectedEntry = iTunesTopPreviewSelection(for: kind)
         let selectedEntryID = selectedEntry?.id
         if currentITunesTopPreviewTargetID(kind) == selectedEntryID {
@@ -935,6 +937,8 @@ extension MenuView {
     }
 
     func refreshITunesTopCarouselForCurrentContext(_ kind: ITunesTopCarouselKind) {
+        // (The Tiger look has nothing beside this list to get ready.)
+        if TigerTheme.isActive { return }
         guard shouldUseITunesTopCarouselSlot(kind) else {
             _ = nextITunesTopCarouselRequestID(kind)
             return

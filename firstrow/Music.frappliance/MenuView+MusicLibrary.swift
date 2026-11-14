@@ -827,6 +827,8 @@ extension MenuView {
     }
 
     func refreshMusicRowCoverForCurrentContext() {
+        // (The Tiger look has nothing beside this list to get ready.)
+        if TigerTheme.isActive { return }
         guard let row = selectedMusicRowWithCover, musicRowCover?.rowID != row else { return }
         if let known = musicRowCovers[row] {
             // (Made before. A row that had nothing to show is asked again when the library changes.)
@@ -1377,6 +1379,8 @@ extension MenuView {
     }
 
     func refreshMusicPreviewForCurrentContext() {
+        // (The Tiger look has nothing beside this list to get ready.)
+        if TigerTheme.isActive { return }
         let selectedSong = resolveMusicPreviewTargetSong()
         let resolvedSongID = selectedSong?.id
         if musicPreviewTargetSongID == resolvedSongID {
@@ -1466,6 +1470,8 @@ extension MenuView {
     }
 
     func refreshMusicTopLevelCarouselForCurrentContext() {
+        // (The Tiger look has nothing beside this list to get ready.)
+        if TigerTheme.isActive { return }
         guard let selectedSubmenuID = selectedTopLevelMusicCarouselSubmenuID else {
             musicTopLevelCarouselActiveSubmenuID = nil
             isLoadingMusicTopLevelCarousel = false

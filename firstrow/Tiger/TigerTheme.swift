@@ -126,9 +126,12 @@ enum TigerDesktop {
     extension TigerDesktop {
         /// Takes the screen's picture as it is now, before First Row's window comes up over it.
         static func capture() {
-            let frame = NSScreen.main?.frame ?? .zero
-            guard frame.width > 0, let image = CGWindowListCreateImage(.infinite, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) else { return }
-            picture = NSImage(cgImage: image, size: frame.size)
+            guard let screen = NSScreen.main, screen.frame.width > 0 else { return }
+            // (That screen alone, where there are several.)
+            let display = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            let bounds = display.map { CGDisplayBounds($0) } ?? screen.frame
+            guard let image = CGWindowListCreateImage(bounds, .optionOnScreenOnly, kCGNullWindowID, [.boundsIgnoreFraming, .bestResolution]) else { return }
+            picture = NSImage(cgImage: image, size: screen.frame.size)
         }
     }
 #endif
