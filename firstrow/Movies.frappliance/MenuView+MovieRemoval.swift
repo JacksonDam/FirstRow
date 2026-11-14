@@ -126,6 +126,8 @@ extension MenuView {
     /// it usually does as it is let go (`confirmPressEnded`), or brings the question up if it
     /// is held instead.
     func confirmPressBegan() -> Bool {
+        // (The Tiger look has no question about removing a movie.)
+        if TigerTheme.isActive { return false }
         if isConfirmPressDown { return true }
         guard let removal = movieRemoval(forThirdMenuRow: selectedThirdIndex) else { return false }
         isConfirmPressDown = true

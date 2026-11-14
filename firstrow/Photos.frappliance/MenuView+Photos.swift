@@ -173,6 +173,11 @@ extension MenuView {
         for album in prioritizedPhotosAlbumsForCoverPrefetch() {
             requestPhotoAlbumCoverImageIfNeeded(for: album)
         }
+        if TigerTheme.isActive {
+            // (One album's cover stands beside the list there, not a fan of its photos.)
+            tigerRefreshPhotosPreview()
+            return
+        }
         refreshPhotosCarouselForCurrentContext()
     }
 

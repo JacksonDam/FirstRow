@@ -88,7 +88,7 @@ final class TigerSceneLayer {
         backdrop.startPoint = CGPoint(x: 0.5, y: 0)
         backdrop.endPoint = CGPoint(x: 0.5, y: 1)
         layer.addSublayer(backdrop)
-        resumeBackdrop.contentsGravity = .resizeAspectFill
+        resumeBackdrop.contentsGravity = .resize
         resumeBackdrop.masksToBounds = true
         resumeBackdrop.opacity = 0
         layer.addSublayer(resumeBackdrop)
@@ -172,10 +172,12 @@ final class TigerSceneLayer {
         let image = menu.isMovieResumePromptVisible ? menu.movieResumePromptBackdropImage : nil
         if let image, image !== shownResumeBackdrop {
             shownResumeBackdrop = image
-            resumeBackdrop.contents = TigerPictures.softened(image)
+            resumeBackdrop.contents = TigerPictures.softened(image, sceneSize: sceneSize)
         }
-        resumeBackdrop.setOpacity(image == nil ? 0 : 1, pass.animation(.easeInOut(duration: 0.5), when: true))
-        if image == nil, resumeBackdrop.opacity == 0, resumeBackdrop.animation(forKey: "opacity") == nil {
+        let shows = menu.tiger.showsResumeBackdrop && image != nil
+        resumeBackdrop.setOpacity(shows ? 1 : 0, pass.animation)
+        // (Kept while it fades away, after the question has gone.)
+        if !shows, shownResumeBackdrop != nil, resumeBackdrop.opacity == 0, resumeBackdrop.animation(forKey: "opacity") == nil {
             shownResumeBackdrop = nil
             resumeBackdrop.contents = nil
         }
@@ -524,21 +526,68 @@ final class TigerSceneLayer {
 /// Pictures the Tiger look makes from others.
 @MainActor
 enum TigerPictures {
-    /// A movie's picture as it stands behind the question about where to start it: blurred
-    /// and darkened.
-    static func softened(_ image: NSImage) -> CGImage? {
-        guard let source = LayerImageCache.cgImage(for: image) else { return nil }
-        // Drawn small and stretched back out: a blur wide enough for the picture to be only
-        // its colours, which is all that shows behind the page.
-        let width = 48, height = max(1, Int((48 * CGFloat(source.height) / CGFloat(max(1, source.width))).rounded()))
+    /// A movie's picture as it stands behind the question about where to start it: filling
+    /// the scene, well blurred, a little greyer and darker. Its edges fade out as a blur's do.
+    static func softened(_ image: NSImage, sceneSize: CGSize) -> CGImage? {
+        guard let source = LayerImageCache.cgImage(for: image), sceneSize.width > 0, sceneSize.height > 0 else { return nil }
+        // Worked on at a quarter of the scene's size, where the blur is a quarter as wide.
+        let width = 480, height = max(1, Int((480 * sceneSize.height / sceneSize.width).rounded()))
         guard let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
-        ) else { return source }
+        ), let data = context.data else { return source }
         context.interpolationQuality = .high
-        context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
-        context.setFillColor(CGColor(gray: 0, alpha: 0.33))
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let aspect = CGFloat(source.width) / CGFloat(max(1, source.height))
+        let frame = CGSize(width: width, height: height)
+        let drawn = aspect > frame.width / frame.height ? CGSize(width: frame.height * aspect, height: frame.height) : CGSize(width: frame.width, height: frame.width / aspect)
+        context.draw(source, in: CGRect(x: (frame.width - drawn.width) / 2, y: (frame.height - drawn.height) / 2, width: drawn.width, height: drawn.height))
+        let bytes = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        var plane = [Float](repeating: 0, count: width * height * 4)
+        for index in 0 ..< width * height * 4 {
+            plane[index] = Float(bytes[index])
+        }
+        // Three box blurs come close to a Gaussian one (of 28 points at the scene's size).
+        var scratch = plane
+        for _ in 0 ..< 3 {
+            boxBlur(&plane, &scratch, width: width, height: height, radius: 7, horizontal: true)
+            boxBlur(&plane, &scratch, width: width, height: height, radius: 7, horizontal: false)
+        }
+        // (Blue, green, red, alpha; the colours already multiplied by the alpha.)
+        for pixel in 0 ..< width * height {
+            let at = pixel * 4
+            let blue = plane[at], green = plane[at + 1], red = plane[at + 2]
+            let grey = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+            for (offset, value) in [(0, blue), (1, green), (2, red)] {
+                let muted = grey + (value - grey) * 0.92
+                bytes[at + offset] = UInt8(max(0, min(255, muted * 0.67)))
+            }
+            bytes[at + 3] = UInt8(max(0, min(255, plane[at + 3])))
+        }
         return context.makeImage() ?? source
+    }
+
+    /// A blur along rows or columns: each value becomes the mean of those within `radius` of
+    /// it, counting what lies past the picture's edge as clear.
+    private static func boxBlur(_ plane: inout [Float], _ scratch: inout [Float], width: Int, height: Int, radius: Int, horizontal: Bool) {
+        let span = Float(radius * 2 + 1)
+        let lines = horizontal ? height : width
+        let length = horizontal ? width : height
+        let step = horizontal ? 4 : width * 4
+        for line in 0 ..< lines {
+            let start = horizontal ? line * width * 4 : line * 4
+            for channel in 0 ..< 4 {
+                var sum: Float = 0
+                for index in 0 ... min(radius, length - 1) {
+                    sum += plane[start + index * step + channel]
+                }
+                for index in 0 ..< length {
+                    scratch[start + index * step + channel] = sum / span
+                    let entering = index + radius + 1, leaving = index - radius
+                    if entering < length { sum += plane[start + entering * step + channel] }
+                    if leaving >= 0 { sum -= plane[start + leaving * step + channel] }
+                }
+            }
+        }
+        swap(&plane, &scratch)
     }
 }

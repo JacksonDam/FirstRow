@@ -195,6 +195,7 @@
 		323C637811B626A6455F2A98 /* TigerRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B801ECE85A7A342179B913 /* TigerRing.swift */; };
 		5DC80E908D05E106F01C1CDB /* TigerSceneLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C646A5BA9B300334F79BC534 /* TigerSceneLayer.swift */; };
 		D616A2CDBDB31D472B404B8C /* TigerTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A200FF5894046B302C3CA1B /* TigerTheme.swift */; };
+		8E3AB8E28EBB6D07EAA5DA2A /* TigerScrubberLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9AB446626E7AB1F88002F46 /* TigerScrubberLayer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -406,6 +407,7 @@
 		35B801ECE85A7A342179B913 /* TigerRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerRing.swift; sourceTree = "<group>"; };
 		C646A5BA9B300334F79BC534 /* TigerSceneLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerSceneLayer.swift; sourceTree = "<group>"; };
 		2A200FF5894046B302C3CA1B /* TigerTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerTheme.swift; sourceTree = "<group>"; };
+		A9AB446626E7AB1F88002F46 /* TigerScrubberLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TigerScrubberLayer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -756,6 +758,7 @@
 				35B801ECE85A7A342179B913 /* TigerRing.swift */,
 				C646A5BA9B300334F79BC534 /* TigerSceneLayer.swift */,
 				2A200FF5894046B302C3CA1B /* TigerTheme.swift */,
+				A9AB446626E7AB1F88002F46 /* TigerScrubberLayer.swift */,
 			);
 			path = Tiger;
 			sourceTree = "<group>";
@@ -1025,6 +1028,7 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				8E3AB8E28EBB6D07EAA5DA2A /* TigerScrubberLayer.swift in Sources */,
 				D616A2CDBDB31D472B404B8C /* TigerTheme.swift in Sources */,
 				5DC80E908D05E106F01C1CDB /* TigerSceneLayer.swift in Sources */,
 				323C637811B626A6455F2A98 /* TigerRing.swift in Sources */,

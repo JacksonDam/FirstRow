@@ -676,6 +676,8 @@ extension MenuView {
     }
 
     func refreshMoviePreviewForCurrentContext() {
+        // (The Tiger look plays the chosen movie itself beside the list: see `TigerMoviePreviewLayer`.)
+        if TigerTheme.isActive { return }
         refreshMoviesFolderSubmenuPreviewForCurrentContext()
         if isInThirdMenu, thirdMenuMode == .moviesITunesTop {
             moviePreviewTargetURL = nil

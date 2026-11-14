@@ -22,6 +22,8 @@ final class MoviePlaybackLayers {
     let playerLayer = AVPlayerLayer()
     let controls = MovieControlsLayer()
     let modernControls = ModernMovieControlsLayer()
+    /// The Tiger look's own: a scrubber along the foot of the screen.
+    let tigerControls = TigerMovieControlsLayer()
     let options = MovieOptionsLayer()
     /// The picture of a movie First Row's own engine is playing: the engine's own layer, put
     /// where the system player's would be.
@@ -69,6 +71,7 @@ final class MoviePlaybackLayers {
         playerLayer.isHidden = true
         playerLayer.actions = ["position": NSNull(), "bounds": NSNull(), "opacity": NSNull(), "hidden": NSNull()]
         controls.layer.isHidden = true
+        tigerControls.layer.isHidden = true
         backdrop.backgroundColor = CGColor(gray: 0, alpha: 1)
         backdrop.isHidden = true
         waiting.opacity = 0
@@ -81,7 +84,7 @@ final class MoviePlaybackLayers {
             pinwheel.layer.shadowRadius = 5
             pinwheel.layer.shadowOffset = .zero
         #endif
-        for sublayer in [backdrop, playerLayer, subtitlePictures.layer, captions.layer, waiting, controls.layer, modernControls.layer, panel.layer, options.layer] {
+        for sublayer in [backdrop, playerLayer, subtitlePictures.layer, captions.layer, waiting, controls.layer, modernControls.layer, tigerControls.layer, panel.layer, options.layer] {
             group.addSublayer(sublayer)
         }
         #if os(iOS)
@@ -94,7 +97,7 @@ final class MoviePlaybackLayers {
         group.place(bounds)
         let depth = ModernTheme.isActive ? menu.movieSceneScale : 1
         group.setTransform(MenuSceneRenderer.scale(depth, about: CGPoint(x: bounds.midX, y: bounds.midY)), pass.animation)
-        group.setOpacity(ModernTheme.isActive ? menu.movieSceneOpacity : 1, pass.animation)
+        group.setOpacity(ModernTheme.isActive || TigerTheme.isActive ? menu.movieSceneOpacity : 1, pass.animation)
         let showsPlayer = menu.isMoviePlaybackVisible && menu.moviePlayer != nil
         let systemPlayer = menu.moviePlayer as? AVPlayer
         if playerLayer.player !== systemPlayer, showsPlayer || menu.moviePlayer == nil {
@@ -236,7 +239,8 @@ final class MoviePlaybackLayers {
         // picture over it is left whole.)
         let panelTop = canvas.upright.map { $0.isBent ? $0.lowerPane.minY : 0 } ?? 0
         panel.update(menu: menu, size: panelSize, top: panelTop, scale: canvas.pixelScale(backingScale: scale), canvasScale: canvas.scale, pass: pass)
-        controls.layer.isHidden = !showsControls || isModern
+        controls.layer.isHidden = !showsControls || isModern || TigerTheme.isActive
+        tigerControls.layer.isHidden = !showsControls || !TigerTheme.isActive
         modernControls.layer.isHidden = !showsControls || !isModern
         // The options' buttons sit above the right end of the bar, and the panel grows out of them.
         defer {
@@ -253,6 +257,19 @@ final class MoviePlaybackLayers {
             )
         }
         guard showsControls else { return }
+        if TigerTheme.isActive {
+            tigerControls.update(
+                glyphState: menu.movieControlsGlyphState,
+                currentTime: menu.moviePlaybackCurrentSeconds,
+                duration: menu.moviePlaybackDurationSeconds,
+                isLoading: menu.isMoviePreviewDownloadLoading,
+                loadingProgress: menu.moviePreviewDownloadProgress,
+                size: bounds.size,
+                scale: scale,
+            )
+            tigerControls.layer.setOpacity(controlsOpacity, pass.animation)
+            return
+        }
         if isModern {
             canvas.apply(to: modernControls.layer)
             modernControls.update(

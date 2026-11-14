@@ -100,7 +100,7 @@ final class TigerPageLayer {
                 self.list = made
                 return made
             }()
-            list.update(page, menu: menu, sceneSize: sceneSize, scale: scale)
+            list.update(page, menu: menu, pass: pass, sceneSize: sceneSize, scale: scale)
             message?.layer.isHidden = true
             nowPlaying?.layer.isHidden = true
         case let .message(text):
@@ -197,7 +197,7 @@ final class TigerListLayer {
         row.updateBusy(menu: menu)
     }
 
-    func update(_ page: TigerPage, menu: MenuView, sceneSize: CGSize, scale: CGFloat) {
+    func update(_ page: TigerPage, menu: MenuView, pass: RenderPass, sceneSize: CGSize, scale: CGFloat) {
         let width = page.isCompact ? TigerTheme.compactColumnWidth : TigerTheme.columnWidth
         let leading = page.isCompact ? TigerTheme.compactColumnLeading : TigerTheme.columnLeading
         let items = page.items
@@ -244,8 +244,9 @@ final class TigerListLayer {
         // The rows slide so that the chosen one is in the bar.
         let place = CGPoint(x: leading, y: anchor + TigerTheme.rowContentVerticalOffset - CGFloat(selected) * TigerTheme.rowPitch)
         let moves = shownSelection != nil && shownSelection != selected && itemCount > 0 && !menu.isMenuFolderSwapTransitioning
+        // (At the pace the change itself asks for, or the pace the arrows are moving at.)
         let glide: Animation? = moves
-            ? (menu.useLinearSelectionSweepAnimation ? .linear(duration: menu.selectionAnimationDuration) : .easeInOut(duration: menu.selectionAnimationDuration))
+            ? pass.animation ?? (menu.useLinearSelectionSweepAnimation ? .linear(duration: menu.selectionAnimationDuration) : .easeInOut(duration: menu.selectionAnimationDuration))
             : nil
         rows.setPosition(place, glide)
         shownSelection = selected
@@ -434,10 +435,7 @@ final class TigerNowPlayingLayer {
     private let title = SceneLayer()
     private let artist = SceneLayer()
     private let album = SceneLayer()
-    private let elapsed = SceneLayer()
-    private let remaining = SceneLayer()
-    private let track = SceneShapeLayer()
-    private let diamond = StillLayer()
+    private let scrubber = TigerScrubberLayer()
 
     init() {
         art.contentsGravity = .resizeAspectFill
@@ -461,12 +459,7 @@ final class TigerNowPlayingLayer {
         reflectionMask.startPoint = CGPoint(x: 0.5, y: 0)
         reflectionMask.endPoint = CGPoint(x: 0.5, y: 1)
         reflectionBox.mask = reflectionMask
-        track.fillColor = CGColor(gray: 0, alpha: 0.25)
-        track.strokeColor = CGColor(gray: 1, alpha: 0.82)
-        track.lineWidth = 6
-        diamond.backgroundColor = CGColor(gray: 1, alpha: 1)
-        diamond.cornerRadius = 4
-        for part in [reflectionBox, art, glyph, title, artist, album, elapsed, track, diamond, remaining] {
+        for part in [reflectionBox, art, glyph, title, artist, album, scrubber.layer] {
             layer.addSublayer(part)
         }
     }
@@ -483,7 +476,6 @@ final class TigerNowPlayingLayer {
         let metaCenterY = artTop + artSide * 0.41
         let titleSize = min(max(height * 0.067, 50), 76)
         let artistSize = min(max(height * 0.056, 42), 64)
-        let timeSize = min(max(height * 0.038, 28), 46)
 
         let seconds = max(0, menu.musicNowPlayingElapsedSeconds.isFinite ? menu.musicNowPlayingElapsedSeconds : 0)
         let duration = max(0, menu.musicNowPlayingDurationSeconds.isFinite ? menu.musicNowPlayingDurationSeconds : 0)
@@ -492,13 +484,7 @@ final class TigerNowPlayingLayer {
         let shownRemaining = max(0, duration - shownElapsed)
         let progress = CGFloat(duration > 0 ? min(1, max(0, shownElapsed / duration)) : 0)
 
-        let barHeight: CGFloat = 72
-        let diamondSide: CGFloat = 40
-        let leadingTimeWidth = max(80, width * 0.068)
-        let trailingTimeWidth = max(90, width * 0.077)
-        let barWidth = max(200, width - 18 - leadingTimeWidth - 18 - 24 - trailingTimeWidth - 24)
-        let barLeft = 18 + leadingTimeWidth + 18
-        let barTop = height - 80 - barHeight * 0.5
+        scrubber.update(elapsedSeconds: shownElapsed, remainingSeconds: shownRemaining, progress: progress, size: sceneSize, scale: scale)
 
         withoutLayerActions {
             layer.place(CGRect(origin: .zero, size: sceneSize))
@@ -546,27 +532,6 @@ final class TigerNowPlayingLayer {
                 part.show(graphic, at: CGPoint(x: metaLeading.rounded(), y: top.rounded()))
                 top += graphic.size.height + 50
             }
-
-            // How far through: the time gone, a track with a diamond on it, the time left.
-            let times = [TextShadow](TigerTheme.textShadow)
-            let elapsedGraphic = TextRenderer.render(TextSpec(text: Self.padded(shownElapsed), fontName: firstRowBoldFontName, size: timeSize, color: RGBA(white: 1, alpha: 0.95), shadows: times), scale: scale)
-            elapsed.show(elapsedGraphic, at: CGPoint(x: 18, y: (height - 80 - elapsedGraphic.size.height * 0.5).rounded()))
-            let remainingGraphic = TextRenderer.render(TextSpec(text: "-" + Self.padded(shownRemaining), fontName: firstRowBoldFontName, size: timeSize, color: RGBA(white: 1, alpha: 0.95), shadows: times), scale: scale)
-            remaining.show(remainingGraphic, at: CGPoint(x: (width - 24 - remainingGraphic.size.width).rounded(), y: (height - 80 - remainingGraphic.size.height * 0.5).rounded()))
-            let barFrame = CGRect(x: barLeft, y: barTop, width: barWidth, height: barHeight)
-            track.place(barFrame)
-            track.path = CGPath(roundedRect: CGRect(origin: .zero, size: barFrame.size), cornerWidth: barHeight * 0.5, cornerHeight: barHeight * 0.5, transform: nil)
-            let low = diamondSide * 0.5 + 16, high = barWidth - diamondSide * 0.5 - 16
-            diamond.bounds = CGRect(x: 0, y: 0, width: diamondSide, height: diamondSide)
-            diamond.position = CGPoint(x: barLeft + low + (high - low) * progress, y: height - 80)
-            diamond.transform = CATransform3DMakeRotation(.pi / 4, 0, 0, 1)
         }
-    }
-
-    /// Minutes and seconds, the minutes always two figures.
-    static func padded(_ seconds: Double) -> String {
-        let plain = formatfirstRowPlaybackTime(seconds)
-        let parts = plain.components(separatedBy: ":")
-        return parts.count == 2 && parts[0].count == 1 ? "0" + plain : plain
     }
 }

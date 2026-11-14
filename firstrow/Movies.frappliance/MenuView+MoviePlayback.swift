@@ -96,6 +96,10 @@ extension MenuView {
 
     func startMovieResumePromptTransition(for url: URL) {
         guard !isMovieTransitioning else { return }
+        if TigerTheme.isActive {
+            tigerEnterResumePage(for: url)
+            return
+        }
         isMovieTransitioning = true
         movieResumePromptOpacity = 0
         withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
@@ -215,6 +219,10 @@ extension MenuView {
     func dismissMovieResumePromptToMenu() {
         guard isMovieResumePromptVisible else { return }
         guard !isMovieTransitioning else { return }
+        if TigerTheme.isActive {
+            tigerLeaveResumePage()
+            return
+        }
         isMovieTransitioning = true
         withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
             movieResumePromptOpacity = 0
@@ -268,6 +276,10 @@ extension MenuView {
 
     func triggerMovieResumePromptSelection() {
         guard let targetURL = movieResumePromptTargetURL else { return }
+        if TigerTheme.isActive {
+            tigerStartMovieFromResumePage(targetURL)
+            return
+        }
         isMovieResumePromptConfirming = true
         playSound(named: "Selection")
         var instant = Transaction()

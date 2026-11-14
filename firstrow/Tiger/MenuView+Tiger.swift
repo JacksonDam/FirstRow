@@ -35,8 +35,15 @@ struct TigerMenuState {
     /// The row that is getting something ready shows a spinner meanwhile.
     var isLoadingTrailers = false
     var isStartingMovie = false
+    /// The movie's picture has come up behind the question about where to start it.
+    var showsResumeBackdrop = false
+    var resumeRequestID = 0
     /// The Photos preview has slid in beside the list.
     var isPhotosPreviewIn = false
+    /// The cover of the album that is chosen in Photos, once it has been read.
+    var photosPreviewImage: NSImage?
+    var photosPreviewAlbumID: String?
+    var photosPreviewRequestID = 0
 
     var trailersRequestID = 0
     var movieStartRequestID = 0
@@ -320,6 +327,9 @@ extension MenuView {
         tiger.section.set(0)
         tiger.flight.set(0)
         tiger.isPhotosPreviewIn = false
+        tiger.photosPreviewRequestID &+= 1
+        tiger.photosPreviewAlbumID = nil
+        tiger.photosPreviewImage = nil
         tiger.labelSwapTask?.cancel()
         if menuItems.indices.contains(selectedIndex) {
             tiger.rootLabelText = menuItems[selectedIndex].title
@@ -479,6 +489,148 @@ extension MenuView {
         }
     }
 
+    // MARK: - Movies
+
+    /// A movie chosen in a list turns for a moment before it starts. Returns false for
+    /// anything else, which the menus act on as ever.
+    func tigerTriggerThirdMenuItem() -> Bool {
+        guard thirdMenuMode == .moviesFolder, tvShowListing == nil, thirdMenuItems.indices.contains(selectedThirdIndex) else { return false }
+        let item = thirdMenuItems[selectedThirdIndex]
+        guard !item.isDirectory else { return false }
+        playSound(named: "Selection")
+        guard !tiger.isStartingMovie else { return true }
+        tiger.movieStartRequestID &+= 1
+        let requestID = tiger.movieStartRequestID
+        tiger.isStartingMovie = true
+        Task {
+            try? await firstRowSleep(0.1)
+            guard !Task.isCancelled, self.tiger.movieStartRequestID == requestID else { return }
+            withTransaction(.instant) {
+                self.tiger.isStartingMovie = false
+            }
+            self.startMoviePlayback(from: item.url)
+        }
+        return true
+    }
+
+    /// The question about where to start a movie is a page of two rows, which slides in; the
+    /// movie's picture comes up behind it a moment later.
+    func tigerEnterResumePage(for url: URL) {
+        guard !isEnteringSubmenu, !isReturningToRoot else { return }
+        isMovieTransitioning = true
+        tiger.resumeRequestID &+= 1
+        let requestID = tiger.resumeRequestID
+        withTransaction(.instant) {
+            tiger.showsResumeBackdrop = false
+            presentMovieResumePrompt(for: url)
+        }
+        // The picture behind the question is the movie where it was left.
+        let seconds = movieResumePromptResumeSeconds
+        let pictureID = incrementRequestID(&movieResumePromptBackdropRequestID)
+        movieResumePromptBackdropImage = nil
+        Task.detached(priority: .userInitiated) { [url] in
+            let image = await self.generateMovieThumbnail(for: url, preferredSeconds: seconds)
+            await MainActor.run {
+                guard self.movieResumePromptBackdropRequestID == pictureID, self.isMovieResumePromptVisible else { return }
+                self.movieResumePromptBackdropImage = image
+            }
+        }
+        Task {
+            try? await firstRowSleep(TigerTheme.pageSlideDuration)
+            self.isMovieTransitioning = false
+        }
+        Task {
+            try? await firstRowSleep(1.0)
+            guard self.tiger.resumeRequestID == requestID, self.isMovieResumePromptVisible else { return }
+            withAnimation(.easeInOut(duration: 0.5)) {
+                self.tiger.showsResumeBackdrop = true
+            }
+        }
+    }
+
+    func tigerLeaveResumePage() {
+        isMovieTransitioning = true
+        tiger.resumeRequestID &+= 1
+        withAnimation(.easeInOut(duration: 0.5)) {
+            tiger.showsResumeBackdrop = false
+        }
+        withTransaction(.instant) {
+            dismissMovieResumePrompt()
+        }
+        Task {
+            try? await firstRowSleep(TigerTheme.pageSlideDuration)
+            self.isMovieTransitioning = false
+        }
+    }
+
+    /// The movie comes up over the page, from where it was left or from its beginning.
+    func tigerStartMovieFromResumePage(_ url: URL) {
+        let resumes = movieResumePromptSelectedIndex == 0
+        let startSeconds = resumes ? movieResumePromptResumeSeconds : 0
+        isMovieResumePromptConfirming = true
+        playSound(named: "Selection")
+        clearMoviePlaybackControlState()
+        isMovieTransitioning = true
+        tiger.resumeRequestID &+= 1
+        withTransaction(.instant) {
+            movieSceneOpacity = 0
+        }
+        activateMoviePlayback(from: url, startSeconds: startSeconds, showsPlayGlyphOnStart: false)
+        withAnimation(.easeInOut(duration: 1.0)) {
+            movieSceneOpacity = 1
+            menuSceneOpacity = 0
+        }
+        Task {
+            try? await firstRowSleep(1.0)
+            if startSeconds > 0.01 {
+                self.showMovieControlsInstantly()
+                self.scheduleMovieControlsAutoHide()
+            }
+            withTransaction(.instant) {
+                self.dismissMovieResumePrompt()
+                self.tiger.showsResumeBackdrop = false
+            }
+            self.isMovieTransitioning = false
+        }
+    }
+
+    // MARK: - Previews
+
+    /// The movie the list rests on, to play beside it (nil on a folder's row).
+    func tigerMoviePreviewURL() -> URL? {
+        guard isInSubmenu, isInThirdMenu, thirdMenuMode == .moviesFolder, !isLoadingMoviesFolderEntries else { return nil }
+        guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
+        let entry = thirdMenuItems[selectedThirdIndex]
+        return entry.isDirectory ? nil : entry.url.standardizedFileURL
+    }
+
+    /// Reads the cover of the album Photos rests on, for the preview beside its list.
+    func tigerRefreshPhotosPreview() {
+        let album: PhotoLibraryAlbumEntry? = if isInThirdMenu, thirdMenuMode == .photosDateAlbums {
+            photosDateAlbums.indices.contains(selectedThirdIndex) ? photosDateAlbums[selectedThirdIndex] : nil
+        } else if !isInThirdMenu {
+            selectedPhotoAlbumForCarousel
+        } else {
+            nil
+        }
+        guard let album else {
+            tiger.photosPreviewRequestID &+= 1
+            tiger.photosPreviewAlbumID = nil
+            tiger.photosPreviewImage = nil
+            return
+        }
+        guard album.id != tiger.photosPreviewAlbumID else { return }
+        tiger.photosPreviewRequestID &+= 1
+        let requestID = tiger.photosPreviewRequestID
+        tiger.photosPreviewAlbumID = album.id
+        tiger.photosPreviewImage = nil
+        guard let cover = album.coverAssetLocalIdentifier else { return }
+        requestPhotoImage(localIdentifier: cover, targetSize: CGSize(width: 800, height: 800), contentMode: .aspectFill, deliveryMode: .highQualityFormat) { image in
+            guard self.tiger.photosPreviewRequestID == requestID, let image else { return }
+            self.tiger.photosPreviewImage = image
+        }
+    }
+
     /// Whether the selected row shows a spinner in place of its arrow.
     func tigerRowIsBusy(_ itemID: String) -> Bool {
         if itemID == "movies_theatrical_trailers" { return tiger.isLoadingTrailers }
@@ -509,8 +661,7 @@ extension MenuView {
                 plainMenuListItem(id: "movie_resume_start", title: L("Start from Beginning")),
             ]
             return TigerPage(
-                key: "\(rootID)|resume|\(movieResumePromptTargetURL?.path ?? "")", depth: depth + 5, rootID: rootID,
-                title: movieResumePromptTargetURL?.deletingPathExtension().lastPathComponent ?? headerText,
+                key: "\(rootID)|resume|\(movieResumePromptTargetURL?.path ?? "")", depth: depth + 5, rootID: rootID, title: headerText,
                 content: .list, items: items, selectedIndex: movieResumePromptSelectedIndex,
             )
         }
@@ -557,6 +708,11 @@ extension MenuView {
         case .moviesFolder:
             return thirdMenuListItems().map {
                 plainMenuListItem(id: $0.id, title: $0.title, leadsToMenu: $0.leadsToMenu)
+            }
+        case .photosDateAlbums:
+            // (Each album leads to its photos; no counts or little pictures on the rows.)
+            return thirdMenuListItems().map {
+                plainMenuListItem(id: $0.id, title: $0.title, leadsToMenu: !$0.id.hasSuffix("_error"))
             }
         default:
             return thirdMenuListItems()

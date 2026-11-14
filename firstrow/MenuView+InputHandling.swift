@@ -578,6 +578,7 @@ extension MenuView {
     }
 
     func triggerThirdMenuAction() {
+        if TigerTheme.isActive, tigerTriggerThirdMenuItem() { return }
         playSound(named: "Selection")
         switch thirdMenuMode {
         case .moviesFolder:
