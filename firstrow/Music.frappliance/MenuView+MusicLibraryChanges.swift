@@ -308,21 +308,23 @@ extension MenuView {
 
     /// A song is about to start from `queue`, at `trackIndex`. When that is the list already
     /// being played going on to another of its songs, it is still from where in the library
-    /// it was; and a song that left the list while it played, which kept its row until now,
-    /// is taken out as the other starts (`songIDsBefore` is the list with it still in).
+    /// it was, and called what it was; and a song that left the list while it played, which
+    /// kept its row until now, is taken out as the other starts (`songIDsBefore` is the list
+    /// with it still in).
     func musicQueueGoingOn(to song: MusicLibrarySongEntry, in queue: [MusicLibrarySongEntry]?, at trackIndex: Int)
-        -> (queue: [MusicLibrarySongEntry]?, trackIndex: Int, origin: MusicQueueOrigin?, departedSongID: String?, songIDsBefore: [String]?)
+        -> (queue: [MusicLibrarySongEntry]?, trackIndex: Int, origin: MusicQueueOrigin?, title: String?, departedSongID: String?, songIDsBefore: [String]?)
     {
         guard var queue, !queue.isEmpty, queue.count == activeMusicPlaybackQueue.count,
               zip(queue, activeMusicPlaybackQueue).allSatisfy({ $0.id == $1.id })
-        else { return (queue, trackIndex, nil, nil, nil) }
+        else { return (queue, trackIndex, nil, nil, nil, nil) }
         let origin = activeMusicQueueOrigin
+        let title = activeMusicQueueTitle
         guard let departed = musicQueueDepartedSongID, departed != song.id,
               let row = queue.firstIndex(where: { $0.id == departed })
-        else { return (queue, trackIndex, origin, musicQueueDepartedSongID, nil) }
+        else { return (queue, trackIndex, origin, title, musicQueueDepartedSongID, nil) }
         let before = queue.map(\.id)
         queue.remove(at: row)
-        return (queue, row < trackIndex ? trackIndex - 1 : trackIndex, origin, nil, before)
+        return (queue, row < trackIndex ? trackIndex - 1 : trackIndex, origin, title, nil, before)
     }
 
     /// The list being played is made again from where it came from in the library, as that

@@ -67,16 +67,23 @@ final class MenuListLayer {
     /// Where the rows were last laid out, for finding the one under the pointer.
     private(set) var hitGeometry: MenuListHitGeometry?
     private static let clipOverhang: CGFloat = 2500
+    /// How far the classic look's fades reach past the edge of what the list clips.
+    private static let fadeOverhang: CGFloat = 2
 
     init() {
         layer.addSublayer(selectionBox.layer)
         clip.masksToBounds = true
         layer.addSublayer(clip)
         clip.addSublayer(rowsContainer)
+        // The fades are drawn inside the clip and reach a little past its edges, so that
+        // they are cut where the rows are and cover all that is left of them. (Laid over the
+        // clip, up to the same edge, a fade could stop a pixel short of where the clip did
+        // when that edge fell part way down a pixel, and the rows going by under it showed at
+        // full strength in a line along the foot of the list.)
         for fade in [topFade, bottomFade] {
-            fade.colors = [CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 0.78), CGColor(gray: 0, alpha: 0)]
+            fade.colors = [CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 0.78), CGColor(gray: 0, alpha: 0)]
             fade.opacity = 0
-            layer.addSublayer(fade)
+            clip.addSublayer(fade)
         }
         topFade.startPoint = CGPoint(x: 0.5, y: 0)
         topFade.endPoint = CGPoint(x: 0.5, y: 1)
@@ -401,8 +408,16 @@ final class MenuListLayer {
         let fadeWidth = max(visualWidth, menuWidth)
         topFade.isHidden = !c.showsTopOverflowFade || isModern
         bottomFade.isHidden = !c.showsTopOverflowFade || isModern
-        topFade.frame = CGRect(x: 0, y: isModern ? 0 : -c.topRoom, width: fadeWidth, height: menu.submenuTopFadeHeight)
-        bottomFade.frame = CGRect(x: 0, y: viewportHeight - menu.submenuTopFadeHeight, width: fadeWidth, height: menu.submenuTopFadeHeight)
+        // (Placed in the clip's own space, which starts `clipOverhang` to the left of the list
+        // and `margin` above it.)
+        let fadeHeight = menu.submenuTopFadeHeight
+        let fadeReach = fadeHeight + Self.fadeOverhang
+        topFade.frame = CGRect(x: Self.clipOverhang, y: (isModern ? 0 : -c.topRoom) + margin - Self.fadeOverhang, width: fadeWidth, height: fadeReach)
+        bottomFade.frame = CGRect(x: Self.clipOverhang, y: viewportHeight - fadeHeight + margin, width: fadeWidth, height: fadeReach)
+        // Solid over the part past the edge, then fading as before over the rest.
+        let fadeStops = [0, Self.fadeOverhang / fadeReach, (Self.fadeOverhang + fadeHeight / 2) / fadeReach, 1].map { NSNumber(value: Double($0)) }
+        topFade.locations = fadeStops
+        bottomFade.locations = fadeStops
         let fadeAnimation = Animation.easeInOut(duration: 0.12)
         topFade.setOpacity(menu.isMenuOverflowScrollingUp ? 1 : 0, pass.animation(fadeAnimation, when: lastScrollingUp != nil && lastScrollingUp != menu.isMenuOverflowScrollingUp))
         bottomFade.setOpacity(menu.isMenuOverflowScrollingDown ? 1 : 0, pass.animation(fadeAnimation, when: lastScrollingDown != nil && lastScrollingDown != menu.isMenuOverflowScrollingDown))
@@ -471,10 +486,17 @@ final class SelectionBoxLayer {
         layer.addSublayer(texture)
     }
 
+    /// How tall the bar's picture is drawn, glow and all, when its visual box is
+    /// `visualHeight` tall over a row `selectionBoxHeight` tall.
+    static func pictureHeight(visualHeight: CGFloat, selectionBoxHeight: CGFloat) -> CGFloat {
+        guard let joined else { return visualHeight }
+        return visualHeight * (joined.height / selectionBoxHeight)
+    }
+
     /// `frame` is the visual box, and the taller glow texture is centred on it.
     func update(frame: CGRect, selectionBoxHeight: CGFloat, animation: Animation?) {
         guard let joined = Self.joined else { return }
-        let textureHeight = frame.height * (joined.height / selectionBoxHeight)
+        let textureHeight = Self.pictureHeight(visualHeight: frame.height, selectionBoxHeight: selectionBoxHeight)
         // The caps keep the picture's proportions at this height.
         let pixelsPerPoint = joined.height / max(1, textureHeight)
         if texture.contentsScale != pixelsPerPoint {

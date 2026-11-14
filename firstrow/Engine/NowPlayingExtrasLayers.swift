@@ -309,7 +309,11 @@ final class NowPlayingQueueLayer {
         clip.mask = fade
         fade.startPoint = CGPoint(x: 0.5, y: 0)
         fade.endPoint = CGPoint(x: 0.5, y: 1)
-        fade.colors = [CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 0)]
+        // (Six stops: past each edge, the edge itself, and where the fade from it ends.)
+        fade.colors = [
+            CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 1),
+            CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0),
+        ]
         panel.opacity = 0
         panel.isHidden = true
     }
@@ -363,31 +367,44 @@ final class NowPlayingQueueLayer {
 
         let pitch = MenuView.nowPlayingQueueRowPitch
         let count = menu.nowPlayingQueueCount
-        let clipFrame = CGRect(x: 0, y: headerTop + 74, width: width, height: panelFrame.height - headerTop - 74 - 18)
+        // Where the rows show, and how far each end is from the sheet's.
+        let listFrame = CGRect(x: 0, y: headerTop + 74, width: width, height: panelFrame.height - headerTop - 74 - 18)
+        let padding: CGFloat = 14
+        // The classic bar's glow reaches further past a row than the room the first and last
+        // rows are given, so on the first row its top was cut off in a straight line. What is
+        // clipped starts that much higher, and ends as much lower as the sheet has room for;
+        // the rows stay where they were, and so does where they fade as they scroll.
+        let barHeight = pitch - 8
+        let glow = SelectionBoxLayer.pictureHeight(visualHeight: barHeight + 58 * barHeight / 75, selectionBoxHeight: barHeight)
+        let glowRoom = isModern ? 0 : max(0, ((glow - barHeight) / 2 - padding).rounded(.up))
+        let roomAbove = min(glowRoom, listFrame.minY)
+        let roomBelow = min(glowRoom, 16)
+        let clipFrame = CGRect(x: 0, y: listFrame.minY - roomAbove, width: width, height: listFrame.height + roomAbove + roomBelow)
         clip.frame = clipFrame
         fade.frame = CGRect(origin: .zero, size: clipFrame.size)
-        let edge = 26 / max(1, clipFrame.height)
-        fade.locations = [0, NSNumber(value: Double(edge)), NSNumber(value: Double(1 - edge)), 1]
-        let padding: CGFloat = 14
-        viewport = CGRect(x: panelFrame.minX, y: panelFrame.minY + clipFrame.minY, width: width, height: clipFrame.height)
+        let fadeReach: CGFloat = 26
+        let clipHeight = max(1, clipFrame.height)
+        fade.locations = [0, roomAbove / clipHeight, (roomAbove + fadeReach) / clipHeight, 1 - (roomBelow + fadeReach) / clipHeight, 1 - roomBelow / clipHeight, 1]
+            .map { NSNumber(value: Double($0)) }
+        viewport = CGRect(x: panelFrame.minX, y: panelFrame.minY + listFrame.minY, width: width, height: listFrame.height)
         listTop = viewport.minY + padding
-        scrollLimit = max(0, CGFloat(count) * pitch + padding * 2 - clipFrame.height)
+        scrollLimit = max(0, CGFloat(count) * pitch + padding * 2 - listFrame.height)
         let scroll = max(0, min(scrollLimit, menu.nowPlayingQueueScroll))
-        rowsContainer.bounds = CGRect(x: 0, y: 0, width: width, height: max(clipFrame.height, CGFloat(count) * pitch + padding * 2))
+        rowsContainer.bounds = CGRect(x: 0, y: 0, width: width, height: max(listFrame.height, CGFloat(count) * pitch + padding * 2))
         let scrollAnimation = lastScroll == nil ? nil : pass.animation
         // Where it shows now, part way through a scroll, as well as where it's going: a quick
         // flick of the wheel mustn't leave it empty on the way.
-        let shownScroll = padding - (rowsContainer.presentation()?.position.y ?? rowsContainer.position.y)
-        rowsContainer.setPosition(CGPoint(x: 0, y: padding - scroll), scrollAnimation)
+        let shownScroll = roomAbove + padding - (rowsContainer.presentation()?.position.y ?? rowsContainer.position.y)
+        rowsContainer.setPosition(CGPoint(x: 0, y: roomAbove + padding - scroll), scrollAnimation)
         lastScroll = scroll
         // Each edge fades only with something scrolled past it: at the top of the list the first
-        // song shows whole, and at the bottom the last one does.
-        let fadeReach: CGFloat = 26
+        // song shows whole, and at the bottom the last one does. (The room for the glow past
+        // each edge shows or hides with the edge.)
         let topFade = min(1, max(0, scroll / fadeReach))
         let bottomFade = min(1, max(0, (scrollLimit - scroll) / fadeReach))
         let fadeColors = [
-            CGColor(gray: 0, alpha: 1 - topFade), CGColor(gray: 0, alpha: 1),
-            CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1 - bottomFade),
+            CGColor(gray: 0, alpha: 1 - topFade), CGColor(gray: 0, alpha: 1 - topFade), CGColor(gray: 0, alpha: 1),
+            CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1 - bottomFade), CGColor(gray: 0, alpha: 1 - bottomFade),
         ]
         let fadeKey = (topFade, bottomFade)
         if lastFade.map({ $0 != fadeKey }) ?? true {
@@ -397,7 +414,7 @@ final class NowPlayingQueueLayer {
 
         // Rows near the view, all the way along a scroll under way.
         let first = max(0, Int(floor(min(scroll, shownScroll) / pitch)) - 2)
-        let last = min(count - 1, Int(ceil((max(scroll, shownScroll) + clipFrame.height) / pitch)) + 2)
+        let last = min(count - 1, Int(ceil((max(scroll, shownScroll) + listFrame.height) / pitch)) + 2)
         let range = first <= last ? first ... last : 1 ... 0
         for (index, row) in rows where !range.contains(index) {
             row.layer.isHidden = true

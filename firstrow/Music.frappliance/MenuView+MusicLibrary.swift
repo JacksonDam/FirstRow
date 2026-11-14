@@ -3474,11 +3474,8 @@ extension MenuView {
             trackCount: shuffledSongs.count,
             usingExistingBlackout: usingExistingBlackout,
             playbackQueue: shuffledSongs,
-            // (Every song in the library, unless the songs last on screen were shuffled
-            // again and those were from somewhere else.)
-            queueOrigin: shuffledSongs.contains(where: { $0.spotify != nil || $0.jellyfin != nil })
-                ? nil
-                : MusicQueueOrigin(category: nil, isShuffled: true),
+            // (Every song in the library.)
+            queueOrigin: MusicQueueOrigin(category: nil, isShuffled: true),
         )
     }
 
@@ -3589,20 +3586,16 @@ extension MenuView {
     }
 
     func startMusicShufflePlaybackFromLibrary() {
-        let canReuseExistingSongsQueue =
-            activeMusicLibraryMediaType == .songs &&
-            !isMusicSongsCategoryScoped &&
-            !musicSongsThirdMenuItems.isEmpty
         // A new Now Playing row waits for the fade-out, but an existing one stays so rows don't shift.
         if !shouldExposeMusicNowPlayingMenuItem {
             deferNowPlayingMenuItemUntilAfterFadeOut = true
         }
         activeMusicLibraryMediaType = .songs
         musicSongsShowsShuffleAction = false
-        if canReuseExistingSongsQueue {
-            applyRootMusicShufflePlayback(with: musicSongsThirdMenuItems)
-            return
-        }
+        // Every song in the library, whatever list of songs was looked at last. (That list
+        // is kept after it is left, and was shuffled instead when it wasn't marked as one
+        // album's or playlist's; but the mark comes off on the way back out of such a list,
+        // so after a look at an album only that album's songs were shuffled.)
         if let cachedSongs = musicAllSongsCache {
             applyRootMusicShufflePlayback(with: cachedSongs)
             return

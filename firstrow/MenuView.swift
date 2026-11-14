@@ -638,6 +638,9 @@ final class MenuView: ObservableObject {
     /// Where in the library the list being played came from, for it to follow the library when
     /// that changes. Nil for a list that isn't one of the library's.
     var activeMusicQueueOrigin: MusicQueueOrigin?
+    /// What the list being played is called (an album's name, say), as the menu it was started
+    /// from had it: Now Playing can be opened again with any other menu behind it, or none.
+    var activeMusicQueueTitle: String?
     /// The song playing, when it has left its list since it started (taken off the playlist,
     /// or out of the library): it keeps its row in the list until it is over.
     var musicQueueDepartedSongID: String?

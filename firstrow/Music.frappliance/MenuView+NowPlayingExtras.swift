@@ -115,12 +115,23 @@ extension MenuView {
     /// What the list is called: the album, playlist or other list of the library its songs
     /// are, or else the menu it came from.
     var nowPlayingQueueTitle: String {
-        if isInThirdMenu, let name = shownMusicSongsListName { return name }
-        if isInThirdMenu, !headerText.isEmpty { return headerText }
+        // (As it was called when it was started. Taken from the menu behind Now Playing each
+        // time, an album played and then come back to from the Music menu's Now Playing row,
+        // which has no list of songs behind it, was "Songs".)
+        if let activeMusicQueueTitle { return activeMusicQueueTitle }
+        if let shown = shownSongsListTitle { return shown }
         #if os(macOS)
             if let restoredMusicQueueTitle, !isPodcastAudioNowPlaying { return restoredMusicQueueTitle }
         #endif
         return isPodcastAudioNowPlaying ? L("Episodes") : L("Songs")
+    }
+
+    /// What the list of songs on screen is called: its name, when it has one of its own, or
+    /// else its menu's heading.
+    var shownSongsListTitle: String? {
+        guard isInThirdMenu else { return nil }
+        if let name = shownMusicSongsListName { return name }
+        return headerText.isEmpty ? nil : headerText
     }
 
     /// The songs on screen, by name, when they are those of one album, playlist, genre,

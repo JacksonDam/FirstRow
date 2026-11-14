@@ -180,6 +180,8 @@ extension MenuView {
             presentsFullscreen: presentsFullscreen,
             playbackQueue: playbackQueue,
             queueOrigin: queueOrigin,
+            // (A song chosen from a menu: its list is the one on screen.)
+            queueTitle: shownSongsListTitle,
         )
     }
 
@@ -426,6 +428,7 @@ extension MenuView {
         usingExistingBlackout: Bool = false,
         playbackQueue: [MusicLibrarySongEntry]? = nil,
         queueOrigin: MusicQueueOrigin? = nil,
+        queueTitle: String? = nil,
     ) {
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
         if resetTransitionState {
@@ -469,9 +472,10 @@ extension MenuView {
         }
         if let playbackQueue {
             activeMusicPlaybackQueue = playbackQueue
-            // Whoever starts a list says where in the library it's from; the list going on to
-            // its next song is from where it was.
+            // Whoever starts a list says where in the library it's from, and what it's called;
+            // the list going on to its next song is from where it was, by the same name.
             activeMusicQueueOrigin = queueOrigin ?? goingOn.origin
+            activeMusicQueueTitle = queueTitle ?? goingOn.title
             musicQueueDepartedSongID = goingOn.departedSongID
             #if os(macOS)
                 if let songIDsBefore = goingOn.songIDsBefore {
@@ -1310,6 +1314,7 @@ extension MenuView {
             hasPendingExternalMusicRestore = false
             activeMusicPlaybackQueue = []
             activeMusicQueueOrigin = nil
+            activeMusicQueueTitle = nil
             musicQueueDepartedSongID = nil
             activeMusicPlaybackSongID = persistentIDDecimalString
             musicAppleScriptCurrentTrackPersistentIDHex = snapshot.persistentIDHex
@@ -2300,6 +2305,7 @@ extension MenuView {
         removeCurrentMusicPlaybackTemporaryFileIfNeeded()
         activeMusicPlaybackQueue = []
         activeMusicQueueOrigin = nil
+        activeMusicQueueTitle = nil
         musicQueueDepartedSongID = nil
         activeMusicPlaybackSongID = nil
         clearActivePodcastAudioPlaybackContext()
