@@ -295,6 +295,10 @@ final class NowPlayingQueueLayer {
     private(set) var isAvailable = false
 
     init() {
+        // Away, the sheet waits past the right edge. It is out of sight there even while the
+        // modern look draws the scene smaller on its way out, which brings what is just past
+        // the screen's edges into view.
+        layer.masksToBounds = true
         layer.addSublayer(panel)
         panel.addSublayer(header)
         panel.addSublayer(clip)
@@ -311,7 +315,9 @@ final class NowPlayingQueueLayer {
     }
 
     func update(menu: MenuView, pass: RenderPass, size: CGSize, scale: CGFloat) {
-        layer.frame = CGRect(origin: .zero, size: size)
+        // (Its bounds, not its frame: it is drawn at the canvas's scale, and what it cuts off is
+        // what lies past the canvas's edges.)
+        layer.bounds = CGRect(origin: .zero, size: size)
         let isModern = ModernTheme.isActive
         isAvailable = menu.canShowNowPlayingQueue
         let reveal = isAvailable ? menu.nowPlayingQueueReveal : 0

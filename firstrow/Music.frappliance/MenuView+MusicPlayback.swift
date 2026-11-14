@@ -635,7 +635,10 @@ extension MenuView {
             musicAppleScriptProgressAnchorDate = isPlaying ? Date() : nil
         }
 
-        func startMusicPlaybackViaAppleScript(_ song: MusicLibrarySongEntry, playbackRequestID: Int) {
+        func startMusicPlaybackViaAppleScript(_ song: MusicLibrarySongEntry, playbackRequestID: Int, askingAgain: Bool = false) {
+            if !askingAgain {
+                musicAppSongStart = (song, 3)
+            }
             isCurrentMusicPlaybackUsingAppleScript = true
             isCurrentMusicPlaybackManagedByFirstRow = true
             musicAppleScriptIsPlaying = false
@@ -649,17 +652,24 @@ extension MenuView {
             musicAppleScriptDidHandleTrackBoundary = false
             let expectedSongID = song.id
             Task(priority: .userInitiated) {
-                let trackStartResult = await musicAppleScriptExecutor.run { () -> MusicAppleScriptTrackStartResult? in
+                let start = await musicAppleScriptExecutor.run { () -> (result: MusicAppleScriptTrackStartResult?, openedMusic: Bool) in
                     // Something else was played while this waited its turn: it never starts, so
                     // Music can't end up playing alongside it.
-                    guard MusicPlaybackGate.isCurrent(playbackRequestID) else { return nil }
-                    return self.playMusicTrackViaAppleScript(song: song)
+                    guard MusicPlaybackGate.isCurrent(playbackRequestID) else { return (nil, false) }
+                    // (Looked at first: asking for the song opens Music.)
+                    let openedMusic = !isMusicApplicationRunning()
+                    return (self.playMusicTrackViaAppleScript(song: song), openedMusic)
                 }
                 await MainActor.run {
+                    // (Noted even if another song has been asked for meanwhile: Music is as
+                    // newly open for that one.)
+                    if start.openedMusic {
+                        self.musicAppOpenedForPlaybackAt = Date()
+                    }
                     guard self.musicPlaybackRequestID == playbackRequestID else { return }
                     guard self.activeMusicPlaybackSongID == expectedSongID else { return }
                     guard self.isCurrentMusicPlaybackUsingAppleScript else { return }
-                    if let trackStartResult {
+                    if let trackStartResult = start.result {
                         self.musicAppleScriptCurrentTrackPersistentIDHex = trackStartResult.persistentIDHex
                         self.musicAppleScriptIsPlaying = trackStartResult.didBeginPlayback
                         self.musicAppleScriptStartupDeadline = trackStartResult.didBeginPlayback
@@ -687,6 +697,33 @@ extension MenuView {
                     }
                 }
             }
+        }
+
+        /// The Music app takes requests as soon as it is open, before it is ready to play: the
+        /// song it was opened for may never start, and Music comes up with another (the one it
+        /// had when it was last quit, say), which looks like its having moved on by itself. So
+        /// until Music has been heard playing a song after First Row opened it, a song it turns
+        /// out not to be playing is asked for again, a few times at most, rather than counted
+        /// as over. False when that doesn't apply: what Music says then counts as it does at
+        /// any other time.
+        private func askMusicAppAgainIfJustOpened() -> Bool {
+            guard let openedAt = musicAppOpenedForPlaybackAt, var start = musicAppSongStart,
+                  Date().timeIntervalSince(openedAt) < 20, start.asksLeft > 0,
+                  start.song.id == activeMusicPlaybackSongID,
+                  isCurrentMusicPlaybackUsingAppleScript, isCurrentMusicPlaybackManagedByFirstRow
+            else { return false }
+            start.asksLeft -= 1
+            musicAppSongStart = start
+            // (A request of its own: whatever is still on its way from the last one is dropped.)
+            let requestID = incrementRequestID(&musicPlaybackRequestID)
+            stopMusicAppleScriptProgressTimer()
+            noteMusicPlaybackStarting()
+            Task { @MainActor [weak self] in
+                try? await firstRowSleep(0.5)
+                guard let self, self.musicPlaybackRequestID == requestID else { return }
+                self.startMusicPlaybackViaAppleScript(start.song, playbackRequestID: requestID, askingAgain: true)
+            }
+            return true
         }
 
         func handleMusicAppleScriptTrackBoundary() {
@@ -1187,6 +1224,7 @@ extension MenuView {
                let currentPersistentIDHex = snapshot.persistentIDHex,
                expectedPersistentIDHex != currentPersistentIDHex
             {
+                if askMusicAppAgainIfJustOpened() { return }
                 handleMusicAppTrackChange(from: expectedPersistentIDHex, to: snapshot)
                 return
             }
@@ -1199,6 +1237,13 @@ extension MenuView {
             }
 
             hasPendingExternalMusicRestore = false
+            // Music is heard playing the song it was asked for: if First Row opened it a moment
+            // ago, it is up.
+            if musicAppOpenedForPlaybackAt != nil, snapshot.hasPosition, snapshot.isPlaying, snapshot.elapsedSeconds > 0.05,
+               snapshot.persistentIDHex == musicAppleScriptCurrentTrackPersistentIDHex
+            {
+                musicAppOpenedForPlaybackAt = nil
+            }
             if let persistentIDHex = snapshot.persistentIDHex {
                 musicAppleScriptCurrentTrackPersistentIDHex = persistentIDHex
             }
@@ -2225,6 +2270,7 @@ extension MenuView {
             musicAppleScriptProgressAnchorElapsedSeconds = 0
             musicAppleScriptCurrentTrackPersistentIDHex = nil
             musicAppleScriptDidHandleTrackBoundary = false
+            musicAppSongStart = nil
         #endif
         #if os(tvOS)
             musicKitScrubGlyphResetWorkItem?.cancel()

@@ -53,6 +53,9 @@ final class FirstRowAppController {
     /// The menus are being drawn out of sight, a moment before they come in after the intro.
     private var isBringingMenusIn = false
     private let introLayer = AVPlayerLayer()
+    #if os(macOS)
+        private let introMask = CALayer()
+    #endif
     private let quitOverlay = SceneLayer()
     private var introPlayer: AVPlayer?
     private var introEndObserver: NSObjectProtocol?
@@ -98,6 +101,15 @@ final class FirstRowAppController {
         introLayer.videoGravity = .resizeAspectFill
         introLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
         introLayer.isHidden = true
+        #if os(macOS)
+            // The intro has the screen to itself, and its picture is cut at the sides to fill a
+            // screen less wide than it. On a MacBook Neo that picture sat to the right of the
+            // middle until something else came up on the screen: a movie alone on the screen
+            // can be put there by the system without being drawn with the other layers. Under
+            // a mask (of all of it, so nothing is hidden) it is always drawn with them.
+            introMask.backgroundColor = CGColor(gray: 0, alpha: 1)
+            introLayer.mask = introMask
+        #endif
         root.addSublayer(introLayer)
         root.addSublayer(menuContainer)
         quitOverlay.backgroundColor = CGColor(gray: 0, alpha: 1)
@@ -186,6 +198,9 @@ final class FirstRowAppController {
             let bounds = CGRect(origin: .zero, size: size)
             menuContainer.frame = bounds
             introLayer.frame = bounds
+            #if os(macOS)
+                introMask.frame = bounds
+            #endif
             quitOverlay.frame = bounds
         }
         renderer?.layout(containerSize: size, backingScale: scale)
