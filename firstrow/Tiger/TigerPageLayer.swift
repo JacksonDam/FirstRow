@@ -20,7 +20,7 @@ final class TigerPageLayer {
     private var list: TigerListLayer?
     private var message: TigerMessageLayer?
     private var nowPlaying: TigerNowPlayingLayer?
-    private var moviePreview: TigerMoviePreviewLayer?
+    private var showsMoviePreview = false
     private var photosPreview: TigerPhotosPreviewLayer?
     private var isFrozen = false
     private var headerMemo: String?
@@ -38,7 +38,6 @@ final class TigerPageLayer {
     /// The page is on its way out: it stays as it is.
     func freeze() {
         isFrozen = true
-        moviePreview?.pause()
     }
 
     func remove() {
@@ -47,8 +46,15 @@ final class TigerPageLayer {
     }
 
     func tearDown() {
-        moviePreview?.tearDown()
+        letGoOfMoviePreview()
         list?.tearDown()
+    }
+
+    private func letGoOfMoviePreview() {
+        guard showsMoviePreview else { return }
+        showsMoviePreview = false
+        let preview = TigerMoviePreviewLayer.shared
+        if preview.layer.superlayer === layer { preview.layer.removeFromSuperlayer() }
     }
 
     func updateBusyRow(menu: MenuView) {
@@ -67,17 +73,14 @@ final class TigerPageLayer {
 
         // A preview to the left of the list.
         if page.showsMoviePreview {
-            let preview = moviePreview ?? {
-                let made = TigerMoviePreviewLayer()
-                layer.insertSublayer(made.layer, below: content)
-                moviePreview = made
-                return made
-            }()
-            preview.update(menu: menu, sceneSize: sceneSize)
-        } else if let preview = moviePreview {
-            preview.tearDown()
-            preview.layer.removeFromSuperlayer()
-            moviePreview = nil
+            let preview = TigerMoviePreviewLayer.shared
+            if preview.layer.superlayer !== layer {
+                withoutLayerActions { layer.insertSublayer(preview.layer, below: content) }
+            }
+            showsMoviePreview = true
+            preview.place(sceneSize: sceneSize)
+        } else {
+            letGoOfMoviePreview()
         }
         if page.showsPhotosPreview {
             let preview = photosPreview ?? {

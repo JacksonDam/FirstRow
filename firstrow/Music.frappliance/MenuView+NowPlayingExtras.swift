@@ -224,6 +224,8 @@ extension MenuView {
     /// Brings Now Playing's list out with the song playing picked out in it, for the arrows to
     /// move from, or puts it away: the keyboard's Tab, and the Siri Remote's TV button.
     func toggleNowPlayingQueue() {
+        // (Now Playing has no list beside it in the Tiger look.)
+        if TigerTheme.isActive { return }
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isFullscreenSceneTransitioning else { return }
         registerUserInteractionForScreenSaver()
         if isNowPlayingQueueVisible {

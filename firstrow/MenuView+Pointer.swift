@@ -217,6 +217,8 @@ extension MenuView {
     }
 
     func handlePointerEvent(_ event: PointerEvent) {
+        // (The Tiger look is worked with keys, a game controller or a remote.)
+        if TigerTheme.isActive { return }
         #if os(macOS)
             // A mouse can report where it is a thousand times a second, and each report had the
             // menus worked out and drawn again. Where it has got to is acted on once a frame;

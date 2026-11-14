@@ -39,7 +39,6 @@ enum TigerTheme {
     static let introStageStartScale: CGFloat = 1.85
     static let introBackdropMinimumScale: CGFloat = 0.25
     static let introBackdropFinalYOffset: CGFloat = -512
-    static let introBackdropFadeStartProgress: CGFloat = 0.75
     static let introDuration: Double = 2.325
     static let introBackdropDuration: Double = 2.75
     static let introStartDelay: Double = 0.05

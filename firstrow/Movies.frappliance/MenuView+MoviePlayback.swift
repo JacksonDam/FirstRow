@@ -473,7 +473,7 @@ extension MenuView {
     }
 
     /// Lets go of the movie once it's out of sight.
-    private func tearDownMoviePlayback() {
+    func tearDownMoviePlayback() {
         removeMoviePlaybackObservation()
         movieOptionsReveal = 0
         moviePlayer = nil
@@ -489,7 +489,7 @@ extension MenuView {
         switch key {
         case .downArrow:
             // Down to the options, out of their buttons; up from there comes back.
-            if !isRepeat { openMovieOptions() }
+            if !isRepeat, !TigerTheme.isActive { openMovieOptions() }
         case .upArrow:
             // Up from the bar puts the controls away.
             if !isRepeat, areMovieControlsVisible {
@@ -498,7 +498,11 @@ extension MenuView {
             }
         case .delete, .escape:
             playSound(named: "Exit")
-            stopMoviePlaybackAndReturnToMenu()
+            if TigerTheme.isActive {
+                tigerLeaveMovie()
+            } else {
+                stopMoviePlaybackAndReturnToMenu()
+            }
         case .space, .enter:
             handleMovieSpacebarPressed()
         case .leftArrow:

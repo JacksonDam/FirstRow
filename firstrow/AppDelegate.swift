@@ -135,6 +135,8 @@
             appMenu.addItem(.separator())
             let settings = NSMenuItem(title: L("Settings…"), action: #selector(showSettings(_:)), keyEquivalent: ",")
             settings.target = self
+            // (The Tiger look has no settings to show.)
+            settings.isHidden = TigerTheme.isActive
             appMenu.addItem(settings)
             appMenu.addItem(.separator())
             appMenu.addItem(withTitle: L("Hide First Row"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -148,6 +150,7 @@
         }
 
         @objc private func showSettings(_: Any?) {
+            guard !TigerTheme.isActive else { return }
             MainActor.runOnMainThread {
                 appController?.showMediaFolders()
             }

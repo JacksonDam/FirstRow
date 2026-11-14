@@ -14,51 +14,61 @@ func tigerSmoothStep(_ value: CGFloat) -> CGFloat {
     return t * t * (3 - 2 * t)
 }
 
-/// A number that moves from where it is to a new value over a time, on a timing curve: the
-/// ring's turn, how far a section has opened. Layers are placed from it as it will be at each
-/// moment of the move (see `TigerKeyframes`), so one move can drive any number of them.
+/// A number that moves to a new value over a time, on a timing curve: the ring's turn, how
+/// far a section has opened. Layers are placed from it as it will be at each moment of the
+/// move (see `TigerKeyframes`), so one move can drive any number of them. A move begun while
+/// another is under way is added to it, so the value keeps its speed: an arrow held down
+/// turns the ring without a stop between its steps.
 struct TigerMovingValue {
-    private var from: Double
+    /// One move: how far it was from its goal when it began, dying away along its curve.
+    private struct Leg {
+        var distance: Double
+        var start: CFTimeInterval
+        var duration: Double
+        var curve: TimingCurve
+    }
+
+    private var legs: [Leg] = []
     private(set) var target: Double
-    private var start: CFTimeInterval = 0
-    private var duration: Double = 0
-    private var curve = TimingCurve.easeInEaseOut
+    /// Where the latest move set out from.
+    private(set) var origin: Double
     /// Counts the moves, for whoever follows the value to tell a new one.
     private(set) var revision = 0
 
     init(_ value: Double) {
-        from = value
         target = value
+        origin = value
     }
 
     func value(at time: CFTimeInterval) -> Double {
-        guard duration > 0 else { return target }
-        let elapsed = time - start
-        if elapsed >= duration { return target }
-        if elapsed <= 0 { return from }
-        return from + (target - from) * curve.value(at: elapsed / duration)
+        var value = target
+        for leg in legs {
+            let elapsed = time - leg.start
+            if elapsed >= leg.duration { continue }
+            let progress = elapsed <= 0 ? 0 : leg.curve.value(at: elapsed / leg.duration)
+            value -= leg.distance * (1 - progress)
+        }
+        return value
     }
 
-    /// When the move under way ends (now or earlier, at rest).
+    /// When the last of the moves under way ends (0 at rest).
     var endTime: CFTimeInterval {
-        duration > 0 ? start + duration : 0
+        legs.map { $0.start + $0.duration }.max() ?? 0
     }
 
     mutating func set(_ value: Double) {
-        from = value
+        legs = []
         target = value
-        duration = 0
+        origin = value
         revision &+= 1
     }
 
-    /// Moves on from wherever it is now.
     mutating func move(to value: Double, duration: Double, curve: TimingCurve = .easeInEaseOut, delay: Double = 0) {
         let now = CACurrentMediaTime()
-        from = self.value(at: now)
+        origin = self.value(at: now)
+        legs.removeAll { now >= $0.start + $0.duration }
+        legs.append(Leg(distance: value - target, start: now + delay, duration: duration, curve: curve))
         target = value
-        start = now + delay
-        self.duration = duration
-        self.curve = curve
         revision &+= 1
     }
 }

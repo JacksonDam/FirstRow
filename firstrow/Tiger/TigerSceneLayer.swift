@@ -135,6 +135,7 @@ final class TigerSceneLayer {
     }
 
     func tearDown() {
+        TigerMoviePreviewLayer.shared.tearDown()
         livePage?.tearDown()
         outgoingPages.forEach { $0.tearDown() }
     }
@@ -210,10 +211,10 @@ final class TigerSceneLayer {
         var opacities: [CGFloat] = [], reflectionOpacities: [CGFloat] = []
         for time in times {
             let progress = tigerUnit(CGFloat(state.introBackdrop.value(at: time)))
-            let fade = tigerUnit((progress - TigerTheme.introBackdropFadeStartProgress) / max(0.001, 1 - TigerTheme.introBackdropFadeStartProgress))
             let factor = tigerMix(1, TigerTheme.introBackdropMinimumScale, progress)
             let yOffset = tigerMix(0, TigerTheme.introBackdropFinalYOffset, progress)
-            let opacity = tigerMix(1, 0, tigerSmoothStep(fade))
+            // (It fades all the way through the move, as steadily as it shrinks.)
+            let opacity = 1 - progress
             imagePlaces.append(CGPoint(x: size.width * 0.5, y: size.height * 0.5 + yOffset))
             imageTurns.append(CATransform3DMakeScale(factor, factor, 1))
             opacities.append(opacity)
@@ -277,23 +278,38 @@ final class TigerSceneLayer {
         var places = Array(repeating: [CGPoint](), count: count), scales = Array(repeating: [CGFloat](), count: count)
         var depths = Array(repeating: [CGFloat](), count: count), opacities = Array(repeating: [CGFloat](), count: count)
         var reflectionPlaces = Array(repeating: [CGPoint](), count: count), reflectionTurns = Array(repeating: [CATransform3D](), count: count)
+        // As First Row opens the ring is at its full width from the first moment (and as it
+        // leaves, at its widest); what each icon is out of place by at that moment, where it
+        // then stands on the ring, dies away over the move.
+        let isMoving = state.isIntroRunning
+        let radius = isMoving && state.isExitRunning ? TigerTheme.ringExitEndRadius : TigerTheme.ringRadius
+        let radiusBefore = state.isExitRunning ? TigerTheme.ringRadius : TigerTheme.ringIntroStartRadius
+        let firstTurn = state.ring.origin
+        let outOfPlace: [TigerRing.Placement] = (0 ..< count).map { index in
+            let after = TigerRing.placement(index: index, selection: firstTurn, count: count, radius: radius)
+            let before = TigerRing.placement(index: index, selection: firstTurn, count: count, radius: isMoving ? radiusBefore : radius)
+            return TigerRing.Placement(x: after.x - before.x, y: after.y - before.y, depth: 0, scale: after.scale - before.scale)
+        }
+        // The whole ring is enlarged as it rises, the more so that the icon to be in front
+        // starts no smaller than it ends up.
+        var stageStartScale = TigerTheme.introStageStartScale
+        if isMoving, !state.isExitRunning, count > 0 {
+            let first = TigerRing.placement(index: selected, selection: firstTurn, count: count, radius: radiusBefore)
+            let settled = TigerRing.placement(index: selected, selection: Double(selected), count: count, radius: TigerTheme.ringRadius)
+            stageStartScale *= max(1, settled.scale / max(0.001, first.scale))
+        }
         for time in times {
             let turn = state.ring.value(at: time)
             let intro = CGFloat(state.intro.value(at: time))
             let opened = tigerSmoothStep(CGFloat(state.section.value(at: time)))
-            let radius = TigerRing.radius(intro: intro, isLeaving: state.isExitRunning)
-            // While the ring rises, the whole of it is enlarged so the icon that will be in
-            // front is never smaller than it ends up.
-            var compensation: CGFloat = 1
-            if state.isIntroRunning, count > 0 {
-                let now = TigerRing.placement(index: selected, selection: turn, count: count, radius: radius)
-                let settled = TigerRing.placement(index: selected, selection: Double(selected), count: count, radius: TigerTheme.ringRadius)
-                compensation = max(1, settled.scale / max(0.001, now.scale))
-            }
+            let left = isMoving ? (state.isExitRunning ? tigerUnit(intro) : 1 - tigerUnit(intro)) : 0
             stagePlaces.append(CGPoint(x: size.width * 0.5, y: size.height + TigerRing.stageYOffset(intro: intro, sceneHeight: size.height)))
-            stageScales.append(compensation * tigerMix(TigerTheme.introStageStartScale, 1, tigerUnit(intro)))
+            stageScales.append(tigerMix(stageStartScale, 1, tigerUnit(intro)))
             for index in 0 ..< count {
-                let placement = TigerRing.placement(index: index, selection: turn, count: count, radius: radius)
+                var placement = TigerRing.placement(index: index, selection: turn, count: count, radius: radius)
+                placement.x -= outOfPlace[index].x * left
+                placement.y -= outOfPlace[index].y * left
+                placement.scale -= outOfPlace[index].scale * left
                 var factor = placement.scale
                 var place = CGPoint(x: center.x + placement.x, y: center.y + placement.y)
                 var opacity: CGFloat = 1
@@ -366,22 +382,23 @@ final class TigerSceneLayer {
         let flightSide = TigerRing.flightSide
         // (The icon lands a little above where the settled one stands, by the ring's own offset.)
         let landedOffset = CGPoint(x: landed.x - center.x, y: landed.y - center.y - stageY - TigerTheme.headerIconOpticalYOffset)
+        // Each of these goes straight from what it is on the ring to what it is in the title
+        // bar, at the pace of the move itself.
+        let placement = TigerRing.placement(index: menu.selectedIndex, selection: state.ring.target, count: count, radius: TigerTheme.ringRadius)
+        let ringScale = placement.scale * TigerTheme.ringBaseSizeMultiplier / TigerTheme.selectedIconSizeMultiplier
+        let ringFoot = optical + (-38 + optical) * (placement.scale - 1)
         for time in times {
-            let flown = tigerSmoothStep(CGFloat(state.flight.value(at: time)))
-            let opened = tigerSmoothStep(CGFloat(state.section.value(at: time)))
-            let placement = TigerRing.placement(index: menu.selectedIndex, selection: state.ring.value(at: time), count: count, radius: TigerTheme.ringRadius)
-            let orbitScale = tigerMix(placement.scale, 1, flown)
-            let localScale = tigerMix(TigerTheme.ringBaseSizeMultiplier / TigerTheme.selectedIconSizeMultiplier, TigerTheme.landedIconScale, flown)
-            let iconScale = orbitScale * localScale
-            let across = tigerMix(placement.x, 0, flown) + tigerMix(0, landedOffset.x, flown)
-            let down = tigerMix(placement.y, 0, flown) + tigerMix(0, landedOffset.y, flown) + TigerTheme.headerIconOpticalYOffset * flown
+            let flown = tigerUnit(CGFloat(state.flight.value(at: time)))
+            let opened = tigerUnit(CGFloat(state.section.value(at: time)))
+            let iconScale = tigerMix(ringScale, TigerTheme.landedIconScale, flown)
+            let across = tigerMix(placement.x, landedOffset.x, flown)
+            let down = tigerMix(placement.y, landedOffset.y + TigerTheme.headerIconOpticalYOffset, flown)
             iconPlaces.append(CGPoint(x: center.x + across, y: center.y + stageY + down))
             iconScales.append(iconScale * flightSide / side)
             // Its reflection lets go of it and sinks away under the floor.
             let reflectionAcross = tigerMix(placement.x, TigerTheme.detachedReflectionXOffset - size.width * 0.05, flown)
             let reflectionDown = tigerMix(placement.y, TigerTheme.detachedReflectionYOffset, flown)
-            let footOffset = tigerMix(optical, optical * TigerTheme.landedIconScale, flown)
-            let foot = footOffset + (-38 + footOffset) * (orbitScale - 1)
+            let foot = tigerMix(ringFoot, optical * TigerTheme.landedIconScale, flown)
             reflectionPlaces.append(CGPoint(x: center.x + reflectionAcross, y: center.y + stageY + reflectionDown + iconScale * flightSide - 38 + foot))
             let reflectionScale = iconScale * flightSide / side
             reflectionTurns.append(CATransform3DMakeScale(reflectionScale, -reflectionScale, 1))
@@ -423,6 +440,7 @@ final class TigerSceneLayer {
     private func updatePages(menu: MenuView, pass: RenderPass, scale: CGFloat) {
         let state = menu.tiger
         let size = sceneSize
+        TigerMoviePreviewLayer.shared.follow(menu: menu)
         guard let page = menu.tigerCurrentPage() else {
             if livePage != nil || !outgoingPages.isEmpty {
                 livePage?.remove()
@@ -476,7 +494,7 @@ final class TigerSceneLayer {
                 contentMemo = memo
                 let times = TigerKeyframes.times(until: state.section.endTime)
                 let rises = times.map { time -> CGPoint in
-                    let opened = tigerSmoothStep(CGFloat(state.section.value(at: time)))
+                    let opened = tigerUnit(CGFloat(state.section.value(at: time)))
                     return CGPoint(x: 0, y: (size.height - TigerTheme.dividerTopInset) * (1 - opened))
                 }
                 TigerKeyframes.run(live.content, position: rises, times: times)
@@ -494,6 +512,7 @@ final class TigerSceneLayer {
         slide.set(0)
         slide.move(to: 1, duration: TigerTheme.pageSlideDuration)
         page.freeze()
+        TigerMoviePreviewLayer.shared.pageWillLeave(menu: menu)
         menu.tiger.pageSlideEnd = CACurrentMediaTime() + TigerTheme.pageSlideDuration
         let leaving = page
         DispatchQueue.main.asyncAfter(deadline: .now() + TigerTheme.pageSlideDuration + 0.05) { [weak self] in
@@ -512,7 +531,7 @@ final class TigerSceneLayer {
         let sign: CGFloat = slidesForward ? 1 : -1
         var arriving: [CGPoint] = [], leaving: [CGPoint] = []
         for time in times {
-            let progress = tigerSmoothStep(CGFloat(slide.value(at: time)))
+            let progress = tigerUnit(CGFloat(slide.value(at: time)))
             arriving.append(CGPoint(x: sign * width * (1 - progress), y: 0))
             leaving.append(CGPoint(x: -sign * width * progress, y: 0))
         }
@@ -534,7 +553,7 @@ enum TigerPictures {
         let width = 480, height = max(1, Int((480 * sceneSize.height / sceneSize.width).rounded()))
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
+            space: ScreenColorSpace.current ?? CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
         ), let data = context.data else { return source }
         context.interpolationQuality = .high
         let aspect = CGFloat(source.width) / CGFloat(max(1, source.height))

@@ -70,6 +70,7 @@ enum TigerMenus {
         "Library": "Mediathek",
         "Last Roll": "Letzter Film",
         "Please Insert a DVD": "Bitte eine DVD einlegen",
+        "An error occurred.": "Ein Fehler ist aufgetreten.",
         "No Video Podcasts": "Keine Videopodcasts",
         "No Podcasts": "Keine Podcasts",
     ]

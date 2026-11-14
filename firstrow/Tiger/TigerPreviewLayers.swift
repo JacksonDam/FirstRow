@@ -33,9 +33,13 @@ enum TigerPreview {
 }
 
 /// The movie that is chosen in a list of movies, playing over and over to the left of the
-/// list once the list has rested on it for a moment.
+/// list once the list has rested on it for a moment. There is one, which stands on whichever
+/// page shows it: it plays on behind the question about where to start its movie, and is
+/// there at once when the list comes back.
 @MainActor
 final class TigerMoviePreviewLayer {
+    static let shared = TigerMoviePreviewLayer()
+
     let layer = SceneLayer()
     private let stand = StillLayer()
     private let picture = AVPlayerLayer()
@@ -66,7 +70,8 @@ final class TigerMoviePreviewLayer {
         layer.addSublayer(stand)
     }
 
-    func update(menu: MenuView, sceneSize: CGSize) {
+    /// Laid out on the page that shows it.
+    func place(sceneSize: CGSize) {
         let height = Self.pictureHeight
         withoutLayerActions {
             layer.place(CGRect(origin: .zero, size: sceneSize))
@@ -80,13 +85,26 @@ final class TigerMoviePreviewLayer {
             reflection.position = CGPoint(x: TigerPreview.width * 0.5, y: height * 0.5)
             reflection.transform = CATransform3DMakeScale(1, -1, 1)
         }
-        // While a movie itself plays, the preview behind it stops.
-        let pauses = menu.isMoviePlaybackVisible || menu.isMovieTransitioning
+    }
+
+    /// Keeps to the movie the menus rest on, whether or not a page shows it just now.
+    func follow(menu: MenuView) {
+        // While a movie itself plays (or the screen is black on the way to it), the preview stops.
+        let pauses = menu.isMoviePlaybackVisible || (menu.isMovieTransitioning && menu.movieTransitionOverlayOpacity > 0)
         if pauses != isPaused {
             isPaused = pauses
             if pauses { player?.pause() } else { player?.play() }
         }
         show(menu.tigerMoviePreviewURL())
+    }
+
+    /// A page is setting off: the movie beside its list goes at once, unless the menus stay
+    /// with that movie (the question about where to start it is coming).
+    func pageWillLeave(menu: MenuView) {
+        let wanted = menu.tigerMoviePreviewURL()
+        if let playingURL, wanted == playingURL { return }
+        tearDown()
+        show(wanted)
     }
 
     private func show(_ url: URL?) {
@@ -132,12 +150,6 @@ final class TigerMoviePreviewLayer {
             picture.player = nil
             reflection.player = nil
         }
-    }
-
-    func pause() {
-        wait?.cancel()
-        wait = nil
-        player?.pause()
     }
 
     func tearDown() {

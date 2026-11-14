@@ -107,6 +107,8 @@ struct TVShowLibrary: Equatable, Sendable {
 /// Reads an episode out of a file's name and place.
 enum TVShowNames {
     static func episode(at url: URL) -> TVEpisode? {
+        // (The Tiger look has no TV Shows to list one under: it stays a movie among the movies.)
+        if TigerTheme.isActive { return nil }
         let name = Array(url.deletingPathExtension().lastPathComponent)
         let folder = url.deletingLastPathComponent()
         let parent = folder.lastPathComponent

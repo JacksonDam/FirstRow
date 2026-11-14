@@ -37,11 +37,6 @@ enum TigerRing {
         )
     }
 
-    /// The ring's radius part way through the opening (or the leaving, which ends wider).
-    static func radius(intro: CGFloat, isLeaving: Bool) -> CGFloat {
-        tigerMix(isLeaving ? TigerTheme.ringExitEndRadius : TigerTheme.ringIntroStartRadius, TigerTheme.ringRadius, tigerUnit(intro))
-    }
-
     /// How far below its place the whole ring is part way through the opening.
     static func stageYOffset(intro: CGFloat, sceneHeight: CGFloat) -> CGFloat {
         tigerMix(max(TigerTheme.introStageStartYOffset, sceneHeight * 1.45), TigerTheme.stageRestingYOffset, tigerUnit(intro))

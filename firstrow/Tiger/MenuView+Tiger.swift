@@ -45,6 +45,10 @@ struct TigerMenuState {
     var photosPreviewAlbumID: String?
     var photosPreviewRequestID = 0
 
+    /// The podcasts being gone through, while they are (see `MenuView+TigerPodcasts.swift`).
+    var podcasts: TigerPodcastsState?
+    var podcastSeriesIndex: [TigerPodcastKind: Int] = [:]
+
     var trailersRequestID = 0
     var movieStartRequestID = 0
     var labelSwapTask: Task<Void, Never>?
@@ -204,7 +208,16 @@ extension MenuView {
         if isMovieResumePromptVisible || isMovieTransitioning || isMoviePlaybackVisible || isMenuFolderSwapTransitioning { return false }
         if isReturningToRoot { return true }
         guard !isInSubmenu, !isInThirdMenu else {
-            // In a section's lists Left and Right do nothing, and the rest is the menus'.
+            // In a section's lists the keys are the menus', but for the pages of podcasts.
+            if let podcasts = tiger.podcasts, isInThirdMenu {
+                if podcasts.showsSeries { return tigerHandlePodcastSeriesKey(key, isRepeat: isRepeat) }
+                if key == .delete || key == .escape {
+                    resetNavigationAccelerationState()
+                    playSound(named: "Exit")
+                    tigerLeavePodcastEpisodes()
+                    return true
+                }
+            }
             return false
         }
         // The ring.
@@ -251,7 +264,7 @@ extension MenuView {
 
     private func tigerTurnRing(by direction: Int, isRepeat: Bool) {
         guard !menuItems.isEmpty else { return }
-        guard prepareNavigationTiming(direction: direction, isRepeat: isRepeat) else { return }
+        guard tigerPrepareRingTurn(key: direction > 0 ? .rightArrow : .leftArrow, isRepeat: isRepeat) else { return }
         let next = (selectedIndex + direction + menuItems.count) % menuItems.count
         didPlayLimitForCurrentHold = false
         markSelectionAsMoving()
@@ -259,6 +272,40 @@ extension MenuView {
         tigerChangeRootLabel(to: menuItems[next].title)
         selectedIndex = next
         tiger.ring.move(to: tiger.ring.target + Double(direction), duration: selectionAnimationDuration * TigerTheme.ringTurnDurationMultiplier)
+    }
+
+    /// Whether the ring takes this step, and how long the step is to take: an arrow held
+    /// down turns it faster and faster. (The menus' own timing is for arrows up and down.)
+    private func tigerPrepareRingTurn(key: KeyCode, isRepeat: Bool) -> Bool {
+        let now = Date()
+        if isRepeat, activeDirectionalHoldKey == key, directionalHoldPressStartTime != nil {
+            let held = now.timeIntervalSince(directionalHoldPressStartTime ?? now)
+            lastArrowNavigationInputTime = now
+            lastHoldNavigationTime = now
+            lastNavigationKey = key
+            lastNavigationEventTime = now
+            if navigationHoldStartTime == nil {
+                navigationHoldStartTime = directionalHoldPressStartTime ?? now
+            }
+            useLinearSelectionSweepAnimation = held >= directionalHoldInitialDelay
+            selectionAnimationDuration = selectionDuration(for: held)
+            return true
+        }
+        if let last = lastArrowNavigationInputTime, now.timeIntervalSince(last) < arrowInputDebounceInterval {
+            return false
+        }
+        if isRepeat {
+            let held = now.timeIntervalSince(navigationHoldStartTime ?? now)
+            if let last = lastHoldNavigationTime, now.timeIntervalSince(last) < minimumHoldRepeatInterval(for: held) {
+                return false
+            }
+        }
+        lastArrowNavigationInputTime = now
+        lastHoldNavigationTime = now
+        let held = updatedHoldDuration(for: key, at: now)
+        useLinearSelectionSweepAnimation = isRepeat && held >= directionalHoldInitialDelay
+        selectionAnimationDuration = selectionDuration(for: held)
+        return true
     }
 
     /// The title under the ring fades out, changes, and fades back in.
@@ -283,6 +330,7 @@ extension MenuView {
     /// three draw back, and its page rises with the bar's line.
     func tigerSectionWillOpen(_ rootItem: RootMenuItemConfig) {
         tiger.sectionMessage = nil
+        tiger.podcasts = nil
         tiger.isLoadingTrailers = false
         tiger.trailersRequestID &+= 1
         tiger.isStartingMovie = false
@@ -324,6 +372,7 @@ extension MenuView {
     /// Back at the ring.
     func tigerSectionDidClose() {
         tiger.sectionMessage = nil
+        tiger.podcasts = nil
         tiger.section.set(0)
         tiger.flight.set(0)
         tiger.isPhotosPreviewIn = false
@@ -443,6 +492,14 @@ extension MenuView {
             playSound(named: "Selection")
             tigerLoadTrailers()
             return true
+        case ("movies", "movies_video_podcasts"):
+            playSound(named: "Selection")
+            tigerEnterPodcasts(.video, title: item.title)
+            return true
+        case ("music", "music_podcasts"):
+            playSound(named: "Selection")
+            tigerEnterPodcasts(.audio, title: item.title)
+            return true
         case ("movies", "movies_itunes_top_music_videos"):
             playSound(named: "Selection")
             enterITunesTopMenu(.musicVideos, title: item.title)
@@ -483,7 +540,7 @@ extension MenuView {
                 self.tiger.isLoadingTrailers = false
             }
             self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
-                "header": L("First Row cannot complete this request."),
+                "header": L("An error occurred."),
                 "subcaption": "",
             ])
         }
@@ -551,10 +608,8 @@ extension MenuView {
     func tigerLeaveResumePage() {
         isMovieTransitioning = true
         tiger.resumeRequestID &+= 1
-        withAnimation(.easeInOut(duration: 0.5)) {
-            tiger.showsResumeBackdrop = false
-        }
         withTransaction(.instant) {
+            tiger.showsResumeBackdrop = false
             dismissMovieResumePrompt()
         }
         Task {
@@ -576,15 +631,22 @@ extension MenuView {
             movieSceneOpacity = 0
         }
         activateMoviePlayback(from: url, startSeconds: startSeconds, showsPlayGlyphOnStart: false)
+        // It stands still as it comes up, and plays once it is up.
+        let player = moviePlayer
+        player?.pause()
         withAnimation(.easeInOut(duration: 1.0)) {
             movieSceneOpacity = 1
             menuSceneOpacity = 0
         }
         Task {
             try? await firstRowSleep(1.0)
-            if startSeconds > 0.01 {
-                self.showMovieControlsInstantly()
-                self.scheduleMovieControlsAutoHide()
+            if let player, self.moviePlayer === player {
+                player.play()
+                if startSeconds > 0.01 {
+                    self.movieControlsGlyphState = .play
+                    self.showMovieControlsInstantly()
+                    self.scheduleMovieControlsAutoHide()
+                }
             }
             withTransaction(.instant) {
                 self.dismissMovieResumePrompt()
@@ -594,10 +656,49 @@ extension MenuView {
         }
     }
 
+    /// Back out of a movie: it darkens as it plays, then the menus come up out of the black.
+    func tigerLeaveMovie() {
+        guard !isMovieTransitioning, isMoviePlaybackVisible else { return }
+        movieOptions = nil
+        movieOptionsReveal = 0
+        isMovieTransitioning = true
+        stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
+        clearMovieControlsVisibilityInstantly()
+        jellyfinMoviePlaybackWillEnd()
+        serverMoviePlaybackWillEnd()
+        if isCurrentMoviePlaybackEphemeralPreview {
+            lastClosedMovieURL = nil
+            lastClosedMovieTimestamp = 0
+        } else {
+            captureLastClosedMoviePlaybackPosition()
+        }
+        let player = moviePlayer
+        withAnimation(.easeInOut(duration: 1.0)) {
+            movieTransitionOverlayOpacity = 1
+        }
+        Task {
+            try? await firstRowSleep(1.0)
+            guard !Task.isCancelled else { return }
+            player?.pause()
+            self.tearDownMoviePlayback()
+            withAnimation(.easeInOut(duration: 1.0)) {
+                self.menuSceneOpacity = 1
+                self.movieTransitionOverlayOpacity = 0
+            }
+            try? await firstRowSleep(1.0)
+            guard !Task.isCancelled else { return }
+            self.resetScreenSaverIdleTimer()
+            self.isMovieTransitioning = false
+        }
+    }
+
     // MARK: - Previews
 
     /// The movie the list rests on, to play beside it (nil on a folder's row).
     func tigerMoviePreviewURL() -> URL? {
+        // (It plays on, unseen, behind the question about where to start it.)
+        if isMovieResumePromptVisible, movieRemoval == nil, let asked = movieResumePromptTargetURL { return asked.standardizedFileURL }
+        if let episode = tigerVideoPodcastPreviewURL() { return episode }
         guard isInSubmenu, isInThirdMenu, thirdMenuMode == .moviesFolder, !isLoadingMoviesFolderEntries else { return nil }
         guard thirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
         let entry = thirdMenuItems[selectedThirdIndex]
@@ -634,6 +735,7 @@ extension MenuView {
     /// Whether the selected row shows a spinner in place of its arrow.
     func tigerRowIsBusy(_ itemID: String) -> Bool {
         if itemID == "movies_theatrical_trailers" { return tiger.isLoadingTrailers }
+        if itemID == TigerPodcastKind.audio.submenuItemID || itemID == TigerPodcastKind.video.submenuItemID { return isLoadingPodcasts && !isInThirdMenu }
         if thirdMenuMode == .moviesFolder || thirdMenuMode == .podcastsEpisodes { return tiger.isStartingMovie }
         return false
     }
@@ -666,14 +768,16 @@ extension MenuView {
             )
         }
         if isInThirdMenu, thirdMenuMode != .none, thirdMenuOpacity > 0.5 {
-            let items = tigerThirdMenuItems()
+            let seriesKind = tiger.podcasts.flatMap { $0.showsSeries ? $0.kind : nil }
+            let items = seriesKind.map(tigerPodcastSeriesListItems) ?? tigerThirdMenuItems()
             var page = TigerPage(
-                key: "\(rootID)|\(thirdMenuMode)|\(headerText)|\(thirdMenuCurrentURL?.path ?? "")|\(isMusicSongsCategoryScoped)|\(musicArtistsReturn != nil)",
+                key: "\(rootID)|\(thirdMenuMode)|\(headerText)|\(thirdMenuCurrentURL?.path ?? "")|\(isMusicSongsCategoryScoped)|\(musicArtistsReturn != nil)|\(seriesKind != nil)",
                 depth: depth, rootID: rootID, title: headerText, content: .list,
                 items: items, selectedIndex: min(selectedThirdIndex, max(0, items.count - 1)),
             )
-            page.showsMoviePreview = thirdMenuMode == .moviesFolder
-            page.isPodcastEpisodes = thirdMenuMode == .podcastsEpisodes
+            let isVideoEpisodes = thirdMenuMode == .podcastsEpisodes && seriesKind == nil && tiger.podcasts?.kind == .video
+            page.showsMoviePreview = thirdMenuMode == .moviesFolder || isVideoEpisodes
+            page.isPodcastEpisodes = thirdMenuMode == .podcastsEpisodes && seriesKind == nil
             page.showsPhotosPreview = rootID == "photos"
             page.isCompact = page.showsMoviePreview || page.showsPhotosPreview
             return page
