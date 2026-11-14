@@ -717,6 +717,11 @@ final class MenuView: ObservableObject {
     @Published var musicAppleScriptStartupDeadline: Date?
     /// What Play or Pause last asked the Music app for, until it says so too.
     var musicAppleScriptAskedToPlay: AskedPlayState?
+    /// When First Row last had to open the Music app to play a song, until Music has been
+    /// heard playing one (see `askMusicAppAgainIfJustOpened`).
+    var musicAppOpenedForPlaybackAt: Date?
+    /// The song being started in the Music app, and how many more times it may be asked for.
+    var musicAppSongStart: (song: MusicLibrarySongEntry, asksLeft: Int)?
     @Published var musicAppleScriptDidHandleTrackBoundary = false
     @Published var musicAppleScriptProgressAnchorElapsedSeconds: Double = 0
     @Published var musicAppleScriptProgressAnchorDate: Date?
