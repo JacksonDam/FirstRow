@@ -56,7 +56,7 @@ There are two looks. **Classic** is the original, down to the pixel. **Modern** 
 
 Movies and shows bought from the Apple TV app won't play because of their DRM.
 
-First Row comes in English and German, and follows the language of the system it runs on (on Linux, the one named by `LANG`). On a Mac, iPhone or iPad its language can also be set by itself, under Language & Region in the system's settings.
+First Row comes in English and German, and follows the language of the system it runs on (on Windows, the first of your preferred languages that it has; on Linux, the one named by `LANG`). On a Mac, iPhone or iPad its language can also be set by itself, under Language & Region in the system's settings.
 
 On the Mac, iPhone, iPad and Apple TV, the kinds of movie file beyond MP4, MOV and M4V play on every system First Row runs on. HDR, Dolby Vision, Dolby Atmos, picture in picture for those kinds of file and shared folders need macOS 15, iOS 18 or tvOS 18.
 

@@ -1,4 +1,7 @@
 import Foundation
+#if os(Windows)
+    import WinSDK
+#endif
 
 /// The languages First Row's own words come in. English is what the code is written in; the
 /// others are tables from the English words to theirs (see `German`).
@@ -32,14 +35,42 @@ enum AppLanguage: String {
                 }
             }
             return tags
-        #elseif FIRSTROW_PORTABLE
-            return Locale.preferredLanguages
+        #elseif os(Windows)
+            // The languages preferred in Windows' settings, in the user's order (what Windows
+            // says apps appear in), and after them the one Windows itself is shown in.
+            var tags: [String] = []
+            let key = Array("Control Panel\\International\\User Profile".utf16) + [0]
+            let name = Array("Languages".utf16) + [0]
+            let kind = DWORD(RRF_RT_REG_MULTI_SZ)
+            var size: DWORD = 0
+            if RegGetValueW(HKEY_CURRENT_USER, key, name, kind, nil, nil, &size) == ERROR_SUCCESS, size > 0 {
+                var list = [WCHAR](repeating: 0, count: Int(size) / MemoryLayout<WCHAR>.size + 1)
+                if RegGetValueW(HKEY_CURRENT_USER, key, name, kind, nil, &list, &size) == ERROR_SUCCESS {
+                    tags += strings(inList: list)
+                }
+            }
+            var count: ULONG = 0
+            var length: ULONG = 0
+            if GetUserPreferredUILanguages(DWORD(MUI_LANGUAGE_NAME), &count, nil, &length), length > 0 {
+                var list = [WCHAR](repeating: 0, count: Int(length))
+                if GetUserPreferredUILanguages(DWORD(MUI_LANGUAGE_NAME), &count, &list, &length) {
+                    tags += strings(inList: list)
+                }
+            }
+            return tags
         #else
             // (The system chooses among the languages the app says it has, and a language
             // chosen for First Row alone in the system's settings counts.)
             return Bundle.main.preferredLocalizations
         #endif
     }
+
+    #if os(Windows)
+        /// The strings of one of Windows' lists, each of which ends with a zero.
+        private static func strings(inList list: [WCHAR]) -> [String] {
+            list.split(separator: 0).map { String(decoding: $0, as: UTF16.self) }
+        }
+    #endif
 
     /// For dates written out in words.
     var locale: Locale {
