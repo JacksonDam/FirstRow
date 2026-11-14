@@ -188,7 +188,9 @@ final class TigerSceneLayer {
 
     private func updateIntroBackdrop(menu: MenuView) {
         let state = menu.tiger
-        let shows = state.introBackdropImage != nil && (menu.tigerIsRootVisible || state.isIntroRunning)
+        // (Only while First Row opens or leaves: at rest the desktop's picture is far off and
+        // clear, and no layer need hold it.)
+        let shows = state.introBackdropImage != nil && (state.isIntroRunning || !state.hasStartedIntro)
         let memo = IntroMemo(revision: state.introBackdrop.revision, shows: shows, size: sceneSize)
         guard memo != introMemo else { return }
         introMemo = memo

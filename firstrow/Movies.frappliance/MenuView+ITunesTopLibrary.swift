@@ -477,6 +477,8 @@ extension MenuView {
                 for kind in ITunesTopCarouselKind.allCases {
                     group.addTask {
                         guard let entries = try? await self.fetchITunesTopEntries(for: kind) else { return }
+                        // (The Tiger look lists the charts by name alone: it fetches a picture when one is played.)
+                        if TigerTheme.isActive { return }
                         for url in entries.artworkURLs {
                             await self.prefetchITunesTopArtworkData(from: url)
                         }

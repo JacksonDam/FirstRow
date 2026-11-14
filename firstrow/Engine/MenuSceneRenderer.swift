@@ -224,6 +224,9 @@ final class MenuSceneRenderer: TransactionRendering {
     /// Each pass is one transaction so its changes reach the screen together.
     private func renderAtEndOfRunLoopPass() {
         guard containerSize != .zero else { return }
+        // (With nothing to draw there is nothing to commit either: a pass of the run loop
+        // that changed nothing costs nothing here.)
+        guard isDirty || carouselNeedsUpdate else { return }
         CATransaction.begin()
         defer { CATransaction.commit() }
         if isDirty {
@@ -317,7 +320,8 @@ final class MenuSceneRenderer: TransactionRendering {
             #endif
             if isReady {
                 hasUnpackedStandIns = true
-                LayerImageCache.unpackAhead(named: ["musicfallback", "moviesfallback", "Podcast", "TVShow", "AudioBook", "PhotoSettingsIcon"])
+                // (The Tiger look shows only the first of these, behind a song with no cover of its own.)
+                LayerImageCache.unpackAhead(named: TigerTheme.isActive ? ["musicfallback"] : ["musicfallback", "moviesfallback", "Podcast", "TVShow", "AudioBook", "PhotoSettingsIcon"])
             }
         }
         memo.theme = theme
