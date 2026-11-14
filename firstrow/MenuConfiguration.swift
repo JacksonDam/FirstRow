@@ -1,11 +1,16 @@
-import SwiftUI
+import Foundation
 
 enum MenuConfiguration {
     private static let catalog = MenuCatalog(features: [
-        MoviesMenuFeature(),
-        MusicMenuFeature(),
-        PhotosMenuFeature(),
         DVDMenuFeature(),
+        MoviesMenuFeature(),
+        TVShowsMenuFeature(),
+        MusicMenuFeature(),
+        YouTubeMenuFeature(),
+        PodcastsMenuFeature(),
+        PhotosMenuFeature(),
+        SettingsMenuFeature(),
+        SourcesMenuFeature(),
     ])
     static var rootItems: [RootMenuItemConfig] {
         catalog.rootItems
@@ -14,13 +19,13 @@ enum MenuConfiguration {
     static let defaultArrowAppearance = ArrowAppearance(
         symbolName: "chevron.right",
         color: .white,
-        fontSize: 36,
-        fontWeight: .heavy,
-        xOffset: -4,
-        glowPrimaryRadius: 1.8,
-        glowSecondaryRadius: 3.8,
-        glowPrimaryOpacity: 0.9,
-        glowSecondaryOpacity: 0.65,
+        fontSize: 30,
+        symbolWeight: .heavy,
+        xOffset: -20,
+        glowPrimaryRadius: 2.5,
+        glowSecondaryRadius: 5,
+        glowPrimaryOpacity: 1.0,
+        glowSecondaryOpacity: 1.0,
     )
     static func rootItem(withID id: String) -> RootMenuItemConfig? {
         catalog.rootItem(withID: id)

@@ -1,4 +1,11 @@
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 
 struct RootMenuItemConfig: Identifiable, Equatable {
     let id: String
@@ -6,28 +13,12 @@ struct RootMenuItemConfig: Identifiable, Equatable {
     let iconAssetName: String
     let leadsToMenu: Bool
     let actionID: String?
-    let showsInRootMenu: Bool
-    let mainMenuSelectionSoundName: String?
 }
 
 extension RootMenuItemConfig {
     /// by default, menu items are marked as leading to a menu (with an arrow visible on the option) but do nothing
-    init(
-        id: String,
-        title: String,
-        iconAssetName: String,
-        showsInRootMenu: Bool = true,
-        mainMenuSelectionSoundName: String? = nil,
-    ) {
-        self.init(
-            id: id,
-            title: title,
-            iconAssetName: iconAssetName,
-            leadsToMenu: true,
-            actionID: nil,
-            showsInRootMenu: showsInRootMenu,
-            mainMenuSelectionSoundName: mainMenuSelectionSoundName,
-        )
+    init(id: String, title: String, iconAssetName: String) {
+        self.init(id: id, title: title, iconAssetName: iconAssetName, leadsToMenu: true, actionID: nil)
     }
 }
 

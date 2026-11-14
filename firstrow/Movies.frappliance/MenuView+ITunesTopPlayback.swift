@@ -1,6 +1,13 @@
 import AVFoundation
 import Foundation
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
@@ -8,6 +15,14 @@ import SwiftUI
 private struct _SendableImage: @unchecked Sendable { let image: NSImage? }
 
 extension MenuView {
+    nonisolated static func write(_ data: Data, to handle: FileHandle) throws {
+        if #available(macOS 10.15.4, iOS 13.4, tvOS 13.4, *) {
+            try handle.write(contentsOf: data)
+        } else {
+            handle.write(data)
+        }
+    }
+
     private nonisolated func iTunesTopMoviePreviewTemporaryDirectoryURL() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("firstRowITunesTopMoviePreviews", isDirectory: true)
     }
@@ -61,7 +76,7 @@ extension MenuView {
                 func flushChunkBuffer() throws {
                     guard !chunkBuffer.isEmpty else { return }
                     let data = Data(chunkBuffer)
-                    try writeHandle.write(contentsOf: data)
+                    try Self.write(data, to: writeHandle)
                     receivedLength += Int64(chunkBuffer.count)
                     chunkBuffer.removeAll(keepingCapacity: true)
                     guard expectedLength > 0 else { return }
@@ -82,7 +97,7 @@ extension MenuView {
                 else {
                     throw URLError(.badServerResponse)
                 }
-                try writeHandle.write(contentsOf: data)
+                try Self.write(data, to: writeHandle)
             }
             onProgress?(1)
             try writeHandle.close()
@@ -219,6 +234,7 @@ extension MenuView {
 
     func startITunesTopVideoPreviewPlayback(from source: ITunesTopVideoPreviewPlaybackSource) {
         guard !isMovieTransitioning, !isMoviePlaybackVisible else { return }
+        resetScreenSaverIdleTimer()
         let requestID = nextITunesTopVideoPreviewPlaybackRequestID(for: source)
         isMovieTransitioning = true
         withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
@@ -307,26 +323,46 @@ extension MenuView {
             } catch {
                 return
             }
+            // Previews are mastered loud: bring them down to the library's level.
+            await self.levelPreviewLoudness(temporaryAudioURL)
             let resolvedArtwork: NSImage? = await MainActor.run {
                 _SendableImage(image: self.currentITunesTopCarouselArtworkCache(.songs)[song.id] ??
                     (self.currentITunesTopPreviewTargetID(.songs) == song.id
                         ? self.iTunesTopState(for: .songs).previewImage
                         : nil))
             }.image
-            let playbackEntry = MusicLibrarySongEntry(
-                id: song.id,
-                title: song.title,
-                artist: "iTunes Top Songs",
-                album: "",
-                genre: "",
-                composer: "",
-                durationSeconds: 0,
-                trackNumber: 0,
-                discNumber: 1,
-                artworkAlbumKey: nil,
-                url: temporaryAudioURL,
-                artwork: resolvedArtwork,
-            )
+            #if os(tvOS)
+                let playbackEntry = MusicLibrarySongEntry(
+                    id: song.id,
+                    title: song.title,
+                    artist: L("iTunes Top Songs"),
+                    album: "",
+                    genre: "",
+                    composer: "",
+                    durationSeconds: 0,
+                    trackNumber: 0,
+                    discNumber: 1,
+                    artworkAlbumKey: nil,
+                    url: temporaryAudioURL,
+                    artwork: resolvedArtwork,
+                    musicKitSong: nil,
+                )
+            #else
+                let playbackEntry = MusicLibrarySongEntry(
+                    id: song.id,
+                    title: song.title,
+                    artist: L("iTunes Top Songs"),
+                    album: "",
+                    genre: "",
+                    composer: "",
+                    durationSeconds: 0,
+                    trackNumber: 0,
+                    discNumber: 1,
+                    artworkAlbumKey: nil,
+                    url: temporaryAudioURL,
+                    artwork: resolvedArtwork,
+                )
+            #endif
             await MainActor.run {
                 guard self.currentITunesTopPlaybackRequestID(.songs) == requestID else {
                     try? FileManager.default.removeItem(at: temporaryAudioURL)
@@ -337,7 +373,7 @@ extension MenuView {
                     return
                 }
                 guard self.thirdMenuMode == .musicITunesTopSongs ||
-                    self.thirdMenuMode == .musicNowPlaying
+                    self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey
                 else {
                     try? FileManager.default.removeItem(at: temporaryAudioURL)
                     return

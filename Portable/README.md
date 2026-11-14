@@ -1,0 +1,96 @@
+# First Row on Linux and Windows
+
+The Linux and Windows versions run the same Swift code as the Mac app. Instead of rewriting the interface, this folder provides portable versions of the Apple frameworks that code uses, so the Mac's layout, animations and timing carry over unchanged:
+
+| Module | Stands in for | Built on |
+|---|---|---|
+| `QuartzCore` | Core Animation: layers, implicit and explicit animations, transactions, 3D transforms, masks, shadows, blur filters, gradients, replicators | An OpenGL 3.3 compositor that follows Core Animation's rules (each layer flattens its sublayers into its own plane; masks, blurs, shadows and group opacity render offscreen) |
+| `CoreGraphics`, `ImageIO`, `CoreImage` | Bitmap contexts, paths, gradients, clipping, shadows and transparency layers; image decoding; the blur and colour filters First Row uses | [plutovg](https://github.com/sammycage/plutovg) (MIT), bundled in `Sources/CPortable` with its stb_image and stb_truetype |
+| `CoreText` | Fonts, line layout, wrapping, truncation, glyph drawing, measured like Core Text (hhea metrics, kerning, UTF-16 ranges) | TrueType fonts found on the machine |
+| `AVFoundation` | `AVPlayer`, `AVPlayerLayer`, assets and their tags, frame grabs, `AVAudioPlayer` | libmpv for playback and frames; SDL 3 audio for interface sounds; its own reader for ID3, MP4, FLAC, WAV and AIFF tags |
+| `Combine` | `ObservableObject` and `@Published` | Plain Swift |
+| `iTunesLibrary`, `Photos` | The Music and Photos libraries | Nothing: they answer like a Mac with access turned off, so music and photos come from folders, iTunes library files and iPhoto libraries |
+| `FirstRowPortable` | `NSImage`, the window, the run loop, keys, game controllers, file pickers | SDL 3 |
+
+`firstrow/` is shared with the Xcode project. Code that differs on Linux and Windows sits behind `#if FIRSTROW_PORTABLE`, and mostly takes the Mac's branch.
+
+## Building
+
+### Linux
+
+Swift 6.4 from [swift.org](https://www.swift.org/install/linux/), SDL 3 and libmpv. On Ubuntu 26.04:
+
+```sh
+sudo apt install libsdl3-dev libmpv-dev libgl-dev
+Portable/scripts/build-linux.sh
+dist/linux/FirstRow/first-row
+```
+
+The Swift runtime is linked in, so `dist/linux/FirstRow` only needs SDL 3 and libmpv on the machine it runs on. The script also packs the folder as `dist/linux/FirstRow-linux-<machine>.tar.gz`, which is the download.
+
+Shared folders (Sources > Add Server > Shared Folder) are read with Samba's client library, which First Row loads as it runs if the system has it (`libsmbclient.so.0`: the `libsmbclient0` package on Ubuntu and Debian, `libsmbclient` on Fedora, there already on most desktops, whose file managers use it). Without it First Row runs as before and doesn't offer shared folders. On Windows the system reaches shared folders itself.
+
+The window brings its own icon where the desktop lets a window do that (X11, and Wayland desktops with the `xdg-toplevel-icon` protocol, such as KDE Plasma). GNOME on Wayland takes a window's icon from the app's desktop entry and nowhere else: `dist/linux/FirstRow/install.sh` adds one for this user (which also puts First Row in the applications menu), and `install.sh remove` takes it out again.
+
+### Windows
+
+Swift 6.4 for Windows and Visual Studio's C++ build tools. From a Developer PowerShell:
+
+```powershell
+Portable\scripts\build-windows.ps1            # or -Arch arm64
+& "dist\windows\FirstRow\First Row.exe"
+```
+
+The script downloads SDL 3 the first time and copies its DLL, libmpv's and the parts of the Swift and Visual C++ runtimes that First Row loads next to the app, then packs the folder as `dist\windows\FirstRow-windows-<x64|arm64>.zip`, which is the download. It also makes the program's icon from the app icon's pictures (`firstrow/Assets.xcassets/AppIcon.appiconset`) and links it into `First Row.exe` with the app's name and version, so Explorer, the task bar and Alt+Tab show it.
+
+The libmpv in the downloads is a small one built from source for First Row: mpv with FFmpeg's decoders and what First Row asks of it (sound through Windows' own audio, pictures drawn with OpenGL into First Row's window, the graphics card's decoders), and without the encoders, scripting and Vulkan and Direct3D renderers that make mpv's own build three times the size. It is a cross-build from a Mac or a Linux machine:
+
+```sh
+Portable/scripts/build-libmpv-windows.sh x86_64     # or aarch64
+```
+
+which needs meson, ninja, nasm, pkg-config, make, git and python3, fetches the compiler (llvm-mingw) and each part's source at a named release, checks every download against a checksum, and leaves `Portable/build/libmpv/<x64|arm64>` for `build-windows.ps1` to use. Where that folder isn't there, `build-windows.ps1` downloads the mpv project's own build for Windows under the LGPL instead, from a named mpv release (`-MpvVersion`). Either way there is nothing in it under the GPL and nothing that reads DVDs: First Row reads an unprotected DVD's files itself, and a DVD that is protected against copying goes to the PC's own DVD player, if it has one. Where a libmpv build has no OpenGL renderer, video frames are converted on the processor and uploaded, which costs more processor time with large videos.
+
+First Row needs OpenGL 3.3, which every current graphics driver provides. A machine or virtual machine without one can use Mesa's software renderer instead: put `opengl32.dll`, `libgallium_wgl.dll` and the DLLs they load (MSYS2's `mingw-w64-clang-x86_64-mesa` or `mingw-w64-clang-aarch64-mesa` package) next to `First Row.exe`, and set `GALLIUM_DRIVER=llvmpipe` (`setx GALLIUM_DRIVER llvmpipe`, then open First Row again): left to choose for itself, Mesa can pick a renderer that quits First Row at startup. In a virtual machine whose graphics driver supports Direct3D 12 (UTM's guest tools, for example), `GALLIUM_DRIVER=d3d12` with `dxil.dll` from the Windows SDK next to `First Row.exe` draws on the GPU instead.
+
+## Fonts
+
+First Row's interface is set in Lucida Grande, which is Apple's and can't be included. First Row looks for it in this order:
+
+1. A folder named in `FIRSTROW_FONTS`
+2. The user's and system's font folders (`~/.local/share/fonts`, `/usr/share/fonts`, `C:\Windows\Fonts` and so on)
+3. Any other font fontconfig knows of, on Linux
+
+The modern theme (Settings > Theme) uses Apple's system font on Apple's systems. Here it uses Inter instead, which is under the SIL Open Font License and ships with First Row in `Resources/Fonts/Inter`, with its licence.
+
+TrueType and OpenType files, collections (`.ttc`) and old Mac `.dfont` files all work. If Lucida Grande is installed (copied from a Mac you own, for example), the text matches the Mac exactly. Otherwise First Row uses Lucida Sans Unicode, which is close and comes with Windows, then DejaVu Sans, then another plain sans-serif font such as Noto Sans or Liberation Sans. Bold is drawn from the regular face when no bold one is found. `FIRSTROW_DEBUG_FONTS=1` prints which font file each name was given, and `FIRSTROW_DEBUG_FONTS_LIST=1` adds every face found.
+
+## Using it
+
+- Arrow keys move, Return selects, Escape or Backspace goes back, Space plays and pauses.
+- Ctrl+Q, Alt+F4 or closing the window quits with the fade. Ctrl+, opens Settings > Media Folders.
+- Game controllers: D-pad or left stick moves, A selects, B, Back or Start goes back, X plays and pauses.
+- The play/pause media key plays and pauses, and remotes that send Select and Back keys work too. A Siri Remote doesn't send keys outside Apple's own systems; on Linux a helper such as [siriremote](https://code.zanneth.com/zanneth/siriremote) can turn it into them.
+- Movies come from your Movies or Videos folder and music from your Music folder, plus any folders, iTunes library files and iPhoto libraries added in Settings > Media Folders (where photo folders are added too), and drives under `/media`, `/run/media` and `/mnt` (other drive letters on Windows).
+- `FIRSTROW_WINDOWED=1` or `--windowed` opens a window instead of filling the screen. `FIRSTROW_WINDOW_SIZE=1280x720` sets its size.
+- Movies are decoded by the graphics card where mpv counts its decoder as dependable, and by the processor otherwise. Should a driver's decoder misbehave, `FIRSTROW_HWDEC=no` keeps decoding on the processor (any value of mpv's `hwdec` option can be given).
+
+## Spotify
+
+Music > Spotify plays your Spotify account through Spotify's web player, which First Row runs out of sight in Google Chrome, Microsoft Edge or Chromium (whichever it finds; `FIRSTROW_SPOTIFY_BROWSER` names another). The browser gets a profile of its own, in `~/.local/share/first-row/spotify` or `%LOCALAPPDATA%\First Row\Spotify`, so it leaves your own browsing alone, and it closes when First Row does. Sign In opens Spotify's sign-in page in a browser window; after that the browser runs without one.
+
+Spotify's songs are protected, so the browser must be able to play protected audio: Google Chrome and Edge can, but some Chromium builds can't, and nothing on Arm Linux can. `FIRSTROW_SPOTIFY_BROWSER_WINDOW=1` shows the browser's window, and `FIRSTROW_DEBUG_SPOTIFY=1` logs what the page and First Row say to each other.
+
+## What differs from the Mac
+
+- Apple Music, the Music app's library, Apple Photos and the Podcasts app aren't available, so those parts show what a Mac without them shows.
+- Spotify needs one of the browsers above; the Mac plays it in a web view of its own.
+- SF Symbols can only ship on Apple platforms, so the few interface symbols (the chevron, play, pause, shuffle) are the hand-drawn versions the app uses on macOS 10.15.
+- Colours are not colour-managed: on a wide-gamut display, saturated colours look stronger than on a Mac, which converts them.
+- Movies with DRM can't play, as on the Mac.
+
+## Testing
+
+`FIRSTROW_HARNESS=1` turns on the test harness, which takes the same commands as the Mac one (`down`, `enter`, `escape`, `press:down`, `source:music:/path` and so on) from the FIFO in `FIRSTROW_HARNESS_FIFO` or a script file in `FIRSTROW_SCRIPT`, plus `wait 1.5`, `shot /path/file.png` and `quit`. With `SDL_VIDEO_DRIVER=offscreen` it runs without a display, and `FIRSTROW_SCALE=2` renders at Retina scale. `FIRSTROW_DEBUG_MPV=1` and `FIRSTROW_DEBUG_FRAMES=1` log playback and where frame time goes, every five seconds. `FIRSTROW_DEBUG_SNAPS=1` reports animations that start somewhere other than where the layer was drawn, which shows up as a jump, and `FIRSTROW_DEBUG_SNAPS_STACK=1` adds the code that added them.
+
+The workflow in `.github/workflows/linux-windows.yml` builds both versions and saves a screenshot of the main menu from each.

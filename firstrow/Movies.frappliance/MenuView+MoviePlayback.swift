@@ -1,6 +1,16 @@
 import AVFoundation
-import AVKit
-import SwiftUI
+import AVFoundation
+#if canImport(Darwin)
+    import Darwin
+#endif
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 #if os(macOS)
     import AppKit
 #elseif canImport(UIKit)
@@ -8,47 +18,24 @@ import SwiftUI
 #endif
 
 extension MenuView {
-    func movieResumePromptBackdropCacheKey(for url: URL, resumeSeconds: Double) -> String {
-        let standardizedURL = url.standardizedFileURL
-        let safeResumeSeconds = max(0, resumeSeconds.isFinite ? resumeSeconds : 0)
-        let resumeTick = Int64((safeResumeSeconds * 600).rounded())
-        return "\(standardizedURL.path)#\(resumeTick)"
-    }
-
-    func captureMovieResumePromptReturnContext() {
-        movieResumeReturnThirdMenuMode = isInThirdMenu ? thirdMenuMode : .none
-        movieResumeReturnHeaderText = headerText
-        movieResumeReturnSelectedThirdIndex = selectedThirdIndex
-    }
-
-    func restoreMovieResumePromptReturnContext() {
-        let returnMode = movieResumeReturnThirdMenuMode
-        let returnHeader = movieResumeReturnHeaderText
-        selectedThirdIndex = movieResumeReturnSelectedThirdIndex
-        if returnMode == .none {
-            isInThirdMenu = false
-            thirdMenuMode = .none
-            thirdMenuOpacity = 0
-            submenuOpacity = 1
-            headerText = returnHeader.isEmpty ? rootMenuTitle(for: activeRootItemID) : returnHeader
-        } else {
-            isInThirdMenu = true
-            thirdMenuMode = returnMode
-            thirdMenuOpacity = 1
-            submenuOpacity = 0
-            headerText = returnHeader
-        }
-        refreshDetailPreviewForCurrentContext()
-    }
-
     func startMoviePlayback(from url: URL) {
         guard !isMovieTransitioning else { return }
+        resetScreenSaverIdleTimer()
         let normalizedURL = url.standardizedFileURL
+        #if !FIRSTROW_PORTABLE
+            if MediaEngine.plays(normalizedURL), !standaloneAudioFileExtensions.contains(normalizedURL.pathExtension.lowercased()) {
+                // (A kind of file the system's player knows nothing of: there is nothing to
+                // ask it about this one.)
+                beginMoviePlayback(for: normalizedURL)
+                return
+            }
+        #endif
         if shouldTreatAsAudioOnlyPlayback(url: normalizedURL) {
+            clearActivePodcastAudioPlaybackContext()
             startAudioOnlyPlayback(
                 from: normalizedURL,
                 title: normalizedURL.deletingPathExtension().lastPathComponent,
-                artist: "Unknown Artist",
+                artist: L("Unknown Artist"),
                 album: "",
                 artwork: musicFallbackImage,
             )
@@ -72,7 +59,6 @@ extension MenuView {
 
     func beginMoviePlayback(for normalizedURL: URL) {
         isCurrentMoviePlaybackEphemeralPreview = false
-        clearActivePodcastAudioPlaybackContext()
         removeCurrentMoviePlaybackTemporaryFileIfNeeded()
         if shouldPresentMovieResumePrompt(for: normalizedURL) {
             startMovieResumePromptTransition(for: normalizedURL)
@@ -109,151 +95,151 @@ extension MenuView {
     }
 
     func startMovieResumePromptTransition(for url: URL) {
-        enterMovieResumePromptPage(for: url)
-    }
-
-    func enterMovieResumePromptPage(for url: URL) {
-        guard !isEnteringSubmenu, !isReturningToRoot else { return }
         guard !isMovieTransitioning else { return }
         isMovieTransitioning = true
-        captureMovieResumePromptReturnContext()
-        let capturedURL = url.standardizedFileURL
-        let capturedResumeSeconds = max(0, lastClosedMovieTimestamp)
-        let snapshot = currentMenuTransitionSnapshot()
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
-            movieResumePromptTargetURL = capturedURL
-            movieResumePromptResumeSeconds = capturedResumeSeconds
-            movieResumePromptSelectedIndex = 0
-            movieResumePromptHideUnselected = false
-            movieResumePromptSolidBlackSelected = false
-            isMovieResumePromptConfirming = false
-            isMovieResumePromptVisible = true
-            selectedThirdIndex = 0
-            isInThirdMenu = true
-            thirdMenuMode = .movieResumePrompt
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
-            movieResumePromptBackdropImage = nil
-            movieResumeBackdropOpacity = 0
-            menuTransitionSnapshot = snapshot
-            menuTransitionDirection = .forward
-            menuTransitionProgress = 0
-            _ = incrementRequestID(&movieResumePromptBackdropRequestID)
+        movieResumePromptOpacity = 0
+        withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
+            menuSceneOpacity = 0
         }
-
-        withAnimation(.easeInOut(duration: menuSlideDuration)) {
-            menuTransitionProgress = 1
-        }
-
-        queueMovieResumePromptBackdropReveal(
-            for: capturedURL,
-            resumeSeconds: capturedResumeSeconds,
-        )
-
+        let revealDelay = movieEntryFadeDuration + movieResumePromptRevealDelay
         Task {
-            try? await firstRowSleep(menuSlideDuration)
+            try? await firstRowSleep(revealDelay)
             guard !Task.isCancelled else { return }
-            menuTransitionSnapshot = nil
+            presentMovieResumePrompt(for: url)
+            withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
+                movieResumePromptOpacity = 1
+            }
+            try? await firstRowSleep(movieResumePromptFadeDuration)
+            guard !Task.isCancelled else { return }
             isMovieTransitioning = false
         }
     }
 
-    func queueMovieResumePromptBackdropReveal(for url: URL, resumeSeconds: Double) {
-        let capturedURL = url.standardizedFileURL
-        let capturedResumeSeconds = max(0, resumeSeconds.isFinite ? resumeSeconds : 0)
-        let cacheKey = movieResumePromptBackdropCacheKey(
-            for: capturedURL,
-            resumeSeconds: capturedResumeSeconds,
-        )
-        let requestID = incrementRequestID(&movieResumePromptBackdropRequestID)
-        let revealNotBefore = Date().addingTimeInterval(1.0)
-
-        func revealBackdrop(_ image: NSImage?) {
-            Task { @MainActor in
-                let remainingDelay = max(0, revealNotBefore.timeIntervalSinceNow)
-                try? await firstRowSleep(remainingDelay)
-                guard !Task.isCancelled else { return }
-                guard self.movieResumePromptBackdropRequestID == requestID else { return }
-                guard self.thirdMenuMode == .movieResumePrompt else { return }
-                guard self.movieResumePromptTargetURL?.standardizedFileURL == capturedURL else { return }
-                guard let image else { return }
-                self.movieResumePromptBackdropImage = image
-                withAnimation(.easeInOut(duration: 0.5)) {
-                    self.movieResumeBackdropOpacity = 1
-                }
-            }
-        }
-
-        if let cachedImage = movieResumePromptBackdropCache[cacheKey] {
-            revealBackdrop(cachedImage)
-            return
-        }
-
-        Task.detached(priority: .userInitiated) { [capturedURL] in
-            let image = await self.generateMovieThumbnail(
-                for: capturedURL,
-                preferredSeconds: capturedResumeSeconds,
-            )
-            await MainActor.run {
-                guard self.movieResumePromptBackdropRequestID == requestID else { return }
-                if let image {
-                    self.movieResumePromptBackdropCache[cacheKey] = image
-                }
-                revealBackdrop(image)
-            }
-        }
-    }
-
-    func startMoviePlaybackWithStandardTransition(from url: URL) {
+    func startMoviePlaybackWithStandardTransition(from url: URL, startSeconds: Double = 0) {
         clearMoviePlaybackControlState()
         isMovieTransitioning = true
+        let isModern = ModernTheme.isActive
         withAnimation(.easeInOut(duration: movieEntryFadeDuration)) {
             movieTransitionOverlayOpacity = 1
             menuSceneOpacity = 0
+            // The modern look's menu recedes as it goes.
+            if isModern { menuSceneScale = ModernTheme.sceneRecedeScale }
         }
         Task {
             try? await firstRowSleep(movieEntryFadeDuration + movieEntryBlackHoldDuration)
             guard !Task.isCancelled else { return }
-            activateMoviePlayback(from: url, startSeconds: 0, showsPlayGlyphOnStart: false)
             var instant = Transaction()
             instant.animation = nil
-            withTransaction(instant) {
-                movieTransitionOverlayOpacity = 0
+            if isModern {
+                withTransaction(instant) {
+                    menuSceneScale = 1
+                    movieSceneScale = ModernTheme.sceneNearScale
+                }
+            }
+            activateMoviePlayback(from: url, startSeconds: startSeconds, showsPlayGlyphOnStart: false)
+            if isModern {
+                // And the movie comes in from a little nearer, out of the black: it is the black
+                // that lifts off it. (Were the movie to fade in under nothing, the menu's
+                // backdrop would show through it until it had.)
+                withAnimation(.smooth(duration: 0.5)) {
+                    movieSceneScale = 1
+                    movieTransitionOverlayOpacity = 0
+                }
+            } else {
+                withTransaction(instant) {
+                    movieTransitionOverlayOpacity = 0
+                }
             }
             isMovieTransitioning = false
         }
     }
 
     func shouldPresentMovieResumePrompt(for url: URL) -> Bool {
-        guard let lastClosedMovieURL else { return false }
-        guard lastClosedMovieURL.standardizedFileURL == url.standardizedFileURL else { return false }
-        return lastClosedMovieTimestamp > 0.05
+        movieResumeSeconds(for: url) > 0.05
+    }
+
+    /// Where `url` was stopped: this session's last movie, or any file stopped in an earlier one.
+    func movieResumeSeconds(for url: URL) -> Double {
+        if let lastClosedMovieURL, lastClosedMovieURL.standardizedFileURL == url.standardizedFileURL, lastClosedMovieTimestamp > 0.05 {
+            return lastClosedMovieTimestamp
+        }
+        return MovieResumeStore.seconds(for: url) ?? 0
+    }
+
+    /// (`pictureFrom`: where the picture behind the question comes from, when that isn't
+    /// the thing asked about: a folder's first movie.)
+    func presentMovieResumePrompt(for url: URL, pictureFrom pictureSource: URL? = nil) {
+        movieResumePromptTargetURL = url.standardizedFileURL
+        movieResumePromptResumeSeconds = max(0, movieResumeSeconds(for: url))
+        movieResumePromptSelectedIndex = 0
+        movieResumePromptHideUnselected = false
+        movieResumePromptSolidBlackSelected = false
+        isMovieResumePromptConfirming = false
+        movieResumePromptBackdropImage = nil
+        movieResumePromptOpacity = 0
+        isMovieResumePromptVisible = true
+        let cacheKey = url.standardizedFileURL.path
+        if let cached = movieResumePromptBackdropCache[cacheKey] {
+            movieResumePromptBackdropImage = cached
+            return
+        }
+        let requestID = incrementRequestID(&movieResumePromptBackdropRequestID)
+        Task.detached(priority: .userInitiated) { [url] in
+            let image = await self.generateMovieThumbnail(for: pictureSource ?? url, preferredSeconds: 0)
+            await MainActor.run {
+                guard self.movieResumePromptBackdropRequestID == requestID else { return }
+                guard self.isMovieResumePromptVisible else { return }
+                guard self.movieResumePromptTargetURL?.standardizedFileURL == url.standardizedFileURL else { return }
+                if let image {
+                    self.movieResumePromptBackdropCache[cacheKey] = image
+                    self.movieResumePromptBackdropImage = image
+                }
+            }
+        }
     }
 
     func dismissMovieResumePrompt() {
         isMovieResumePromptVisible = false
+        movieRemoval = nil
         isMovieResumePromptConfirming = false
         movieResumePromptHideUnselected = false
         movieResumePromptSolidBlackSelected = false
         movieResumePromptTargetURL = nil
         movieResumePromptResumeSeconds = 0
         movieResumePromptBackdropImage = nil
-        movieResumeBackdropOpacity = 0
         _ = incrementRequestID(&movieResumePromptBackdropRequestID)
+        movieResumePromptOpacity = 0
         lastArrowNavigationInputTime = nil
     }
 
     func dismissMovieResumePromptToMenu() {
-        guard thirdMenuMode == .movieResumePrompt else { return }
+        guard isMovieResumePromptVisible else { return }
         guard !isMovieTransitioning else { return }
-        exitMovieResumePromptPage()
+        isMovieTransitioning = true
+        withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
+            movieResumePromptOpacity = 0
+        }
+        Task {
+            try? await firstRowSleep(movieResumePromptFadeDuration)
+            guard !Task.isCancelled else { return }
+            dismissMovieResumePrompt()
+            withAnimation(.easeInOut(duration: movieResumePromptFadeDuration)) {
+                menuSceneOpacity = 1
+            }
+            try? await firstRowSleep(movieResumePromptFadeDuration)
+            guard !Task.isCancelled else { return }
+            isMovieTransitioning = false
+        }
     }
 
     func handleMovieResumePromptInput(_ key: KeyCode, isRepeat: Bool) {
         guard isMovieResumePromptVisible, !isMovieResumePromptConfirming, !isMovieTransitioning else { return }
         _ = isRepeat
+        if movieRemoval != nil {
+            // (The same screen, asking whether to delete a movie: see `MenuView+MovieRemoval.swift`.)
+            handleMovieRemovalInput(key)
+            return
+        }
         switch key {
         case .upArrow, .downArrow:
             let now = Date()
@@ -268,7 +254,6 @@ extension MenuView {
             guard next != movieResumePromptSelectedIndex else { return }
             withAnimation(.easeInOut(duration: 0.16)) {
                 movieResumePromptSelectedIndex = next
-                selectedThirdIndex = next
             }
             playSound(named: "SelectionChange")
         case .enter:
@@ -282,110 +267,84 @@ extension MenuView {
     }
 
     func triggerMovieResumePromptSelection() {
-        triggerMovieResumeFromPage()
-    }
-
-    func triggerMovieResumeFromPage() {
         guard let targetURL = movieResumePromptTargetURL else { return }
-        let resumeFromSavedPosition = (selectedThirdIndex == 0)
-        let startSeconds = resumeFromSavedPosition ? movieResumePromptResumeSeconds : 0
-        let showsPlayGlyphOnStart = startSeconds > 0.01
-
-        clearMoviePlaybackControlState()
-        isCurrentMoviePlaybackEphemeralPreview = false
-        removeCurrentMoviePlaybackTemporaryFileIfNeeded()
-        isMovieTransitioning = true
         isMovieResumePromptConfirming = true
         playSound(named: "Selection")
-
         var instant = Transaction()
-        instant.disablesAnimations = true
+        instant.animation = nil
         withTransaction(instant) {
-            moviePlaybackEntryOpacity = 0
+            movieResumePromptHideUnselected = true
+            movieResumePromptSolidBlackSelected = true
         }
-
-        let preparedPlayer = activateMoviePlayback(
-            from: targetURL,
-            startSeconds: startSeconds,
-            showsPlayGlyphOnStart: false,
-            startsPaused: true,
-        )
-
-        withAnimation(.easeInOut(duration: 1.0)) {
-            moviePlaybackEntryOpacity = 1
-            menuSceneOpacity = 0
+        withAnimation(.linear(duration: movieResumePromptLaunchFadeDuration)) {
+            movieTransitionOverlayOpacity = 1
+            movieResumePromptOpacity = 0
         }
-
         Task {
-            try? await firstRowSleep(1.0)
+            try? await firstRowSleep(movieResumePromptLaunchFadeDuration)
             guard !Task.isCancelled else { return }
-            beginPreparedMoviePlayback(
-                preparedPlayer,
-                showsPlayGlyphOnStart: showsPlayGlyphOnStart,
-            )
+            let resumeFromSavedPosition = (movieResumePromptSelectedIndex == 0)
+            let startSeconds = resumeFromSavedPosition ? movieResumePromptResumeSeconds : 0
+            dismissMovieResumePrompt()
+            clearMoviePlaybackControlState()
+            isMovieTransitioning = true
             var instant = Transaction()
-            instant.disablesAnimations = true
+            instant.animation = nil
             withTransaction(instant) {
-                dismissMovieResumePrompt()
-                restoreMovieResumePromptReturnContext()
+                menuSceneOpacity = 0
+            }
+            activateMoviePlayback(
+                from: targetURL,
+                startSeconds: startSeconds,
+                showsPlayGlyphOnStart: true,
+            )
+            withTransaction(instant) {
+                movieTransitionOverlayOpacity = 0
             }
             isMovieTransitioning = false
         }
     }
 
-    func beginPreparedMoviePlayback(
-        _ player: AVPlayer,
-        showsPlayGlyphOnStart: Bool,
-    ) {
-        guard moviePlayer === player else { return }
-        player.play()
-        if showsPlayGlyphOnStart {
-            movieControlsGlyphState = .play
-            showMovieControlsInstantly()
-            scheduleMovieControlsAutoHide()
-        }
-    }
-
-    @discardableResult
     func activateMoviePlayback(
         from url: URL,
         startSeconds: Double,
         showsPlayGlyphOnStart: Bool,
-        startsPaused: Bool = false,
-    ) -> AVPlayer {
+    ) {
         // Ensure movie/video playback never overlaps with an existing audio session.
         if hasActiveMusicPlaybackSession() {
             stopMusicPlaybackSession(clearDisplayState: false)
         }
-        let player = AVPlayer(url: url)
+        let clampedStart = max(0, startSeconds.isFinite ? startSeconds : 0)
+        let player = makeMoviePlayer(for: url, startSeconds: clampedStart)
+        player.isMuted = FirstRowHarness.isActive
         configureMoviePlaybackObservation(for: player)
         currentMoviePlaybackURL = url.standardizedFileURL
         moviePlayer = player
+        movieOptionKinds = [.speed]
+        movieOptionsReveal = 0
+        movieOptionKindProbes = 0
+        probeMovieOptionKinds(player)
         isMoviePlaybackVisible = true
         pendingMovieControlsRevealOnDurationReady = false
-        let clampedStart = max(0, startSeconds.isFinite ? startSeconds : 0)
-        if clampedStart > 0.001 {
-            moviePlaybackCurrentSeconds = clampedStart
-            player.seek(
-                to: CMTime(seconds: clampedStart, preferredTimescale: 600),
-                toleranceBefore: .zero,
-                toleranceAfter: .zero,
-            ) { _ in
-                Task { @MainActor in
-                    guard !startsPaused else { return }
-                    beginPreparedMoviePlayback(
-                        player,
-                        showsPlayGlyphOnStart: showsPlayGlyphOnStart,
-                    )
+        if clampedStart > 0.001 { moviePlaybackCurrentSeconds = clampedStart }
+        if player is AVPlayer {
+            if clampedStart > 0.001 {
+                player.seek(toSeconds: clampedStart, exactly: true) { _ in
+                    player.play()
                 }
+            } else {
+                player.play()
             }
-        } else if !startsPaused {
-            beginPreparedMoviePlayback(
-                player,
-                showsPlayGlyphOnStart: showsPlayGlyphOnStart,
-            )
         }
-        return player
+        // (The engine starts a movie where it's asked to as it opens it, and plays.)
+        movieControlsGlyphState = .play
+        if showsPlayGlyphOnStart {
+            showMovieControlsInstantly()
+            scheduleMovieControlsAutoHide()
+        }
+        jellyfinMoviePlaybackDidActivate(url: url, startSeconds: clampedStart)
+        serverMoviePlaybackDidActivate(url: url, startSeconds: clampedStart)
+        youtubeMoviePlaybackDidActivate(url: url)
     }
 
     func captureLastClosedMoviePlaybackPosition() {
@@ -395,12 +354,14 @@ extension MenuView {
             return
         }
         var closedAt = moviePlaybackCurrentSeconds
-        if let playerSeconds = moviePlayer?.currentTime().seconds, playerSeconds.isFinite {
+        if let playerSeconds = moviePlayer?.positionSeconds {
             closedAt = max(closedAt, playerSeconds)
         }
         if closedAt.isFinite, closedAt > 0.05 {
             lastClosedMovieURL = currentMoviePlaybackURL.standardizedFileURL
             lastClosedMovieTimestamp = closedAt
+            MovieResumeStore.record(currentMoviePlaybackURL, seconds: closedAt, duration: moviePlaybackDurationSeconds)
+            refreshContinueWatchingIfShown()
         } else {
             lastClosedMovieURL = nil
             lastClosedMovieTimestamp = 0
@@ -409,16 +370,37 @@ extension MenuView {
 
     func stopMoviePlaybackAndReturnToMenu(captureResumePosition: Bool = true) {
         guard !isMovieTransitioning, isMoviePlaybackVisible else { return }
+        movieOptions = nil
+        movieOptionsReveal = 0
         isMovieTransitioning = true
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         clearMovieControlsVisibilityInstantly()
-        let playerToPause = moviePlayer
+        moviePlayer?.pause()
+        jellyfinMoviePlaybackWillEnd()
+        serverMoviePlaybackWillEnd()
+        youtubeMoviePlaybackWillEnd()
         let shouldCaptureResumePosition = captureResumePosition && !isCurrentMoviePlaybackEphemeralPreview
         if shouldCaptureResumePosition {
             captureLastClosedMoviePlaybackPosition()
         } else {
             lastClosedMovieURL = nil
             lastClosedMovieTimestamp = 0
+        }
+        #if FIRSTROW_PORTABLE
+            // The menus are drawn again from here, as good as clear and under the movie, which
+            // has stopped: the frame that puts their pictures back on the graphics card is
+            // one nobody sees, and the frames they come back in are all on time.
+            var unseen = Transaction()
+            unseen.animation = nil
+            withTransaction(unseen) {
+                menuSceneOpacity = Self.asGoodAsClear
+                // (At the size the modern look brings them back from.)
+                if ModernTheme.isActive { menuSceneScale = ModernTheme.sceneNearScale }
+            }
+        #endif
+        if ModernTheme.isActive {
+            recedeMovieToMenu()
+            return
         }
         Task {
             try? await firstRowSleep(movieExitFreezeHoldDuration)
@@ -428,72 +410,120 @@ extension MenuView {
             }
             try? await firstRowSleep(movieExitFadeDuration)
             guard !Task.isCancelled else { return }
-            playerToPause?.pause()
-            removeMoviePlaybackObservation()
-            moviePlayer = nil
-            isMoviePlaybackVisible = false
-            clearMoviePlaybackControlState()
-            isCurrentMoviePlaybackEphemeralPreview = false
-            removeCurrentMoviePlaybackTemporaryFileIfNeeded()
+            tearDownMoviePlayback()
             withAnimation(.easeInOut(duration: 0.24)) {
                 menuSceneOpacity = 1
                 movieTransitionOverlayOpacity = 0
             }
             try? await firstRowSleep(0.24)
             guard !Task.isCancelled else { return }
-            isMovieTransitioning = false
-        }
-    }
-    
-    func exitMoviePlaybackForUser() {
-        guard !isMovieTransitioning, isMoviePlaybackVisible else { return }
-        isMovieTransitioning = true
-        stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
-        clearMovieControlsVisibilityInstantly()
-        let playerToPause = moviePlayer
-        if !isCurrentMoviePlaybackEphemeralPreview {
-            captureLastClosedMoviePlaybackPosition()
-        } else {
-            lastClosedMovieURL = nil
-            lastClosedMovieTimestamp = 0
-        }
-        withAnimation(.easeInOut(duration: 1.0)) {
-            movieTransitionOverlayOpacity = 1
-        }
-        Task { @MainActor in
-            try? await firstRowSleep(1.0)
-            guard !Task.isCancelled else { return }
-            playerToPause?.pause()
-            removeMoviePlaybackObservation()
-            moviePlayer = nil
-            isMoviePlaybackVisible = false
-            clearMoviePlaybackControlState()
-            isCurrentMoviePlaybackEphemeralPreview = false
-            removeCurrentMoviePlaybackTemporaryFileIfNeeded()
-            withAnimation(.easeInOut(duration: 1.0)) {
-                menuSceneOpacity = 1
-                movieTransitionOverlayOpacity = 0
-            }
-            try? await firstRowSleep(1.0)
-            guard !Task.isCancelled else { return }
+            resetScreenSaverIdleTimer()
             isMovieTransitioning = false
         }
     }
 
+    /// The modern look's way out of a movie, with no black between: the movie shrinks back
+    /// and fades, and the menu comes in from a little nearer, as full-screen scenes do.
+    private func recedeMovieToMenu() {
+        let leave = Animation.smoothInOut(duration: 0.36)
+        let arrive = Animation.smooth(duration: 0.5)
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        Task {
+            // Long enough to see the movie stop where it was.
+            try? await firstRowSleep(0.12)
+            guard !Task.isCancelled else { return }
+            withTransaction(instant) {
+                menuSceneScale = ModernTheme.sceneNearScale
+            }
+            withAnimation(leave) {
+                movieSceneOpacity = 0
+                movieSceneScale = ModernTheme.sceneRecedeScale
+            }
+            try? await firstRowSleep(leave.duration * 0.7)
+            guard !Task.isCancelled else { return }
+            withAnimation(arrive) {
+                menuSceneOpacity = 1
+                menuSceneScale = 1
+            }
+            try? await firstRowSleep(leave.duration * 0.3 + 0.02)
+            guard !Task.isCancelled else { return }
+            tearDownMoviePlayback()
+            withTransaction(instant) {
+                movieSceneOpacity = 1
+                movieSceneScale = 1
+            }
+            try? await firstRowSleep(max(0, arrive.duration - leave.duration * 0.3))
+            guard !Task.isCancelled else { return }
+            resetScreenSaverIdleTimer()
+            isMovieTransitioning = false
+        }
+    }
+
+    /// Lets go of the movie once it's out of sight.
+    private func tearDownMoviePlayback() {
+        removeMoviePlaybackObservation()
+        movieOptionsReveal = 0
+        moviePlayer = nil
+        isMoviePlaybackVisible = false
+        clearMoviePlaybackControlState()
+        isCurrentMoviePlaybackEphemeralPreview = false
+        removeCurrentMoviePlaybackTemporaryFileIfNeeded()
+    }
+
     func handleMoviePlaybackInput(_ key: KeyCode, isRepeat: Bool) {
+        if handleYouTubePanelInput(key) { return }
+        if handleMovieOptionsInput(key) { return }
         switch key {
-        case .delete:
+        case .downArrow:
+            // Down to the options, out of their buttons; up from there comes back.
+            if !isRepeat { openMovieOptions() }
+        case .upArrow:
+            // Up from the bar puts the controls away.
+            if !isRepeat, areMovieControlsVisible {
+                stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
+                hideMovieControlsWithFade()
+            }
+        case .delete, .escape:
             playSound(named: "Exit")
-            exitMoviePlaybackForUser()
-        case .space:
+            stopMoviePlaybackAndReturnToMenu()
+        case .space, .enter:
             handleMovieSpacebarPressed()
         case .leftArrow:
-            beginMovieScrubbing(direction: -1, isRepeat: isRepeat)
+            handleMovieArrow(direction: -1, isRepeat: isRepeat)
         case .rightArrow:
-            beginMovieScrubbing(direction: 1, isRepeat: isRepeat)
+            handleMovieArrow(direction: 1, isRepeat: isRepeat)
         default:
             break
         }
+    }
+
+    /// A tap of left or right skips ten seconds; held, it scrubs as before.
+    func handleMovieArrow(direction: Int, isRepeat: Bool) {
+        if isRepeat || movieScrubDirection != 0 {
+            movieArrowPending = nil
+            beginMovieScrubbing(direction: direction, isRepeat: isRepeat)
+            return
+        }
+        guard moviePlayer != nil else { return }
+        // A new press means the last one was let go: if it was still undecided, it was a tap.
+        if let pending = movieArrowPending {
+            pending.task.cancel()
+            movieArrowPending = nil
+            skipMovie(bySeconds: Double(pending.direction) * 10)
+        }
+        showMovieControlsInstantly()
+        let task = Task { @MainActor in
+            try? await firstRowSleep(0.3)
+            guard !Task.isCancelled, isMoviePlaybackVisible, movieArrowPending?.direction == direction else { return }
+            movieArrowPending = nil
+            if isHoldingScrubKey(direction: direction) {
+                beginMovieScrubbing(direction: direction, isRepeat: false)
+            } else {
+                skipMovie(bySeconds: Double(direction) * 10)
+            }
+        }
+        movieArrowPending = (direction, task)
     }
 
     // MARK: - Movie Controls and Scrubbing
@@ -512,7 +542,8 @@ extension MenuView {
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         movieControlsGlyphState = .play
         player.play()
-        hideMovieControlsWithFade()
+        if movieSpeed != 1 { player.setSpeed(movieSpeed) }
+        if movieOptions == nil { hideMovieControlsWithFade() }
     }
 
     func beginMovieScrubbing(direction: Int, isRepeat: Bool) {
@@ -562,7 +593,9 @@ extension MenuView {
     func startMovieScrubTimerIfNeeded() {
         guard movieScrubTimer == nil else { return }
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
-            handleMovieScrubTick()
+            MainActor.assumeIsolatedIfPossible {
+                self.handleMovieScrubTick()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         movieScrubTimer = timer
@@ -587,7 +620,7 @@ extension MenuView {
             stopMovieScrubbing(revertToPause: true, scheduleAutoHide: true)
             return
         }
-        if now.timeIntervalSince(lastInput) > movieScrubReleaseGracePeriod {
+        if !isHoldingScrubKey(direction: movieScrubDirection), now.timeIntervalSince(lastInput) > movieScrubReleaseGracePeriod {
             stopMovieScrubbing(revertToPause: true, scheduleAutoHide: true)
             return
         }
@@ -607,11 +640,7 @@ extension MenuView {
         let unclampedTime = moviePlaybackCurrentSeconds + (Double(movieScrubDirection) * velocity * delta)
         let targetSeconds = max(0, min(maxTime > 0 ? maxTime : unclampedTime, unclampedTime))
         moviePlaybackCurrentSeconds = max(0, targetSeconds)
-        player.seek(
-            to: CMTime(seconds: moviePlaybackCurrentSeconds, preferredTimescale: 600),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero,
-        )
+        player.seek(toSeconds: moviePlaybackCurrentSeconds, exactly: true)
     }
 
     func stopMovieScrubbing(revertToPause: Bool, scheduleAutoHide: Bool) {
@@ -628,12 +657,47 @@ extension MenuView {
         }
     }
 
+    /// On a screen bent at its fold, a movie's controls have the part under it to themselves,
+    /// and stay up.
+    var keepsMovieControlsUp: Bool { upright?.isBent == true }
+    var showsMovieControls: Bool { areMovieControlsVisible || keepsMovieControlsUp }
+    var shownMovieControlsOpacity: Double { keepsMovieControlsUp ? 1 : movieControlsOpacity }
+
+    /// Turned on its side or laid out flat, the controls go to their place over the picture,
+    /// and away after a while as ever.
+    func movieStanceDidChange() {
+        guard isMoviePlaybackVisible, moviePlayer != nil, !keepsMovieControlsUp else { return }
+        // Plain changes, not drawn here and now: they're drawn with the layout that follows a
+        // change of stance, so everything moves to its new place together.
+        cancelMovieControlsAutoHide()
+        areMovieControlsVisible = true
+        movieControlsOpacity = 1
+        scheduleMovieControlsAutoHide()
+    }
+
     func showMovieControlsInstantly() {
         cancelMovieControlsAutoHide()
         var instant = Transaction()
         instant.animation = nil
         withTransaction(instant) {
             areMovieControlsVisible = true
+            movieControlsOpacity = 1
+        }
+    }
+
+    /// Fades the controls in (the pointer moving), rather than putting them straight up.
+    func showMovieControlsFading() {
+        cancelMovieControlsAutoHide()
+        guard !areMovieControlsVisible || movieControlsOpacity < 1 else { return }
+        if !areMovieControlsVisible {
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                movieControlsOpacity = 0
+                areMovieControlsVisible = true
+            }
+        }
+        withAnimation(.easeOut(duration: 0.25)) {
             movieControlsOpacity = 1
         }
     }
@@ -650,7 +714,7 @@ extension MenuView {
 
     func hideMovieControlsWithFade() {
         cancelMovieControlsAutoHide()
-        guard areMovieControlsVisible else { return }
+        guard areMovieControlsVisible, movieOptions == nil else { return }
         withAnimation(.easeOut(duration: movieControlsFadeDuration)) {
             movieControlsOpacity = 0
         }
@@ -666,7 +730,8 @@ extension MenuView {
         cancelMovieControlsAutoHide()
         movieControlsHideWorkItem = Task {
             try? await firstRowSleep(movieControlsAutoHideDelay)
-            guard !Task.isCancelled else { return }
+            // The controls stay while the options are open; closing them starts the wait again.
+            guard !Task.isCancelled, movieOptions == nil else { return }
             hideMovieControlsWithFade()
         }
     }
@@ -676,63 +741,229 @@ extension MenuView {
         movieControlsHideWorkItem = nil
     }
 
-    func configureMoviePlaybackObservation(for player: AVPlayer) {
+    func configureMoviePlaybackObservation(for player: any MoviePlayer) {
         removeMoviePlaybackObservation()
+        movieOptions = nil
+        movieSpeed = 1
         observedMoviePlayer = player
-        moviePlaybackCurrentSeconds = max(0, player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0)
+        moviePlaybackCurrentSeconds = player.positionSeconds
         moviePlaybackDurationSeconds = resolvedMovieDurationSeconds(for: player)
-        if let currentItem = player.currentItem {
-            moviePlaybackDidEndObserver = NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: currentItem,
-                queue: .main,
-            ) { _ in
-                guard self.observedMoviePlayer === player else { return }
-                guard self.isMoviePlaybackVisible else { return }
-                guard !self.isMovieTransitioning else { return }
-                let resolvedDuration = self.resolvedMovieDurationSeconds(for: player)
-                self.moviePlaybackDurationSeconds = max(self.moviePlaybackDurationSeconds, resolvedDuration)
-                self.moviePlaybackCurrentSeconds = self.moviePlaybackDurationSeconds
-                self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
+        moviePlaybackDidEndObserver = player.observeEnd { [weak player] in
+            guard let player, self.observedMoviePlayer === player else { return }
+            guard self.isMoviePlaybackVisible else { return }
+            guard !self.isMovieTransitioning else { return }
+            let resolvedDuration = self.resolvedMovieDurationSeconds(for: player)
+            self.moviePlaybackDurationSeconds = max(self.moviePlaybackDurationSeconds, resolvedDuration)
+            self.moviePlaybackCurrentSeconds = self.moviePlaybackDurationSeconds
+            // Watched to the end: nothing left to resume.
+            if let url = self.currentMoviePlaybackURL {
+                MovieResumeStore.remove(url)
+                self.refreshContinueWatchingIfShown()
+            }
+            if self.jellyfinPlayNextEpisodeAtEnd() { return }
+            self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
+        }
+        moviePlaybackFailureObserver = player.observeFailure { [weak player] in
+            guard let player, self.observedMoviePlayer === player else { return }
+            self.movieCouldNotBePlayed()
+        }
+        movieTimeObserverToken = player.observeTime(every: 1.0 / 30.0) { [weak player] currentSeconds in
+            guard let player else { return }
+            if self.movieScrubDirection == 0 {
+                self.moviePlaybackCurrentSeconds = currentSeconds
+            }
+            // Once it's playing its tracks are known (some players only list them then): a
+            // look half a second in, and again a little later.
+            let probeAt: Double? = switch self.movieOptionKindProbes {
+            case 0: 0.5
+            case 1: 2.5
+            default: nil
+            }
+            if self.moviePlayer === player, let probeAt, currentSeconds > probeAt {
+                self.movieOptionKindProbes += 1
+                self.probeMovieOptionKinds(player)
+            }
+            let durationSeconds = self.resolvedMovieDurationSeconds(for: player)
+            if durationSeconds > 0 {
+                self.moviePlaybackDurationSeconds = durationSeconds
+                if self.pendingMovieControlsRevealOnDurationReady {
+                    self.pendingMovieControlsRevealOnDurationReady = false
+                    self.showMovieControlsInstantly()
+                    self.scheduleMovieControlsAutoHide()
+                }
             }
         }
-        let interval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
-        movieTimeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
-            let currentSeconds = max(0, time.seconds.isFinite ? time.seconds : 0)
-            if movieScrubDirection == 0 {
-                moviePlaybackCurrentSeconds = currentSeconds
-            }
-            let durationSeconds = resolvedMovieDurationSeconds(for: player)
-            if durationSeconds > 0 {
-                moviePlaybackDurationSeconds = durationSeconds
-                if pendingMovieControlsRevealOnDurationReady {
-                    pendingMovieControlsRevealOnDurationReady = false
-                    showMovieControlsInstantly()
-                    scheduleMovieControlsAutoHide()
+        watchMovieBuffering(of: player)
+    }
+
+    /// Has the pinwheel show while the player is waiting for more of the movie than it has:
+    /// once it has waited a third of a second, so the short waits that every start and every
+    /// jump to another place have don't flash it.
+    private func watchMovieBuffering(of player: any MoviePlayer) {
+        movieBufferingWatchTask?.cancel()
+        if showsMovieBufferingPinwheel { showsMovieBufferingPinwheel = false }
+        movieBufferingWatchTask = Task { @MainActor [weak self] in
+            var waitingSince: CFTimeInterval?
+            while !Task.isCancelled {
+                try? await firstRowSleep(0.1)
+                guard let self, !Task.isCancelled, self.observedMoviePlayer === player else { return }
+                let now = CACurrentMediaTime()
+                if self.isMoviePlaybackVisible, player.isWaitingToPlay {
+                    waitingSince = waitingSince ?? now
+                } else {
+                    waitingSince = nil
                 }
+                let shows = waitingSince.map { now - $0 >= 0.3 } ?? false
+                if shows != self.showsMovieBufferingPinwheel { self.showsMovieBufferingPinwheel = shows }
             }
         }
     }
 
     func removeMoviePlaybackObservation() {
+        movieBufferingWatchTask?.cancel()
+        movieBufferingWatchTask = nil
+        if showsMovieBufferingPinwheel { showsMovieBufferingPinwheel = false }
         if let token = movieTimeObserverToken, let observedMoviePlayer {
-            observedMoviePlayer.removeTimeObserver(token)
+            observedMoviePlayer.stopObservingTime(token)
         }
         movieTimeObserverToken = nil
-        if let moviePlaybackDidEndObserver {
-            NotificationCenter.default.removeObserver(moviePlaybackDidEndObserver)
+        if let moviePlaybackDidEndObserver, let observedMoviePlayer {
+            observedMoviePlayer.stopObservingEnd(moviePlaybackDidEndObserver)
         }
         moviePlaybackDidEndObserver = nil
+        if let moviePlaybackFailureObserver, let observedMoviePlayer {
+            observedMoviePlayer.stopObservingFailure(moviePlaybackFailureObserver)
+        }
+        moviePlaybackFailureObserver = nil
         observedMoviePlayer = nil
     }
 
-    func resolvedMovieDurationSeconds(for player: AVPlayer) -> Double {
-        guard let currentItem = player.currentItem else { return 0 }
-        let itemDuration = currentItem.duration.seconds
-        if itemDuration.isFinite, itemDuration > 0 {
-            return itemDuration
+    func resolvedMovieDurationSeconds(for player: any MoviePlayer) -> Double {
+        player.lengthSeconds
+    }
+
+    /// The words to show under the picture: a YouTube video's captions, or the subtitles the
+    /// movie's player has First Row draw.
+    var movieCaptionText: String? {
+        if let text = youtubeCaptionText { return text }
+        let lines = movieCaptions.compactMap(\.text).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// The movie's player when it is the system's own (on Linux and Windows, the one there is).
+    var movieSystemPlayer: AVPlayer? {
+        moviePlayer as? AVPlayer
+    }
+
+    /// What will play a movie: the system's player for what it can open, First Row's own
+    /// engine for the rest, where there is one.
+    func makeMoviePlayer(for url: URL, startSeconds: Double) -> any MoviePlayer {
+        #if FIRSTROW_PORTABLE
+            return AVPlayer(url: url)
+        #else
+            // (A YouTube video at a size that was asked for has a playlist of First Row's making.)
+            if let item = YouTubePlaylistLoader.shared.playerItem(for: url) {
+                return AVPlayer(playerItem: item)
+            }
+            // A movie on a server is the engine's wherever there is one (what such an address
+            // ends in says little), but for a stream the server has cut up for the system's player.
+            let onServer = serverVideo(at: url)
+            let isForEngine = onServer != nil
+                ? MediaEngine.isAvailable && !["m3u8", "m3u"].contains(url.pathExtension.lowercased())
+                : MediaEngine.plays(url)
+            if isForEngine, let player = EngineMoviePlayer(
+                url: url,
+                startSeconds: startSeconds,
+                headers: onServer?.headers ?? [:],
+                subtitleFiles: onServer?.subtitleFiles ?? Self.subtitleFiles(beside: url),
+                user: onServer?.user,
+                password: onServer?.password,
+            ) {
+                player.onCaptions = { [weak self, weak player] captions in
+                    guard let self, let player, self.moviePlayer === player else { return }
+                    self.movieCaptions = captions
+                }
+                player.onChange = { [weak self, weak player] in
+                    guard let self, let player, self.moviePlayer === player, self.movieOptions == nil else { return }
+                    self.probeMovieOptionKinds(player)
+                }
+                return player
+            }
+            if let headers = onServer?.headers, !headers.isEmpty {
+                return AVPlayer(playerItem: AVPlayerItem(asset: AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])))
+            }
+            return AVPlayer(url: url)
+        #endif
+    }
+
+    /// The kinds of subtitle file that are kept beside a movie.
+    static let subtitleFileExtensions: Set<String> = ["srt", "ass", "ssa", "vtt", "sub", "idx", "sup", "smi", "sami", "mpl", "txt", "tmp", "ttml", "dfxp"]
+
+    /// The subtitle files kept beside a movie: those in its folder whose names start with
+    /// the movie's ("Film.srt", "Film.en.srt", "Film.forced.ass"). What comes between the
+    /// movie's name and the kind of file is taken for the language where it looks like one.
+    nonisolated static func subtitleFiles(beside movie: URL) -> [MovieSubtitleFile] {
+        guard movie.isFileURL else { return [] }
+        let folder = movie.deletingLastPathComponent()
+        let name = movie.deletingPathExtension().lastPathComponent.lowercased()
+        guard !name.isEmpty, let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
+        var found: [MovieSubtitleFile] = []
+        for file in files.sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }) {
+            let kind = file.pathExtension.lowercased()
+            guard subtitleFileExtensions.contains(kind), file.standardizedFileURL != movie.standardizedFileURL else { continue }
+            let other = file.deletingPathExtension().lastPathComponent.lowercased()
+            guard other == name || other.hasPrefix(name + ".") else { continue }
+            // (A VobSub's .sub goes with its .idx, which names it: the .sub alone is not a track.)
+            if kind == "sub", files.contains(where: { $0.pathExtension.lowercased() == "idx" && $0.deletingPathExtension().lastPathComponent.lowercased() == other }) {
+                continue
+            }
+            let words = other.dropFirst(name.count).split(separator: ".").map(String.init)
+            let language = words.first { ($0.count == 2 || $0.count == 3) && $0.allSatisfy(\.isLetter) }
+            let rest = words.filter { $0 != language }
+            // (With no language to go by, the kind of file tells one from another.)
+            found.append(MovieSubtitleFile(url: file, language: language, name: rest.isEmpty ? (language == nil ? kind.uppercased() : nil) : rest.joined(separator: " ").capitalized))
         }
-        return 0
+        return found
+    }
+
+    /// The movie's player has given up on it: back to the menus, and a screen that says so.
+    func movieCouldNotBePlayed() {
+        let url = currentMoviePlaybackURL
+        Task { @MainActor in
+            // (A movie that fails as it's coming in is put away once it's in.)
+            for _ in 0 ..< 40 where self.isMovieTransitioning {
+                try? await firstRowSleep(0.1)
+            }
+            guard self.isMoviePlaybackVisible, !self.isMovieTransitioning else { return }
+            self.playSound(named: "Limit")
+            self.stopMoviePlaybackAndReturnToMenu(captureResumePosition: false)
+            // (Once the menus are back.)
+            for _ in 0 ..< 60 where self.isMovieTransitioning || self.isMoviePlaybackVisible {
+                try? await firstRowSleep(0.1)
+            }
+            guard !self.isMoviePlaybackVisible, self.activeFullscreenScene == nil else { return }
+            self.presentFullscreenScene(key: self.featureErrorFullscreenKey, payload: [
+                "header": L("This video can't be played."),
+                "subcaption": Self.whyMovieCouldNotBePlayed(url),
+            ])
+        }
+    }
+
+    /// Why, for the screen that says a movie couldn't be played.
+    static func whyMovieCouldNotBePlayed(_ url: URL?) -> String {
+        if let url, url.isFileURL, DiscWatch.shared.protectedDisc == url.standardizedFileURL {
+            return L("It's protected against copying.")
+        }
+        #if !FIRSTROW_PORTABLE
+            let kind = url?.pathExtension.lowercased() ?? ""
+            if !MediaEngine.isAvailable, !kind.isEmpty, !MediaEngine.systemPlayerExtensions.contains(kind) {
+                // (A kind of file the system's own player doesn't open, and nothing else here to open it.)
+                return MediaEngine.isSystemNewEnough
+                    ? L("This copy of First Row has no player for this kind of file.")
+                    : L("This kind of file needs %@ or later.", MediaEngine.systemNeeded)
+            }
+        #endif
+        return L("First Row couldn't open it.")
     }
 
     func clearMoviePlaybackControlState() {
@@ -747,5 +978,6 @@ extension MenuView {
         moviePlaybackCurrentSeconds = 0
         moviePlaybackDurationSeconds = 0
         pendingMovieControlsRevealOnDurationReady = false
+        if !movieCaptions.isEmpty { movieCaptions = [] }
     }
 }

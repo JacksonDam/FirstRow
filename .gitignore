@@ -4,5 +4,16 @@
 Products/*
 Scripts/*
 dist/
-First Row Classic.xcodeproj/xcuserdata/
-First Row Classic.xcodeproj/project.xcworkspace/xcuserdata/
+First Row.xcodeproj/xcuserdata/
+First Row.xcodeproj/project.xcworkspace/xcuserdata/
+
+.build/
+
+# The media engine's builds, and its copy of the file it shares with the app.
+MediaEngine/.build/
+MediaEngine/build/
+MediaEngine/Vendor/
+MediaEngine/Sources/FirstRowMediaEngine/Shared/
+
+# A libmpv built for the Windows packages (Portable/scripts/build-libmpv-windows.sh).
+Portable/build/

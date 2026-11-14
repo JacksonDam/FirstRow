@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "Vol_BKG_v1_OFF.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

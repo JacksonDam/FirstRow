@@ -1,7 +1,17 @@
 import AVFoundation
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 #if canImport(CryptoKit)
     import CryptoKit
+#endif
+#if os(iOS)
+    import MediaPlayer
 #endif
 #if os(macOS)
     import SQLite3
@@ -9,7 +19,6 @@ import SwiftUI
 #if canImport(iTunesLibrary)
     import iTunesLibrary
 #endif
-
 private struct PodcastEmbeddedMetadataEntry {
     let artwork: NSImage?
     let description: String?
@@ -18,150 +27,57 @@ private struct PodcastEmbeddedMetadataEntry {
 private let podcastEmbeddedMetadataCache = BoundedCache<String, PodcastEmbeddedMetadataEntry>(maxEntryCount: 600)
 
 extension MenuView {
-    enum PodcastBrowserKind: String, Hashable {
-        case audio
-        case video
-
-        var submenuItemID: String {
-            switch self {
-            case .audio:
-                "music_podcasts"
-            case .video:
-                "movies_video_podcasts"
-            }
-        }
-
-        var headerTitle: String {
-            switch self {
-            case .audio:
-                "Podcasts"
-            case .video:
-                "Video Podcasts"
-            }
-        }
-
-        var seriesMode: ThirdMenuMode {
-            switch self {
-            case .audio:
-                .audioPodcastSeries
-            case .video:
-                .videoPodcastSeries
-            }
-        }
-
-        var episodesMode: ThirdMenuMode {
-            switch self {
-            case .audio:
-                .audioPodcastEpisodes
-            case .video:
-                .videoPodcastEpisodes
-            }
-        }
-
-        var usesMoviePreview: Bool {
-            self == .video
-        }
+    var podcastSeriesSubmenuItemPrefix: String {
+        "podcast_series::"
     }
 
-    struct PodcastEpisodeEntry: Identifiable {
-        let id: String
-        let seriesID: String
-        let seriesTitle: String
-        let title: String
-        let artist: String
-        let description: String
-        let durationSeconds: Double
-        let airedDate: Date?
-        let mediaURL: URL?
-        let artwork: NSImage?
-        let isVideo: Bool
-    }
-
-    struct PodcastSeriesEntry: Identifiable {
-        let id: String
-        let title: String
-        let artist: String
-        let description: String
-        let artwork: NSImage?
-        let episodes: [PodcastEpisodeEntry]
-    }
-
-    var activePodcastThirdMenuKind: PodcastBrowserKind? {
-        switch thirdMenuMode {
-        case .audioPodcastSeries, .audioPodcastEpisodes:
-            .audio
-        case .videoPodcastSeries, .videoPodcastEpisodes:
-            .video
-        default:
-            nil
-        }
+    var podcastsNowPlayingSubmenuItemID: String {
+        "podcasts_now_playing"
     }
 
     var isPodcastAudioNowPlaying: Bool {
         activePodcastPlaybackSeriesID != nil && activePodcastPlaybackEpisodeID != nil
     }
 
-    var isPodcastSeriesThirdMenuMode: Bool {
-        switch thirdMenuMode {
-        case .audioPodcastSeries, .videoPodcastSeries:
-            true
-        default:
-            false
+    func activePodcastPlaybackSeries() -> PodcastSeriesEntry? {
+        guard let activePodcastPlaybackSeriesID else { return nil }
+        return podcastSeriesItems.first(where: { $0.id == activePodcastPlaybackSeriesID })
+    }
+
+    func activePodcastPlaybackEpisodes() -> [PodcastEpisodeEntry] {
+        if let activeSeries = activePodcastPlaybackSeries() {
+            return activeSeries.episodes
         }
+        guard let activePodcastPlaybackSeriesID else { return [] }
+        let activeThirdMenuEpisodes = podcastEpisodesThirdMenuItems.filter { $0.seriesID == activePodcastPlaybackSeriesID }
+        return activeThirdMenuEpisodes.isEmpty ? [] : activeThirdMenuEpisodes
     }
 
-    var isPodcastEpisodesThirdMenuMode: Bool {
-        switch thirdMenuMode {
-        case .audioPodcastEpisodes, .videoPodcastEpisodes:
-            true
-        default:
-            false
+    func podcastTrackPositionText(trackIndex: Int, trackCount: Int) -> String {
+        guard trackCount > 0, trackIndex >= 0, trackIndex < trackCount else { return "" }
+        return L("%@ of %@", trackIndex + 1, trackCount)
+    }
+
+    func podcastTrackPositionText(forEpisodeID episodeID: String?, inSeriesID seriesID: String?) -> String {
+        guard let episodeID, let seriesID else { return "" }
+        let episodes: [PodcastEpisodeEntry] = if let series = podcastSeriesItems.first(where: { $0.id == seriesID }) {
+            series.episodes
+        } else {
+            podcastEpisodesThirdMenuItems.filter { $0.seriesID == seriesID }
         }
+        guard !episodes.isEmpty else { return "" }
+        guard let index = episodes.firstIndex(where: { $0.id == episodeID }) else { return "" }
+        return podcastTrackPositionText(trackIndex: index, trackCount: episodes.count)
     }
 
-    var selectedVideoPodcastEpisodeForPreview: PodcastEpisodeEntry? {
-        guard activeRootItemID == "movies",
-              isInThirdMenu,
-              thirdMenuMode == .videoPodcastEpisodes,
-              podcastEpisodesThirdMenuItems.indices.contains(selectedThirdIndex)
-        else {
-            return nil
-        }
-        return podcastEpisodesThirdMenuItems[selectedThirdIndex]
-    }
-
-    var podcastArtworkRequestSize: CGSize {
-        CGSize(width: 1600, height: 1600)
-    }
-
-    var podcastAudioExtensions: Set<String> {
-        ["aac", "aif", "aiff", "alac", "caf", "flac", "m4a", "m4b", "mp3", "opus", "wav"]
-    }
-
-    var podcastVideoExtensions: Set<String> {
-        ["avi", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "ts", "webm", "wmv"]
-    }
-
-    var podcastFallbackImage: NSImage? {
-        musicFallbackImage
-    }
-
-    func podcastMediaMetadataCacheKey(for mediaURL: URL) -> String {
-        let normalizedURL = mediaURL.standardizedFileURL
-        return normalizedURL.isFileURL ? normalizedURL.path : normalizedURL.absoluteString
-    }
-
-    func blockingAssetLoad<Value>(
-        _ operation: @escaping @Sendable () async -> Value?,
-    ) -> Value? {
-        let semaphore = DispatchSemaphore(value: 0)
-        let box = BlockingResultBox<Value>()
-        Task.detached(priority: .userInitiated) {
-            box.set(await operation())
-            semaphore.signal()
-        }
-        semaphore.wait()
-        return box.value()
+    func syncPodcastSubmenuSelectionForActiveSeries() {
+        guard activeRootItemID == "podcasts", isInSubmenu, !isInThirdMenu else { return }
+        let targetSeriesID = activePodcastSeriesID ?? activePodcastPlaybackSeriesID
+        guard let targetSeriesID else { return }
+        let targetItemID = "\(podcastSeriesSubmenuItemPrefix)\(targetSeriesID)"
+        let submenuItems = currentSubmenuItems()
+        guard let targetIndex = submenuItems.firstIndex(where: { $0.id == targetItemID }) else { return }
+        selectedSubIndex = targetIndex
     }
 
     func normalizedPodcastText(_ raw: String?) -> String? {
@@ -193,7 +109,37 @@ extension MenuView {
         normalizedPodcastText(plainText)
             ?? strippedHTMLText(htmlText)
             ?? normalizedPodcastText(fallback)
-            ?? "No description available."
+            ?? L("No description available.")
+    }
+
+    nonisolated var podcastArtworkRequestSize: CGSize {
+        CGSize(width: 1600, height: 1600)
+    }
+
+    var podcastAudioExtensions: Set<String> {
+        ["aac", "aif", "aiff", "alac", "caf", "flac", "m4a", "mp3", "opus", "wav"]
+    }
+
+    var podcastVideoExtensions: Set<String> {
+        ["avi", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "ts", "webm", "wmv"]
+    }
+
+    func podcastMediaMetadataCacheKey(for mediaURL: URL) -> String {
+        let normalizedURL = mediaURL.standardizedFileURL
+        return normalizedURL.isFileURL ? normalizedURL.path : normalizedURL.absoluteString
+    }
+
+    func blockingAssetLoad<Value>(
+        _ operation: @escaping @Sendable () async -> Value?,
+    ) -> Value? {
+        let semaphore = DispatchSemaphore(value: 0)
+        let box = BlockingResultBox<Value>()
+        Task.detached(priority: .userInitiated) {
+            await box.set(operation())
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return box.value()
     }
 
     private func loadPodcastEmbeddedMetadata(_ mediaURL: URL) -> PodcastEmbeddedMetadataEntry {
@@ -205,14 +151,13 @@ extension MenuView {
             let asset = AVURLAsset(url: mediaURL)
             let commonMetadata: [AVMetadataItem]
             if #available(macOS 12.0, *) {
-                guard let loadedMetadata = try? await asset.load(.commonMetadata) else {
+                guard let loaded = try? await asset.load(.commonMetadata) else {
                     return PodcastEmbeddedMetadataEntry(artwork: nil, description: nil)
                 }
-                commonMetadata = loadedMetadata
+                commonMetadata = loaded
             } else {
                 commonMetadata = asset.commonMetadata
             }
-
             let artworkItems = AVMetadataItem.metadataItems(
                 from: commonMetadata,
                 filteredByIdentifier: .commonIdentifierArtwork,
@@ -221,7 +166,6 @@ extension MenuView {
                 from: commonMetadata,
                 filteredByIdentifier: .commonIdentifierDescription,
             )
-
             var artwork: NSImage?
             for item in artworkItems {
                 let dataValue: Data? = if #available(macOS 12.0, *) {
@@ -233,7 +177,7 @@ extension MenuView {
                    let image = cachedDecodedDisplayArtworkImage(
                        from: dataValue,
                        sourceKey: "\(cacheKey)::embedded_artwork_data",
-                       maxPixelSize: podcastArtworkRequestSize.width,
+                       maxPixelSize: self.podcastArtworkRequestSize.width,
                    )
                 {
                     artwork = image
@@ -244,18 +188,17 @@ extension MenuView {
                 } else {
                     item.value
                 }
-                if let rawData = itemValue as? Data,
+                if let dataValue = itemValue as? Data,
                    let image = cachedDecodedDisplayArtworkImage(
-                       from: rawData,
+                       from: dataValue,
                        sourceKey: "\(cacheKey)::embedded_artwork_value",
-                       maxPixelSize: podcastArtworkRequestSize.width,
+                       maxPixelSize: self.podcastArtworkRequestSize.width,
                    )
                 {
                     artwork = image
                     break
                 }
             }
-
             var description: String?
             for item in descriptionItems {
                 let stringValue: String? = if #available(macOS 12.0, *) {
@@ -263,21 +206,26 @@ extension MenuView {
                 } else {
                     item.stringValue
                 }
-                if let direct = normalizedPodcastText(stringValue) {
-                    description = direct
-                    break
+                if let direct = stringValue {
+                    let trimmed = direct.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        description = trimmed
+                        break
+                    }
                 }
                 let itemValue: (NSCopying & NSObjectProtocol)? = if #available(macOS 12.0, *) {
                     try? await item.load(.value)
                 } else {
                     item.value
                 }
-                if let rawString = normalizedPodcastText(itemValue as? String) {
-                    description = rawString
-                    break
+                if let rawValue = itemValue as? String {
+                    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        description = trimmed
+                        break
+                    }
                 }
             }
-
             return PodcastEmbeddedMetadataEntry(artwork: artwork, description: description)
         } ?? PodcastEmbeddedMetadataEntry(artwork: nil, description: nil)
         podcastEmbeddedMetadataCache.store(loaded, for: cacheKey)
@@ -310,235 +258,157 @@ extension MenuView {
         normalizedPodcastText(loadPodcastEmbeddedMetadata(mediaURL).description)
     }
 
-    func filteredPodcastEpisodes(in series: PodcastSeriesEntry, for kind: PodcastBrowserKind) -> [PodcastEpisodeEntry] {
-        series.episodes.filter { episode in
-            kind == .video ? episode.isVideo : !episode.isVideo
-        }
+    func podcastSeriesSubmenuItemID(for series: PodcastSeriesEntry) -> String {
+        "\(podcastSeriesSubmenuItemPrefix)\(series.id)"
     }
 
-    func filteredPodcastSeriesItems(for kind: PodcastBrowserKind) -> [PodcastSeriesEntry] {
-        podcastSeriesItems.compactMap { series in
-            let filteredEpisodes = filteredPodcastEpisodes(in: series, for: kind)
-            guard !filteredEpisodes.isEmpty else { return nil }
-            return PodcastSeriesEntry(
-                id: series.id,
-                title: series.title,
-                artist: series.artist,
-                description: series.description,
-                artwork: series.artwork,
-                episodes: filteredEpisodes,
-            )
-        }
-    }
-
-    func currentPodcastSeriesSelectionIndex(for kind: PodcastBrowserKind) -> Int {
-        podcastSeriesSelectionIndexByKind[kind] ?? 0
-    }
-
-    func storePodcastSeriesSelectionIndex(_ index: Int, for kind: PodcastBrowserKind) {
-        podcastSeriesSelectionIndexByKind[kind] = max(0, index)
-    }
-
-    func clampPodcastSeriesSelectionIndexes() {
-        for kind in [PodcastBrowserKind.audio, .video] {
-            let maxIndex = max(0, filteredPodcastSeriesItems(for: kind).count - 1)
-            storePodcastSeriesSelectionIndex(
-                min(currentPodcastSeriesSelectionIndex(for: kind), maxIndex),
-                for: kind,
-            )
-        }
-    }
-
-    func selectedPodcastSeriesFromThirdMenuSelection() -> PodcastSeriesEntry? {
-        guard isPodcastSeriesThirdMenuMode,
-              let kind = activePodcastThirdMenuKind
-        else {
-            return nil
-        }
-        let seriesItems = filteredPodcastSeriesItems(for: kind)
-        guard seriesItems.indices.contains(selectedThirdIndex) else { return nil }
-        return seriesItems[selectedThirdIndex]
+    func podcastSeriesForSubmenuItemID(_ submenuItemID: String?) -> PodcastSeriesEntry? {
+        guard let submenuItemID else { return nil }
+        guard submenuItemID.hasPrefix(podcastSeriesSubmenuItemPrefix) else { return nil }
+        let seriesID = String(submenuItemID.dropFirst(podcastSeriesSubmenuItemPrefix.count))
+        return podcastSeriesItems.first(where: { $0.id == seriesID })
     }
 
     func selectedPodcastEpisodeFromThirdMenuSelection() -> PodcastEpisodeEntry? {
-        guard isPodcastEpisodesThirdMenuMode,
-              podcastEpisodesThirdMenuItems.indices.contains(selectedThirdIndex)
-        else {
+        guard activeRootItemID == "podcasts", isInSubmenu, isInThirdMenu, thirdMenuMode == .podcastsEpisodes else {
             return nil
         }
+        guard podcastEpisodesThirdMenuItems.indices.contains(selectedThirdIndex) else { return nil }
         return podcastEpisodesThirdMenuItems[selectedThirdIndex]
     }
 
-    func podcastEpisodeAiredText(for date: Date?) -> String {
-        guard let date else { return "--/--" }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "M/d"
-        return formatter.string(from: date)
-    }
-
-    func podcastEpisodeIsRecent(_ date: Date?) -> Bool {
-        guard let date else { return false }
-        let calendar = Calendar.current
-        let todayStart = calendar.startOfDay(for: Date())
-        let airedStart = calendar.startOfDay(for: date)
-        guard airedStart <= todayStart else { return false }
-        guard let dayDelta = calendar.dateComponents([.day], from: airedStart, to: todayStart).day else {
-            return false
-        }
-        return dayDelta <= 7
-    }
-
-    func podcastSeriesHasRecentEpisode(_ series: PodcastSeriesEntry) -> Bool {
-        series.episodes.contains { podcastEpisodeIsRecent($0.airedDate) }
-    }
-
-    func podcastTrackPositionText(trackIndex: Int, trackCount: Int) -> String {
-        guard trackCount > 0, trackIndex >= 0, trackIndex < trackCount else { return "" }
-        return "\(trackIndex + 1) of \(trackCount)"
-    }
-
-    func podcastTrackPositionText(forEpisodeID episodeID: String?, inSeriesID seriesID: String?) -> String {
-        guard let episodeID, let seriesID else { return "" }
-        let episodes: [PodcastEpisodeEntry] = if let series = podcastSeriesItems.first(where: { $0.id == seriesID }) {
-            series.episodes
+    func podcastsSubmenuItems() -> [SubmenuItemConfig] {
+        let baseItems: [SubmenuItemConfig] = if isLoadingPodcasts, podcastSeriesItems.isEmpty {
+            []
+        } else if let podcastsLoadError, podcastSeriesItems.isEmpty {
+            [.init(
+                id: "podcasts_error",
+                title: podcastsLoadError,
+                actionID: "podcasts_error",
+                leadsToMenu: false,
+            )]
+        } else if podcastSeriesItems.isEmpty {
+            []
         } else {
-            podcastEpisodesThirdMenuItems.filter { $0.seriesID == seriesID }
+            podcastSeriesItems.map { series in .init(
+                id: podcastSeriesSubmenuItemID(for: series),
+                title: series.title,
+                actionID: "podcast_series_open",
+                leadsToMenu: true,
+            ) }
         }
-        guard !episodes.isEmpty else { return "" }
-        guard let index = episodes.firstIndex(where: { $0.id == episodeID }) else { return "" }
-        return podcastTrackPositionText(trackIndex: index, trackCount: episodes.count)
+        guard isPodcastAudioNowPlaying else { return baseItems }
+        return [.init(
+            id: podcastsNowPlayingSubmenuItemID,
+            title: L("Now Playing"),
+            actionID: podcastsNowPlayingSubmenuItemID,
+            leadsToMenu: true,
+        )] + baseItems
     }
 
-    func activePodcastPlaybackSeries() -> PodcastSeriesEntry? {
-        guard let activePodcastPlaybackSeriesID else { return nil }
-        return podcastSeriesItems.first(where: { $0.id == activePodcastPlaybackSeriesID })
-    }
-
-    func activePodcastPlaybackEpisodes() -> [PodcastEpisodeEntry] {
-        if let activeSeries = activePodcastPlaybackSeries() {
-            return activeSeries.episodes
+    func refreshPodcastsForCurrentContext() {
+        guard activeRootItemID == "podcasts", isInSubmenu else { return }
+        requestPodcastsLibraryLoadIfNeeded()
+        if !podcastSeriesItems.isEmpty {
+            hasPresentedNoPodcastsErrorInCurrentSession = false
         }
-        guard let activePodcastPlaybackSeriesID else { return [] }
-        let activeEpisodes = podcastEpisodesThirdMenuItems.filter { $0.seriesID == activePodcastPlaybackSeriesID }
-        return activeEpisodes.isEmpty ? [] : activeEpisodes
-    }
-
-    func clearActivePodcastAudioPlaybackContext() {
-        activePodcastPlaybackSeriesID = nil
-        activePodcastPlaybackEpisodeID = nil
-    }
-
-    func podcastPlaybackContextForEpisode(_ episode: PodcastEpisodeEntry) -> (trackIndex: Int, trackCount: Int) {
-        let episodes = podcastSeriesItems.first(where: { $0.id == episode.seriesID })?.episodes
-            ?? podcastEpisodesThirdMenuItems.filter { $0.seriesID == episode.seriesID }
-        guard !episodes.isEmpty else { return (0, 1) }
-        let trackIndex = episodes.firstIndex(where: { $0.id == episode.id }) ?? 0
-        return (trackIndex, episodes.count)
-    }
-
-    func startPodcastEpisodeAudioPlayback(
-        _ episode: PodcastEpisodeEntry,
-        trackIndex: Int,
-        trackCount: Int,
-        presentsFullscreen: Bool = true,
-    ) {
-        guard let mediaURL = episode.mediaURL?.standardizedFileURL else { return }
-        startAudioOnlyPlayback(
-            from: mediaURL,
-            title: episode.title,
-            artist: episode.artist,
-            album: episode.seriesTitle,
-            artwork: episode.artwork ?? podcastFallbackImage,
-            playbackID: episode.id,
-            trackIndex: trackIndex,
-            trackCount: trackCount,
-            showsTrackPosition: true,
-            presentsFullscreen: presentsFullscreen,
-        )
-        activePodcastPlaybackSeriesID = episode.seriesID
-        activePodcastPlaybackEpisodeID = episode.id
-    }
-
-    func startPodcastEpisodePlayback(_ episode: PodcastEpisodeEntry, presentsFullscreen: Bool = true) {
-        guard let mediaURL = episode.mediaURL?.standardizedFileURL else { return }
-        if episode.isVideo && !shouldTreatAsAudioOnlyPlayback(url: mediaURL) {
-            clearActivePodcastAudioPlaybackContext()
-            startMoviePlayback(from: mediaURL)
-            return
+        if isInThirdMenu, thirdMenuMode == .podcastsEpisodes {
+            syncPodcastEpisodesForActiveSeries()
         }
-        let context = podcastPlaybackContextForEpisode(episode)
-        startPodcastEpisodeAudioPlayback(
-            episode,
-            trackIndex: context.trackIndex,
-            trackCount: context.trackCount,
-            presentsFullscreen: presentsFullscreen,
-        )
+        maybePresentNoPodcastsEmptyLibraryError()
+    }
+
+    func maybePresentNoPodcastsEmptyLibraryError() {
+        guard activeRootItemID == "podcasts", isInSubmenu else { return }
+        guard podcastsHasLoadedAtLeastOnce else { return }
+        guard !isLoadingPodcasts else { return }
+        guard podcastsLoadError == nil else { return }
+        guard podcastSeriesItems.isEmpty else { return }
+        guard !hasPresentedNoPodcastsErrorInCurrentSession else { return }
+        guard activeFullscreenScene == nil else { return }
+        guard !isFullscreenSceneTransitioning else { return }
+        hasPresentedNoPodcastsErrorInCurrentSession = true
+        presentNoPodcastsFeatureErrorScreen()
     }
 
     func presentNoPodcastsFeatureErrorScreen() {
         presentFeatureErrorScreen(.noPodcasts)
     }
 
-    func podcastsLibraryErrorMessage(for error: Error) -> String {
-        let nsError = error as NSError
-        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSUserCancelledError {
-            return "Podcasts library access denied"
-        }
-        return "Unable to access Podcasts library"
-    }
-
-    func requestPodcastsLibraryAuthorization(_ completion: @escaping (Bool) -> Void) {
-        completion(true)
-    }
-
-    func refreshPodcastsForCurrentContext() {
-        guard activePodcastThirdMenuKind != nil else { return }
-        if !podcastsHasLoadedAtLeastOnce, !isLoadingPodcasts {
-            requestPodcastsLibraryLoadIfNeeded()
-            return
-        }
-        syncPodcastContextAfterLibraryRefresh()
-    }
-
-    func syncPodcastContextAfterLibraryRefresh() {
-        clampPodcastSeriesSelectionIndexes()
-        guard let kind = activePodcastThirdMenuKind else { return }
-        switch thirdMenuMode {
-        case kind.seriesMode:
-            let seriesItems = filteredPodcastSeriesItems(for: kind)
-            let clampedIndex = min(
-                currentPodcastSeriesSelectionIndex(for: kind),
-                max(0, seriesItems.count - 1),
-            )
-            storePodcastSeriesSelectionIndex(clampedIndex, for: kind)
-            selectedThirdIndex = clampedIndex
-            headerText = kind.headerTitle
-        case kind.episodesMode:
-            guard let activePodcastSeriesID,
-                  let series = filteredPodcastSeriesItems(for: kind).first(where: { $0.id == activePodcastSeriesID })
-            else {
-                podcastEpisodesThirdMenuItems = []
-                selectedThirdIndex = 0
-                headerText = kind.headerTitle
+    func handlePodcastsRootMenuSelection(_ chosenRootItem: RootMenuItemConfig) {
+        guard !isResolvingPodcastsRootSelection else { return }
+        if podcastsHasLoadedAtLeastOnce, !isLoadingPodcasts {
+            if podcastsLoadError == nil, podcastSeriesItems.isEmpty {
+                playSound(named: "Selection")
+                presentNoPodcastsFeatureErrorScreen()
                 return
             }
-            podcastEpisodesThirdMenuItems = series.episodes
-            selectedThirdIndex = min(selectedThirdIndex, max(0, podcastEpisodesThirdMenuItems.count - 1))
-            headerText = truncatedPodcastSeriesHeaderTitle(series.title)
-        default:
-            break
+            beginSubmenuTransition(for: chosenRootItem)
+            return
+        }
+        let requestID = incrementRequestID(&podcastsRequestID)
+        isResolvingPodcastsRootSelection = true
+        isLoadingPodcasts = true
+        podcastsLoadError = nil
+        playSound(named: "Selection")
+        requestPodcastsLibraryAuthorization { isAuthorized in
+            guard self.podcastsRequestID == requestID else { return }
+            guard isAuthorized else {
+                self.isResolvingPodcastsRootSelection = false
+                self.isLoadingPodcasts = false
+                self.podcastSeriesItems = []
+                self.podcastEpisodesThirdMenuItems = []
+                self.activePodcastSeriesID = nil
+                self.podcastsHasLoadedAtLeastOnce = true
+                self.podcastsLoadError = L("Podcasts library access denied")
+                guard !self.isInSubmenu, !self.isEnteringSubmenu else { return }
+                self.beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
+                return
+            }
+            Task(priority: .userInitiated) {
+                do {
+                    let series = try self.loadDownloadedPodcastSeries()
+                    await MainActor.run {
+                        guard self.podcastsRequestID == requestID else { return }
+                        self.isResolvingPodcastsRootSelection = false
+                        self.isLoadingPodcasts = false
+                        self.podcastSeriesItems = series
+                        self.podcastEpisodesThirdMenuItems = []
+                        self.activePodcastSeriesID = nil
+                        self.podcastsHasLoadedAtLeastOnce = true
+                        self.podcastsLoadError = nil
+                        self.hasPresentedNoPodcastsErrorInCurrentSession = false
+                        #if os(macOS)
+                            self.findMissingPodcastArtwork()
+                        #endif
+                        guard !self.isInSubmenu, !self.isEnteringSubmenu else { return }
+                        if series.isEmpty {
+                            self.presentNoPodcastsFeatureErrorScreen()
+                        } else {
+                            self.beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard self.podcastsRequestID == requestID else { return }
+                        self.isResolvingPodcastsRootSelection = false
+                        self.isLoadingPodcasts = false
+                        self.podcastSeriesItems = []
+                        self.podcastEpisodesThirdMenuItems = []
+                        self.activePodcastSeriesID = nil
+                        self.podcastsHasLoadedAtLeastOnce = true
+                        self.podcastsLoadError = self.podcastsLibraryErrorMessage(for: error)
+                        guard !self.isInSubmenu, !self.isEnteringSubmenu else { return }
+                        self.beginSubmenuTransition(for: chosenRootItem, playSelectionSound: false)
+                    }
+                }
+            }
         }
     }
 
-    func requestPodcastsLibraryLoadIfNeeded(
-        force: Bool = false,
-        completion: (() -> Void)? = nil,
-    ) {
-        if !force, podcastsHasLoadedAtLeastOnce {
-            completion?()
-            return
-        }
+    func requestPodcastsLibraryLoadIfNeeded(force: Bool = false) {
+        guard activeRootItemID == "podcasts", isInSubmenu else { return }
+        guard force || !podcastsHasLoadedAtLeastOnce else { return }
         guard !isLoadingPodcasts else { return }
         let requestID = incrementRequestID(&podcastsRequestID)
         isLoadingPodcasts = true
@@ -551,178 +421,175 @@ extension MenuView {
                 self.podcastEpisodesThirdMenuItems = []
                 self.activePodcastSeriesID = nil
                 self.podcastsHasLoadedAtLeastOnce = true
-                self.podcastsLoadError = "Podcasts library access denied"
-                completion?()
+                self.podcastsLoadError = L("Podcasts library access denied")
                 return
             }
             Task(priority: .userInitiated) {
                 do {
-                    let series = try loadDownloadedPodcastSeries()
+                    let series = try self.loadDownloadedPodcastSeries()
                     await MainActor.run {
-                        guard podcastsRequestID == requestID else { return }
-                        isLoadingPodcasts = false
-                        podcastSeriesItems = series
-                        podcastsHasLoadedAtLeastOnce = true
-                        podcastsLoadError = nil
-                        syncPodcastContextAfterLibraryRefresh()
-                        completion?()
+                        guard self.podcastsRequestID == requestID else { return }
+                        guard self.activeRootItemID == "podcasts", self.isInSubmenu else { return }
+                        self.isLoadingPodcasts = false
+                        self.podcastSeriesItems = series
+                        self.podcastsHasLoadedAtLeastOnce = true
+                        self.podcastsLoadError = nil
+                        #if os(macOS)
+                            self.findMissingPodcastArtwork()
+                        #endif
+                        if self.isInThirdMenu, self.thirdMenuMode == .podcastsEpisodes {
+                            self.syncPodcastEpisodesForActiveSeries()
+                        } else {
+                            self.selectedSubIndex = min(
+                                self.selectedSubIndex,
+                                max(0, self.podcastSeriesItems.count - 1),
+                            )
+                            self.syncPodcastSubmenuSelectionForActiveSeries()
+                        }
+                        self.refreshDetailPreviewForCurrentContext()
                     }
                 } catch {
                     await MainActor.run {
-                        guard podcastsRequestID == requestID else { return }
-                        isLoadingPodcasts = false
-                        podcastSeriesItems = []
-                        podcastEpisodesThirdMenuItems = []
-                        activePodcastSeriesID = nil
-                        podcastsHasLoadedAtLeastOnce = true
-                        podcastsLoadError = podcastsLibraryErrorMessage(for: error)
-                        completion?()
+                        guard self.podcastsRequestID == requestID else { return }
+                        guard self.activeRootItemID == "podcasts", self.isInSubmenu else { return }
+                        self.isLoadingPodcasts = false
+                        self.podcastSeriesItems = []
+                        self.podcastEpisodesThirdMenuItems = []
+                        self.activePodcastSeriesID = nil
+                        self.podcastsHasLoadedAtLeastOnce = true
+                        self.podcastsLoadError = self.podcastsLibraryErrorMessage(for: error)
                     }
                 }
             }
         }
     }
 
-    func enterPodcastSeriesMenu(kind: PodcastBrowserKind, title: String) {
-        let shouldForceReload = podcastsLoadError != nil || !podcastsHasLoadedAtLeastOnce
-        if shouldForceReload {
-            requestPodcastsLibraryLoadIfNeeded(force: true) {
-                guard self.activeRootItemID == (kind == .video ? "movies" : "music") else { return }
-                if self.podcastsLoadError == nil, self.filteredPodcastSeriesItems(for: kind).isEmpty {
-                    self.presentNoPodcastsFeatureErrorScreen()
-                    return
+    func podcastsLibraryErrorMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSUserCancelledError {
+            return L("Podcasts library access denied")
+        }
+        return L("Unable to access Podcasts library")
+    }
+
+    func requestPodcastsLibraryAuthorization(_ completion: @escaping (Bool) -> Void) {
+        #if os(iOS)
+            let status = MPMediaLibrary.authorizationStatus()
+            switch status {
+            case .authorized:
+                completion(true)
+            case .denied, .restricted:
+                completion(false)
+            case .notDetermined:
+                MPMediaLibrary.requestAuthorization { newStatus in
+                    Task { @MainActor in
+                        completion(newStatus == .authorized)
+                    }
                 }
-                self.enterResolvedPodcastSeriesMenu(kind: kind, title: title)
+            @unknown default:
+                completion(false)
             }
-            return
-        }
-        if filteredPodcastSeriesItems(for: kind).isEmpty {
-            presentNoPodcastsFeatureErrorScreen()
-            return
-        }
-        enterResolvedPodcastSeriesMenu(kind: kind, title: title)
-    }
-
-    func enterResolvedPodcastSeriesMenu(kind: PodcastBrowserKind, title: String) {
-        transitionMenuForFolderSwap(direction: .forward) {
-            let seriesItems = filteredPodcastSeriesItems(for: kind)
-            let clampedIndex = min(currentPodcastSeriesSelectionIndex(for: kind), max(0, seriesItems.count - 1))
-            storePodcastSeriesSelectionIndex(clampedIndex, for: kind)
-            activePodcastSeriesID = nil
-            podcastEpisodesThirdMenuItems = []
-            isInThirdMenu = true
-            thirdMenuMode = kind.seriesMode
-            selectedThirdIndex = clampedIndex
-            headerText = title
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
-            refreshDetailPreviewForCurrentContext()
-        }
-    }
-
-    func enterPodcastEpisodesMenu(for series: PodcastSeriesEntry, kind: PodcastBrowserKind) {
-        let seriesItems = filteredPodcastSeriesItems(for: kind)
-        if let seriesIndex = seriesItems.firstIndex(where: { $0.id == series.id }) {
-            storePodcastSeriesSelectionIndex(seriesIndex, for: kind)
-        }
-        let initialEpisodeIndex: Int = {
-            guard let activePodcastPlaybackEpisodeID,
-                  activePodcastPlaybackSeriesID == series.id,
-                  let episodeIndex = series.episodes.firstIndex(where: { $0.id == activePodcastPlaybackEpisodeID })
-            else {
-                return 0
-            }
-            return episodeIndex
-        }()
-        transitionMenuForFolderSwap(direction: .forward) {
-            thirdMenuMode = kind.episodesMode
-            isInThirdMenu = true
-            activePodcastSeriesID = series.id
-            podcastEpisodesThirdMenuItems = series.episodes
-            selectedThirdIndex = min(initialEpisodeIndex, max(0, podcastEpisodesThirdMenuItems.count - 1))
-            headerText = truncatedPodcastSeriesHeaderTitle(series.title)
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
-            refreshDetailPreviewForCurrentContext()
-        }
-    }
-
-    func exitPodcastEpisodesMenuToSeriesMenu(kind: PodcastBrowserKind) {
-        transitionMenuForFolderSwap(direction: .backward) {
-            let seriesItems = filteredPodcastSeriesItems(for: kind)
-            let clampedIndex = min(currentPodcastSeriesSelectionIndex(for: kind), max(0, seriesItems.count - 1))
-            activePodcastSeriesID = nil
-            podcastEpisodesThirdMenuItems = []
-            thirdMenuMode = kind.seriesMode
-            selectedThirdIndex = clampedIndex
-            headerText = kind.headerTitle
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
-            refreshDetailPreviewForCurrentContext()
-        }
-    }
-
-    func exitPodcastSeriesMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
-        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade, direction: .backward) {
-            activePodcastSeriesID = nil
-            podcastEpisodesThirdMenuItems = []
-            isInThirdMenu = false
-            thirdMenuMode = .none
-            thirdMenuOpacity = 0
-            submenuOpacity = 1
-            headerText = rootMenuTitle(for: activeRootItemID)
-            refreshDetailPreviewForCurrentContext()
-        }
-    }
-
-    func truncatedPodcastSeriesHeaderTitle(_ title: String) -> String {
-        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedTitle.isEmpty else { return "Podcasts" }
-        let font = NSFont(name: firstRowBoldFontName, size: 60) ?? NSFont.boldSystemFont(ofSize: 60)
-        let maxWidth: CGFloat = 720
-        func measuredWidth(_ value: String) -> CGFloat {
-            ceil((value as NSString).size(withAttributes: [.font: font]).width)
-        }
-        if measuredWidth(normalizedTitle) <= maxWidth {
-            return normalizedTitle
-        }
-        var candidate = normalizedTitle
-        while !candidate.isEmpty {
-            candidate.removeLast()
-            let truncated = "\(candidate)..."
-            if measuredWidth(truncated) <= maxWidth {
-                return truncated
-            }
-        }
-        return "..."
-    }
-
-    func podcastDateFromCoreDataTimestamp(_ rawValue: Double) -> Date? {
-        guard rawValue.isFinite, rawValue > 0 else { return nil }
-        return Date(timeIntervalSinceReferenceDate: rawValue)
-    }
-
-    func sqliteColumnString(_ statement: OpaquePointer?, _ column: Int32) -> String? {
-        guard let raw = sqlite3_column_text(statement, column) else { return nil }
-        return String(cString: raw)
-    }
-
-    func sqliteColumnDouble(_ statement: OpaquePointer?, _ column: Int32) -> Double {
-        sqlite3_column_double(statement, column)
-    }
-
-    func sqliteColumnInt64(_ statement: OpaquePointer?, _ column: Int32) -> Int64 {
-        sqlite3_column_int64(statement, column)
+        #else
+            completion(true)
+        #endif
     }
 
     func loadDownloadedPodcastSeries() throws -> [PodcastSeriesEntry] {
-        #if os(macOS)
+        #if os(iOS)
+            guard MPMediaLibrary.authorizationStatus() == .authorized else {
+                throw NSError(
+                    domain: "firstRowPodcastsLibrary",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: L("Podcasts library access not authorized")],
+                )
+            }
+            let collections = MPMediaQuery.podcasts().collections ?? []
+            var seriesEntries: [PodcastSeriesEntry] = []
+            seriesEntries.reserveCapacity(collections.count)
+            for collection in collections {
+                let downloadedItems = collection.items.filter { $0.assetURL != nil }
+                guard !downloadedItems.isEmpty else { continue }
+                let seriesTitle = downloadedItems.lazy.compactMap { self.normalizedPodcastText($0.albumTitle) }.first
+                    ?? normalizedPodcastText(downloadedItems.first?.artist)
+                    ?? L("Unknown Podcast")
+                let seriesArtist = downloadedItems.lazy.compactMap { self.normalizedPodcastText($0.artist) }.first
+                    ?? L("Unknown Artist")
+                var seriesArtwork = downloadedItems.lazy.compactMap { $0.artwork?.image(at: self.podcastArtworkRequestSize) }.first
+                var episodes: [PodcastEpisodeEntry] = []
+                episodes.reserveCapacity(downloadedItems.count)
+                for item in downloadedItems {
+                    guard let mediaURL = item.assetURL else { continue }
+                    let episodeTitle = normalizedPodcastText(item.title)
+                        ?? mediaURL.deletingPathExtension().lastPathComponent
+                    let episodeArtist = normalizedPodcastText(item.artist) ?? seriesArtist
+                    let itemComments = item.value(forProperty: MPMediaItemPropertyComments) as? String
+                    let embeddedDescription = loadPodcastDescriptionFromMediaMetadata(mediaURL)
+                    let episodeDescription = resolvedPodcastDescription(
+                        plainText: itemComments,
+                        htmlText: nil,
+                        fallback: embeddedDescription,
+                    )
+                    let durationSeconds = max(0, item.playbackDuration)
+                    let airedDate = item.releaseDate
+                    let mediaTypeMask = item.mediaType.rawValue
+                    let declaredIsVideo = (mediaTypeMask & MPMediaType.anyVideo.rawValue) != 0
+                    let isVideo = resolvedPodcastIsVideo(mediaURL: mediaURL, declaredIsVideo: declaredIsVideo)
+                    let episodeArtwork = item.artwork?.image(at: podcastArtworkRequestSize)
+                        ?? loadPodcastArtworkFromMediaMetadata(mediaURL)
+                        ?? seriesArtwork
+                    if seriesArtwork == nil, let episodeArtwork {
+                        seriesArtwork = episodeArtwork
+                    }
+                    episodes.append(
+                        PodcastEpisodeEntry(
+                            id: "ios::\(item.persistentID)",
+                            seriesID: "ios::\(collection.persistentID)",
+                            seriesTitle: seriesTitle,
+                            title: episodeTitle,
+                            artist: episodeArtist,
+                            description: episodeDescription,
+                            durationSeconds: durationSeconds,
+                            airedDate: airedDate,
+                            mediaURL: mediaURL,
+                            artwork: episodeArtwork,
+                            isVideo: isVideo,
+                        ),
+                    )
+                }
+                guard !episodes.isEmpty else { continue }
+                let seriesDescription = downloadedItems.lazy.compactMap { item -> String? in
+                    if let comments = self.normalizedPodcastText(item.value(forProperty: MPMediaItemPropertyComments) as? String) {
+                        return comments
+                    }
+                    guard let mediaURL = item.assetURL else { return nil }
+                    return self.loadPodcastDescriptionFromMediaMetadata(mediaURL)
+                }.first
+                    ?? ""
+                seriesEntries.append(
+                    PodcastSeriesEntry(
+                        id: "ios::\(collection.persistentID)",
+                        title: seriesTitle,
+                        artist: seriesArtist,
+                        description: seriesDescription,
+                        artwork: seriesArtwork,
+                        episodes: sortedPodcastEpisodes(episodes),
+                    ),
+                )
+            }
+            return seriesEntries.sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+        #elseif os(macOS)
             let podcastsAppSeries = loadDownloadedPodcastSeriesFromPodcastsAppDatabase()
             if !podcastsAppSeries.isEmpty {
                 return podcastsAppSeries
             }
-        #endif
-        #if canImport(iTunesLibrary)
+            #if canImport(iTunesLibrary)
+                return try loadDownloadedPodcastSeriesFromITunesLibrary()
+            #else
+                return []
+            #endif
+        #elseif canImport(iTunesLibrary)
             return try loadDownloadedPodcastSeriesFromITunesLibrary()
         #else
             return []
@@ -756,14 +623,13 @@ extension MenuView {
                 var groupedArtists: [String: String] = [:]
                 var groupedDescriptions: [String: String] = [:]
                 var groupedArtwork: [String: NSImage] = [:]
-
                 for item in mediaItems {
                     guard item.mediaKind == .kindPodcast else { continue }
-                    guard let mediaURL = item.location?.standardizedFileURL else { continue }
+                    guard let mediaURL = item.location else { continue }
                     let seriesTitle = normalizedPodcastText(item.album.title)
                         ?? normalizedPodcastText(item.title)
-                        ?? "Unknown Podcast"
-                    let seriesArtist = normalizedPodcastText(item.artist?.name) ?? "Unknown Artist"
+                        ?? L("Unknown Podcast")
+                    let seriesArtist = normalizedPodcastText(item.artist?.name) ?? L("Unknown Artist")
                     let seriesKey = "\(seriesTitle.lowercased())::\(seriesArtist.lowercased())"
                     let seriesID = "mac::itunes::\(seriesKey)"
                     let episodeTitle = normalizedPodcastText(item.title)
@@ -780,7 +646,6 @@ extension MenuView {
                     let airedDate = item.releaseDate ?? item.addedDate
                     let episodeArtwork = item.artwork?.image ?? loadPodcastArtworkFromMediaMetadata(mediaURL)
                     let isVideo = resolvedPodcastIsVideo(mediaURL: mediaURL, declaredIsVideo: item.videoInfo != nil)
-
                     groupedTitles[seriesKey] = seriesTitle
                     groupedArtists[seriesKey] = seriesArtist
                     if groupedDescriptions[seriesKey] == nil || groupedDescriptions[seriesKey]?.isEmpty == true {
@@ -793,7 +658,6 @@ extension MenuView {
                     if groupedArtwork[seriesKey] == nil, let episodeArtwork {
                         groupedArtwork[seriesKey] = episodeArtwork
                     }
-
                     let episode = PodcastEpisodeEntry(
                         id: "mac::itunes::\(item.persistentID)",
                         seriesID: seriesID,
@@ -809,31 +673,32 @@ extension MenuView {
                     )
                     groupedEpisodes[seriesKey, default: []].append(episode)
                 }
-
                 var seriesEntries: [PodcastSeriesEntry] = []
                 seriesEntries.reserveCapacity(groupedEpisodes.count)
                 for (seriesKey, episodes) in groupedEpisodes {
                     guard !episodes.isEmpty else { continue }
-                    let title = groupedTitles[seriesKey] ?? "Unknown Podcast"
-                    let artist = groupedArtists[seriesKey] ?? "Unknown Artist"
+                    let title = groupedTitles[seriesKey] ?? L("Unknown Podcast")
+                    let artist = groupedArtists[seriesKey] ?? L("Unknown Artist")
                     let description = groupedDescriptions[seriesKey] ?? ""
                     let seriesArtwork = groupedArtwork[seriesKey]
                     let seriesID = "mac::itunes::\(seriesKey)"
-                    let normalizedEpisodes = episodes.map { episode in
-                        PodcastEpisodeEntry(
-                            id: episode.id,
-                            seriesID: episode.seriesID,
-                            seriesTitle: episode.seriesTitle,
-                            title: episode.title,
-                            artist: episode.artist,
-                            description: episode.description,
-                            durationSeconds: episode.durationSeconds,
-                            airedDate: episode.airedDate,
-                            mediaURL: episode.mediaURL,
-                            artwork: episode.artwork ?? seriesArtwork,
-                            isVideo: episode.isVideo,
-                        )
-                    }
+                    let sortedEpisodes = sortedPodcastEpisodes(
+                        episodes.map { episode in
+                            PodcastEpisodeEntry(
+                                id: episode.id,
+                                seriesID: episode.seriesID,
+                                seriesTitle: episode.seriesTitle,
+                                title: episode.title,
+                                artist: episode.artist,
+                                description: episode.description,
+                                durationSeconds: episode.durationSeconds,
+                                airedDate: episode.airedDate,
+                                mediaURL: episode.mediaURL,
+                                artwork: episode.artwork ?? seriesArtwork,
+                                isVideo: episode.isVideo,
+                            )
+                        },
+                    )
                     seriesEntries.append(
                         PodcastSeriesEntry(
                             id: seriesID,
@@ -841,39 +706,29 @@ extension MenuView {
                             artist: artist,
                             description: description,
                             artwork: seriesArtwork,
-                            episodes: sortedPodcastEpisodes(normalizedEpisodes),
+                            episodes: sortedEpisodes,
                         ),
                     )
                 }
-
                 return seriesEntries.sorted {
                     $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
                 }
-            }
+            } // withITLibrary
         }
     #endif
-
     #if os(macOS)
         func podcastsAppGroupContainerURL() -> URL? {
+            guard !FirstRowHarness.isActive else { return nil }
             guard let homeURL = realUserHomeDirectoryURL() else { return nil }
-            return homeURL
-                .appendingPathComponent("Library", isDirectory: true)
-                .appendingPathComponent("Group Containers", isDirectory: true)
-                .appendingPathComponent("243LU875E5.groups.com.apple.podcasts", isDirectory: true)
+            return homeURL.appendingPathComponent("Library", isDirectory: true).appendingPathComponent("Group Containers", isDirectory: true).appendingPathComponent("243LU875E5.groups.com.apple.podcasts", isDirectory: true)
         }
 
         func podcastsAppDatabaseURL() -> URL? {
-            podcastsAppGroupContainerURL()?
-                .appendingPathComponent("Documents", isDirectory: true)
-                .appendingPathComponent("MTLibrary.sqlite", isDirectory: false)
+            podcastsAppGroupContainerURL()?.appendingPathComponent("Documents", isDirectory: true).appendingPathComponent("MTLibrary.sqlite", isDirectory: false)
         }
 
         func podcastsAppArtworkCacheDirectoryURL(groupContainerURL: URL) -> URL {
-            groupContainerURL
-                .appendingPathComponent("Library", isDirectory: true)
-                .appendingPathComponent("Cache", isDirectory: true)
-                .appendingPathComponent("Assets", isDirectory: true)
-                .appendingPathComponent("Artwork", isDirectory: true)
+            groupContainerURL.appendingPathComponent("Library", isDirectory: true).appendingPathComponent("Cache", isDirectory: true).appendingPathComponent("Assets", isDirectory: true).appendingPathComponent("Artwork", isDirectory: true)
         }
 
         func resolvePodcastsAppMediaURL(
@@ -890,9 +745,7 @@ extension MenuView {
                 if rawDownloadPath.hasPrefix("/") {
                     return URL(fileURLWithPath: rawDownloadPath, isDirectory: false).standardizedFileURL
                 }
-                return groupContainerURL
-                    .appendingPathComponent(rawDownloadPath, isDirectory: false)
-                    .standardizedFileURL
+                return groupContainerURL.appendingPathComponent(rawDownloadPath, isDirectory: false).standardizedFileURL
             }
             if let rawAssetURL = normalizedPodcastText(assetURL),
                rawAssetURL.lowercased().hasPrefix("file://"),
@@ -901,6 +754,24 @@ extension MenuView {
                 return fileURL.standardizedFileURL
             }
             return nil
+        }
+
+        func podcastDateFromCoreDataTimestamp(_ rawValue: Double) -> Date? {
+            guard rawValue.isFinite, rawValue > 0 else { return nil }
+            return Date(timeIntervalSinceReferenceDate: rawValue)
+        }
+
+        func sqliteColumnString(_ statement: OpaquePointer?, _ column: Int32) -> String? {
+            guard let raw = sqlite3_column_text(statement, column) else { return nil }
+            return String(cString: raw)
+        }
+
+        func sqliteColumnDouble(_ statement: OpaquePointer?, _ column: Int32) -> Double {
+            sqlite3_column_double(statement, column)
+        }
+
+        func sqliteColumnInt64(_ statement: OpaquePointer?, _ column: Int32) -> Int64 {
+            sqlite3_column_int64(statement, column)
         }
 
         func podcastsArtworkPixelArea(from fileName: String) -> Int {
@@ -1058,10 +929,7 @@ extension MenuView {
                 rawCandidates.append(templateURL)
                 let replacements = [1200, 600]
                 for size in replacements {
-                    let resolved = templateURL
-                        .replacingOccurrences(of: "{w}", with: "\(size)")
-                        .replacingOccurrences(of: "{h}", with: "\(size)")
-                        .replacingOccurrences(of: "{f}", with: "jpg")
+                    let resolved = templateURL.replacingOccurrences(of: "{w}", with: "\(size)").replacingOccurrences(of: "{h}", with: "\(size)").replacingOccurrences(of: "{f}", with: "jpg")
                     rawCandidates.append(resolved)
                 }
             }
@@ -1081,9 +949,7 @@ extension MenuView {
             guard let database else { return [] }
             let pragma = "PRAGMA table_info(\(tableName));"
             var statement: OpaquePointer?
-            guard sqlite3_prepare_v2(database, pragma, -1, &statement, nil) == SQLITE_OK,
-                  let statement
-            else {
+            guard sqlite3_prepare_v2(database, pragma, -1, &statement, nil) == SQLITE_OK, let statement else {
                 if statement != nil {
                     sqlite3_finalize(statement)
                 }
@@ -1105,7 +971,6 @@ extension MenuView {
             let fileManager = FileManager.default
             guard fileManager.fileExists(atPath: databaseURL.path) else { return [] }
             let artworkFileIndex = podcastsAppArtworkFileIndex(groupContainerURL: groupContainerURL)
-
             var database: OpaquePointer?
             let openStatus = sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil)
             guard openStatus == SQLITE_OK, let database else {
@@ -1115,7 +980,6 @@ extension MenuView {
                 return []
             }
             defer { sqlite3_close(database) }
-
             let episodeColumns = sqliteTableColumns(database, tableName: "ZMTEPISODE")
             let hiddenFilter = if episodeColumns.contains("ZISHIDDEN") {
                 "COALESCE(e.ZISHIDDEN, 0) != 1"
@@ -1155,28 +1019,22 @@ extension MenuView {
               AND \(hiddenFilter)
               AND (
                     (e.ZDOWNLOADPATH IS NOT NULL AND LENGTH(e.ZDOWNLOADPATH) > 0)
-                 OR (e.ZASSETURL IS NOT NULL AND e.ZASSETURL LIKE 'file://%')
-                  )
+                 OR (e.ZASSETURL IS NOT NULL AND e.ZASSETURL LIKE 'file://%')          )
             ORDER BY p.ZTITLE COLLATE NOCASE ASC, e.ZPUBDATE DESC
             """
-
             var statement: OpaquePointer?
-            guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK,
-                  let statement
-            else {
+            guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK, let statement else {
                 if statement != nil {
                     sqlite3_finalize(statement)
                 }
                 return []
             }
             defer { sqlite3_finalize(statement) }
-
             var groupedEpisodes: [String: [PodcastEpisodeEntry]] = [:]
             var groupedTitles: [String: String] = [:]
             var groupedArtists: [String: String] = [:]
             var groupedDescriptions: [String: String] = [:]
             var groupedArtwork: [String: NSImage] = [:]
-
             while sqlite3_step(statement) == SQLITE_ROW {
                 let episodeUUID = normalizedPodcastText(sqliteColumnString(statement, 0))
                 let rawEpisodeTitle = normalizedPodcastText(sqliteColumnString(statement, 1))
@@ -1198,7 +1056,6 @@ extension MenuView {
                 let rawSeriesArtworkTemplateURL = normalizedPodcastText(sqliteColumnString(statement, 17))
                 let rawSeriesImageURL = normalizedPodcastText(sqliteColumnString(statement, 18))
                 let rawSeriesLogoImageURL = normalizedPodcastText(sqliteColumnString(statement, 19))
-
                 guard let mediaURL = resolvePodcastsAppMediaURL(
                     downloadPath: rawDownloadPath,
                     assetURL: rawAssetURL,
@@ -1206,12 +1063,16 @@ extension MenuView {
                 ) else {
                     continue
                 }
-
-                let seriesTitle = rawSeriesTitle ?? episodeAuthor ?? "Unknown Podcast"
-                let seriesArtist = rawSeriesAuthor ?? episodeAuthor ?? "Unknown Artist"
+                let seriesTitle = rawSeriesTitle
+                    ?? episodeAuthor
+                    ?? L("Unknown Podcast")
+                let seriesArtist = rawSeriesAuthor
+                    ?? episodeAuthor
+                    ?? L("Unknown Artist")
                 let seriesKey = podcastUUID ?? "\(seriesTitle.lowercased())::\(seriesArtist.lowercased())"
                 let seriesID = "mac::podcasts_app::\(seriesKey)"
-                let episodeTitle = rawEpisodeTitle ?? mediaURL.deletingPathExtension().lastPathComponent
+                let episodeTitle = rawEpisodeTitle
+                    ?? mediaURL.deletingPathExtension().lastPathComponent
                 let embeddedDescription = loadPodcastDescriptionFromMediaMetadata(mediaURL)
                 let episodeDescription = resolvedPodcastDescription(
                     plainText: episodeDescriptionWithoutHTML,
@@ -1221,10 +1082,8 @@ extension MenuView {
                 let airedDate = podcastDateFromCoreDataTimestamp(pubDateRaw)
                     ?? podcastDateFromCoreDataTimestamp(downloadDateRaw)
                     ?? podcastDateFromCoreDataTimestamp(importDateRaw)
-                let episodeID = episodeUUID
-                    ?? "mac::podcasts_app::\(seriesKey)::\(episodeTitle.lowercased())::\(Int(pubDateRaw))"
+                let episodeID = episodeUUID ?? "mac::podcasts_app::\(seriesKey)::\(episodeTitle.lowercased())::\(Int(pubDateRaw))"
                 let isVideo = resolvedPodcastIsVideo(mediaURL: mediaURL, declaredIsVideo: declaredIsVideo)
-
                 groupedTitles[seriesKey] = seriesTitle
                 groupedArtists[seriesKey] = seriesArtist
                 if groupedDescriptions[seriesKey] == nil || groupedDescriptions[seriesKey]?.isEmpty == true {
@@ -1248,7 +1107,6 @@ extension MenuView {
                     logoURL: rawSeriesLogoImageURL,
                     artworkFileIndex: artworkFileIndex,
                 ) ?? loadPodcastArtworkFromMediaMetadata(mediaURL) ?? groupedArtwork[seriesKey]
-
                 let episode = PodcastEpisodeEntry(
                     id: episodeID,
                     seriesID: seriesID,
@@ -1264,15 +1122,14 @@ extension MenuView {
                 )
                 groupedEpisodes[seriesKey, default: []].append(episode)
             }
-
             var seriesEntries: [PodcastSeriesEntry] = []
             seriesEntries.reserveCapacity(groupedEpisodes.count)
             for (seriesKey, episodes) in groupedEpisodes {
                 guard !episodes.isEmpty else { continue }
                 let seriesArtwork = groupedArtwork[seriesKey]
                 let seriesID = "mac::podcasts_app::\(seriesKey)"
-                let title = groupedTitles[seriesKey] ?? "Unknown Podcast"
-                let artist = groupedArtists[seriesKey] ?? "Unknown Artist"
+                let title = groupedTitles[seriesKey] ?? L("Unknown Podcast")
+                let artist = groupedArtists[seriesKey] ?? L("Unknown Artist")
                 let description = groupedDescriptions[seriesKey] ?? ""
                 let normalizedEpisodes = episodes.map { episode in
                     PodcastEpisodeEntry(
@@ -1300,10 +1157,453 @@ extension MenuView {
                     ),
                 )
             }
-
             return seriesEntries.sorted {
                 $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
         }
     #endif
+    func enterPodcastEpisodesMenu(for series: PodcastSeriesEntry) {
+        transitionMenuForFolderSwap {
+            self.thirdMenuMode = .podcastsEpisodes
+            self.isInThirdMenu = true
+            self.activePodcastSeriesID = series.id
+            self.podcastEpisodesThirdMenuItems = series.episodes
+            self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, self.podcastEpisodesThirdMenuItems.count - 1))
+            self.headerText = self.truncatedPodcastSeriesHeaderTitle(series.title)
+            self.submenuOpacity = 0
+            self.thirdMenuOpacity = 1
+            self.refreshDetailPreviewForCurrentContext()
+        }
+    }
+
+    func syncPodcastEpisodesForActiveSeries() {
+        guard activeRootItemID == "podcasts", isInSubmenu else { return }
+        guard thirdMenuMode == .podcastsEpisodes else { return }
+        guard let activePodcastSeriesID else {
+            podcastEpisodesThirdMenuItems = []
+            selectedThirdIndex = 0
+            headerText = rootMenuTitle(for: activeRootItemID)
+            return
+        }
+        guard let series = podcastSeriesItems.first(where: { $0.id == activePodcastSeriesID }) else {
+            podcastEpisodesThirdMenuItems = []
+            selectedThirdIndex = 0
+            headerText = rootMenuTitle(for: activeRootItemID)
+            return
+        }
+        podcastEpisodesThirdMenuItems = series.episodes
+        selectedThirdIndex = min(selectedThirdIndex, max(0, podcastEpisodesThirdMenuItems.count - 1))
+        headerText = truncatedPodcastSeriesHeaderTitle(series.title)
+    }
+
+    func truncatedPodcastSeriesHeaderTitle(_ title: String) -> String {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTitle.isEmpty else { return L("Podcasts") }
+        let maxWidth: CGFloat = 720
+        #if FIRSTROW_PORTABLE
+            func measuredWidth(_ value: String) -> CGFloat {
+                FontMetrics.width(value, fontName: firstRowBoldFontName, size: 60)
+            }
+        #else
+            let font = NSFont(name: firstRowBoldFontName, size: 60) ?? NSFont.boldSystemFont(ofSize: 60)
+            func measuredWidth(_ value: String) -> CGFloat {
+                ceil((value as NSString).size(withAttributes: [.font: font]).width)
+            }
+        #endif
+        if measuredWidth(normalizedTitle) <= maxWidth {
+            return normalizedTitle
+        }
+        var candidate = normalizedTitle
+        while !candidate.isEmpty {
+            candidate.removeLast()
+            let truncated = "\(candidate)..."
+            if measuredWidth(truncated) <= maxWidth {
+                return truncated
+            }
+        }
+        return "..."
+    }
+
+    func podcastEpisodeLengthText(for durationSeconds: Double) -> String {
+        guard durationSeconds.isFinite, durationSeconds > 0 else {
+            return "--:--"
+        }
+        return formatfirstRowPlaybackTime(durationSeconds)
+    }
+
+    func podcastEpisodeAiredText(for date: Date?) -> String {
+        guard let date else { return "--/--" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = AppLanguage.current == .german ? "d.M." : "M/d"
+        return formatter.string(from: date)
+    }
+
+    func podcastEpisodeIsRecent(_ date: Date?) -> Bool {
+        guard let date else { return false }
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: Date())
+        let airedStart = calendar.startOfDay(for: date)
+        guard airedStart <= todayStart else { return false }
+        guard let dayDelta = calendar.dateComponents([.day], from: airedStart, to: todayStart).day else {
+            return false
+        }
+        return dayDelta <= 7
+    }
 }
+
+extension MenuView {
+    struct PodcastEpisodeEntry: Identifiable {
+        let id: String
+        let seriesID: String
+        let seriesTitle: String
+        let title: String
+        let artist: String
+        let description: String
+        let durationSeconds: Double
+        let airedDate: Date?
+        let mediaURL: URL?
+        let artwork: NSImage?
+        let isVideo: Bool
+    }
+
+    struct PodcastSeriesEntry: Identifiable {
+        let id: String
+        let title: String
+        let artist: String
+        let description: String
+        let artwork: NSImage?
+        let episodes: [PodcastEpisodeEntry]
+    }
+
+    var podcastFallbackImage: NSImage? {
+        if ModernTheme.isActive { return ModernTheme.placeholderArtwork(symbol: "mic.fill") }
+        return NSImage(named: "Podcast") ?? NSImage(named: "podcasts")
+    }
+}
+
+#if os(macOS)
+    /// Downloaded episodes sit in the Podcasts app's own folder, which macOS keeps other apps out
+    /// of unless they have Full Disk Access. Then an episode plays from the podcast's public feed,
+    /// found through Apple's podcast directory, with the show's artwork from there.
+    enum PodcastFeedStreams {
+        struct Found {
+            let stream: URL
+            let artwork: NSImage?
+            /// A video episode (it plays in the movie player).
+            let isVideo: Bool
+        }
+
+        /// Episodes already found, by their id.
+        @MainActor static var found: [String: Found] = [:]
+
+        private static let session: URLSession = {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = 8
+            configuration.timeoutIntervalForResource = 20
+            return URLSession(configuration: configuration)
+        }()
+
+        /// Shows' pictures found in the directory, by the show's id in the menus, for as long
+        /// as First Row is open; and the shows already asked about, found or not.
+        @MainActor static var artworkFound: [String: NSImage] = [:]
+        @MainActor static var artworkAsked: Set<String> = []
+
+        /// For shows' pictures: what the directory answers and the pictures themselves are
+        /// kept on disk, since every show without a picture is asked about each time First
+        /// Row opens Podcasts, and neither changes from day to day.
+        private static let artworkSession: URLSession = {
+            let configuration = URLSessionConfiguration.default
+            configuration.timeoutIntervalForRequest = 8
+            configuration.timeoutIntervalForResource = 20
+            configuration.requestCachePolicy = .returnCacheDataElseLoad
+            if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+                let folder = caches.appendingPathComponent("First Row", isDirectory: true).appendingPathComponent("Podcast Artwork", isDirectory: true)
+                configuration.urlCache = URLCache(memoryCapacity: 1 << 20, diskCapacity: 64 << 20, directory: folder)
+            }
+            return URLSession(configuration: configuration)
+        }()
+
+        /// The show's picture from the directory, decoded for the screen; nil when the show
+        /// isn't there, or the directory can't be reached.
+        static func findArtwork(seriesTitle: String, artist: String) async -> NSImage? {
+            guard let url = await lookUpShows(title: seriesTitle, artist: artist, wantsVideo: false, using: artworkSession).first?.artwork,
+                  let (data, _) = try? await artworkSession.data(from: url)
+            else { return nil }
+            return cachedDecodedDisplayArtworkImage(from: data, sourceKey: url.absoluteString, maxPixelSize: DisplayArtworkSize.maxPixelSize)
+        }
+
+        /// Whether First Row may open the file itself.
+        static func canRead(_ url: URL) -> Bool {
+            guard url.isFileURL else { return true }
+            guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+            try? handle.close()
+            return true
+        }
+
+        /// The episode online, by the show's name (and maker), and the episode's title, or (shows
+        /// rename old episodes) its day of release or its file's name. A video episode comes from
+        /// the show's video version where there's one (some shows have an audio and a video feed).
+        static func find(seriesTitle: String, artist: String, episodeTitle: String, airedDate: Date? = nil, fileName: String? = nil, wantsVideo: Bool = false) async -> Found? {
+            var fallback: (show: Show, item: FeedReader.Item)?
+            var chosen: (show: Show, item: FeedReader.Item)?
+            for show in await lookUpShows(title: seriesTitle, artist: artist, wantsVideo: wantsVideo).prefix(4) {
+                guard let item = await feedItem(in: show.feed, titled: episodeTitle, airedDate: airedDate, fileName: fileName) else { continue }
+                if wantsVideo, !isVideo(item) {
+                    if fallback == nil { fallback = (show, item) }
+                    continue
+                }
+                chosen = (show, item)
+                break
+            }
+            guard let (show, item) = chosen ?? fallback else { return nil }
+            var artwork: NSImage?
+            if let artworkURL = show.artwork, let (data, _) = try? await session.data(from: artworkURL) {
+                artwork = NSImage(data: data)
+            }
+            return Found(stream: item.enclosure, artwork: artwork, isVideo: isVideo(item))
+        }
+
+        private struct Show {
+            let name: String
+            let feed: URL
+            let artwork: URL?
+        }
+
+        private static func isVideo(_ item: FeedReader.Item) -> Bool {
+            item.type.hasPrefix("video/") || ["m4v", "mp4", "mov"].contains(item.enclosure.pathExtension.lowercased())
+        }
+
+        /// The show in Apple's podcast directory (its feed and artwork), best match first: the
+        /// same name and maker, the same name, then the maker's shows with the name in theirs
+        /// (a show's video version, say), video versions first when that's what's wanted.
+        private static func lookUpShows(title: String, artist: String, wantsVideo: Bool, using session: URLSession = session) async -> [Show] {
+            var components = URLComponents(string: "https://itunes.apple.com/search")
+            components?.queryItems = [
+                URLQueryItem(name: "media", value: "podcast"),
+                URLQueryItem(name: "entity", value: "podcast"),
+                URLQueryItem(name: "limit", value: "15"),
+                URLQueryItem(name: "term", value: title),
+            ]
+            guard let url = components?.url,
+                  let (data, _) = try? await session.data(from: url),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let results = object["results"] as? [[String: Any]]
+            else { return [] }
+            let shows: [(name: String, artist: String, show: Show)] = results.compactMap { result in
+                guard let feed = (result["feedUrl"] as? String).flatMap(URL.init(string:)) else { return nil }
+                let artwork = ((result["artworkUrl600"] ?? result["artworkUrl100"]) as? String).flatMap(URL.init(string:))
+                let name = result["collectionName"] as? String ?? ""
+                return (name, result["artistName"] as? String ?? "", Show(name: name, feed: feed, artwork: artwork))
+            }
+            let wantedTitle = comparable(title)
+            let wantedArtist = comparable(artist)
+            var ordered: [Show] = []
+            let tiers = [
+                shows.filter { comparable($0.name) == wantedTitle && comparable($0.artist) == wantedArtist },
+                shows.filter { comparable($0.name) == wantedTitle },
+                shows.filter { comparable($0.artist) == wantedArtist && comparable($0.name).contains(wantedTitle) },
+            ]
+            for matches in tiers {
+                for match in matches where !ordered.contains(where: { $0.feed == match.show.feed }) {
+                    ordered.append(match.show)
+                }
+            }
+            if wantsVideo {
+                // Stable: video versions first, the rest in the same order.
+                ordered = ordered.filter { $0.name.lowercased().contains("video") } + ordered.filter { !$0.name.lowercased().contains("video") }
+            }
+            return ordered
+        }
+
+        /// The feed's episode with that title, else the one released that day, else the one
+        /// whose file has that name.
+        private static func feedItem(in feed: URL, titled title: String, airedDate: Date?, fileName: String?) async -> FeedReader.Item? {
+            // Feeds over https where they have it (plain http requests are refused).
+            var secure = URLComponents(url: feed, resolvingAgainstBaseURL: false)
+            if secure?.scheme == "http" { secure?.scheme = "https" }
+            var data: Data?
+            if let secureURL = secure?.url { data = try? await session.data(from: secureURL).0 }
+            if data == nil { data = try? await session.data(from: feed).0 }
+            guard let data else { return nil }
+            let reader = FeedReader()
+            let parser = XMLParser(data: data)
+            parser.delegate = reader
+            parser.parse()
+            let items = reader.items
+            let wanted = comparable(title)
+            if let item = items.first(where: { comparable($0.title) == wanted })
+                ?? items.first(where: { !wanted.isEmpty && (comparable($0.title).hasPrefix(wanted) || wanted.hasPrefix(comparable($0.title))) })
+            {
+                return item
+            }
+            if let airedDate {
+                let calendar = Calendar(identifier: .gregorian)
+                let sameDay = items.filter { $0.date.map { abs($0.timeIntervalSince(airedDate)) < 36 * 3600 && calendar.isDate($0, inSameDayAs: airedDate) } ?? false }
+                if sameDay.count == 1 { return sameDay[0] }
+            }
+            if let fileName, !fileName.isEmpty {
+                return items.first { $0.enclosure.lastPathComponent.lowercased() == fileName.lowercased() }
+            }
+            return nil
+        }
+
+        /// Letters and digits only, lowercased, for matching names that differ in punctuation.
+        private static func comparable(_ text: String) -> String {
+            String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+        }
+
+        /// A feed's items: each one's title, release date and media.
+        private final class FeedReader: NSObject, XMLParserDelegate {
+            struct Item {
+                let title: String
+                let enclosure: URL
+                let type: String
+                let date: Date?
+            }
+
+            var items: [Item] = []
+            private var inItem = false
+            private var title = ""
+            private var enclosure: URL?
+            private var type = ""
+            private var date: Date?
+            private var text = ""
+            private static let dateFormats = ["EEE, dd MMM yyyy HH:mm:ss zzz", "EEE, dd MMM yyyy HH:mm:ss Z", "dd MMM yyyy HH:mm:ss zzz", "EEE, dd MMM yyyy HH:mm zzz"]
+            private let dateFormatter: DateFormatter = {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                return formatter
+            }()
+
+            func parser(_: XMLParser, didStartElement name: String, namespaceURI _: String?, qualifiedName _: String?, attributes: [String: String] = [:]) {
+                if name == "item" {
+                    inItem = true
+                    title = ""
+                    enclosure = nil
+                    type = ""
+                    date = nil
+                } else if inItem, name == "enclosure", let url = attributes["url"].flatMap(URL.init(string:)) {
+                    enclosure = url
+                    type = attributes["type"]?.lowercased() ?? ""
+                }
+                text = ""
+            }
+
+            func parser(_: XMLParser, foundCharacters string: String) {
+                text += string
+            }
+
+            func parser(_: XMLParser, foundCDATA block: Data) {
+                text += String(decoding: block, as: UTF8.self)
+            }
+
+            func parser(_: XMLParser, didEndElement name: String, namespaceURI _: String?, qualifiedName _: String?) {
+                if inItem, name == "title", title.isEmpty {
+                    title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else if inItem, name == "pubDate" {
+                    let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    for format in Self.dateFormats {
+                        dateFormatter.dateFormat = format
+                        if let parsed = dateFormatter.date(from: raw) {
+                            date = parsed
+                            break
+                        }
+                    }
+                } else if name == "item" {
+                    inItem = false
+                    if let enclosure { items.append(Item(title: title, enclosure: enclosure, type: type, date: date)) }
+                }
+            }
+        }
+    }
+
+    extension MenuView {
+        /// Finds a picture for each show that came without one, in Apple's podcast directory:
+        /// the show being pointed at first, then the rest, one at a time. (Without Full Disk
+        /// Access First Row can't read the Podcasts app's own pictures, and these shows had
+        /// none until one of their episodes had been played.)
+        func findMissingPodcastArtwork() {
+            for entry in podcastSeriesItems where entry.artwork == nil {
+                if let known = PodcastFeedStreams.artworkFound[entry.id] { showPodcastArtwork(known, forSeriesID: entry.id) }
+            }
+            var missing = podcastSeriesItems.filter { $0.artwork == nil && !PodcastFeedStreams.artworkAsked.contains($0.id) }
+            guard !missing.isEmpty else { return }
+            if let pointedAt = selectedPodcastSeriesForPreview?.id, let index = missing.firstIndex(where: { $0.id == pointedAt }) {
+                missing.insert(missing.remove(at: index), at: 0)
+            }
+            for entry in missing { PodcastFeedStreams.artworkAsked.insert(entry.id) }
+            let wanted = missing.map { (id: $0.id, title: $0.title, artist: $0.artist) }
+            Task.detached(priority: .utility) {
+                for (index, show) in wanted.enumerated() {
+                    // The directory answers some twenty questions a minute: a long list of
+                    // shows is asked about no faster than that.
+                    if index >= 15 { try? await Task.sleep(nanoseconds: 3_200_000_000) }
+                    guard let picture = await PodcastFeedStreams.findArtwork(seriesTitle: show.title, artist: show.artist) else { continue }
+                    await MainActor.run {
+                        PodcastFeedStreams.artworkFound[show.id] = picture
+                        self.showPodcastArtwork(picture, forSeriesID: show.id)
+                    }
+                }
+            }
+        }
+
+        /// Gives a show that has no picture this one, in its menus.
+        func showPodcastArtwork(_ picture: NSImage, forSeriesID id: String) {
+            guard let index = podcastSeriesItems.firstIndex(where: { $0.id == id }), podcastSeriesItems[index].artwork == nil else { return }
+            let entry = podcastSeriesItems[index]
+            podcastSeriesItems[index] = PodcastSeriesEntry(
+                id: entry.id, title: entry.title, artist: entry.artist, description: entry.description,
+                artwork: picture, episodes: entry.episodes,
+            )
+        }
+
+        /// Plays an episode whose download First Row can't open from the podcast's feed, once
+        /// it's found (and its show's artwork with it), video in the movie player; says so if it
+        /// can't be found.
+        func playPodcastEpisodeFromFeed(_ episode: PodcastEpisodeEntry, trackIndex: Int, trackCount: Int, presentsFullscreen: Bool, resetTransitionState: Bool) {
+            let request = incrementRequestID(&podcastStreamRequestID)
+            func play(_ found: PodcastFeedStreams.Found) {
+                if found.isVideo {
+                    clearActivePodcastAudioPlaybackContext()
+                    startMoviePlayback(from: found.stream)
+                    return
+                }
+                let streamed = PodcastEpisodeEntry(
+                    id: episode.id, seriesID: episode.seriesID, seriesTitle: episode.seriesTitle, title: episode.title,
+                    artist: episode.artist, description: episode.description, durationSeconds: episode.durationSeconds,
+                    airedDate: episode.airedDate, mediaURL: found.stream, artwork: episode.artwork ?? found.artwork, isVideo: false,
+                )
+                startPodcastEpisodeAudioPlayback(streamed, trackIndex: trackIndex, trackCount: trackCount, presentsFullscreen: presentsFullscreen, resetTransitionState: resetTransitionState)
+            }
+            if let found = PodcastFeedStreams.found[episode.id] {
+                play(found)
+                return
+            }
+            let series = episode.seriesTitle
+            let artist = episode.artist
+            let title = episode.title
+            let airedDate = episode.airedDate
+            let fileName = episode.mediaURL?.lastPathComponent
+            let wantsVideo = episode.isVideo || ["m4v", "mp4", "mov"].contains(episode.mediaURL?.pathExtension.lowercased() ?? "")
+            Task.detached(priority: .userInitiated) {
+                let found = await PodcastFeedStreams.find(seriesTitle: series, artist: artist, episodeTitle: title, airedDate: airedDate, fileName: fileName, wantsVideo: wantsVideo)
+                await MainActor.run {
+                    // Something else chosen meanwhile, or Podcasts left.
+                    guard self.podcastStreamRequestID == request,
+                          self.activeRootItemID == "podcasts" || self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey
+                    else { return }
+                    guard let found else {
+                        self.presentFeatureErrorScreen(.podcastEpisodeUnavailable)
+                        return
+                    }
+                    PodcastFeedStreams.found[episode.id] = found
+                    // The show's picture, for its menus too, if the directory hadn't given one yet.
+                    if let artwork = found.artwork { self.showPodcastArtwork(artwork, forSeriesID: episode.seriesID) }
+                    play(found)
+                }
+            }
+        }
+    }
+#endif
+

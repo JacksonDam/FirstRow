@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 #if os(iOS) || os(tvOS)
     let firstRowRegularFontName = "Helvetica Neue"
@@ -7,75 +7,124 @@ import SwiftUI
     let firstRowRegularFontName = "Lucida Grande"
     let firstRowBoldFontName = "Lucida Grande Bold"
 #endif
-extension Font {
-    static func firstRowRegular(size: CGFloat) -> Font {
-        .custom(firstRowRegularFontName, size: size)
-    }
 
-    static func firstRowBold(size: CGFloat) -> Font {
-        .custom(firstRowBoldFontName, size: size)
-    }
+/// A file shipped with the app, like `Bundle.main.url(forResource:withExtension:)`.
+func bundledResourceURL(_ name: String, _ fileExtension: String?) -> URL? {
+    #if FIRSTROW_PORTABLE
+        AppResources.url(forResource: name, withExtension: fileExtension)
+    #else
+        Bundle.main.url(forResource: name, withExtension: fileExtension)
+    #endif
 }
 
-struct FirstRowTimelineView<Content: View>: View {
-    let minimumInterval: TimeInterval
-    let content: (Date) -> Content
-    @State private var fallbackDate = Date()
+/// The folder holding the app's bundled resources.
+var bundledResourceFolderURL: URL? {
+    #if FIRSTROW_PORTABLE
+        AppResources.resourceURL
+    #else
+        Bundle.main.resourceURL
+    #endif
+}
 
-    init(
-        minimumInterval: TimeInterval,
-        @ViewBuilder content: @escaping (Date) -> Content,
-    ) {
-        self.minimumInterval = minimumInterval
-        self.content = content
+#if FIRSTROW_PORTABLE
+    /// The computer's name, as Settings and Sources show it.
+    var portableDeviceName: String {
+        let environment = ProcessInfo.processInfo.environment
+        if let name = environment["COMPUTERNAME"], !name.isEmpty { return name }
+        let host = ProcessInfo.processInfo.hostName
+        return host.split(separator: ".").first.map(String.init) ?? host
     }
+#endif
 
-    var body: some View {
-        #if os(macOS)
-            if #available(macOS 12.0, *) {
-                TimelineView(.animation(minimumInterval: minimumInterval, paused: false)) { timeline in
-                    content(timeline.date)
-                }
-            } else {
-                content(fallbackDate)
-                    .onAppear {
-                        fallbackDate = Date()
-                    }
-                    .onReceive(Timer.publish(every: minimumInterval, on: .main, in: .common).autoconnect()) { currentDate in
-                        fallbackDate = currentDate
-                    }
-            }
+#if FIRSTROW_PORTABLE
+    /// What the computer's own media folders are called in lists of sources.
+    var portableComputerTitle: String {
+        #if os(Windows)
+            L("My PC")
         #else
-            TimelineView(.animation(minimumInterval: minimumInterval, paused: false)) { timeline in
-                content(timeline.date)
-            }
+            L("My Computer")
         #endif
     }
-}
 
-extension View {
-    @ViewBuilder
-    func foregroundStyleCompat(_ color: Color) -> some View {
-        if #available(macOS 14.0, iOS 17.0, tvOS 17.0, *) {
-            _applyForegroundStyle(color)
-        } else {
-            foregroundColor(color)
+    /// A media folder in the home folder: the Mac's name if it exists, else the system's own
+    /// (Videos, Music, Pictures), as XDG user dirs or Windows name it.
+    func portableUserFolder(named macName: String, standardName: String, xdgKey: String) -> URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let macStyle = home.appendingPathComponent(macName, isDirectory: true)
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: macStyle.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return macStyle
         }
+        #if !os(Windows)
+            // ~/.config/user-dirs.dirs has lines like XDG_VIDEOS_DIR="$HOME/Videos".
+            let config = home.appendingPathComponent(".config/user-dirs.dirs")
+            if let text = try? String(contentsOf: config, encoding: .utf8) {
+                for line in text.split(separator: "\n") where line.hasPrefix(xdgKey + "=") {
+                    let value = line.dropFirst(xdgKey.count + 1).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                    let path = value.replacingOccurrences(of: "$HOME", with: home.path)
+                    if !path.isEmpty { return URL(fileURLWithPath: path, isDirectory: true) }
+                }
+            }
+        #endif
+        return home.appendingPathComponent(standardName, isDirectory: true)
     }
 
-    @available(macOS 14.0, iOS 17.0, tvOS 17.0, *)
-    private func _applyForegroundStyle(_ color: Color) -> some View {
-        foregroundStyle(color)
+    /// Removable and other drives with media on them: /media and /run/media on Linux, the
+    /// other drive letters on Windows.
+    func portableExternalVolumeURLs() -> [URL] {
+        let fileManager = FileManager.default
+        var volumes: [URL] = []
+        #if os(Windows)
+            for letter in "DEFGHIJKLMNOPQRSTUVWXYZ" {
+                let root = URL(fileURLWithPath: "\(letter):\\", isDirectory: true)
+                if fileManager.fileExists(atPath: root.path) { volumes.append(root) }
+            }
+        #else
+            let user = ProcessInfo.processInfo.environment["USER"] ?? ""
+            for base in ["/media/\(user)", "/run/media/\(user)", "/media", "/mnt"] {
+                guard let names = try? fileManager.contentsOfDirectory(atPath: base) else { continue }
+                for name in names where !name.hasPrefix(".") && name != user {
+                    let url = URL(fileURLWithPath: base, isDirectory: true).appendingPathComponent(name, isDirectory: true)
+                    var isDirectory: ObjCBool = false
+                    if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue, !volumes.contains(url) {
+                        volumes.append(url)
+                    }
+                }
+            }
+        #endif
+        return volumes
+    }
+#endif
+
+extension Timer {
+    /// A timer that first fires one interval from now on every platform. Foundation on Linux
+    /// and Windows fires `Timer(timeInterval:repeats:block:)` timers straight away.
+    convenience init(after interval: TimeInterval, repeats: Bool, block: @escaping (Timer) -> Void) {
+        nonisolated(unsafe) let body = block
+        self.init(fire: Date(timeIntervalSinceNow: interval), interval: interval, repeats: repeats) { body($0) }
     }
 }
 
 func firstRowSleep(_ seconds: Double) async throws {
-    if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
-        try await Task.sleep(for: .seconds(seconds))
-    } else {
-        try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-    }
+    #if FIRSTROW_PORTABLE
+        // Kept by the main loop there. A Task's sleep ends only on one of Windows' 64 clock
+        // ticks a second, so each of these pauses ran up to 16 ms over; and anywhere, it
+        // ends on one of the threads everything away from the main one shares, so with
+        // those all busy (reading a folder of movies, say) a menu's pause went on until
+        // one was free, and the menu stood still for as long.
+        try await PortableApplication.sleep(seconds)
+    #else
+        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+            try await Task.sleep(for: .seconds(seconds))
+        } else {
+            try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+        }
+    #endif
 }
+
+#if FIRSTROW_PORTABLE
+    import FirstRowPortable
+#endif
 
 #if os(iOS) || os(tvOS)
     import UIKit
@@ -90,12 +139,6 @@ func firstRowSleep(_ seconds: Double) async throws {
 
         convenience init?(cgImage: CGImage, size _: NSSize) {
             self.init(cgImage: cgImage)
-        }
-    }
-
-    extension Image {
-        init(nsImage: NSImage) {
-            self.init(uiImage: nsImage)
         }
     }
 #endif

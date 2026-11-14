@@ -1,12 +1,22 @@
 import Foundation
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 
 private let iTunesTopArtworkParallelismLimit = 4
 
 private struct ITunesTopMoviesFeedEntry {
     let rank: Int
     let lookupID: String
+    /// The collection's name when the entry has one (an episode's season), else the entry's own.
     let title: String
+    /// The entry's own name (a song's, not its album's).
+    let name: String
     let summary: String?
     let artworkURL: URL?
     let storeURL: URL?
@@ -23,6 +33,8 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
     private var currentIDURL: URL?
     private var currentFallbackTitle: String?
     private var currentMovieName: String?
+    private var currentEntryName: String?
+    private var isInsideCollection = false
     private var currentSummary: String?
     private var currentStoreURL: URL?
     private var currentArtworkURL: URL?
@@ -33,6 +45,8 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
         currentIDURL = nil
         currentFallbackTitle = nil
         currentMovieName = nil
+        currentEntryName = nil
+        isInsideCollection = false
         currentSummary = nil
         currentStoreURL = nil
         currentArtworkURL = nil
@@ -55,12 +69,14 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
         guard let currentLookupID, !currentLookupID.isEmpty else { return }
         let resolvedTitle = currentMovieName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackTitle = currentFallbackTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = (resolvedTitle?.isEmpty == false ? resolvedTitle : fallbackTitle) ?? "Unknown Movie"
+        let title = (resolvedTitle?.isEmpty == false ? resolvedTitle : fallbackTitle) ?? L("Unknown Movie")
+        let entryName = currentEntryName?.trimmingCharacters(in: .whitespacesAndNewlines)
         entries.append(
             ITunesTopMoviesFeedEntry(
                 rank: entries.count + 1,
                 lookupID: currentLookupID,
                 title: title,
+                name: (entryName?.isEmpty == false ? entryName : nil) ?? title,
                 summary: currentSummary,
                 artworkURL: currentArtworkURL,
                 storeURL: currentStoreURL ?? currentIDURL,
@@ -82,6 +98,9 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
             return
         }
         guard isInsideEntry else { return }
+        if elementName == "im:collection" {
+            isInsideCollection = true
+        }
         if elementName == "id",
            let rawLookupID = attributeDict["im:id"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !rawLookupID.isEmpty
@@ -141,6 +160,9 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
                     currentSummary = trimmed
                 case "im:name":
                     currentMovieName = trimmed
+                    if !isInsideCollection {
+                        currentEntryName = trimmed
+                    }
                 case "im:image":
                     if let imageURL = URL(string: trimmed) {
                         addArtworkCandidate(url: imageURL, height: currentImageHeight)
@@ -152,6 +174,9 @@ private final class ITunesTopMoviesFeedParserDelegate: NSObject, XMLParserDelega
             currentElementName = nil
             currentElementText = ""
             currentImageHeight = nil
+        }
+        if elementName == "im:collection" {
+            isInsideCollection = false
         }
         if elementName == "entry" {
             appendCurrentEntryIfPossible()
@@ -183,15 +208,13 @@ extension MenuView {
         let nsRange = NSRange(rawArtwork.startIndex ..< rawArtwork.endIndex, in: rawArtwork)
         let matches = regex.matches(in: rawArtwork, options: [], range: nsRange)
         guard let match = matches.last,
-              match.numberOfRanges >= 4,
-              let wholeMatchRange = Range(match.range(at: 0), in: rawArtwork),
-              let extRange = Range(match.range(at: 3), in: rawArtwork)
+              let wholeMatchRange = Range(match.range(at: 0), in: rawArtwork)
         else {
             return rawArtwork
         }
-        let fileExtension = String(rawArtwork[extRange])
+        // Artwork is decoded to at most 900 pixels, so a 1000x1500 JPEG is plenty.
         var replaced = rawArtwork
-        replaced.replaceSubrange(wholeMatchRange, with: "/2000x3000bb.\(fileExtension)")
+        replaced.replaceSubrange(wholeMatchRange, with: "/1000x1500bb.jpg")
         return replaced
     }
 
@@ -205,12 +228,12 @@ extension MenuView {
     nonisolated func iTunesTopErrorMessage(for error: Error, label: String) -> String {
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCannotFindHost {
-            return "Unable to resolve \(label) host"
+            return L("Unable to resolve %@ host", label)
         }
         if nsError.domain == NSURLErrorDomain {
-            return "Unable to reach \(label)"
+            return L("Unable to reach %@", label)
         }
-        return "Unable to load \(label)"
+        return L("Unable to load %@", label)
     }
 
     private nonisolated func fetchData(from url: URL) async throws -> Data {
@@ -341,26 +364,9 @@ extension MenuView {
     nonisolated func fetchITunesTopMovies() async throws -> [ITunesTopMovieEntry] {
         try await mapITunesTopFeedEntries(from: iTunesTopMoviesFeedURLString) { entry in
             let normalizedSummary = normalizedITunesTopMovieSummary(entry.summary)
-                ?? "No description available."
+                ?? L("No description available.")
             return ITunesTopMovieEntry(
                 id: "itunes_top_movie_\(entry.lookupID)",
-                rank: entry.rank,
-                title: entry.title,
-                summary: normalizedSummary,
-                lookupID: entry.lookupID,
-                artworkURL: entry.artworkURL,
-                storeURL: entry.storeURL,
-                previewVideoURL: entry.previewVideoURL,
-            )
-        }
-    }
-
-    nonisolated func fetchITunesTopTVEpisodes() async throws -> [ITunesTopTVEpisodeEntry] {
-        try await mapITunesTopFeedEntries(from: iTunesTopTVEpisodesFeedURLString) { entry in
-            let normalizedSummary = normalizedITunesTopMovieSummary(entry.summary)
-                ?? "No description available."
-            return ITunesTopTVEpisodeEntry(
-                id: "itunes_top_tv_episode_\(entry.lookupID)",
                 rank: entry.rank,
                 title: entry.title,
                 summary: normalizedSummary,
@@ -388,12 +394,30 @@ extension MenuView {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    nonisolated func fetchITunesTopTVEpisodes() async throws -> [ITunesTopTVEpisodeEntry] {
+        try await mapITunesTopFeedEntries(from: iTunesTopTVEpisodesFeedURLString) { entry in
+            let normalizedSummary = normalizedITunesTopMovieSummary(entry.summary)
+                ?? L("No description available.")
+            return ITunesTopTVEpisodeEntry(
+                id: "itunes_top_tv_episode_\(entry.lookupID)",
+                rank: entry.rank,
+                title: entry.title,
+                summary: normalizedSummary,
+                lookupID: entry.lookupID,
+                artworkURL: entry.artworkURL,
+                storeURL: entry.storeURL,
+                previewVideoURL: entry.previewVideoURL,
+            )
+        }
+    }
+
     nonisolated func fetchITunesTopSongs() async throws -> [ITunesTopSongEntry] {
         try await mapITunesTopFeedEntries(from: iTunesTopSongsFeedURLString) { entry in
             ITunesTopSongEntry(
                 id: "itunes_top_song_\(entry.lookupID)",
                 rank: entry.rank,
-                title: entry.title,
+                // The song's name, since the feed's other name is the album's ("Babydoll - Single").
+                title: entry.name,
                 lookupID: entry.lookupID,
                 artworkURL: entry.artworkURL,
                 storeURL: entry.storeURL,
@@ -405,7 +429,7 @@ extension MenuView {
     nonisolated func fetchITunesTopMusicVideos() async throws -> [ITunesTopMusicVideoEntry] {
         try await mapITunesTopFeedEntries(from: iTunesTopMusicVideosFeedURLString) { entry in
             let normalizedSummary = normalizedITunesTopMovieSummary(entry.summary)
-                ?? "No description available."
+                ?? L("No description available.")
             return ITunesTopMusicVideoEntry(
                 id: "itunes_top_music_video_\(entry.lookupID)",
                 rank: entry.rank,
@@ -426,20 +450,39 @@ extension MenuView {
         ) {
             return cached
         }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200 ..< 300).contains(httpResponse.statusCode)
-            else {
-                return nil
+        guard let data = await ITunesTopStore.shared.artworkData(for: url) else { return nil }
+        return cachedDecodedDisplayArtworkImage(
+            from: data,
+            sourceKey: url.absoluteString,
+            maxPixelSize: maxPixelSize,
+        )
+    }
+
+    /// Downloads a chart entry's artwork into `ITunesTopStore` undecoded, larger copy first.
+    nonisolated func prefetchITunesTopArtworkData(from lowResolutionURL: URL) async {
+        if let highResolutionURL = highResolutionITunesArtworkURL(from: lowResolutionURL),
+           await ITunesTopStore.shared.artworkData(for: highResolutionURL) != nil
+        {
+            return
+        }
+        _ = await ITunesTopStore.shared.artworkData(for: lowResolutionURL)
+    }
+
+    /// Best-effort preload of the four charts and their artwork, soon after launch.
+    func preloadITunesTopChartsInBackground() {
+        Task.detached(priority: .utility) {
+            guard await ITunesTopStore.shared.beginPreload() else { return }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await withTaskGroup(of: Void.self) { group in
+                for kind in ITunesTopCarouselKind.allCases {
+                    group.addTask {
+                        guard let entries = try? await self.fetchITunesTopEntries(for: kind) else { return }
+                        for url in entries.artworkURLs {
+                            await self.prefetchITunesTopArtworkData(from: url)
+                        }
+                    }
+                }
             }
-            return cachedDecodedDisplayArtworkImage(
-                from: data,
-                sourceKey: url.absoluteString,
-                maxPixelSize: maxPixelSize,
-            )
-        } catch {
-            return nil
         }
     }
 
@@ -483,20 +526,6 @@ extension MenuView {
         return iTunesTopMovies[index]
     }
 
-    func resolveITunesTopTVEpisodePreviewTarget() -> ITunesTopTVEpisodeEntry? {
-        guard let index = selectedITunesTopPreviewIndex(.tvEpisodes, entryCount: iTunesTopTVEpisodes.count) else {
-            return nil
-        }
-        return iTunesTopTVEpisodes[index]
-    }
-
-    func resolveITunesTopMusicVideoPreviewTarget() -> ITunesTopMusicVideoEntry? {
-        guard let index = selectedITunesTopPreviewIndex(.musicVideos, entryCount: iTunesTopMusicVideos.count) else {
-            return nil
-        }
-        return iTunesTopMusicVideos[index]
-    }
-
     enum ITunesTopLoadEntries {
         case movies([ITunesTopMovieEntry])
         case tvEpisodes([ITunesTopTVEpisodeEntry])
@@ -512,6 +541,19 @@ extension MenuView {
                 entries.count
             case let .musicVideos(entries):
                 entries.count
+            }
+        }
+
+        var artworkURLs: [URL] {
+            switch self {
+            case let .movies(entries):
+                entries.compactMap(\.artworkURL)
+            case let .tvEpisodes(entries):
+                entries.compactMap(\.artworkURL)
+            case let .songs(entries):
+                entries.compactMap(\.artworkURL)
+            case let .musicVideos(entries):
+                entries.compactMap(\.artworkURL)
             }
         }
     }
@@ -584,7 +626,14 @@ extension MenuView {
         }
     }
 
+    /// A chart's entries, from `ITunesTopStore` while fresh, otherwise downloaded.
     nonisolated func fetchITunesTopEntries(for kind: ITunesTopCarouselKind) async throws -> ITunesTopLoadEntries {
+        try await ITunesTopStore.shared.entries(for: kind) {
+            try await self.downloadITunesTopEntries(for: kind)
+        }
+    }
+
+    private nonisolated func downloadITunesTopEntries(for kind: ITunesTopCarouselKind) async throws -> ITunesTopLoadEntries {
         switch kind {
         case .movies:
             try await .movies(fetchITunesTopMovies())
@@ -618,27 +667,35 @@ extension MenuView {
                 let loadedEntries = try await self.fetchITunesTopEntries(for: kind)
                 await MainActor.run {
                     guard self.currentITunesTopRequestID(kind) == requestID else { return }
-                    guard self.shouldAcceptITunesTopLoadResult(kind) else { return }
+                    guard self.shouldAcceptITunesTopLoadResult(kind) else {
+                        // Moved on: keep the chart for later and clear loading, or its carousel stays empty.
+                        self.setITunesTopLoading(false, for: kind)
+                        self.setITunesTopEntries(loadedEntries, for: kind)
+                        return
+                    }
+                    self.setITunesTopLoading(false, for: kind)
                     self.setITunesTopEntries(loadedEntries, for: kind)
                     self.selectedThirdIndex = min(self.selectedThirdIndex, max(0, loadedEntries.count - 1))
                     self.setITunesTopLoadError(
                         loadedEntries.count == 0 ? kind.emptyLoadMessage : nil,
                         for: kind,
                     )
-                    self.setITunesTopLoading(false, for: kind)
                     self.refreshDetailPreviewForCurrentContext()
                 }
             } catch {
                 await MainActor.run {
                     guard self.currentITunesTopRequestID(kind) == requestID else { return }
-                    guard self.shouldAcceptITunesTopLoadResult(kind) else { return }
+                    guard self.shouldAcceptITunesTopLoadResult(kind) else {
+                        self.setITunesTopLoading(false, for: kind)
+                        return
+                    }
+                    self.setITunesTopLoading(false, for: kind)
                     self.clearITunesTopEntries(for: kind)
                     self.selectedThirdIndex = 0
                     self.setITunesTopLoadError(self.iTunesTopErrorMessage(for: kind, error: error), for: kind)
                     self.setCurrentITunesTopCarouselArtworks([], for: kind)
                     self.setCurrentITunesTopCarouselIdentity("", for: kind)
                     _ = self.nextITunesTopCarouselRequestID(kind)
-                    self.setITunesTopLoading(false, for: kind)
                     self.refreshDetailPreviewForCurrentContext()
                 }
             }
@@ -712,66 +769,74 @@ extension MenuView {
 
     func enterITunesTopMenu(_ kind: ITunesTopCarouselKind, title: String) {
         transitionMenuForFolderSwap(
-            revealWhen: { !shouldHideThirdMenuListUntilLoadCompletes },
+            useOverlayFade: true,
+            revealWhen: { !self.isLoadingITunesTopCarousel(kind) },
         ) {
-            thirdMenuMode = kind.thirdMenuMode
-            isInThirdMenu = true
-            selectedThirdIndex = 0
-            headerText = title
-            resetThirdMenuDirectoryState()
+            self.thirdMenuMode = kind.thirdMenuMode
+            self.isInThirdMenu = true
+            self.selectedThirdIndex = 0
+            self.headerText = title
+            self.resetThirdMenuDirectoryState()
             switch kind {
             case .movies:
-                resetITunesTopMenuState(
+                self.resetITunesTopMenuState(
                     for: .movies,
                     isLoading: true,
                     invalidateLoadRequest: false,
                     resetPlaybackRequestID: false,
                 )
-                resetMusicCategoryStateForNonMusicITunesTop()
-                activeMusicLibraryMediaType = .songs
-                musicSongsShowsShuffleAction = false
+                self.resetMusicCategoryStateForNonMusicITunesTop()
+                self.activeMusicLibraryMediaType = .songs
+                self.musicSongsShowsShuffleAction = false
             case .tvEpisodes:
-                resetITunesTopMenuState(
+                self.resetITunesTopMenuState(
                     for: .tvEpisodes,
                     isLoading: true,
                     invalidateLoadRequest: false,
                     resetPlaybackRequestID: false,
                 )
-                resetMusicCategoryStateForNonMusicITunesTop()
+                self.resetMusicCategoryStateForNonMusicITunesTop()
             case .songs:
-                resetMusicCategoryAndSongStateForMusicITunesTop()
-                resetITunesTopMenuState(
+                self.resetMusicCategoryAndSongStateForMusicITunesTop()
+                self.resetITunesTopMenuState(
                     for: .songs,
                     isLoading: true,
                     invalidateLoadRequest: false,
                     resetPlaybackRequestID: true,
                 )
-                resetITunesTopMenuState(
+                self.resetITunesTopMenuState(
                     for: .musicVideos,
                     isLoading: false,
                     invalidateLoadRequest: true,
                     resetPlaybackRequestID: true,
                 )
             case .musicVideos:
-                resetMusicCategoryAndSongStateForMusicITunesTop()
-                resetITunesTopMenuState(
+                self.resetMusicCategoryAndSongStateForMusicITunesTop()
+                self.resetITunesTopMenuState(
                     for: .musicVideos,
                     isLoading: true,
                     invalidateLoadRequest: false,
                     resetPlaybackRequestID: true,
                 )
-                resetITunesTopMenuState(
+                self.resetITunesTopMenuState(
                     for: .songs,
                     isLoading: false,
                     invalidateLoadRequest: true,
                     resetPlaybackRequestID: true,
                 )
             }
-            submenuOpacity = 0
-            thirdMenuOpacity = 1
-            requestITunesTopLoad(kind)
-            refreshDetailPreviewForCurrentContext()
+            self.submenuOpacity = 0
+            self.thirdMenuOpacity = 1
+            self.requestITunesTopLoad(kind)
+            self.refreshDetailPreviewForCurrentContext()
         }
+    }
+
+    func resolveITunesTopTVEpisodePreviewTarget() -> ITunesTopTVEpisodeEntry? {
+        guard let index = selectedITunesTopPreviewIndex(.tvEpisodes, entryCount: iTunesTopTVEpisodes.count) else {
+            return nil
+        }
+        return iTunesTopTVEpisodes[index]
     }
 
     func currentITunesTopPreviewTargetID(_ kind: ITunesTopCarouselKind) -> String? {
@@ -794,7 +859,7 @@ extension MenuView {
 
     func setCurrentITunesTopPreviewImage(_ image: NSImage?, for kind: ITunesTopCarouselKind, animationDuration: Double) {
         let assignImage = {
-            updateITunesTopState(kind) { $0.previewImage = image }
+            self.updateITunesTopState(kind) { $0.previewImage = image }
         }
         guard kind != .musicVideos, animationDuration > 0 else {
             assignImage()
@@ -868,28 +933,25 @@ extension MenuView {
     }
 
     func refreshITunesTopCarouselForCurrentContext(_ kind: ITunesTopCarouselKind) {
-        if shouldUseITunesTopCarouselSlot(kind) {
-            let items = iTunesTopCarouselArtworkItems(kind)
-            guard !items.isEmpty else {
-                _ = nextITunesTopCarouselRequestID(kind)
-                if !isLoadingITunesTopCarousel(kind) {
-                    requestITunesTopCarouselLoad(kind)
-                }
-                return
-            }
-            let identity = iTunesTopCarouselIdentityKey(items)
-            if currentITunesTopCarouselIdentity(kind) == identity,
-               !currentITunesTopCarouselArtworks(kind).isEmpty
-            {
-                return
-            }
-            requestITunesTopCarouselArtworks(for: kind, items: items, identity: identity)
-        } else {
-            if isLoadingITunesTopCarousel(kind) || !currentITunesTopCarouselArtworks(kind).isEmpty || !currentITunesTopCarouselIdentity(kind).isEmpty {
-                resetITunesTopCarouselAndPreviewState(for: [kind])
-                setITunesTopLoading(false, for: kind)
-            }
+        guard shouldUseITunesTopCarouselSlot(kind) else {
+            _ = nextITunesTopCarouselRequestID(kind)
+            return
         }
+        let items = iTunesTopCarouselArtworkItems(kind)
+        guard !items.isEmpty else {
+            _ = nextITunesTopCarouselRequestID(kind)
+            if !isLoadingITunesTopCarousel(kind) {
+                requestITunesTopCarouselLoad(kind)
+            }
+            return
+        }
+        let identity = iTunesTopCarouselIdentityKey(items)
+        if currentITunesTopCarouselIdentity(kind) == identity,
+           !currentITunesTopCarouselArtworks(kind).isEmpty
+        {
+            return
+        }
+        requestITunesTopCarouselArtworks(for: kind, items: items, identity: identity)
     }
 
     func requestITunesTopCarouselArtworks(
@@ -1107,15 +1169,16 @@ extension MenuView {
         case musicVideos
         var rootItemID: String {
             switch self {
-            case .movies, .tvEpisodes, .musicVideos: "movies"
-            case .songs: "music"
+            case .movies: "movies"
+            case .tvEpisodes: "tv_shows"
+            case .songs, .musicVideos: "music"
             }
         }
 
         var thirdMenuMode: ThirdMenuMode {
             switch self {
             case .movies: .moviesITunesTop
-            case .tvEpisodes: .tvEpisodesITunesTop
+            case .tvEpisodes: .tvITunesTopEpisodes
             case .songs: .musicITunesTopSongs
             case .musicVideos: .musicITunesTopMusicVideos
             }
@@ -1123,19 +1186,19 @@ extension MenuView {
 
         var emptyLoadMessage: String {
             switch self {
-            case .movies: "No iTunes Top Movies Available"
-            case .tvEpisodes: "No iTunes Top TV Episodes Available"
-            case .songs: "No iTunes Top Songs Available"
-            case .musicVideos: "No iTunes Top Music Videos Available"
+            case .movies: L("No iTunes Top Movies Available")
+            case .tvEpisodes: L("No iTunes Top TV Episodes Available")
+            case .songs: L("No iTunes Top Songs Available")
+            case .musicVideos: L("No iTunes Top Music Videos Available")
             }
         }
 
         var errorLabel: String {
             switch self {
-            case .movies: "iTunes Top Movies"
-            case .tvEpisodes: "iTunes Top TV Episodes"
-            case .songs: "iTunes Top Songs"
-            case .musicVideos: "iTunes Top Music Videos"
+            case .movies: L("iTunes Top Movies")
+            case .tvEpisodes: L("iTunes Top TV Episodes")
+            case .songs: L("iTunes Top Songs")
+            case .musicVideos: L("iTunes Top Music Videos")
             }
         }
 
@@ -1162,5 +1225,109 @@ extension MenuView {
     enum TVShowsSortMode {
         case date
         case show
+    }
+}
+
+/// The iTunes Store charts and their artwork, kept for the session and shared by every menu.
+actor ITunesTopStore {
+    static let shared = ITunesTopStore()
+
+    /// Charts older than this are downloaded again when asked for.
+    private static let chartFreshness: TimeInterval = 15 * 60
+    /// Downloaded (still compressed) artwork kept, least recently used dropped first.
+    private static let artworkByteBudget = 24 * 1024 * 1024
+
+    private var charts: [MenuView.ITunesTopCarouselKind: (entries: MenuView.ITunesTopLoadEntries, loadedAt: Date)] = [:]
+    private var chartDownloads: [MenuView.ITunesTopCarouselKind: Task<MenuView.ITunesTopLoadEntries, Error>] = [:]
+    private var artwork: [URL: Data] = [:]
+    private var artworkUseOrder: [URL] = []
+    private var artworkBytes = 0
+    private var artworkDownloads: [URL: Task<Data?, Never>] = [:]
+    private var hasStartedPreload = false
+
+    /// True the first time only.
+    func beginPreload() -> Bool {
+        defer { hasStartedPreload = true }
+        return !hasStartedPreload
+    }
+
+    func entries(
+        for kind: MenuView.ITunesTopCarouselKind,
+        download: @escaping @Sendable () async throws -> MenuView.ITunesTopLoadEntries,
+    ) async throws -> MenuView.ITunesTopLoadEntries {
+        if let chart = charts[kind], Date().timeIntervalSince(chart.loadedAt) < Self.chartFreshness {
+            return chart.entries
+        }
+        let task: Task<MenuView.ITunesTopLoadEntries, Error>
+        if let running = chartDownloads[kind] {
+            task = running
+        } else {
+            task = Task { try await download() }
+            chartDownloads[kind] = task
+        }
+        do {
+            let entries = try await task.value
+            if chartDownloads[kind] == task { chartDownloads[kind] = nil }
+            if entries.count > 0 {
+                charts[kind] = (entries, Date())
+            }
+            return entries
+        } catch {
+            if chartDownloads[kind] == task { chartDownloads[kind] = nil }
+            // A failed refresh falls back to the chart that loaded last time.
+            if let chart = charts[kind] { return chart.entries }
+            throw error
+        }
+    }
+
+    func artworkData(for url: URL) async -> Data? {
+        if let data = artwork[url] {
+            markUsed(url)
+            return data
+        }
+        let task: Task<Data?, Never>
+        if let running = artworkDownloads[url] {
+            task = running
+        } else {
+            task = Task { await Self.download(url) }
+            artworkDownloads[url] = task
+        }
+        let data = await task.value
+        if artworkDownloads[url] == task { artworkDownloads[url] = nil }
+        if let data, artwork[url] == nil {
+            keep(data, for: url)
+        }
+        return data
+    }
+
+    private static func download(_ url: URL) async -> Data? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse,
+              (200 ..< 300).contains(httpResponse.statusCode),
+              !data.isEmpty
+        else {
+            return nil
+        }
+        return data
+    }
+
+    private func keep(_ data: Data, for url: URL) {
+        artwork[url] = data
+        artworkBytes += data.count
+        artworkUseOrder.append(url)
+        while artworkBytes > Self.artworkByteBudget, artworkUseOrder.count > 1 {
+            let oldest = artworkUseOrder.removeFirst()
+            if let removed = artwork.removeValue(forKey: oldest) {
+                artworkBytes -= removed.count
+            }
+        }
+    }
+
+    private func markUsed(_ url: URL) {
+        guard let index = artworkUseOrder.firstIndex(of: url) else { return }
+        artworkUseOrder.remove(at: index)
+        artworkUseOrder.append(url)
     }
 }

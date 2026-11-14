@@ -17,7 +17,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "7AE49B402D1491FC0022CD0D"
                BuildableName = "First Row Classic.app"
-               BlueprintName = "First Row Classic"
+               BlueprintName = "First Row"
                ReferencedContainer = "container:First Row Classic.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -31,7 +31,7 @@
       shouldAutocreateTestPlan = "YES">
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Release"
+      buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
@@ -46,7 +46,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7AE49B402D1491FC0022CD0D"
             BuildableName = "First Row Classic.app"
-            BlueprintName = "First Row Classic"
+            BlueprintName = "First Row"
             ReferencedContainer = "container:First Row Classic.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -63,7 +63,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7AE49B402D1491FC0022CD0D"
             BuildableName = "First Row Classic.app"
-            BlueprintName = "First Row Classic"
+            BlueprintName = "First Row"
             ReferencedContainer = "container:First Row Classic.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -73,7 +73,6 @@
    </AnalyzeAction>
    <ArchiveAction
       buildConfiguration = "Release"
-      customArchiveName = "First Row Classic"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>

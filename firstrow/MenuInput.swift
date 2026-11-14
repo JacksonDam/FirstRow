@@ -1,151 +1,6 @@
-import SwiftUI
-
+import Foundation
 #if os(macOS)
-    struct KeyEventHandlingModifier: ViewModifier {
-        let onKeyDown: (KeyCode, Bool, NSEvent.ModifierFlags) -> Void
-        let onKeyUp: (KeyCode, NSEvent.ModifierFlags) -> Void
-        func body(content: Content) -> some View {
-            content.background(
-                KeyEventHandlingView(
-                    onKeyDown: onKeyDown,
-                    onKeyUp: onKeyUp,
-                ),
-            )
-        }
-    }
-
-    struct KeyEventHandlingView: NSViewRepresentable {
-        let onKeyDown: (KeyCode, Bool, NSEvent.ModifierFlags) -> Void
-        let onKeyUp: (KeyCode, NSEvent.ModifierFlags) -> Void
-        func makeCoordinator() -> Coordinator {
-            Coordinator(onKeyDown: onKeyDown, onKeyUp: onKeyUp)
-        }
-
-        func makeNSView(context: Context) -> NSView {
-            let view = KeyCapturingView()
-            view.onKeyDown = onKeyDown
-            view.onKeyUp = onKeyUp
-            context.coordinator.startMonitoring()
-            Task { @MainActor in view.window?.makeFirstResponder(view) }
-            return view
-        }
-
-        func updateNSView(_ nsView: NSView, context: Context) {
-            if let keyView = nsView as? KeyCapturingView {
-                keyView.onKeyDown = onKeyDown
-                keyView.onKeyUp = onKeyUp
-            }
-            context.coordinator.onKeyDown = onKeyDown
-            context.coordinator.onKeyUp = onKeyUp
-            Task { @MainActor in nsView.window?.makeFirstResponder(nsView) }
-        }
-
-        static func dismantleNSView(_: NSView, coordinator: Coordinator) {
-            coordinator.stopMonitoring()
-        }
-
-        class Coordinator {
-            var onKeyDown: (KeyCode, Bool, NSEvent.ModifierFlags) -> Void
-            var onKeyUp: (KeyCode, NSEvent.ModifierFlags) -> Void
-            private var keyDownMonitor: Any?
-            private var keyUpMonitor: Any?
-            init(
-                onKeyDown: @escaping (KeyCode, Bool, NSEvent.ModifierFlags) -> Void,
-                onKeyUp: @escaping (KeyCode, NSEvent.ModifierFlags) -> Void,
-            ) {
-                self.onKeyDown = onKeyDown
-                self.onKeyUp = onKeyUp
-            }
-
-            func startMonitoring() {
-                guard keyDownMonitor == nil else { return }
-                keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-                    guard let self else { return event }
-                    let key = KeyCode(rawValue: event.keyCode) ?? .none
-                    let modifiers = event.modifierFlags
-                    let independentModifiers = modifiers.intersection(.deviceIndependentFlagsMask)
-                    let isCommandEscape =
-                        independentModifiers.contains(.command) &&
-                        (key == .escape || event.charactersIgnoringModifiers == "\u{1b}")
-                    if isCommandEscape {
-                        onKeyDown(.escape, event.isARepeat, modifiers)
-                        return nil
-                    }
-                    if event.window?.firstResponder is KeyCapturingView {
-                        return event
-                    }
-                    onKeyDown(key, event.isARepeat, modifiers)
-                    return nil
-                }
-                guard keyUpMonitor == nil else { return }
-                keyUpMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyUp]) { [weak self] event in
-                    guard let self else { return event }
-                    let key = KeyCode(rawValue: event.keyCode) ?? .none
-                    let modifiers = event.modifierFlags
-                    if event.window?.firstResponder is KeyCapturingView {
-                        return event
-                    }
-                    onKeyUp(key, modifiers)
-                    return nil
-                }
-            }
-
-            func stopMonitoring() {
-                if let keyDownMonitor {
-                    NSEvent.removeMonitor(keyDownMonitor)
-                    self.keyDownMonitor = nil
-                }
-                if let keyUpMonitor {
-                    NSEvent.removeMonitor(keyUpMonitor)
-                    self.keyUpMonitor = nil
-                }
-            }
-        }
-
-        class KeyCapturingView: NSView {
-            var onKeyDown: ((KeyCode, Bool, NSEvent.ModifierFlags) -> Void)?
-            var onKeyUp: ((KeyCode, NSEvent.ModifierFlags) -> Void)?
-            override func keyDown(with event: NSEvent) {
-                let key = KeyCode(rawValue: event.keyCode) ?? .none
-                let modifiers = event.modifierFlags
-                let independentModifiers = modifiers.intersection(.deviceIndependentFlagsMask)
-                let isCommandEscape =
-                    independentModifiers.contains(.command) &&
-                    (key == .escape || event.charactersIgnoringModifiers == "\u{1b}")
-                if isCommandEscape {
-                    onKeyDown?(.escape, event.isARepeat, modifiers)
-                    return
-                }
-                onKeyDown?(key, event.isARepeat, modifiers)
-            }
-
-            override func keyUp(with event: NSEvent) {
-                let key = KeyCode(rawValue: event.keyCode) ?? .none
-                onKeyUp?(key, event.modifierFlags)
-            }
-
-            override func performKeyEquivalent(with event: NSEvent) -> Bool {
-                guard event.type == .keyDown else {
-                    return super.performKeyEquivalent(with: event)
-                }
-                let key = KeyCode(rawValue: event.keyCode) ?? .none
-                let modifiers = event.modifierFlags
-                if key == .escape, modifiers.contains(.command) {
-                    onKeyDown?(key, event.isARepeat, modifiers)
-                    return true
-                }
-                return super.performKeyEquivalent(with: event)
-            }
-
-            override var acceptsFirstResponder: Bool {
-                true
-            }
-
-            override func becomeFirstResponder() -> Bool {
-                true
-            }
-        }
-    }
+    import AppKit
 #else
     enum NSEvent {
         struct ModifierFlags: OptionSet {
@@ -153,15 +8,8 @@ import SwiftUI
             static let command = ModifierFlags(rawValue: 1 << 0)
         }
     }
-
-    struct KeyEventHandlingModifier: ViewModifier {
-        let onKeyDown: (KeyCode, Bool, NSEvent.ModifierFlags) -> Void
-        let onKeyUp: (KeyCode, NSEvent.ModifierFlags) -> Void
-        func body(content: Content) -> some View {
-            content
-        }
-    }
 #endif
+
 enum KeyCode: UInt16 {
     case none = 0
     case space = 49
@@ -172,27 +20,90 @@ enum KeyCode: UInt16 {
     case enter = 36
     case escape = 53
     case delete = 51
+    case tab = 48
 }
 
-extension View {
-    func onKeyDown(_ action: @escaping (KeyCode, Bool, NSEvent.ModifierFlags) -> Void) -> some View {
-        modifier(
-            KeyEventHandlingModifier(
-                onKeyDown: action,
-                onKeyUp: { _, _ in },
-            ),
-        )
+/// Where the last input came from. Hints for pointing and touching (the faint bars) stay
+/// away while the keyboard or the old Apple Remote is in use, which can't use them.
+enum MenuInputSource {
+    case keyboard
+    /// The white or aluminium infrared Apple Remote.
+    case appleRemote
+    case siriRemote
+    case pointer
+    case touch
+}
+
+extension MenuView {
+    /// Notes the input that just came in, for the hints that depend on it.
+    func noteInputSource(_ source: MenuInputSource) {
+        if lastInputSource != source { lastInputSource = source }
     }
 
-    func onKeyEvents(
-        onKeyDown: @escaping (KeyCode, Bool, NSEvent.ModifierFlags) -> Void,
-        onKeyUp: @escaping (KeyCode, NSEvent.ModifierFlags) -> Void,
-    ) -> some View {
-        modifier(
-            KeyEventHandlingModifier(
-                onKeyDown: onKeyDown,
-                onKeyUp: onKeyUp,
-            ),
-        )
+    /// The pointing and touching hints (the faint bars, the on-screen buttons) are for the
+    /// pointer and fingers: a key or any remote puts them away until the pointer moves or a
+    /// finger touches again.
+    var showsPointingHints: Bool {
+        lastInputSource == .pointer || lastInputSource == .touch
+    }
+
+    /// There are round on-screen buttons (Back, the transports) for fingers and the pointer:
+    /// everywhere but Apple TV. They show while `showsPointingHints` does.
+    var showsOnScreenControls: Bool {
+        #if os(tvOS)
+            false
+        #else
+            true
+        #endif
+    }
+
+    /// `willBeLetGo` for a key whose release will be told of too (`handleKeyUp`): Return can
+    /// then be held on a movie to ask about deleting it, and acts as a press when it's let go.
+    func handleKeyDown(_ key: KeyCode, isRepeat: Bool = false, modifiers: NSEvent.ModifierFlags = [], willBeLetGo: Bool = false) {
+        // The file picker is answering keys of its own.
+        if isChoosingMediaSource { return }
+        if key == .enter, willBeLetGo, onboardingStep == nil, !isTextEntryActive {
+            if isRepeat, isConfirmPressDown { return }
+            if !isRepeat, confirmPressBegan() { return }
+        }
+        if onboardingStep != nil {
+            handleOnboardingKey(key, isRepeat: isRepeat)
+            return
+        }
+        if key == .upArrow || key == .downArrow || key == .leftArrow || key == .rightArrow {
+            if isRepeat { return }
+            handleDirectionalPressBegan(key, modifiers: modifiers)
+            return
+        }
+        endDirectionalHoldSession()
+        handleKeyInput(key, isRepeat: isRepeat, modifiers: modifiers)
+    }
+
+    func handleKeyUp(_ key: KeyCode) {
+        if key == .enter { confirmPressEnded() }
+        handleDirectionalPressEnded(key)
+    }
+
+    /// Called once the menus are on screen.
+    func start() {
+        beginOnboardingIfNeeded()
+        beginStartupMusicLibraryPreloadIfNeeded()
+        preloadITunesTopChartsInBackground()
+        registerUserInteractionForScreenSaver()
+        startScreenSaverIdleMonitor()
+        pauseScreenSaverIdleWhileInBackground()
+        startupSoundWarmUpWorkItem?.cancel()
+        startupSoundWarmUpWorkItem = Task {
+            try? await firstRowSleep(0.75)
+            guard !Task.isCancelled else { return }
+            SoundEffectPlayer.shared.warmUp(soundNames: ["Selection", "SelectionChange", "Exit", "Limit"].map(Self.themedSoundName))
+        }
+    }
+
+    func stop() {
+        startupSoundWarmUpWorkItem?.cancel()
+        startupSoundWarmUpWorkItem = nil
+        endDirectionalHoldSession()
+        stopScreenSaverIdleMonitor()
     }
 }

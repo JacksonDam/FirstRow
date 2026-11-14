@@ -1,6 +1,14 @@
+import AVFoundation
 import Foundation
 import ImageIO
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 
 final class DecodedDisplayArtworkCache {
     static let shared = DecodedDisplayArtworkCache()
@@ -14,7 +22,12 @@ final class DecodedDisplayArtworkCache {
     private var lruKeys: [String] = []
     private var totalCost: Int = 0
     private let maxEntries: Int = 240
-    private let maxCostBytes: Int = 220 * 1024 * 1024
+    #if FIRSTROW_PORTABLE
+        // (There each one is its pixels in memory and a texture as large, for as long as it's kept.)
+        private let maxCostBytes: Int = 48 * 1024 * 1024
+    #else
+        private let maxCostBytes: Int = 128 * 1024 * 1024
+    #endif
     func image(for key: String) -> NSImage? {
         lock.lock()
         defer { lock.unlock() }
@@ -50,6 +63,41 @@ final class DecodedDisplayArtworkCache {
                 totalCost = max(0, totalCost - removed.cost)
             }
         }
+    }
+}
+
+/// How large a cover needs decoding for this screen. A cover is drawn at most some 600 scene
+/// points across (Now Playing's), which on a 1080p screen is as many pixels: decoded at 900
+/// each took twice the memory it needed, in the store of decoded covers and again on the
+/// graphics card.
+enum DisplayArtworkSize {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var pixels: CGFloat = 900
+    nonisolated(unsafe) private static var scale: CGFloat = 1
+
+    /// How many pixels a scene point covers, as the renderer last said.
+    static var pixelsPerPoint: CGFloat {
+        lock.lock()
+        defer { lock.unlock() }
+        return scale
+    }
+
+    /// The longest side to decode a cover at, in pixels.
+    static var maxPixelSize: CGFloat {
+        lock.lock()
+        defer { lock.unlock() }
+        return pixels
+    }
+
+    /// The renderer says how many pixels a scene point covers. Sizes come in a few steps, so
+    /// that resizing a window doesn't have every cover decoded again for each new size.
+    static func noteScale(_ pixelsPerPoint: CGFloat) {
+        let needed = 620 * pixelsPerPoint
+        let size: CGFloat = [512, 640, 768].first { $0 >= needed } ?? 900
+        lock.lock()
+        pixels = size
+        scale = pixelsPerPoint
+        lock.unlock()
     }
 }
 
@@ -134,7 +182,9 @@ func decompressedArtworkCGImage(from image: CGImage) -> CGImage {
     let width = image.width
     let height = image.height
     guard width > 0, height > 0 else { return image }
-    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    // (In the screen's own colours on the Mac, so the cover reaches the screen without being
+    // converted on the main thread: see `ScreenColorSpace`.)
+    let colorSpace = ScreenColorSpace.current ?? CGColorSpaceCreateDeviceRGB()
     let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(.init(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue))
     guard let context = CGContext(
         data: nil,
@@ -153,8 +203,82 @@ func decompressedArtworkCGImage(from image: CGImage) -> CGImage {
 }
 
 func decodedArtworkImageCost(_ image: NSImage) -> Int {
-    if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-        return max(1, cgImage.width * cgImage.height * 4)
-    }
+    #if os(iOS) || os(tvOS)
+        if let cgImage = image.cgImage {
+            return max(1, cgImage.width * cgImage.height * 4)
+        }
+    #else
+        if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return max(1, cgImage.width * cgImage.height * 4)
+        }
+    #endif
     return 4 * 1024 * 1024
+}
+
+/// The picture embedded in a media file (MPEG-4 `covr`, ID3 `APIC` or QuickTime artwork), if any.
+func loadEmbeddedArtworkData(from url: URL) async -> Data? {
+    let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
+    var candidates: [AVMetadataItem] = []
+    if #available(macOS 12.0, iOS 15.0, tvOS 15.0, *) {
+        if let commonMetadata = try? await asset.load(.commonMetadata) {
+            candidates = AVMetadataItem.metadataItems(from: commonMetadata, filteredByIdentifier: .commonIdentifierArtwork)
+        }
+        if candidates.isEmpty, let metadata = try? await asset.load(.metadata) {
+            candidates = embeddedArtworkMetadataItems(in: metadata)
+        }
+    } else {
+        candidates = AVMetadataItem.metadataItems(from: asset.commonMetadata, filteredByIdentifier: .commonIdentifierArtwork)
+        if candidates.isEmpty {
+            candidates = embeddedArtworkMetadataItems(in: asset.metadata)
+        }
+    }
+    for item in candidates {
+        if let data = await embeddedArtworkData(of: item), !data.isEmpty {
+            return data
+        }
+    }
+    return nil
+}
+
+private func embeddedArtworkMetadataItems(in metadata: [AVMetadataItem]) -> [AVMetadataItem] {
+    let artworkIdentifiers: Set<AVMetadataIdentifier> = [
+        .iTunesMetadataCoverArt,
+        .id3MetadataAttachedPicture,
+        .quickTimeMetadataArtwork,
+        .commonIdentifierArtwork,
+    ]
+    return metadata.filter { item in
+        guard let identifier = item.identifier else { return false }
+        return artworkIdentifiers.contains(identifier)
+    }
+}
+
+private func embeddedArtworkData(of item: AVMetadataItem) async -> Data? {
+    let dataValue: Data?
+    let rawValue: (NSCopying & NSObjectProtocol)?
+    if #available(macOS 12.0, iOS 15.0, tvOS 15.0, *) {
+        dataValue = try? await item.load(.dataValue)
+        rawValue = dataValue == nil ? (try? await item.load(.value)) : nil
+    } else {
+        dataValue = item.dataValue
+        rawValue = dataValue == nil ? item.value : nil
+    }
+    if let dataValue {
+        return dataValue
+    }
+    if let data = rawValue as? Data {
+        return data
+    }
+    // Older ID3 tags surface APIC frames as a dictionary with the picture under "data".
+    if let dictionary = rawValue as? NSDictionary, let data = dictionary["data"] as? Data {
+        return data
+    }
+    return nil
+}
+
+/// A cheap content fingerprint, used to spot the same picture showing up for different items.
+func artworkContentDigest(_ data: Data) -> Int {
+    var hasher = Hasher()
+    data.withUnsafeBytes { hasher.combine(bytes: $0) }
+    return hasher.finalize()
 }

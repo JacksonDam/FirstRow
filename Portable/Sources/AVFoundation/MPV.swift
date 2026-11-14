@@ -1,0 +1,653 @@
+import CMPV
+import CoreGraphics
+import CPortable
+import Foundation
+
+/// One libmpv instance. A player's calls happen on the main thread; events are pumped once a frame.
+final class MPVCore {
+    let handle: OpaquePointer
+    var onEvent: ((UnsafeMutablePointer<mpv_event>) -> Void)?
+    private(set) var renderContext: OpaquePointer?
+    /// The players' cores, whose events are delivered each frame (main thread only).
+    nonisolated(unsafe) static var live: [ObjectIdentifier: MPVCore] = [:]
+    private var isRegistered = false
+    /// Cores their players have let go of, until mpv has let go of their renderers (see
+    /// `close`; main thread only).
+    nonisolated(unsafe) private static var closing: [ObjectIdentifier: MPVCore] = [:]
+    private var closingSince: TimeInterval = 0
+
+    // MARK: What mpv last said
+
+    // Asking mpv for something waits for its core to answer, and the core doesn't while it
+    // opens a file's sound, plays a file's last sound out or shuts its video down: a fifth
+    // of a second and more with the main thread stopped, at the moments the interface is
+    // moving. So what's wanted every frame is watched instead (mpv says when it changes)
+    // and kept here as mpv's events come in.
+
+    /// Where playback had got to when mpv last said, and when that was (in system uptime).
+    private(set) var reportedTime: Double?
+    private(set) var reportedTimeAt: TimeInterval = 0
+    private(set) var reportedDuration: Double?
+    private(set) var videoWidth = 0
+    private(set) var videoHeight = 0
+    /// Paused, waiting for data or between files: the time isn't moving.
+    private(set) var isCoreIdle = true
+    /// No file is open, so mpv is showing no video.
+    private(set) var isIdle = true
+    /// mpv has had a frame of the file it has open to draw (set by what draws its frames).
+    var hasVideoFrame = false
+
+    static let endOfFileID: UInt64 = 1
+    private static let timeID: UInt64 = 2
+    static let durationID: UInt64 = 3
+    private static let widthID: UInt64 = 4
+    private static let heightID: UInt64 = 5
+    private static let coreIdleID: UInt64 = 6
+    private static let idleID: UInt64 = 7
+
+    /// Keeps what a watched property has changed to.
+    private func note(_ event: UnsafeMutablePointer<mpv_event>) {
+        guard let property = event.pointee.data?.assumingMemoryBound(to: mpv_event_property.self).pointee else { return }
+        let number = property.format == MPV_FORMAT_DOUBLE ? property.data?.assumingMemoryBound(to: Double.self).pointee : nil
+        let whole = property.format == MPV_FORMAT_INT64 ? property.data?.assumingMemoryBound(to: Int64.self).pointee : nil
+        let flag = property.format == MPV_FORMAT_FLAG ? property.data?.assumingMemoryBound(to: Int32.self).pointee : nil
+        switch event.pointee.reply_userdata {
+        case Self.timeID:
+            reportedTime = number
+            reportedTimeAt = ProcessInfo.processInfo.systemUptime
+        case Self.durationID:
+            reportedDuration = number
+        case Self.widthID:
+            videoWidth = Int(whole ?? 0)
+        case Self.heightID:
+            videoHeight = Int(whole ?? 0)
+        case Self.coreIdleID:
+            isCoreIdle = flag.map { $0 != 0 } ?? true
+            // (The time stood still until now, or stands still from now.)
+            reportedTimeAt = ProcessInfo.processInfo.systemUptime
+        case Self.idleID:
+            if let flag { isIdle = flag != 0 }
+        default:
+            break
+        }
+    }
+
+    /// A file is about to be opened: what was known of the last one no longer holds.
+    func noteLoading() {
+        reportedTime = nil
+        reportedDuration = nil
+        hasVideoFrame = false
+        isIdle = false
+    }
+
+    /// Whether mpv has said it has events waiting. mpv says so on a thread of its own, and
+    /// may go on saying so while the core is being closed down, so this is kept apart from
+    /// the core and handed to mpv with a reference of its own.
+    private final class Wakeup: @unchecked Sendable {
+        private let lock = NSLock()
+        private var isSet = true
+
+        func set() {
+            lock.lock()
+            isSet = true
+            lock.unlock()
+        }
+
+        /// Whether it was set; it's cleared.
+        func take() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            let was = isSet
+            isSet = false
+            return was
+        }
+    }
+
+    private let wakeup = Wakeup()
+    private var wakeupReference: Unmanaged<Wakeup>?
+
+    // MARK: A core made ahead
+
+    private static let spareLock = NSCondition()
+    nonisolated(unsafe) private static var spare: MPVCore?
+    nonisolated(unsafe) private static var isMakingSpare = false
+
+    /// A core for a player: the one made ahead (another is started for next time), or a new
+    /// one. Making a core takes milliseconds (mpv starts its threads and sets itself up),
+    /// and one is wanted the moment a song or a movie starts, which is the moment its
+    /// screen starts to come in. One that is still being made is waited for: it's nearer
+    /// done than a new one would be, and two made at once take longer than either.
+    static func forPlayer() -> MPVCore? {
+        spareLock.lock()
+        while spare == nil, isMakingSpare { spareLock.wait() }
+        let ready = spare
+        spare = nil
+        spareLock.unlock()
+        let core = ready ?? MPVCore(video: true)
+        core?.register()
+        prepareSpare()
+        return core
+    }
+
+    /// Makes the next player's core now, off the main thread.
+    static func prepareSpare() {
+        spareLock.lock()
+        let needed = spare == nil && !isMakingSpare
+        if needed { isMakingSpare = true }
+        spareLock.unlock()
+        guard needed else { return }
+        // (At the priority of what may come to wait for it: the main thread, in `forPlayer`.)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let made = MPVCore(video: true)
+            spareLock.lock()
+            spare = made
+            isMakingSpare = false
+            spareLock.broadcast()
+            spareLock.unlock()
+        }
+    }
+
+    /// Runs mpv with no audio output, for tests and headless runs.
+    static var silent: Bool { ProcessInfo.processInfo.environment["FIRSTROW_NO_AUDIO"] == "1" }
+
+    init?(video: Bool) {
+        guard let handle = mpv_create() else { return nil }
+        self.handle = handle
+        set("vo", video ? "libmpv" : "null")
+        if !video { set("vid", "no") }
+        set("keep-open", "yes")
+        set("idle", "yes")
+        set("terminal", "no")
+        set("input-default-bindings", "no")
+        set("input-vo-keyboard", "no")
+        set("osc", "no")
+        // The graphics card decodes where mpv knows its decoder to be dependable, and the
+        // frames are copied back, so they're drawn as ever. On the processor a 4K film has a
+        // frame in the making on every thread (hundreds of megabytes) and can fall behind.
+        // Where there is no such decoder, mpv decodes on the processor as before.
+        set("hwdec", Self.decodersAskedFor ?? "auto-copy-safe")
+        // (Copying back needs none of mpv's links between a decoder and OpenGL: they'd only
+        // be looked for, one by one, each time a renderer is made.)
+        set("gpu-hwdec-interop", "no")
+        // How much of a stream is held ahead of and behind where it's playing.
+        set("demuxer-max-bytes", "64MiB")
+        set("demuxer-max-back-bytes", "16MiB")
+        // Frames are drawn at their own size and scaled by the compositor, like AVPlayerLayer,
+        // so mpv's expensive scalers would only cost time.
+        set("profile", "fast")
+        set("audio-client-name", "First Row")
+        set("msg-level", "all=error")
+        set("ytdl", "no")
+        // Cover art in audio files is not a video to show.
+        set("audio-display", "no")
+        // The file after the one playing (a queue player's: see AVQueuePlayer) is opened a
+        // little before it is due, so that its sound is ready where the other's ends.
+        set("prefetch-playlist", "yes")
+        // Interlaced video (a DVD's, a broadcast's) is deinterlaced, and what isn't is left
+        // as it is. (A libmpv too old to tell the two apart leaves everything as it is.)
+        set("deinterlace", "auto")
+        // A movie's subtitle files kept beside it ("Film.srt", "Film.en.srt") are offered
+        // with its own.
+        set("sub-auto", "fuzzy")
+        if Self.silent { set("ao", "null") }
+        guard mpv_initialize(handle) >= 0 else {
+            mpv_terminate_destroy(handle)
+            return nil
+        }
+        #if !os(Windows)
+            // (Movies in shared folders are read for it: see SharedFolders.swift.)
+            registerSharedFolderReading(on: handle)
+        #endif
+        observe("eof-reached", MPV_FORMAT_FLAG, id: Self.endOfFileID)
+        observe("time-pos", MPV_FORMAT_DOUBLE, id: Self.timeID)
+        observe("duration", MPV_FORMAT_DOUBLE, id: Self.durationID)
+        observe("dwidth", MPV_FORMAT_INT64, id: Self.widthID)
+        observe("dheight", MPV_FORMAT_INT64, id: Self.heightID)
+        observe("core-idle", MPV_FORMAT_FLAG, id: Self.coreIdleID)
+        observe("idle-active", MPV_FORMAT_FLAG, id: Self.idleID)
+        if Self.debugEnabled { mpv_request_log_messages(handle, "v") }
+        // mpv says when it has events, so that it's asked for them only then: asking takes
+        // a lock inside mpv and a wait on it, which every pass of the main loop was paying
+        // for every player.
+        let reference = Unmanaged.passRetained(wakeup)
+        wakeupReference = reference
+        mpv_set_wakeup_callback(handle, { context in
+            guard let context else { return }
+            Unmanaged<Wakeup>.fromOpaque(context).takeUnretainedValue().set()
+        }, reference.toOpaque())
+        Self.debug("core created (video \(video))")
+    }
+
+    /// Takes its place among the players' cores (on the main thread).
+    func register() {
+        isRegistered = true
+        Self.live[ObjectIdentifier(self)] = self
+        // (A core made before OpenGL was up was made without knowing whose it is.)
+        if Self.decodersAskedFor == nil, let preferred = Self.decodersForDriver {
+            setPropertyWithoutWaiting("hwdec", preferred)
+        }
+    }
+
+    /// What `FIRSTROW_HWDEC` asks for, which is taken as it is.
+    private static let decodersAskedFor = ProcessInfo.processInfo.environment["FIRSTROW_HWDEC"]
+
+    /// The decoders to try with the graphics driver in use, where mpv's own choice among
+    /// the dependable ones isn't the one to make (main thread only).
+    nonisolated(unsafe) private static var decodersForDriver: String?
+
+    /// OpenGL is up, and current on this thread: which driver's it is decides the decoder.
+    /// mpv tries Vulkan's first. Nvidia's OpenGL and Vulkan are one library with one lock
+    /// between them, held while a Vulkan decoder is set up and again while it is let go of:
+    /// the interface's own drawing waited on it for a quarter of a second and more, with the
+    /// screen stopped, as a movie started and as it went away (which is as the menus come
+    /// back). Nvidia's own decoder, which shares nothing with OpenGL, is tried first there.
+    static func noteGraphicsDriver() {
+        #if os(Linux)
+            guard let vendor = glGetString(GL_VENDOR).map({ String(cString: $0) }), vendor.uppercased().contains("NVIDIA") else { return }
+            // (Decoders can be given as a list from mpv 0.36, whose client API is 2.1.)
+            guard mpv_client_api_version() >= 0x20001 else { return }
+            decodersForDriver = "nvdec-copy,auto-copy-safe"
+        #endif
+    }
+
+    static let debugEnabled = ProcessInfo.processInfo.environment["FIRSTROW_DEBUG_MPV"] == "1"
+
+    static func debug(_ message: @autoclosure () -> String) {
+        guard debugEnabled else { return }
+        let stamp = String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
+        FileHandle.standardError.write(Data("[mpv] \(stamp) \(message())\n".utf8))
+    }
+
+    /// Whether `close` has handed mpv over to be shut down.
+    private var isShutDown = false
+
+    deinit {
+        guard !isShutDown else { return }
+        if let renderContext { mpv_render_context_free(renderContext) }
+        mpv_terminate_destroy(handle)
+        // (mpv is gone, and with it the last thing that could call on this.)
+        wakeupReference?.release()
+    }
+
+    /// The player is done with it (on the main thread). mpv is shut down on another thread:
+    /// that waits for mpv's own threads to finish, and at a song's end mpv is still playing
+    /// out the sound it holds, for up to half a second.
+    ///
+    /// A core that showed video has a renderer, which has to be let go of here, where OpenGL
+    /// is, and letting go of it waits for mpv to shut its video down: up to a fifth of a
+    /// second when mpv is waiting to show a frame, with the main thread stopped, just as a
+    /// movie's screen goes out and the menus come in. So mpv is asked to stop, which isn't
+    /// waited for, and the renderer goes once mpv says it has stopped (see `finishClosing`).
+    ///
+    /// Stopping has mpv let go of its decoder, and a decoder on the graphics card is let go
+    /// of through the card's driver, which the interface is drawing through at the same
+    /// time: its frames come late, or not at all, for a quarter of a second. So mpv is only
+    /// paused here, and is asked to stop once nothing on screen is moving.
+    func close() {
+        Self.debug("core closed")
+        if isRegistered {
+            isRegistered = false
+            Self.live.removeValue(forKey: ObjectIdentifier(self))
+        }
+        guard !isShutDown else { return }
+        isShutDown = true
+        onEvent = nil
+        guard renderContext != nil else {
+            shutDown()
+            return
+        }
+        setFlagWithoutWaiting("pause", true)
+        closingSince = ProcessInfo.processInfo.systemUptime
+        Self.closing[ObjectIdentifier(self)] = self
+    }
+
+    /// When a closing core was asked to stop, once it has been.
+    private var askedToStopAt: TimeInterval?
+
+    private func askToStop() {
+        guard askedToStopAt == nil else { return }
+        askedToStopAt = ProcessInfo.processInfo.systemUptime
+        commandWithoutWaiting(["stop"])
+    }
+
+    /// Has the cores that are closing stop now, moving or not: another movie is about to
+    /// open, and their decoders are better let go of before its picture is up than under it.
+    static func stopClosing() {
+        for core in closing.values { core.askToStop() }
+    }
+
+    /// A closing core's turn in a pass of the main loop. It is asked to stop when nothing on
+    /// screen is moving, if such a moment comes within three seconds. Its renderer goes once
+    /// mpv is idle, again when nothing is moving if such a moment comes within three seconds
+    /// (what's left to do then is giving OpenGL's things back, which is quick, but not
+    /// nothing); and after five seconds whatever mpv says.
+    private func finishClosing(interfaceIsMoving: Bool) {
+        if wakeup.take() {
+            while let event = mpv_wait_event(handle, 0), event.pointee.event_id != MPV_EVENT_NONE {
+                if event.pointee.event_id == MPV_EVENT_PROPERTY_CHANGE { note(event) }
+            }
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let askedToStopAt else {
+            if !interfaceIsMoving || now - closingSince > 3 { askToStop() }
+            return
+        }
+        let waited = now - askedToStopAt
+        guard (isIdle && (!interfaceIsMoving || waited > 3)) || waited > 5 else { return }
+        Self.debug("core let go of after \(Int(waited * 1000)) ms")
+        Self.closing.removeValue(forKey: ObjectIdentifier(self))
+        shutDown()
+    }
+
+    /// The cores being shut down on other threads.
+    private static let shuttingDown = DispatchGroup()
+
+    private func shutDown() {
+        // (The renderer goes here, where OpenGL is.)
+        if let renderContext { mpv_render_context_free(renderContext) }
+        renderContext = nil
+        let handle = handle
+        let reference = wakeupReference
+        wakeupReference = nil
+        Self.shuttingDown.enter()
+        DispatchQueue.global(qos: .utility).async {
+            mpv_terminate_destroy(handle)
+            // (mpv is gone, and with it the last thing that could call on this.)
+            reference?.release()
+            // A film's frames and buffers are freed by now: the system gets them back.
+            fr_release_free_memory()
+            Self.shuttingDown.leave()
+        }
+    }
+
+    /// First Row is quitting (on the main thread, with OpenGL still up): every core is shut
+    /// down and waited for. One left playing as the program exits goes on decoding while
+    /// what it decodes with is taken away under it, which brought First Row down on its way
+    /// out whenever it was quit with a movie playing.
+    static func shutDownAll() {
+        let cores = Array(live.values) + Array(closing.values)
+        live.removeAll()
+        closing.removeAll()
+        spareLock.lock()
+        while isMakingSpare { spareLock.wait() }
+        let unused = spare
+        spare = nil
+        spareLock.unlock()
+        for core in cores + (unused.map { [$0] } ?? []) {
+            core.isShutDown = true
+            core.onEvent = nil
+            core.shutDown()
+        }
+        _ = shuttingDown.wait(timeout: .now() + 3)
+    }
+
+    @discardableResult
+    func set(_ option: String, _ value: String) -> Bool {
+        mpv_set_option_string(handle, option, value) >= 0
+    }
+
+    func setProperty(_ name: String, _ value: String) {
+        mpv_set_property_string(handle, name, value)
+    }
+
+    func setProperty(_ name: String, _ value: Double) {
+        var v = value
+        mpv_set_property(handle, name, MPV_FORMAT_DOUBLE, &v)
+    }
+
+    func setFlag(_ name: String, _ value: Bool) {
+        var v: Int32 = value ? 1 : 0
+        mpv_set_property(handle, name, MPV_FORMAT_FLAG, &v)
+    }
+
+    /// Sets a flag without waiting for mpv to have done it: for when mpv may be busy (at a
+    /// file's end it plays out the sound it holds before it answers anything).
+    /// (mpv's answer comes later as an event carrying `reply`. False if it couldn't be sent.)
+    @discardableResult
+    func setFlagWithoutWaiting(_ name: String, _ value: Bool, reply: UInt64 = 0) -> Bool {
+        var v: Int32 = value ? 1 : 0
+        return mpv_set_property_async(handle, reply, name, MPV_FORMAT_FLAG, &v) >= 0
+    }
+
+    func setPropertyWithoutWaiting(_ name: String, _ value: Double) {
+        var v = value
+        mpv_set_property_async(handle, 0, name, MPV_FORMAT_DOUBLE, &v)
+    }
+
+    func setPropertyWithoutWaiting(_ name: String, _ value: String) {
+        var text: UnsafeMutablePointer<CChar>? = strdup(value)
+        defer { free(text) }
+        mpv_set_property_async(handle, 0, name, MPV_FORMAT_STRING, &text)
+    }
+
+    /// Sends a command without waiting for mpv to have carried it out. Commands and
+    /// properties sent this way are carried out in the order they were sent.
+    func commandWithoutWaiting(_ args: [String]) {
+        var cStrings = args.map { strdup($0) }
+        cStrings.append(nil)
+        defer { cStrings.forEach { free($0) } }
+        cStrings.withUnsafeMutableBufferPointer { buffer in
+            buffer.baseAddress!.withMemoryRebound(to: UnsafePointer<CChar>?.self, capacity: buffer.count) { pointer in
+                _ = mpv_command_async(handle, 0, pointer)
+            }
+        }
+    }
+
+    func double(_ name: String) -> Double? {
+        var v = 0.0
+        return mpv_get_property(handle, name, MPV_FORMAT_DOUBLE, &v) >= 0 ? v : nil
+    }
+
+    func int(_ name: String) -> Int? {
+        var v: Int64 = 0
+        return mpv_get_property(handle, name, MPV_FORMAT_INT64, &v) >= 0 ? Int(v) : nil
+    }
+
+    func string(_ name: String) -> String? {
+        guard let value = mpv_get_property_string(handle, name) else { return nil }
+        defer { mpv_free(value) }
+        return String(cString: value)
+    }
+
+    func flag(_ name: String) -> Bool? {
+        var v: Int32 = 0
+        return mpv_get_property(handle, name, MPV_FORMAT_FLAG, &v) >= 0 ? v != 0 : nil
+    }
+
+    func observe(_ name: String, _ format: mpv_format, id: UInt64) {
+        mpv_observe_property(handle, id, name, format)
+    }
+
+    func command(_ args: [String]) {
+        var cStrings = args.map { strdup($0) }
+        cStrings.append(nil)
+        defer { cStrings.forEach { free($0) } }
+        cStrings.withUnsafeMutableBufferPointer { buffer in
+            buffer.baseAddress!.withMemoryRebound(to: UnsafePointer<CChar>?.self, capacity: buffer.count) { pointer in
+                _ = mpv_command(handle, pointer)
+            }
+        }
+    }
+
+    /// Delivers queued events to `onEvent`.
+    func pump() {
+        // Nothing new since they were last collected.
+        guard wakeup.take() else { return }
+        while true {
+            guard let event = mpv_wait_event(handle, 0) else { return }
+            if event.pointee.event_id == MPV_EVENT_NONE { return }
+            if event.pointee.event_id == MPV_EVENT_LOG_MESSAGE {
+                if let message = event.pointee.data?.assumingMemoryBound(to: mpv_event_log_message.self).pointee {
+                    Self.debug("log \(String(cString: message.prefix)): \(String(cString: message.text).trimmingCharacters(in: .newlines))")
+                }
+                continue
+            }
+            if event.pointee.event_id == MPV_EVENT_PROPERTY_CHANGE {
+                note(event)
+            } else {
+                if event.pointee.event_id == MPV_EVENT_START_FILE {
+                    // (What comes after this is about the new file.)
+                    reportedTime = nil
+                    reportedDuration = nil
+                    hasVideoFrame = false
+                }
+                Self.debug("event \(String(cString: mpv_event_name(event.pointee.event_id)))")
+            }
+            onEvent?(event)
+        }
+    }
+
+    static func pumpAll(interfaceIsMoving: Bool) {
+        for core in live.values { core.pump() }
+        guard !closing.isEmpty else { return }
+        for core in Array(closing.values) { core.finishClosing(interfaceIsMoving: interfaceIsMoving) }
+    }
+
+    // MARK: Video
+
+    nonisolated(unsafe) static var procAddress: ((String) -> UnsafeMutableRawPointer?)?
+
+    /// Set when frames are drawn into memory because this libmpv has no OpenGL renderer
+    /// (the Windows on Arm builds, for one).
+    private(set) var softwareRendering = false
+
+    /// Creates the render context that draws frames into our textures. Needs a current GL context.
+    func makeRenderContext() -> OpaquePointer? {
+        if let renderContext { return renderContext }
+        guard Self.procAddress != nil else { return nil }
+        var status = makeOpenGLContext()
+        if renderContext == nil {
+            Self.debug("OpenGL render context failed: \(String(cString: mpv_error_string(status)))")
+            status = makeSoftwareContext()
+            softwareRendering = renderContext != nil
+        }
+        Self.debug("render context \(renderContext == nil ? "failed: \(String(cString: mpv_error_string(status)))" : softwareRendering ? "made (software)" : "made")")
+        return renderContext
+    }
+
+    private func makeOpenGLContext() -> Int32 {
+        var initParams = mpv_opengl_init_params(
+            get_proc_address: { _, name in
+                guard let name else { return nil }
+                return MPVCore.procAddress?(String(cString: name))
+            },
+            get_proc_address_ctx: nil,
+        )
+        var context: OpaquePointer?
+        let apiType = strdup(MPV_RENDER_API_TYPE_OPENGL)
+        defer { free(apiType) }
+        var advanced: Int32 = 0
+        var status: Int32 = 0
+        withUnsafeMutablePointer(to: &initParams) { initPointer in
+            withUnsafeMutablePointer(to: &advanced) { advancedPointer in
+                var params = [
+                    mpv_render_param(type: MPV_RENDER_PARAM_API_TYPE, data: UnsafeMutableRawPointer(apiType)),
+                    mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, data: UnsafeMutableRawPointer(initPointer)),
+                    mpv_render_param(type: MPV_RENDER_PARAM_ADVANCED_CONTROL, data: UnsafeMutableRawPointer(advancedPointer)),
+                    mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
+                ]
+                status = mpv_render_context_create(&context, handle, &params)
+            }
+        }
+        renderContext = context
+        return status
+    }
+
+    private func makeSoftwareContext() -> Int32 {
+        var context: OpaquePointer?
+        let apiType = strdup(MPV_RENDER_API_TYPE_SW)
+        defer { free(apiType) }
+        var params = [
+            mpv_render_param(type: MPV_RENDER_PARAM_API_TYPE, data: UnsafeMutableRawPointer(apiType)),
+            mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
+        ]
+        let status = mpv_render_context_create(&context, handle, &params)
+        renderContext = context
+        return status
+    }
+}
+
+/// A one-off mpv used to read a file's length or grab a frame.
+enum MediaProbe {
+    static func duration(of url: URL) -> Double? {
+        guard let core = MPVCore(video: false) else { return nil }
+        defer { core.close() }
+        core.set("ao", "null")
+        core.setFlag("pause", true)
+        core.command(["loadfile", url.path])
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            guard let event = mpv_wait_event(core.handle, 0.25) else { continue }
+            switch event.pointee.event_id {
+            case MPV_EVENT_FILE_LOADED: return core.double("duration")
+            case MPV_EVENT_END_FILE: return nil
+            default: continue
+            }
+        }
+        return nil
+    }
+
+    /// A frame of a video, decoded in software and read back with mpv's screenshot command.
+    static func frame(of url: URL, at seconds: Double, maximumSize: CGSize) -> CGImage? {
+        guard let handle = mpv_create() else { return nil }
+        defer { mpv_terminate_destroy(handle) }
+        for (option, value) in [("vo", "null"), ("ao", "null"), ("terminal", "no"), ("hwdec", "no"), ("msg-level", "all=error"), ("pause", "yes"), ("start", String(format: "%.3f", max(0, seconds)))] {
+            mpv_set_option_string(handle, option, value)
+        }
+        guard mpv_initialize(handle) >= 0 else { return nil }
+        var args: [UnsafeMutablePointer<CChar>?] = [strdup("loadfile"), strdup(url.path), nil]
+        defer { args.forEach { free($0) } }
+        args.withUnsafeMutableBufferPointer { buffer in
+            buffer.baseAddress!.withMemoryRebound(to: UnsafePointer<CChar>?.self, capacity: buffer.count) { _ = mpv_command(handle, $0) }
+        }
+        let deadline = Date().addingTimeInterval(8)
+        var loaded = false
+        while Date() < deadline, !loaded {
+            guard let event = mpv_wait_event(handle, 0.25) else { continue }
+            switch event.pointee.event_id {
+            case MPV_EVENT_PLAYBACK_RESTART: loaded = true
+            case MPV_EVENT_END_FILE: return nil
+            default: continue
+            }
+        }
+        guard loaded else { return nil }
+        var node = mpv_node()
+        var shot: [UnsafeMutablePointer<CChar>?] = [strdup("screenshot-raw"), strdup("video"), nil]
+        defer { shot.forEach { free($0) } }
+        let status = shot.withUnsafeMutableBufferPointer { buffer in
+            buffer.baseAddress!.withMemoryRebound(to: UnsafePointer<CChar>?.self, capacity: buffer.count) { mpv_command_ret(handle, $0, &node) }
+        }
+        guard status >= 0 else { return nil }
+        defer { mpv_free_node_contents(&node) }
+        return image(from: node, maximumSize: maximumSize)
+    }
+
+    private static func image(from node: mpv_node, maximumSize: CGSize) -> CGImage? {
+        guard node.format == MPV_FORMAT_NODE_MAP, let list = node.u.list?.pointee else { return nil }
+        var width = 0, height = 0, stride = 0
+        var format = ""
+        var bytes: UnsafeRawPointer?
+        for index in 0 ..< Int(list.num) {
+            guard let key = list.keys?[index].map({ String(cString: $0) }), let value = list.values?[index] else { continue }
+            switch key {
+            case "w": width = Int(value.u.int64)
+            case "h": height = Int(value.u.int64)
+            case "stride": stride = Int(value.u.int64)
+            case "format": format = value.u.string.map { String(cString: $0) } ?? ""
+            case "data": bytes = value.u.ba.map { UnsafeRawPointer($0.pointee.data) } ?? nil
+            default: break
+            }
+        }
+        guard width > 0, height > 0, stride > 0, let bytes, format == "bgr0" || format == "bgra" else { return nil }
+        let storage = PixelStorage(copying: bytes.assumingMemoryBound(to: UInt8.self), width: width, height: height, bytesPerRow: stride)
+        if format == "bgr0" {
+            for i in 0 ..< width * height { storage.bytes[i * 4 + 3] = 255 }
+        }
+        let image = CGImage(storage: storage, colorSpace: CGColorSpace(name: CGColorSpace.sRGB), alphaInfo: .premultipliedFirst)
+        if maximumSize.width > 0, maximumSize.height > 0, CGFloat(width) > maximumSize.width || CGFloat(height) > maximumSize.height {
+            let scale = min(maximumSize.width / CGFloat(width), maximumSize.height / CGFloat(height))
+            return image.resized(width: max(1, Int(CGFloat(width) * scale)), height: max(1, Int(CGFloat(height) * scale)))
+        }
+        return image
+    }
+}

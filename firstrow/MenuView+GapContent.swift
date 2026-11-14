@@ -1,13 +1,20 @@
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 
 extension MenuView {
-    func detailContentView(sceneSize: CGSize) -> some View {
-        let selectedImage = activeRootItemID.flatMap { menuImage(forRootID: $0) }
-        return defaultDetailContent(image: selectedImage, sceneSize: sceneSize)
+    /// Movies or TV Shows is the section: its third menu can be a list of movie files.
+    var isInSectionOfMovieFiles: Bool {
+        activeRootItemID == "movies" || activeRootItemID == "tv_shows"
     }
 
     var selectedMoviesFolderEntry: MoviesFolderEntry? {
-        guard activeRootItemID == "movies",
+        guard isInSectionOfMovieFiles,
               isInThirdMenu,
               thirdMenuMode == .moviesFolder,
               thirdMenuItems.indices.contains(selectedThirdIndex)
@@ -19,18 +26,18 @@ extension MenuView {
 
     var shouldShowMoviePreviewContent: Bool {
         if activeRootItemID == "movies" {
-            if isInThirdMenu {
-                let kind: ITunesTopCarouselKind? = switch thirdMenuMode {
-                case .moviesITunesTop: .movies
-                case .tvEpisodesITunesTop: .tvEpisodes
-                case .musicITunesTopMusicVideos: .musicVideos
-                default: nil
-                }
-                if let kind {
-                    return currentITunesTopPreviewTargetID(kind) != nil &&
-                        currentITunesTopPreviewImage(kind) != nil
-                }
+            if isInThirdMenu, thirdMenuMode == .moviesITunesTop {
+                return currentITunesTopPreviewTargetID(.movies) != nil &&
+                    currentITunesTopPreviewImage(.movies) != nil
             }
+            return moviePreviewTargetURL != nil && moviePreviewImage != nil
+        }
+        if activeRootItemID == "tv_shows" {
+            if isInThirdMenu, thirdMenuMode == .tvITunesTopEpisodes {
+                return currentITunesTopPreviewTargetID(.tvEpisodes) != nil &&
+                    currentITunesTopPreviewImage(.tvEpisodes) != nil
+            }
+            // (A show's or an episode's row: a picture from the movie file.)
             return moviePreviewTargetURL != nil && moviePreviewImage != nil
         }
         return false
@@ -68,23 +75,31 @@ extension MenuView {
     var movieGapPreviewDescriptor: MovieGapPreviewDescriptor? {
         if activeRootItemID == "movies",
            isInThirdMenu,
-           shouldShowMoviePreviewContent
+           thirdMenuMode == .moviesITunesTop,
+           shouldShowMoviePreviewContent,
+           let iTunesTopMoviePreviewImage = currentITunesTopPreviewImage(.movies)
         {
-            let kind: ITunesTopCarouselKind? = switch thirdMenuMode {
-            case .moviesITunesTop: .movies
-            case .tvEpisodesITunesTop: .tvEpisodes
-            case .musicITunesTopMusicVideos: .musicVideos
-            default: nil
-            }
-            if let kind, let iTunesTopPreviewImage = currentITunesTopPreviewImage(kind) {
-                let previewID = currentITunesTopPreviewTargetID(kind) ?? "itunes_preview"
-                return MovieGapPreviewDescriptor(
-                    id: "itunes:\(previewID)",
-                    image: iTunesTopPreviewImage,
-                    aspectRatio: aspectRatio(for: iTunesTopPreviewImage, fallback: 2.0 / 3.0),
-                    sizeScale: 0.75,
-                )
-            }
+            let previewID = currentITunesTopPreviewTargetID(.movies) ?? "itunes_movie_preview"
+            return MovieGapPreviewDescriptor(
+                id: "itunes:\(previewID)",
+                image: iTunesTopMoviePreviewImage,
+                aspectRatio: aspectRatio(for: iTunesTopMoviePreviewImage, fallback: 2.0 / 3.0),
+                sizeScale: 0.75,
+            )
+        }
+        if activeRootItemID == "tv_shows",
+           isInThirdMenu,
+           thirdMenuMode == .tvITunesTopEpisodes,
+           shouldShowMoviePreviewContent,
+           let iTunesTopTVEpisodePreviewImage = currentITunesTopPreviewImage(.tvEpisodes)
+        {
+            let previewID = currentITunesTopPreviewTargetID(.tvEpisodes) ?? "itunes_tv_episode_preview"
+            return MovieGapPreviewDescriptor(
+                id: "itunes_tv:\(previewID)",
+                image: iTunesTopTVEpisodePreviewImage,
+                aspectRatio: aspectRatio(for: iTunesTopTVEpisodePreviewImage, fallback: 2.0 / 3.0),
+                sizeScale: 0.75,
+            )
         }
         if shouldShowMoviePreviewContent,
            let moviePreviewImage
@@ -117,7 +132,7 @@ extension MenuView {
             )
         }
 
-        if activeRootItemID == "movies",
+        if isInSectionOfMovieFiles,
            isInThirdMenu,
            thirdMenuMode == .moviesFolder,
            thirdMenuItems.indices.contains(selectedThirdIndex),
@@ -149,14 +164,34 @@ extension MenuView {
             )
         }
 
+        if activeRootItemID == "tv_shows",
+           isInThirdMenu,
+           thirdMenuMode == .tvITunesTopEpisodes,
+           currentITunesTopPreviewTargetID(.tvEpisodes) != nil,
+           currentITunesTopPreviewImage(.tvEpisodes) == nil
+        {
+            let previewID = currentITunesTopPreviewTargetID(.tvEpisodes) ?? "itunes_tv_loading"
+            return MovieGapPreviewDescriptor(
+                id: "itunes_tv_loading:\(previewID)",
+                image: moviesFallbackImage,
+                aspectRatio: aspectRatio(for: moviesFallbackImage),
+                sizeScale: 0.5,
+            )
+        }
         return nil
     }
 
     var shouldShowMusicPreviewContent: Bool {
-        activeRootItemID == "music" &&
+        isMusicLibraryContext &&
             isInThirdMenu &&
-            thirdMenuMode == .musicSongs &&
+            (thirdMenuMode == .musicSongs || isShowingMusicCategoryCovers || isShowingSpotifyCollectionCovers || isShowingSpotifyRowCover) &&
             musicPreviewTargetSongID != nil
+    }
+
+    /// One of the rows of Spotify's own menu has its picture up (Music's own picture stays
+    /// until it is made, and for a row with nothing to show).
+    var isShowingSpotifyRowCover: Bool {
+        selectedSpotifyRowWithCover != nil && musicPreviewImage != nil
     }
 
     var shouldShowMusicNowPlayingGapPreview: Bool {
@@ -175,6 +210,8 @@ extension MenuView {
 
     var shouldUseMusicSongMetadataPreview: Bool {
         guard shouldShowMusicPreviewContent else { return false }
+        // The Albums, Artists and Playlists lists show just the cover.
+        guard thirdMenuMode == .musicSongs else { return false }
         guard activeMusicLibraryMediaType == .songs else { return false }
         if !isMusicSongsCategoryScoped {
             // Songs submenu
@@ -189,22 +226,40 @@ extension MenuView {
 
     func normalizedMusicMetadataValue(_ rawValue: String) -> String {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "Unknown" }
+        guard !trimmed.isEmpty else { return L("Unknown") }
         let unknownTokens: Set<String> = [
             "unknown",
             "unknown artist",
             "unknown album",
             "unknown genre",
             "unknown composer",
+            // (And as First Row itself names what a song doesn't say, in the language in use.)
+            L("Unknown Artist").lowercased(),
+            L("Unknown Album").lowercased(),
+            L("Unknown Genre").lowercased(),
+            L("Unknown Composer").lowercased(),
         ]
         if unknownTokens.contains(trimmed.lowercased()) {
-            return "Unknown"
+            return L("Unknown")
         }
         return trimmed
     }
 
+    func musicSongMetadataLines(for song: MusicLibrarySongEntry) -> [MetadataPreviewSpec.Line] {
+        var lines: [MetadataPreviewSpec.Line] = [
+            .init(label: L("Album"), value: normalizedMusicMetadataValue(song.album)),
+            .init(label: L("Artist"), value: normalizedMusicMetadataValue(song.artist)),
+        ]
+        // Spotify doesn't give songs a genre.
+        if song.spotify == nil {
+            lines.append(.init(label: L("Genre"), value: normalizedMusicMetadataValue(song.genre)))
+        }
+        lines.append(.init(label: L("Length"), value: musicSongMetadataLengthText(song.durationSeconds)))
+        return lines
+    }
+
     func musicSongMetadataLengthText(_ durationSeconds: Double) -> String {
-        guard durationSeconds.isFinite, durationSeconds > 0 else { return "Unknown" }
+        guard durationSeconds.isFinite, durationSeconds > 0 else { return L("Unknown") }
         return formatfirstRowPlaybackTime(durationSeconds)
     }
 
@@ -248,12 +303,12 @@ extension MenuView {
         selectedMoviesSubmenuItemID == "movies_itunes_top"
     }
 
-    var shouldUseITunesTopMusicVideosCarouselSlot: Bool {
-        selectedMoviesSubmenuItemID == "movies_itunes_top_music_videos"
+    var selectedTVShowsSubmenuItemID: String? {
+        selectedSubmenuItemID(for: "tv_shows")
     }
 
     var shouldUseITunesTopTVEpisodesCarouselSlot: Bool {
-        selectedMoviesSubmenuItemID == "movies_itunes_top_tv_episodes"
+        selectedTVShowsSubmenuItemID == "tv_itunestopepisodes"
     }
 
     var selectedMusicSubmenuItemID: String? {
@@ -268,6 +323,10 @@ extension MenuView {
 
     var shouldUseITunesTopSongsCarouselSlot: Bool {
         selectedMusicSubmenuItemID == "music_itunes_top_songs"
+    }
+
+    var shouldUseITunesTopMusicVideosCarouselSlot: Bool {
+        selectedMusicSubmenuItemID == "music_itunes_top_music_videos"
     }
 
     var shouldShowMusicTopLevelCarouselContent: Bool {
@@ -310,8 +369,9 @@ extension MenuView {
     }
 
     var selectedPhotoAlbumForCarousel: PhotoLibraryAlbumEntry? {
-        if let selectedPhotosDateAlbumID {
-            return photosDateAlbums.first(where: { $0.id == selectedPhotosDateAlbumID })
+        if selectedPhotosDateAlbumID != nil {
+            // (The selected row is the album's place in the list: no need to look for it.)
+            return photosDateAlbums[selectedThirdIndex]
         }
         guard let selectedPhotosSubmenuItemID else { return nil }
         return photoAlbumForSubmenuItemID(selectedPhotosSubmenuItemID)
@@ -334,6 +394,20 @@ extension MenuView {
         return min(1, max(0, max(backspaceExitOverlay, max(forwardExitOverlay, photosCarouselLoadOverlayOpacity))))
     }
 
+    var selectedPodcastsSubmenuItemID: String? {
+        selectedSubmenuItemID(for: "podcasts")
+    }
+
+    var selectedPodcastSeriesForPreview: PodcastSeriesEntry? {
+        podcastSeriesForSubmenuItemID(selectedPodcastsSubmenuItemID)
+    }
+
+    var selectedPodcastEpisodeForPreview: PodcastEpisodeEntry? {
+        selectedPodcastEpisodeFromThirdMenuSelection()
+    }
+
+    /// Movie and music previews have different projected width/yaw, so they need
+    /// separate horizontal anchors after removing the old menu-scene HStack padding.
     var movieGapPreviewHorizontalOffset: CGFloat {
         gapContentHorizontalOffset - 62
     }
@@ -346,257 +420,361 @@ extension MenuView {
         gapContentHorizontalOffset - 450
     }
 
-    func defaultGapIcon(_ image: NSImage, opacity: Double = 1) -> some View {
-        ReflectedGapContentIconView(
-            image: image,
-            adjustedIconSize: gapContentAdjustedIconSize,
-            horizontalOffset: gapContentHorizontalOffset,
-            verticalOffset: gapContentVerticalOffset,
-        ).opacity(opacity)
-    }
-
-    func gapCarousel(artworks: [NSImage?], preserveAspect: Bool = false, exitOpacity: Double) -> some View {
-        MusicTopLevelCarouselGapContentView(
-            artworkImages: artworks,
+    /// A carousel of these pictures. `asCovers` gives Music's carousel: every picture a
+    /// square that it fills, whatever its own shape.
+    func gapCarouselItem(key: String, artworks: [NSImage?], exitOpacity: Double, asCovers: Bool = false) -> GapItemSpec? {
+        guard !artworks.isEmpty else { return nil }
+        return GapItemSpec(key: key, kind: .coverCarousel(CoverCarouselConfiguration(
+            source: .images(artworks),
             baseIconSize: iconSize,
             horizontalOffset: musicTopLevelCarouselHorizontalOffset,
             verticalOffset: gapContentVerticalOffset - 34,
-            preserveArtworkAspectRatio: preserveAspect,
-            exitOverlayOpacity: exitOpacity,
-        )
+            preserveArtworkAspectRatio: !asCovers,
+        ), exitOverlayOpacity: exitOpacity))
     }
 
-    func musicGapCarousel(exitOpacity: Double) -> some View {
-        MusicTopLevelCarouselGapContentView(
-            artworkCount: musicTopLevelCarouselResolvedArtworkCount,
-            initialLoadedArtworkCount: musicTopLevelCarouselLoadedArtworkCount,
-            artworkForGlobalIndex: musicTopLevelCarouselArtwork(forGlobalIndex:),
-            prefetchIfNeededForSerial: prefetchMusicTopLevelCarouselIfNeeded(forSerial:),
+    func musicGapCarouselItem(exitOpacity: Double) -> GapItemSpec? {
+        guard musicTopLevelCarouselLoadedArtworkCount > 0 else { return nil }
+        return GapItemSpec(key: "music_carousel", kind: .coverCarousel(CoverCarouselConfiguration(
+            source: .dynamic(
+                resolvedArtworkCount: musicTopLevelCarouselResolvedArtworkCount,
+                loadedArtworkCount: musicTopLevelCarouselLoadedArtworkCount,
+                artworkForGlobalIndex: { [weak self] index in self?.musicTopLevelCarouselArtwork(forGlobalIndex: index) },
+                prefetchIfNeededForSerial: { [weak self] serial in self?.prefetchMusicTopLevelCarouselIfNeeded(forSerial: serial) },
+                phaseResetKey: "music_top_level_carousel",
+            ),
             baseIconSize: iconSize,
             horizontalOffset: musicTopLevelCarouselHorizontalOffset,
             verticalOffset: gapContentVerticalOffset - 34,
-            exitOverlayOpacity: exitOpacity,
-            phaseResetKey: "music_top_level_carousel",
+            preserveArtworkAspectRatio: false,
+        ), exitOverlayOpacity: exitOpacity))
+    }
+
+    func moviePreviewSpec(_ descriptor: MovieGapPreviewDescriptor, yaw: Double = 36, reflectionYaw: Double = 35.8) -> MoviePreviewSpec {
+        MoviePreviewSpec(
+            image: descriptor.image,
+            aspectRatio: descriptor.aspectRatio,
+            sizeScale: descriptor.sizeScale,
+            baseIconSize: iconSize,
+            offsetX: movieGapPreviewHorizontalOffset,
+            offsetY: gapContentVerticalOffset + 8,
+            previewYaw: yaw,
+            reflectionYaw: reflectionYaw,
         )
     }
 
-    func defaultDetailContent(image: NSImage?, sceneSize: CGSize) -> some View {
-        Group {
-            if let image {
-                if activeRootItemID == "movies" {
-                    let activeMoviePreviewDescriptor = movieGapPreviewDescriptor
-                    let selectedITunesTopTarget: (title: String, summary: String, id: String)? = {
-                        if let movie = resolveITunesTopMoviePreviewTarget() {
-                            return (movie.title, movie.summary, movie.id)
-                        }
-                        if let episode = resolveITunesTopTVEpisodePreviewTarget() {
-                            return (episode.title, episode.summary, episode.id)
-                        }
-                        if let video = resolveITunesTopMusicVideoPreviewTarget() {
-                            return (video.title, video.summary, video.id)
-                        }
-                        return nil
-                    }()
-                    let shouldShowMoviesFolderSlideshow = shouldShowMoviesFolderSubmenuPreviewSlideshow
-                    let shouldShowMovieGapPreviewContent =
-                        activeMoviePreviewDescriptor != nil || shouldShowMoviesFolderSlideshow
-                    let shouldShowITunesTopMoviesCarousel = shouldShowITunesTopCarouselContent(.movies)
-                    let shouldShowITunesTopMusicVideosCarousel = shouldShowITunesTopCarouselContent(.musicVideos)
-                    let shouldShowITunesTopTVEpisodesCarousel = shouldShowITunesTopCarouselContent(.tvEpisodes)
-                    let shouldReserveITunesTopMoviesCarouselSlot =
-                        shouldUseITunesTopMoviesCarouselSlot ||
-                        shouldUseITunesTopMusicVideosCarouselSlot ||
-                        shouldUseITunesTopTVEpisodesCarouselSlot
-                    let shouldUseITunesTopMovieMetadataPreview =
-                        isInThirdMenu &&
-                        (thirdMenuMode == .moviesITunesTop || thirdMenuMode == .tvEpisodesITunesTop || thirdMenuMode == .musicITunesTopMusicVideos) &&
-                        shouldShowMoviePreviewContent &&
-                        selectedITunesTopTarget != nil
-                    let moviePreviewAnimationKey: String = {
-                        if shouldShowMoviesFolderSlideshow {
-                            let descriptorIDs = moviesFolderSubmenuPreviewDescriptors.map(\.id).joined(separator: "|")
-                            return "movies_folder_slideshow:\(descriptorIDs)"
-                        }
-                        return activeMoviePreviewDescriptor?.id ?? "none"
-                    }()
-                    ZStack {
-                        defaultGapIcon(image, opacity: (shouldShowMovieGapPreviewContent || shouldReserveITunesTopMoviesCarouselSlot) ? 0 : 1)
-                        if shouldShowITunesTopMoviesCarousel {
-                            gapCarousel(artworks: currentITunesTopCarouselArtworks(.movies), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
-                        } else if shouldShowITunesTopMusicVideosCarousel {
-                            gapCarousel(artworks: currentITunesTopCarouselArtworks(.musicVideos), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
-                        } else if shouldShowITunesTopTVEpisodesCarousel {
-                            gapCarousel(artworks: currentITunesTopCarouselArtworks(.tvEpisodes), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
-                        }
-                        if shouldShowMoviesFolderSlideshow,
-                           !shouldShowITunesTopMoviesCarousel,
-                           !shouldShowITunesTopMusicVideosCarousel,
-                           !shouldShowITunesTopTVEpisodesCarousel
-                        {
-                            MoviePreviewSlideshowGapContentView(
-                                descriptors: moviesFolderSubmenuPreviewDescriptors,
-                                baseIconSize: iconSize,
-                                horizontalOffset: movieGapPreviewHorizontalOffset,
-                                verticalOffset: gapContentVerticalOffset + 8,
-                                previewYawDegrees: 36,
-                                reflectionYawDegrees: 35.8,
-                                cycleDuration: 3.0,
-                            ).transition(.opacity).opacity(shouldShowMovieGapPreviewContent ? 1 : 0)
-                        } else if shouldUseITunesTopMovieMetadataPreview,
-                                  let selectedITunesTopTarget,
-                                  let activeMoviePreviewDescriptor,
-                                  !shouldShowITunesTopMoviesCarousel,
-                                  !shouldShowITunesTopMusicVideosCarousel,
-                                  !shouldShowITunesTopTVEpisodesCarousel
-                        {
-                            AnimatedMetadataGapContentView(
-                                image: activeMoviePreviewDescriptor.image,
-                                aspectRatio: activeMoviePreviewDescriptor.aspectRatio,
-                                sizeScale: activeMoviePreviewDescriptor.sizeScale,
-                                titleText: selectedITunesTopTarget.title,
-                                descriptionText: selectedITunesTopTarget.summary,
-                                baseIconSize: iconSize,
-                                horizontalOffset: movieGapPreviewHorizontalOffset,
-                                verticalOffset: gapContentVerticalOffset + 8,
-                                transitionIdentity: selectedITunesTopTarget.id,
-                                sceneSize: sceneSize,
-                            ).id("itunes_movie_metadata:\(selectedITunesTopTarget.id)").transition(.opacity).opacity(shouldShowMovieGapPreviewContent ? 1 : 0)
-                        } else if let activeMoviePreviewDescriptor,
-                                  !shouldShowITunesTopMoviesCarousel,
-                                  !shouldShowITunesTopMusicVideosCarousel,
-                                  !shouldShowITunesTopTVEpisodesCarousel
-                        {
-                            MoviePreviewGapContentView(
-                                image: activeMoviePreviewDescriptor.image,
-                                aspectRatio: activeMoviePreviewDescriptor.aspectRatio,
-                                sizeScale: activeMoviePreviewDescriptor.sizeScale,
-                                baseIconSize: iconSize,
-                                horizontalOffset: movieGapPreviewHorizontalOffset,
-                                verticalOffset: gapContentVerticalOffset + 8,
-                                previewYawDegrees:
-                                    isInThirdMenu && (thirdMenuMode == .moviesITunesTop || thirdMenuMode == .tvEpisodesITunesTop || thirdMenuMode == .musicITunesTopMusicVideos)
-                                        ? 10
-                                        : 36,
-                                reflectionYawDegrees:
-                                    isInThirdMenu && (thirdMenuMode == .moviesITunesTop || thirdMenuMode == .tvEpisodesITunesTop || thirdMenuMode == .musicITunesTopMusicVideos)
-                                        ? 9.8
-                                        : 35.8,
-                            ).id(activeMoviePreviewDescriptor.id).transition(.opacity).opacity(shouldShowMovieGapPreviewContent ? 1 : 0)
-                        }
-                    }.animation(.easeInOut(duration: 0.22), value: moviePreviewAnimationKey)
-                } else if activeRootItemID == "music" {
-                    let shouldShowMusicTopLevelCarousel = shouldShowMusicTopLevelCarouselContent
-                    let shouldShowITunesTopSongsCarousel = shouldShowITunesTopCarouselContent(.songs)
-                    let selectedMusicSong = selectedMusicSongForPreview
-                    let shouldShowMusicSongMetadataPreview =
-                        shouldUseMusicSongMetadataPreview &&
-                        selectedMusicSong != nil
-                    let shouldShowClassicMusicPreview =
-                        shouldShowITunesTopSongPreviewContent ||
-                        shouldShowMusicNowPlayingGapPreview ||
-                        (shouldShowMusicPreviewContent && !shouldShowMusicSongMetadataPreview)
-                    let shouldShowAnyMusicITunesTopPreview =
-                        shouldShowITunesTopSongPreviewContent
-                    let shouldHideMusicRootIcon =
-                        shouldShowMusicPreviewContent ||
-                        shouldShowMusicNowPlayingGapPreview ||
-                        shouldShowAnyMusicITunesTopPreview ||
-                        shouldShowMusicTopLevelCarousel ||
-                        shouldUseMusicTopLevelCarouselSlot ||
-                        shouldUseITunesTopSongsCarouselSlot
-                    ZStack {
-                        ReflectedGapContentIconView(
-                            image: image,
-                            adjustedIconSize: gapContentAdjustedIconSize,
-                            horizontalOffset: gapContentHorizontalOffset,
-                            verticalOffset: gapContentVerticalOffset,
-                        ).opacity(shouldHideMusicRootIcon ? 0 : 1).animation(
-                            shouldHideMusicRootIcon ? nil : .easeInOut(duration: 0.18),
-                            value: shouldHideMusicRootIcon,
-                        )
-                        if shouldShowMusicSongMetadataPreview,
-                           let selectedMusicSong
-                        {
-                            let metadataPreviewImage = musicPreviewImage ?? musicFallbackImage ?? image
-                            AnimatedMetadataGapContentView(
-                                image: metadataPreviewImage,
-                                aspectRatio: aspectRatio(for: metadataPreviewImage, fallback: 1.0),
-                                forcedPreviewAspectRatio: 1.0,
-                                sizeScale: 0.92,
-                                titleText: selectedMusicSong.title,
-                                descriptionText: nil,
-                                metadataLines: [.init(label: "Album", value: normalizedMusicMetadataValue(selectedMusicSong.album)), .init(label: "Artist", value: normalizedMusicMetadataValue(selectedMusicSong.artist)), .init(label: "Genre", value: normalizedMusicMetadataValue(selectedMusicSong.genre)), .init(label: "Length", value: musicSongMetadataLengthText(selectedMusicSong.durationSeconds))],
-                                baseIconSize: iconSize,
-                                horizontalOffset: musicGapPreviewHorizontalOffset - 56,
-                                verticalOffset: gapContentVerticalOffset - 8,
-                                transitionIdentity: "music_song_metadata:\(selectedMusicSong.id)",
-                                transitionDelay: 0,
-                                animatePreviewTransition: false,
-                                sceneSize: sceneSize,
-                            ).transaction { transaction in
-                                transaction.animation = nil
-                            }
-                        } else {
-                            MusicPreviewGapContentView(
-                                image:
-                                shouldShowITunesTopSongPreviewContent
-                                    ? (currentITunesTopPreviewImage(.songs) ?? musicFallbackImage)
-                                    : shouldShowMusicNowPlayingGapPreview
-                                    ? (musicNowPlayingArtwork ?? musicFallbackImage ?? image)
-                                    : (musicPreviewImage ?? musicFallbackImage),
-                                baseIconSize: iconSize,
-                                horizontalOffset: musicGapPreviewHorizontalOffset,
-                                verticalOffset: gapContentVerticalOffset + 8,
-                            ).opacity(shouldShowClassicMusicPreview ? 1 : 0)
-                        }
-                        if shouldShowMusicTopLevelCarousel {
-                            musicGapCarousel(exitOpacity: musicTopLevelCarouselExitOverlayOpacity)
-                        } else if shouldShowITunesTopSongsCarousel {
-                            gapCarousel(artworks: currentITunesTopCarouselArtworks(.songs), preserveAspect: true, exitOpacity: iTunesTopCarouselExitOverlayOpacity)
-                        }
-                    }
-                } else if activeRootItemID == "photos" {
-                    let shouldShowCarousel = shouldShowPhotosCarouselContent
-                    let shouldReserveCarouselSlot = shouldUsePhotosCarouselSlot
-                    let shouldHidePhotosRootIcon = shouldShowCarousel || shouldReserveCarouselSlot
-                    ZStack {
-                        defaultGapIcon(image, opacity: shouldHidePhotosRootIcon ? 0 : 1).animation(
-                            shouldHidePhotosRootIcon ? nil : .easeInOut(duration: 0.18),
-                            value: shouldHidePhotosRootIcon,
-                        )
-                        if shouldShowCarousel {
-                            gapCarousel(artworks: photosCarouselArtworks, preserveAspect: true, exitOpacity: photosCarouselExitOverlayOpacity)
-                        }
-                    }
-                } else {
-                    defaultGapIcon(image)
-                }
+    /// The pieces of preview content for the section, back to front (see `GapContentLayer`).
+    func gapContentItems(sceneSize _: CGSize, pass: RenderPass, memo: inout GapContentMemo) -> [GapItemSpec] {
+        guard let rootID = activeRootItemID, let image = menuImage(forRootID: rootID) else { return [] }
+        func icon(opacity: Double, animation: Animation?) -> GapItemSpec {
+            GapItemSpec(key: "icon", kind: .icon(image: image, reflected: true), opacity: opacity, animation: animation)
+        }
+        let fadeAlways = pass.transaction.disablesAnimations ? nil : Animation.easeInOut(duration: 0.22)
+
+        // A server's song lists under Sources show what Music's do.
+        switch isShowingJellyfinSongs || isShowingServerSongs ? "music" : rootID {
+        case "movies":
+            let descriptor = movieGapPreviewDescriptor
+            let selectedMovie = resolveITunesTopMoviePreviewTarget()
+            let showsSlideshow = shouldShowMoviesFolderSubmenuPreviewSlideshow
+            let showsPreview = descriptor != nil || showsSlideshow
+            let showsCarousel = shouldShowITunesTopCarouselContent(.movies)
+            let usesMetadata = isInThirdMenu && thirdMenuMode == .moviesITunesTop && shouldShowMoviePreviewContent && selectedMovie != nil
+            let key = showsSlideshow
+                ? "movies_folder_slideshow:\(moviesFolderSubmenuPreviewDescriptors.map(\.id).joined(separator: "|"))"
+                : (descriptor?.id ?? "none")
+            let animation = pass.animation(.easeInOut(duration: 0.22), when: memo.moviePreviewKey != nil && memo.moviePreviewKey != key)
+            memo.moviePreviewKey = key
+            var items = [icon(opacity: (showsPreview || shouldUseITunesTopMoviesCarouselSlot) ? 0 : 1, animation: animation)]
+            if showsCarousel, let carousel = gapCarouselItem(key: "itunes_movies_carousel", artworks: currentITunesTopCarouselArtworks(.movies), exitOpacity: iTunesTopCarouselExitOverlayOpacity) {
+                items.append(carousel)
             }
+            if showsSlideshow, !showsCarousel, let first = moviesFolderSubmenuPreviewDescriptors.first {
+                items.append(GapItemSpec(
+                    key: "movies_folder_slideshow",
+                    kind: .movieSlideshow(descriptors: moviesFolderSubmenuPreviewDescriptors, template: moviePreviewSpec(first)),
+                    opacity: showsPreview ? 1 : 0,
+                    animation: animation,
+                    transition: animation,
+                    fade: .easeInOut(duration: 0.22),
+                ))
+            } else if usesMetadata, let selectedMovie, let descriptor, !showsCarousel {
+                // One piece for the whole list, so changing movies swaps poster and details with no crossfade.
+                items.append(GapItemSpec(
+                    key: "itunes_movie_metadata",
+                    kind: .metadata(MetadataPreviewSpec(
+                        image: descriptor.image,
+                        aspectRatio: descriptor.aspectRatio,
+                        sizeScale: descriptor.sizeScale,
+                        title: selectedMovie.title,
+                        description: selectedMovie.summary,
+                        baseIconSize: iconSize,
+                        offsetX: movieGapPreviewHorizontalOffset,
+                        offsetY: gapContentVerticalOffset + 8,
+                        identity: selectedMovie.id,
+                    )),
+                    opacity: showsPreview ? 1 : 0,
+                    animation: animation,
+                    transition: animation,
+                    fade: .easeInOut(duration: 0.22),
+                ))
+            } else if let descriptor, !showsCarousel {
+                let isITunes = isInThirdMenu && thirdMenuMode == .moviesITunesTop
+                items.append(GapItemSpec(
+                    key: "preview:\(descriptor.id)",
+                    kind: .moviePreview(moviePreviewSpec(descriptor, yaw: isITunes ? 10 : 36, reflectionYaw: isITunes ? 9.8 : 35.8)),
+                    opacity: showsPreview ? 1 : 0,
+                    animation: animation,
+                    transition: animation,
+                    fade: .easeInOut(duration: 0.22),
+                ))
+            }
+            return items
+
+        case "tv_shows":
+            let descriptor = movieGapPreviewDescriptor
+            let selectedEpisode = resolveITunesTopTVEpisodePreviewTarget()
+            let showsPreview = descriptor != nil
+            let showsCarousel = shouldShowITunesTopCarouselContent(.tvEpisodes)
+            let usesMetadata = isInThirdMenu && thirdMenuMode == .tvITunesTopEpisodes && shouldShowMoviePreviewContent && selectedEpisode != nil
+            let key = descriptor?.id ?? "none"
+            let animation = pass.animation(.easeInOut(duration: 0.22), when: memo.episodePreviewKey != nil && memo.episodePreviewKey != key)
+            memo.episodePreviewKey = key
+            var items = [icon(opacity: (showsPreview || shouldUseITunesTopTVEpisodesCarouselSlot) ? 0 : 1, animation: animation)]
+            if showsCarousel, let carousel = gapCarouselItem(key: "itunes_tv_carousel", artworks: currentITunesTopCarouselArtworks(.tvEpisodes), exitOpacity: iTunesTopCarouselExitOverlayOpacity) {
+                items.append(carousel)
+            }
+            if usesMetadata, let selectedEpisode, let descriptor, !showsCarousel {
+                items.append(GapItemSpec(
+                    key: "itunes_tv_metadata",
+                    kind: .metadata(MetadataPreviewSpec(
+                        image: descriptor.image,
+                        aspectRatio: descriptor.aspectRatio,
+                        forcedPreviewAspectRatio: 1.0,
+                        sizeScale: descriptor.sizeScale,
+                        title: selectedEpisode.title,
+                        description: selectedEpisode.summary,
+                        baseIconSize: iconSize,
+                        offsetX: movieGapPreviewHorizontalOffset,
+                        offsetY: gapContentVerticalOffset + 8,
+                        identity: selectedEpisode.id,
+                    )),
+                    opacity: showsPreview ? 1 : 0,
+                    animation: animation,
+                    transition: animation,
+                    fade: .easeInOut(duration: 0.22),
+                ))
+            } else if let descriptor, !showsCarousel {
+                let isITunes = isInThirdMenu && thirdMenuMode == .tvITunesTopEpisodes
+                items.append(GapItemSpec(
+                    key: "preview:\(descriptor.id)",
+                    kind: .moviePreview(moviePreviewSpec(descriptor, yaw: isITunes ? 10 : 36, reflectionYaw: isITunes ? 9.8 : 35.8)),
+                    opacity: showsPreview ? 1 : 0,
+                    animation: animation,
+                    transition: animation,
+                    fade: .easeInOut(duration: 0.22),
+                ))
+            }
+            return items
+
+        case "music":
+            let showsMusicCarousel = shouldShowMusicTopLevelCarouselContent
+            let showsSongsCarousel = shouldShowITunesTopCarouselContent(.songs)
+            let showsVideosCarousel = shouldShowITunesTopCarouselContent(.musicVideos)
+            let song = selectedMusicSongForPreview
+            let showsSongMetadata = shouldUseMusicSongMetadataPreview && song != nil
+            // (Music Videos, Playlists and Audiobooks: a picture of what the row holds.)
+            let rowCover = rootID == "music" ? shownMusicRowCover : nil
+            let showsClassicPreview = shouldShowITunesTopSongPreviewContent || shouldShowMusicNowPlayingGapPreview || (shouldShowMusicPreviewContent && !showsSongMetadata)
+                || rowCover != nil
+            let showsAnyITunesPreview = shouldShowITunesTopSongPreviewContent || shouldShowITunesTopMusicVideoPreviewContent
+            let hidesIcon = rowCover != nil || shouldShowMusicPreviewContent || shouldShowMusicNowPlayingGapPreview || showsAnyITunesPreview ||
+                showsMusicCarousel || shouldUseMusicTopLevelCarouselSlot || shouldUseITunesTopSongsCarouselSlot || shouldUseITunesTopMusicVideosCarouselSlot
+            let iconAnimation = pass.animation(hidesIcon ? nil : .easeInOut(duration: 0.18), when: memo.hidesMusicRootIcon != nil && memo.hidesMusicRootIcon != hidesIcon)
+            memo.hidesMusicRootIcon = hidesIcon
+            var items = [icon(opacity: hidesIcon ? 0 : 1, animation: iconAnimation)]
+            if showsSongMetadata, let song {
+                let preview = musicPreviewImage ?? musicFallbackImage ?? image
+                items.append(GapItemSpec(key: "music_song_metadata", kind: .metadata(MetadataPreviewSpec(
+                    image: preview,
+                    aspectRatio: aspectRatio(for: preview, fallback: 1.0),
+                    forcedPreviewAspectRatio: 1.0,
+                    sizeScale: 0.92,
+                    title: song.title,
+                    description: nil,
+                    lines: musicSongMetadataLines(for: song),
+                    baseIconSize: iconSize,
+                    offsetX: musicGapPreviewHorizontalOffset - 56,
+                    offsetY: gapContentVerticalOffset - 8,
+                    identity: "music_song_metadata:\(song.id)",
+                    transitionDelay: 0,
+                    animatesTransition: false,
+                ))))
+            } else {
+                let preview: NSImage? = if shouldShowITunesTopSongPreviewContent {
+                    currentITunesTopPreviewImage(.songs) ?? musicFallbackImage
+                } else if shouldShowMusicNowPlayingGapPreview {
+                    musicNowPlayingArtwork ?? musicFallbackImage ?? image
+                } else if rootID == "music", !isInThirdMenu, let held = musicRowCover?.image {
+                    // (Still the row's as it fades, once another row is chosen.)
+                    held
+                } else {
+                    musicPreviewImage ?? musicFallbackImage
+                }
+                items.append(GapItemSpec(
+                    key: "music_preview",
+                    kind: .musicPreview(image: preview, offsetX: musicGapPreviewHorizontalOffset, offsetY: gapContentVerticalOffset + 8),
+                    opacity: showsClassicPreview ? 1 : 0,
+                    animation: pass.animation,
+                ))
+            }
+            if shouldShowITunesTopMusicVideoPreviewContent, !showsVideosCarousel,
+               let previewImage = currentITunesTopPreviewImage(.musicVideos) ?? moviesFallbackImage ?? musicFallbackImage
+            {
+                items.append(GapItemSpec(
+                    key: "video:\(currentITunesTopPreviewTargetID(.musicVideos) ?? "itunes_top_music_video_preview")",
+                    kind: .moviePreview(MoviePreviewSpec(
+                        image: previewImage,
+                        aspectRatio: aspectRatio(for: previewImage, fallback: 2.0 / 3.0),
+                        sizeScale: 0.75,
+                        baseIconSize: iconSize,
+                        offsetX: movieGapPreviewHorizontalOffset,
+                        offsetY: gapContentVerticalOffset + 8,
+                        previewYaw: 10,
+                        reflectionYaw: 9.8,
+                    )),
+                    transition: fadeAlways,
+                    fade: .easeInOut(duration: 0.22),
+                ))
+            }
+            if showsMusicCarousel {
+                if let carousel = musicGapCarouselItem(exitOpacity: musicTopLevelCarouselExitOverlayOpacity) { items.append(carousel) }
+            } else if showsSongsCarousel {
+                if let carousel = gapCarouselItem(key: "itunes_songs_carousel", artworks: currentITunesTopCarouselArtworks(.songs), exitOpacity: iTunesTopCarouselExitOverlayOpacity) { items.append(carousel) }
+            } else if showsVideosCarousel {
+                if let carousel = gapCarouselItem(key: "itunes_videos_carousel", artworks: currentITunesTopCarouselArtworks(.musicVideos), exitOpacity: iTunesTopCarouselExitOverlayOpacity) { items.append(carousel) }
+            }
+            return items
+
+        case "photos":
+            let showsCarousel = shouldShowPhotosCarouselContent
+            let hidesIcon = showsCarousel || shouldUsePhotosCarouselSlot
+            let iconAnimation = pass.animation(hidesIcon ? nil : .easeInOut(duration: 0.18), when: memo.hidesPhotosRootIcon != nil && memo.hidesPhotosRootIcon != hidesIcon)
+            memo.hidesPhotosRootIcon = hidesIcon
+            var items = [icon(opacity: hidesIcon ? 0 : 1, animation: iconAnimation)]
+            if showsCarousel, let carousel = gapCarouselItem(key: "photos_carousel", artworks: photosCarouselArtworks, exitOpacity: photosCarouselExitOverlayOpacity) {
+                items.append(carousel)
+            }
+            return items
+
+        case "podcasts":
+            let episode = selectedPodcastEpisodeForPreview
+            // (In a show's list of episodes, the show is the episode's: its picture stands in
+            // for an episode that has none of its own.)
+            let series = selectedPodcastSeriesForPreview ?? episode.flatMap { shown in podcastSeriesItems.first(where: { $0.id == shown.seriesID }) }
+            let seriesArtwork = series?.artwork ?? podcastFallbackImage
+            let seriesImage = seriesArtwork ?? image
+            let episodeImage = episode?.artwork ?? seriesArtwork ?? image
+            let showsEpisode = episode != nil
+            let showsSeries = series != nil && !showsEpisode
+            let hidesIcon = showsSeries || showsEpisode
+            let iconAnimation = pass.animation(.easeInOut(duration: 0.18), when: memo.hidesPodcastsRootIcon != nil && memo.hidesPodcastsRootIcon != hidesIcon)
+            memo.hidesPodcastsRootIcon = hidesIcon
+            var items = [icon(opacity: hidesIcon ? 0 : 1, animation: iconAnimation)]
+            if showsSeries, let series {
+                let mostRecent = series.episodes.compactMap(\.airedDate).max()
+                items.append(GapItemSpec(
+                    key: "podcast_series_metadata:\(series.id)",
+                    kind: .metadata(MetadataPreviewSpec(
+                        image: seriesImage,
+                        aspectRatio: aspectRatio(for: seriesImage, fallback: 1.0),
+                        forcedPreviewAspectRatio: 1.0,
+                        sizeScale: 0.92,
+                        title: series.title,
+                        description: nil,
+                        lines: [
+                            .init(label: L("Number of Episodes"), value: "\(series.episodes.count)"),
+                            .init(label: L("Most Recent"), value: podcastEpisodeAiredText(for: mostRecent)),
+                        ],
+                        baseIconSize: iconSize,
+                        offsetX: musicGapPreviewHorizontalOffset - 56,
+                        offsetY: gapContentVerticalOffset - 8,
+                        identity: "podcast_series_metadata:\(series.id)",
+                    )),
+                    transition: pass.transaction.disablesAnimations ? nil : .easeInOut(duration: 0.2),
+                    fade: .easeInOut(duration: 0.2),
+                ))
+            }
+            if let episode {
+                let description = normalizedPodcastText(episode.description) ?? normalizedPodcastText(series?.description) ?? L("No description available.")
+                let artist = normalizedPodcastText(episode.artist) ?? normalizedPodcastText(series?.artist) ?? L("Unknown Artist")
+                items.append(GapItemSpec(
+                    key: "podcast_episode_metadata:\(episode.id)",
+                    kind: .metadata(MetadataPreviewSpec(
+                        image: episodeImage,
+                        aspectRatio: aspectRatio(for: episodeImage, fallback: 1.0),
+                        forcedPreviewAspectRatio: 1.0,
+                        sizeScale: 0.92,
+                        title: episode.title,
+                        description: description,
+                        lines: [
+                            .init(label: L("Artist"), value: artist),
+                            .init(label: L("Length"), value: podcastEpisodeLengthText(for: episode.durationSeconds)),
+                            .init(label: L("Aired"), value: podcastEpisodeAiredText(for: episode.airedDate)),
+                        ],
+                        baseIconSize: iconSize,
+                        offsetX: musicGapPreviewHorizontalOffset - 56,
+                        offsetY: gapContentVerticalOffset - 8,
+                        identity: "podcast_episode_metadata:\(episode.id)",
+                        transitionDelay: 0,
+                        animatesTransition: false,
+                    )),
+                    transition: pass.transaction.disablesAnimations ? nil : .easeInOut(duration: 0.18),
+                    fade: .easeInOut(duration: 0.18),
+                ))
+            }
+            return items
+
+        case "settings":
+            return [GapItemSpec(key: "icon", kind: .icon(image: image, reflected: false))]
+
+        case "sources":
+            return jellyfinGapContentItems(icon: { icon(opacity: $0, animation: $1) }, pass: pass, memo: &memo)
+
+        case "youtube":
+            return youtubeGapContentItems(icon: { icon(opacity: $0, animation: $1) }, pass: pass, memo: &memo)
+
+        default:
+            return [GapItemSpec(key: "icon", kind: .icon(image: image, reflected: true))]
         }
     }
 
     var shouldKeepDetailContentFullyOpaqueForCarousel: Bool {
         switch activeRootItemID {
         case "movies":
-            shouldUseITunesTopMoviesCarouselSlot ||
-                shouldUseITunesTopMusicVideosCarouselSlot ||
-                shouldUseITunesTopTVEpisodesCarouselSlot ||
-                shouldShowITunesTopCarouselContent(.movies) ||
-                shouldShowITunesTopCarouselContent(.musicVideos) ||
-                shouldShowITunesTopCarouselContent(.tvEpisodes)
+            shouldUseITunesTopMoviesCarouselSlot || shouldShowITunesTopCarouselContent(.movies)
+        case "tv_shows":
+            shouldUseITunesTopTVEpisodesCarouselSlot || shouldShowITunesTopCarouselContent(.tvEpisodes)
         case "music":
             shouldUseMusicTopLevelCarouselSlot ||
                 shouldUseITunesTopSongsCarouselSlot ||
+                shouldUseITunesTopMusicVideosCarouselSlot ||
                 shouldShowMusicTopLevelCarouselContent ||
-                shouldShowITunesTopCarouselContent(.songs)
+                shouldShowITunesTopCarouselContent(.songs) ||
+                shouldShowITunesTopCarouselContent(.musicVideos)
         case "photos":
             shouldUsePhotosCarouselSlot || shouldShowPhotosCarouselContent
+        case "youtube":
+            youtubeCarouselPictures != nil
         default:
             false
         }
     }
 
     var detailContentVisibilityOpacity: Double {
-        shouldKeepDetailContentFullyOpaqueForCarousel ? 1 : detailContentOpacity
+        if shouldHidePodcastsSubmenuChromeUntilLoadCompletes {
+            return 0
+        }
+        return shouldKeepDetailContentFullyOpaqueForCarousel ? 1 : detailContentOpacity
     }
 }

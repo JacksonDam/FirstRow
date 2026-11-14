@@ -1,10 +1,18 @@
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 
 private let musicSongsMenuListItemsCache = BoundedCache<String, [MenuListItemConfig]>(maxEntryCount: 24)
 
 extension MenuView {
     var shouldExposeMusicNowPlayingMenuItem: Bool {
         ((hasActiveMusicPlaybackSession() && !isPodcastAudioNowPlaying) ||
+            isRestartingMusicPlayback ||
             holdNowPlayingMenuItemDuringExitFade ||
             hasPendingExternalMusicRestore) &&
             !deferNowPlayingMenuItemUntilAfterFadeOut
@@ -30,7 +38,7 @@ extension MenuView {
             songsItems.insert(
                 plainMenuListItem(
                     id: musicSongsShuffleActionItemID,
-                    title: "Shuffle Songs",
+                    title: L("Shuffle Songs"),
                     trailingSymbolName: "shuffle",
                 ),
                 at: 0,
@@ -42,14 +50,48 @@ extension MenuView {
 
     func currentSubmenuItems() -> [SubmenuItemConfig] {
         guard let activeRootItemID else { return [] }
+        if activeRootItemID == "podcasts" {
+            return podcastsSubmenuItems()
+        }
+        if activeRootItemID == "sources" {
+            return sourcesSubmenuItems()
+        }
+        if activeRootItemID == "youtube" {
+            return youtubeSubmenuItems()
+        }
         var items = MenuConfiguration.submenuItems(forRootID: activeRootItemID)
+        if activeRootItemID == "photos" {
+            // Folders chosen in Settings and iPhoto albums, after the Photos library's own items.
+            items += photosSourceAlbums.map { album in
+                SubmenuItemConfig(
+                    id: album.id,
+                    title: album.title,
+                    leadingImageAssetName: "photos",
+                    trailingText: "(\(album.count))",
+                    showsLightRowBackground: true,
+                )
+            }
+        }
+        if activeRootItemID == "tv_shows" {
+            // The shows found among the movie files, under iTunes Top TV Episodes.
+            items += tvShowsSubmenuItems()
+        }
+        if activeRootItemID == "movies", !MovieResumeStore.entries().isEmpty {
+            items.insert(SubmenuItemConfig(id: Self.continueWatchingItemID, title: L("Continue Watching"), leadsToMenu: true), at: 0)
+        }
+        #if !os(tvOS)
+            if activeRootItemID == "movies" {
+                // Where more movies come from: Dropbox, Google Drive and the like, and files.
+                items.append(SubmenuItemConfig(id: Self.importMoviesItemID, title: L("Import..."), leadsToMenu: true))
+            }
+        #endif
         if activeRootItemID == "music",
            shouldExposeMusicNowPlayingMenuItem
         {
             items.insert(
                 SubmenuItemConfig(
                     id: "music_now_playing",
-                    title: "Now Playing",
+                    title: L("Now Playing"),
                     actionID: "music_now_playing",
                     leadsToMenu: true,
                 ),
@@ -59,8 +101,45 @@ extension MenuView {
         return items
     }
 
+    /// Keeps the Music (or Movies) menu selection on its row when the Now Playing (or Continue
+    /// Watching) row comes or goes at the top.
+    func keepMusicSubmenuSelectionOnItsRow() {
+        let topRowID = switch activeRootItemID {
+        case "music": "music_now_playing"
+        case "movies": Self.continueWatchingItemID
+        default: ""
+        }
+        guard !topRowID.isEmpty, isInSubmenu else {
+            musicSubmenuSelectionMemo = nil
+            return
+        }
+        let items = currentSubmenuItems()
+        let hasNowPlayingRow = items.first?.id == topRowID
+        if let memo = musicSubmenuSelectionMemo,
+           memo.hasNowPlayingRow != hasNowPlayingRow,
+           let previousID = memo.selectedID,
+           let index = items.firstIndex(where: { $0.id == previousID }),
+           index != selectedSubIndex
+        {
+            selectedSubIndex = index
+        }
+        let selectedID = items.indices.contains(selectedSubIndex) ? items[selectedSubIndex].id : nil
+        musicSubmenuSelectionMemo = (hasNowPlayingRow, selectedID)
+    }
+
     var isMusicActivelyPlaying: Bool {
-        hasActiveMusicPlaybackSession()
+        isMusicPlaybackRunning() && !isPodcastAudioNowPlaying
+    }
+
+    var shouldHideSubmenuListUntilLoadCompletes: Bool {
+        activeRootItemID == "podcasts" &&
+            isLoadingPodcasts &&
+            podcastSeriesItems.isEmpty &&
+            podcastsLoadError == nil
+    }
+
+    var shouldHidePodcastsSubmenuChromeUntilLoadCompletes: Bool {
+        shouldHideSubmenuListUntilLoadCompletes
     }
 
     var shouldHideThirdMenuListUntilLoadCompletes: Bool {
@@ -69,18 +148,10 @@ extension MenuView {
             isLoadingITunesTop(.movies) &&
                 iTunesTopMovies.isEmpty &&
                 currentITunesTopLoadError(.movies) == nil
-        case .tvEpisodesITunesTop:
+        case .tvITunesTopEpisodes:
             isLoadingITunesTop(.tvEpisodes) &&
                 iTunesTopTVEpisodes.isEmpty &&
                 currentITunesTopLoadError(.tvEpisodes) == nil
-        case .videoPodcastSeries:
-            isLoadingPodcasts &&
-                filteredPodcastSeriesItems(for: .video).isEmpty &&
-                podcastsLoadError == nil
-        case .videoPodcastEpisodes:
-            isLoadingPodcasts &&
-                podcastEpisodesThirdMenuItems.isEmpty &&
-                podcastsLoadError == nil
         case .musicITunesTopSongs:
             isLoadingITunesTop(.songs) &&
                 iTunesTopSongs.isEmpty &&
@@ -89,14 +160,6 @@ extension MenuView {
             isLoadingITunesTop(.musicVideos) &&
                 iTunesTopMusicVideos.isEmpty &&
                 currentITunesTopLoadError(.musicVideos) == nil
-        case .audioPodcastSeries:
-            isLoadingPodcasts &&
-                filteredPodcastSeriesItems(for: .audio).isEmpty &&
-                podcastsLoadError == nil
-        case .audioPodcastEpisodes:
-            isLoadingPodcasts &&
-                podcastEpisodesThirdMenuItems.isEmpty &&
-                podcastsLoadError == nil
         case .musicCategories:
             isLoadingMusicSongs &&
                 musicCategoryThirdMenuItems.isEmpty &&
@@ -109,13 +172,27 @@ extension MenuView {
             isLoadingPhotoLibrary &&
                 photosDateAlbums.isEmpty &&
                 photoLibraryLoadError == nil
+        case .podcastsEpisodes:
+            isLoadingPodcasts &&
+                podcastEpisodesThirdMenuItems.isEmpty &&
+                podcastsLoadError == nil
+        case .mediaFolders, .screenSaverSettings:
+            false
+        case .spotify:
+            shouldHideSpotifyMenuUntilLoaded
+        case .jellyfin:
+            shouldHideJellyfinMenuUntilLoaded
+        case .server:
+            shouldHideServerMenuUntilLoaded
+        case .youtube:
+            shouldHideYouTubeMenuUntilLoaded
         default:
             false
         }
     }
 
     func rootMenuTitle(for rootID: String?) -> String {
-        guard let rootID, let rootItem = MenuConfiguration.rootItem(withID: rootID) else {
+        guard let rootID, let rootItem = menuItems.first(where: { $0.id == rootID }) else {
             return "First Row"
         }
         return rootItem.title
@@ -139,13 +216,27 @@ extension MenuView {
 
     func submenuListItems() -> [MenuListItemConfig] {
         currentSubmenuItems().map {
-            .init(
+            let resolvedTrailingText: String?
+            var resolvedLeadingImageAssetName = $0.leadingImageAssetName
+            var resolvedLeadingImage: NSImage?
+            if activeRootItemID == "settings", let settingText = settingsTrailingText(forItemID: $0.id) {
+                resolvedTrailingText = settingText
+            } else if activeRootItemID == "photos", let album = photoAlbumForSubmenuItemID($0.id) {
+                resolvedTrailingText = "(\(album.count))"
+                resolvedLeadingImage = photoLeadingImage(for: album)
+                if resolvedLeadingImage != nil {
+                    resolvedLeadingImageAssetName = nil
+                }
+            } else {
+                resolvedTrailingText = $0.trailingText
+            }
+            return .init(
                 id: $0.id,
                 title: $0.title,
                 leadsToMenu: $0.leadsToMenu,
-                leadingImageAssetName: $0.leadingImageAssetName,
-                leadingImage: nil,
-                trailingText: $0.trailingText,
+                leadingImageAssetName: resolvedLeadingImageAssetName,
+                leadingImage: resolvedLeadingImage,
+                trailingText: resolvedTrailingText,
                 trailingSymbolName: $0.trailingSymbolName,
                 showsTopDivider: $0.showsTopDivider,
                 showsBlueDot: $0.showsBlueDot,
@@ -164,95 +255,25 @@ extension MenuView {
             if thirdMenuItems.isEmpty {
                 return []
             }
-            return thirdMenuItems.map {
-                plainMenuListItem(id: $0.id, title: $0.title, leadsToMenu: $0.isDirectory)
+            return thirdMenuItems.enumerated().map { index, entry in
+                // (The folders brought in, first in the list, stand apart from what follows.)
+                let endsFoldersBroughtIn = index > 0 && thirdMenuItems[index - 1].isFolderBroughtIn && !entry.isFolderBroughtIn
+                return plainMenuListItem(
+                    id: entry.id,
+                    title: entry.title,
+                    leadsToMenu: entry.isDirectory,
+                    trailingText: isShowingContinueWatching ? continueWatchingRemainingText[entry.id].flatMap { $0.isEmpty ? nil : $0 } : nil,
+                    showsTopDivider: endsFoldersBroughtIn,
+                )
             }
         case .moviesITunesTop:
             return iTunesTopThirdMenuListItems(for: .movies)
-        case .tvEpisodesITunesTop:
+        case .tvITunesTopEpisodes:
             return iTunesTopThirdMenuListItems(for: .tvEpisodes)
-        case .videoPodcastSeries:
-            let seriesItems = filteredPodcastSeriesItems(for: .video)
-            if isLoadingPodcasts, seriesItems.isEmpty {
-                return []
-            }
-            if let podcastsLoadError, seriesItems.isEmpty {
-                return [menuMessageItem(id: "video_podcasts_error", title: podcastsLoadError)]
-            }
-            if seriesItems.isEmpty {
-                return [menuMessageItem(id: "video_podcasts_empty", title: "No Video Podcasts")]
-            }
-            return seriesItems.map { series in
-                plainMenuListItem(
-                    id: series.id,
-                    title: series.title,
-                    leadsToMenu: true,
-                    showsBlueDot: podcastSeriesHasRecentEpisode(series),
-                )
-            }
-        case .videoPodcastEpisodes:
-            if isLoadingPodcasts, podcastEpisodesThirdMenuItems.isEmpty {
-                return []
-            }
-            if let podcastsLoadError, podcastEpisodesThirdMenuItems.isEmpty {
-                return [menuMessageItem(id: "video_podcast_episodes_error", title: podcastsLoadError)]
-            }
-            if podcastEpisodesThirdMenuItems.isEmpty {
-                return [menuMessageItem(id: "video_podcast_episodes_empty", title: "No Downloaded Episodes")]
-            }
-            return podcastEpisodesThirdMenuItems.enumerated().map { index, episode in
-                let trailingText = isPodcastAudioNowPlaying && activePodcastPlaybackEpisodeID == episode.id
-                    ? podcastTrackPositionText(trackIndex: index, trackCount: podcastEpisodesThirdMenuItems.count)
-                    : podcastEpisodeAiredText(for: episode.airedDate)
-                return plainMenuListItem(
-                    id: episode.id,
-                    title: episode.title,
-                    trailingText: trailingText,
-                )
-            }
         case .musicITunesTopSongs:
             return iTunesTopThirdMenuListItems(for: .songs)
         case .musicITunesTopMusicVideos:
             return iTunesTopThirdMenuListItems(for: .musicVideos)
-        case .audioPodcastSeries:
-            let seriesItems = filteredPodcastSeriesItems(for: .audio)
-            if isLoadingPodcasts, seriesItems.isEmpty {
-                return []
-            }
-            if let podcastsLoadError, seriesItems.isEmpty {
-                return [menuMessageItem(id: "podcasts_error", title: podcastsLoadError)]
-            }
-            if seriesItems.isEmpty {
-                return [menuMessageItem(id: "podcasts_empty", title: "No Podcasts")]
-            }
-            return seriesItems.map { series in
-                plainMenuListItem(
-                    id: series.id,
-                    title: series.title,
-                    leadsToMenu: true,
-                    showsBlueDot: podcastSeriesHasRecentEpisode(series),
-                )
-            }
-        case .audioPodcastEpisodes:
-            if isLoadingPodcasts, podcastEpisodesThirdMenuItems.isEmpty {
-                return []
-            }
-            if let podcastsLoadError, podcastEpisodesThirdMenuItems.isEmpty {
-                return [menuMessageItem(id: "podcast_episodes_error", title: podcastsLoadError)]
-            }
-            if podcastEpisodesThirdMenuItems.isEmpty {
-                return [menuMessageItem(id: "podcast_episodes_empty", title: "No Downloaded Episodes")]
-            }
-            return podcastEpisodesThirdMenuItems.enumerated().map { index, episode in
-                let trailingText = isPodcastAudioNowPlaying && activePodcastPlaybackEpisodeID == episode.id
-                    ? podcastTrackPositionText(trackIndex: index, trackCount: podcastEpisodesThirdMenuItems.count)
-                    : podcastEpisodeAiredText(for: episode.airedDate)
-                return plainMenuListItem(
-                    id: episode.id,
-                    title: episode.title,
-                    trailingText: trailingText,
-                )
-            }
         case .musicCategories:
             if isLoadingMusicSongs, musicCategoryThirdMenuItems.isEmpty {
                 return []
@@ -281,13 +302,6 @@ extension MenuView {
                 return []
             }
             return cachedMusicSongsThirdMenuListItems()
-        case .movieResumePrompt:
-            return [
-                plainMenuListItem(id: "movie_resume_resume", title: "Resume Playing"),
-                plainMenuListItem(id: "movie_resume_start", title: "Start from Beginning"),
-            ]
-        case .musicNowPlaying, .errorPage:
-            return []
         case .photosDateAlbums:
             if isLoadingPhotoLibrary, photosDateAlbums.isEmpty {
                 return []
@@ -301,6 +315,59 @@ extension MenuView {
                 return []
             }
             return photosDateAlbumMenuItems
+        case .podcastsEpisodes:
+            if isLoadingPodcasts, podcastEpisodesThirdMenuItems.isEmpty {
+                return []
+            }
+            if let podcastsLoadError, podcastEpisodesThirdMenuItems.isEmpty {
+                return [
+                    menuMessageItem(id: "podcasts_episodes_error", title: podcastsLoadError),
+                ]
+            }
+            if podcastEpisodesThirdMenuItems.isEmpty {
+                return [
+                    menuMessageItem(
+                        id: "podcasts_episodes_empty",
+                        title: L("No Downloaded Episodes"),
+                    ),
+                ]
+            }
+            return podcastEpisodesThirdMenuItems.enumerated().map { index, episode in
+                let isActiveAudioEpisode =
+                    isPodcastAudioNowPlaying &&
+                    activePodcastPlaybackEpisodeID == episode.id
+                let resolvedTrailingText = isActiveAudioEpisode
+                    ? podcastTrackPositionText(
+                        trackIndex: index,
+                        trackCount: podcastEpisodesThirdMenuItems.count,
+                    )
+                    : podcastEpisodeAiredText(for: episode.airedDate)
+                return .init(
+                    id: episode.id,
+                    title: episode.title,
+                    leadsToMenu: false,
+                    leadingImageAssetName: nil,
+                    leadingImage: nil,
+                    trailingText: resolvedTrailingText,
+                    trailingSymbolName: nil,
+                    showsTopDivider: false,
+                    showsBlueDot: podcastEpisodeIsRecent(episode.airedDate),
+                    showsLightRowBackground: false,
+                    alignsTextToDividerStart: false,
+                )
+            }
+        case .mediaFolders:
+            return mediaFoldersListItems()
+        case .screenSaverSettings:
+            return screenSaverSettingsListItems()
+        case .spotify:
+            return spotifyMenuListItems()
+        case .jellyfin:
+            return jellyfinMenuListItems()
+        case .server:
+            return serverMenuListItems()
+        case .youtube:
+            return youtubeMenuListItems()
         case .none:
             return []
         }

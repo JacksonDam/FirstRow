@@ -1,4 +1,11 @@
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 
 private let featureErrorKindPayloadKey = "featureErrorKind"
 private let featureErrorHeaderPayloadKey = "header"
@@ -9,7 +16,7 @@ struct FeatureErrorCopy {
     let subcaptionText: String
 
     static let fallback = FeatureErrorCopy(
-        headerText: "First Row cannot complete this request.",
+        headerText: L("First Row cannot complete this request."),
         subcaptionText: "",
     )
 
@@ -27,80 +34,74 @@ struct FeatureErrorCopy {
 }
 
 enum FeatureErrorKind: String {
-    case genericOperationFailed
     case noSharedPhotos
     case noContentFound
     case protectedVideoUnsupported
     case noMoviesInFolder
     case noPhotosInLibrary
     case noPodcasts
+    case podcastEpisodeUnavailable
     case noAudiobooks
     case noMusicVideos
     case noSongs
     case noPlaylists
-    case noDVDDisc
 
     var copy: FeatureErrorCopy {
         switch self {
-        case .genericOperationFailed:
-            FeatureErrorCopy(
-                headerText: "An error occurred.",
-                subcaptionText: "",
-            )
         case .noSharedPhotos:
             FeatureErrorCopy(
-                headerText: "First Row cannot find any shared photos.",
-                subcaptionText: "Use Photos to set up Shared Albums.",
+                headerText: L("First Row cannot find any shared photos."),
+                subcaptionText: L("Use Photos to set up Shared Albums."),
             )
         case .noContentFound:
             FeatureErrorCopy(
-                headerText: "No content was found.",
+                headerText: L("No content was found."),
                 subcaptionText: "",
             )
         case .protectedVideoUnsupported:
             FeatureErrorCopy(
-                headerText: "This video cannot be played in First Row.",
-                subcaptionText: "It appears to be protected media. Open it in Apple TV or Music.",
+                headerText: L("This video cannot be played in First Row."),
+                subcaptionText: L("It appears to be protected media. Open it in Apple TV or Music."),
             )
         case .noMoviesInFolder:
             FeatureErrorCopy(
-                headerText: "There are no movies to play in your Movies folder.",
-                subcaptionText: "Make sure movies you create or download are in your Movies folder in your home folder.",
+                headerText: L("There are no movies to play in your Movies folder."),
+                subcaptionText: L("Make sure movies you create or download are in your Movies folder in your home folder."),
             )
         case .noPhotosInLibrary:
             FeatureErrorCopy(
-                headerText: "There are no photos in your iPhoto library.",
+                headerText: L("There are no photos in your iPhoto library."),
                 subcaptionText: "",
             )
         case .noPodcasts:
             FeatureErrorCopy(
-                headerText: "First Row cannot find any podcasts.",
-                subcaptionText: "Use iTunes to subscribe to podcasts from the iTunes Store.",
+                headerText: L("First Row cannot find any podcasts."),
+                subcaptionText: L("Use iTunes to subscribe to podcasts from the iTunes Store."),
+            )
+        case .podcastEpisodeUnavailable:
+            FeatureErrorCopy(
+                headerText: L("This episode can't be played right now."),
+                subcaptionText: L("First Row can't open the Podcasts app's download or find the episode online. Check your internet connection, or give First Row Full Disk Access in System Settings > Privacy & Security."),
             )
         case .noAudiobooks:
             FeatureErrorCopy(
-                headerText: "First Row cannot find any audiobooks.",
-                subcaptionText: "Use iTunes to purchase audiobooks from the iTunes Store.",
+                headerText: L("First Row cannot find any audiobooks."),
+                subcaptionText: L("Use iTunes to purchase audiobooks from the iTunes Store."),
             )
         case .noMusicVideos:
             FeatureErrorCopy(
-                headerText: "First Row cannot find any music videos.",
-                subcaptionText: "Use iTunes to purchase music videos from the iTunes Store.",
+                headerText: L("First Row cannot find any music videos."),
+                subcaptionText: L("Use iTunes to purchase music videos from the iTunes Store."),
             )
         case .noSongs:
             FeatureErrorCopy(
-                headerText: "First Row cannot find any songs.",
-                subcaptionText: "Use iTunes to import songs or purchase songs from the iTunes Store.",
+                headerText: L("First Row cannot find any songs."),
+                subcaptionText: L("Use iTunes to import songs or purchase songs from the iTunes Store."),
             )
         case .noPlaylists:
             FeatureErrorCopy(
-                headerText: "First Row cannot find any playlists.",
-                subcaptionText: "Use iTunes to create and manage your playlists.",
-            )
-        case .noDVDDisc:
-            FeatureErrorCopy(
-                headerText: "Please Insert a DVD",
-                subcaptionText: "",
+                headerText: L("First Row cannot find any playlists."),
+                subcaptionText: L("Use iTunes to create and manage your playlists."),
             )
         }
     }
@@ -111,9 +112,11 @@ enum FeatureErrorKind: String {
 }
 
 extension MenuView {
-    func presentFeatureErrorScreen(_ kind: FeatureErrorKind) {
-        let copy = kind.copy
-        enterErrorPage(header: copy.headerText, subcaption: copy.subcaptionText)
+    func presentFeatureErrorScreen(_ kind: FeatureErrorKind, usingExistingBlackout: Bool = false) {
+        presentFullscreenScene(
+            key: featureErrorFullscreenKey,
+            payload: kind.payload,
+            usingExistingBlackout: usingExistingBlackout && isMenuFolderSwapTransitioning,
+        )
     }
 }
-

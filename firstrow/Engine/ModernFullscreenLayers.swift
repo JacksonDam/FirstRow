@@ -1,0 +1,775 @@
+import QuartzCore
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
+
+// The modern look's playback screens: Now Playing and the movie transport bar.
+
+/// Now Playing in the modern look: the artwork large on the left over a blurred copy of it,
+/// the song's details and a thin progress bar on the right. Songs crossfade as they change.
+final class ModernNowPlayingSceneLayer: FullscreenContent {
+    private let backdrop = SceneLayer()
+    private let shade = SceneGradientLayer()
+    private let incoming = ModernNowPlayingPanelLayer()
+    private let outgoing = ModernNowPlayingPanelLayer()
+    private var backdropSource: NSImage?
+    private var backdropMissing = true
+
+    override init() {
+        super.init()
+        layer.backgroundColor = CGColor(gray: 0, alpha: 1)
+        backdrop.contentsGravity = .resizeAspectFill
+        backdrop.magnificationFilter = .linear
+        shade.colors = [CGColor(gray: 0, alpha: 0.15), CGColor(gray: 0, alpha: 0.55)]
+        shade.startPoint = CGPoint(x: 0.5, y: 0)
+        shade.endPoint = CGPoint(x: 0.5, y: 1)
+        for sublayer in [backdrop, shade, stage] {
+            layer.addSublayer(sublayer)
+        }
+        stage.addSublayer(outgoing.layer)
+        stage.addSublayer(incoming.layer)
+    }
+
+    /// The song's panels, which move aside for the list or the lyrics, and scale as Now Playing
+    /// comes and goes while the blurred backdrop behind them stays put.
+    private let stage = SceneLayer()
+
+    override var scalesItsOwnForeground: Bool { true }
+    private var shift: (dx: CGFloat, scale: CGFloat) = (0, 1)
+    private var size: CGSize = .zero
+    private var isSwitchingSong = false
+    private var lastFlipAway: CGFloat = 0
+    private var lastBarHeld = false
+    private var lastMirrored: Bool?
+
+    private static func scale(_ factor: CGFloat, about center: CGPoint) -> CATransform3D {
+        var transform = CATransform3DMakeTranslation(center.x, center.y, 0)
+        transform = CATransform3DScale(transform, factor, factor, 1)
+        return CATransform3DTranslate(transform, -center.x, -center.y, 0)
+    }
+
+    /// Where the progress bar is in canvas points, or nil while songs change over.
+    var progressBar: CGRect? {
+        isSwitchingSong ? nil : barPlace
+    }
+
+    /// Where the progress bar sits in canvas points, songs changing over or not (the new song's).
+    var barPlace: CGRect? {
+        incoming.barPlace.width <= 0 ? nil : NowPlayingSideLayout.map(incoming.barPlace, shift, size: size)
+    }
+
+    var detailsScale: CGFloat { shift.scale * incoming.detailsScale }
+
+    /// How far along the details are from where they rest, in canvas points (standing upright,
+    /// while the list or the words come out: see `NowPlayingSideLayout.detailsPlace`).
+    var detailsSlide: CGFloat { incoming.detailsSlide }
+
+    private func showBackdrop(_ blurred: CGImage?) {
+        withoutLayerActions {
+            if backdrop.contents != nil {
+                backdrop.removeAnimation(forKey: "contents")
+                let fade = CABasicAnimation(keyPath: "contents")
+                fade.duration = 0.8
+                fade.fromValue = backdrop.contents
+                fade.toValue = blurred
+                backdrop.addAtFullRate(fade, forKey: "contents")
+            }
+            backdrop.contents = blurred
+        }
+    }
+
+    override func update(menu: MenuView, scene _: FullscreenScenePresentation, pass: RenderPass, size: CGSize, scale: CGFloat) {
+        let bounds = CGRect(origin: .zero, size: size)
+        backdrop.frame = bounds
+        shade.frame = bounds
+        self.size = size
+        stage.place(bounds)
+        shift = NowPlayingSideLayout.shift(menu: menu, size: size)
+        let depth = MenuSceneRenderer.scale(menu.fullscreenSceneScale, about: CGPoint(x: size.width / 2, y: size.height / 2))
+        stage.setTransform(CATransform3DConcat(NowPlayingSideLayout.transform(shift, size: size), depth), pass.animation)
+        let snapshot = menu.currentMusicNowPlayingSnapshot
+        if snapshot.artworkImage !== backdropSource || backdropMissing {
+            backdropSource = snapshot.artworkImage
+            if let source = snapshot.artworkImage {
+                // One not made before is made off the main thread and comes in when it's done.
+                backdropMissing = false
+                ModernBackgroundLayer.ambient(for: source) { [weak self] blurred in
+                    guard let self, backdropSource === source else { return }
+                    backdropMissing = blurred == nil
+                    showBackdrop(blurred)
+                }
+            } else {
+                backdropMissing = true
+                showBackdrop(nil)
+            }
+        }
+
+        let hasTransition = menu.musicSongTransitionSnapshot != nil
+        isSwitchingSong = hasTransition
+        let incomingProgress = min(max(menu.musicSongTransitionIncomingProgress, 0), 1)
+        let outgoingProgress = min(max(menu.musicSongTransitionOutgoingOpacityProgress, 0), 1)
+        let direction: CGFloat = menu.musicSongTransitionDirection > 0 ? 1 : -1
+        // The old song eases out as the new one eases in a moment later, on quadratic curves of
+        // their own rather than the classic look's slower zoom.
+        // Only the moves animate: setting up a change (the new song placed off to the side) is instant.
+        let moves = pass.animation != nil
+        let leave: Animation? = moves ? .smoothInOut(duration: 0.42) : nil
+        let arrive: Animation? = moves ? .smooth(duration: 0.55) : nil
+
+        // Every so often the panel turns round (the artwork moves to the other side), as the
+        // classic look's does, but by fading: the artwork shrinks a little as it fades and the
+        // details fade, then both come back the other way round, the artwork growing back.
+        let mirrored = menu.musicNowPlayingUsesAlternateLayout
+        let away = min(1, abs(menu.musicNowPlayingFlipRotationDegrees) / 90)
+        let turning = away != lastFlipAway
+        lastFlipAway = away
+        let flipAnimation = turning ? pass.animation.map { Animation.smoothInOut(duration: $0.duration) } : nil
+        // Standing upright, the cover and the details tuck up together above the fold as the
+        // list or the words come out under it; changing sides (turned round) is out of sight.
+        let tuck = NowPlayingSideLayout.tuck(menu: menu)
+        let tuckAnimation = lastMirrored == mirrored ? pass.animation : nil
+        lastMirrored = mirrored
+        // The old song's panel, just brought back, is laid out where things are now, not moved there.
+        let outgoingReturns = outgoing.layer.isHidden
+        defer {
+            // After the layout, so the artwork shrinks about where it is now.
+            for panel in [incoming, outgoing] {
+                var place = panel.coverPlace
+                place.scale *= 1 - 0.16 * away
+                let instantly = panel === outgoing && outgoingReturns
+                panel.cover.setTransform(place.transform, instantly ? nil : (turning ? flipAnimation : tuckAnimation))
+                panel.cover.setOpacity(Double(1 - away), flipAnimation)
+                panel.details.setOpacity(Double(1 - away), flipAnimation)
+            }
+        }
+
+        incoming.layer.place(bounds)
+        let barHeld = menu.isMusicProgressBarHeld
+        let barAnimation: Animation? = barHeld != lastBarHeld ? (barHeld ? .smooth(duration: 0.28) : .smoothInOut(duration: 0.32)) : nil
+        lastBarHeld = barHeld
+        incoming.update(snapshot, mirrored: mirrored, barHeld: barHeld, barAnimation: barAnimation, size: size, scale: scale, upright: menu.upright, tuck: tuck, tuckAnimation: tuckAnimation)
+        let inShift = hasTransition ? 90 * direction * (1 - incomingProgress) : 0
+        incoming.layer.setTransform(CATransform3DMakeTranslation(inShift, 0, 0), arrive)
+        incoming.layer.setOpacity(hasTransition ? Double(incomingProgress) : 1, arrive)
+
+        if let previous = menu.musicSongTransitionSnapshot {
+            outgoing.layer.isHidden = false
+            outgoing.layer.place(bounds)
+            outgoing.update(previous, mirrored: mirrored, size: size, scale: scale, upright: menu.upright, tuck: tuck, tuckAnimation: outgoingReturns ? nil : tuckAnimation)
+            outgoing.layer.setTransform(CATransform3DMakeTranslation(-90 * direction * outgoingProgress, 0, 0), leave)
+            outgoing.layer.setOpacity(Double(1 - outgoingProgress), leave)
+        } else {
+            outgoing.layer.isHidden = true
+            outgoing.layer.removeAllAnimations()
+            outgoing.layer.transform = CATransform3DIdentity
+            outgoing.layer.opacity = 1
+        }
+    }
+}
+
+@MainActor
+final class ModernNowPlayingPanelLayer {
+    let layer = SceneLayer()
+    /// The artwork, which shrinks and fades as the panel turns round, and the details, which fade.
+    let cover = SceneLayer()
+    let details = SceneLayer()
+    /// Where the artwork shows (about its middle), before any shrinking as the panel turns.
+    private(set) var coverPlace = NowPlayingSideLayout.Place(anchor: .zero, scale: 1, center: .zero)
+    /// The progress bar where it shows, in the panel's points, and how large the details show
+    /// against their full size.
+    private(set) var barPlace: CGRect = .zero
+    private(set) var detailsScale: CGFloat = 1
+    private(set) var detailsSlide: CGFloat = 0
+    private let artworkShadow = SceneLayer()
+    private let artwork = SceneLayer()
+    private let title = SceneLayer()
+    private let artist = SceneLayer()
+    private let album = SceneLayer()
+    private let position = SceneLayer()
+    private let shuffle = SceneLayer()
+    private let track = SceneLayer()
+    private let fill = SceneLayer()
+    private let elapsed = SceneLayer()
+    private let remaining = SceneLayer()
+    private let glyph = PlaybackGlyphLayer()
+    private(set) var barFrame: CGRect = .zero
+
+    init() {
+        artworkShadow.shadowColor = CGColor(gray: 0, alpha: 1)
+        artworkShadow.shadowOpacity = 0.6
+        artworkShadow.shadowRadius = 30
+        artworkShadow.shadowOffset = CGSize(width: 0, height: 20)
+        artwork.contentsGravity = .resizeAspectFill
+        artwork.masksToBounds = true
+        artwork.backgroundColor = CGColor(gray: 0.15, alpha: 1)
+        track.backgroundColor = CGColor(gray: 1, alpha: 0.25)
+        track.masksToBounds = true
+        fill.backgroundColor = CGColor(gray: 1, alpha: 0.95)
+        track.addSublayer(fill)
+        layer.addSublayer(cover)
+        layer.addSublayer(details)
+        for sublayer in [artworkShadow, artwork] {
+            cover.addSublayer(sublayer)
+        }
+        for sublayer in [title, artist, album, position, shuffle, track, elapsed, remaining, glyph.layer] {
+            details.addSublayer(sublayer)
+        }
+    }
+
+    /// Lays the panel out, the artwork on the left or, `mirrored`, on the right.
+    /// A scale about `anchor` (in the layer's own points), then a move.
+    private static func scale(_ factor: CGFloat, about anchor: CGPoint, then offset: CGPoint) -> CATransform3D {
+        var transform = CATransform3DMakeTranslation(offset.x + anchor.x, offset.y + anchor.y, 0)
+        transform = CATransform3DScale(transform, factor, factor, 1)
+        return CATransform3DTranslate(transform, -anchor.x, -anchor.y, 0)
+    }
+
+    /// `upright`: standing upright, the artwork goes above the fold and the details, centred,
+    /// under it; `tuck` (0 to 1) brings the details up beside the artwork, both smaller, moving
+    /// with `tuckAnimation`.
+    func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, mirrored: Bool = false, barHeld: Bool = false, barAnimation: Animation? = nil, size: CGSize, scale: CGFloat, upright: UprightStance? = nil, tuck: CGFloat = 0, tuckAnimation: Animation? = nil) {
+        cover.place(CGRect(origin: .zero, size: size))
+        details.place(CGRect(origin: .zero, size: size))
+        let width = size.width
+        let height = size.height
+        // The artwork and the details beside it are centred together on the screen.
+        // (Standing upright the artwork is drawn the size it is lying down.)
+        let side = upright == nil ? min(height * 0.56, width * 0.34) : min(min(width, height) * 0.56, max(width, height) * 0.34)
+        let gap = (side * 0.17).rounded()
+        var columnWidth = min(side * 1.5, width - side - gap - width * 0.12)
+        let left = ((width - side - gap - columnWidth) * 0.5).rounded()
+        var artLeft = mirrored ? left + columnWidth + gap : left
+        var artCenter = CGPoint(x: artLeft + side / 2, y: height * 0.49)
+        var columnLeft = mirrored ? left : artLeft + side + gap
+        if let upright {
+            columnWidth = min(width - 200, 880)
+            columnLeft = ((width - columnWidth) * 0.5).rounded()
+            artCenter = CGPoint(x: width / 2, y: upright.upperPane.midY)
+            artLeft = artCenter.x - side / 2
+        }
+        // Centred under the artwork upright; beside it, lined up on their left.
+        func lineLeft(_ lineWidth: CGFloat) -> CGFloat {
+            upright == nil ? columnLeft : columnLeft + ((columnWidth - lineWidth) * 0.5).rounded()
+        }
+        let art = CGRect(x: artLeft, y: artCenter.y - side / 2, width: side, height: side)
+        let radius = side * 0.035
+        artworkShadow.frame = art
+        artworkShadow.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: art.size), cornerWidth: radius, cornerHeight: radius, transform: nil)
+        artwork.frame = art
+        artwork.cornerRadius = radius
+        artwork.contents = LayerImageCache.cgImage(for: snapshot.artworkImage)
+
+        let titleGraphic = TextRenderer.render(TextSpec(text: snapshot.trackTitle, fontName: ModernTheme.boldFontName, size: 54, color: ModernTheme.text, maxWidth: columnWidth, minimumScaleFactor: 0.7), scale: scale)
+        let artistGraphic = TextRenderer.render(TextSpec(text: snapshot.artistName, fontName: ModernTheme.mediumFontName, size: 40, color: RGBA(white: 1, alpha: 0.72), maxWidth: columnWidth, minimumScaleFactor: 0.75), scale: scale)
+        let albumGraphic = TextRenderer.render(TextSpec(text: snapshot.albumTitle, fontName: ModernTheme.regularFontName, size: 34, color: RGBA(white: 1, alpha: 0.5), maxWidth: columnWidth, minimumScaleFactor: 0.75), scale: scale)
+        let positionGraphic = TextRenderer.render(TextSpec(text: snapshot.trackPositionText, fontName: ModernTheme.regularFontName, size: 26, color: RGBA(white: 1, alpha: 0.45), maxWidth: columnWidth), scale: scale)
+        let barHeight: CGFloat = 10
+        let timesHeight: CGFloat = 40
+        let blockHeight = titleGraphic.size.height + 6 + artistGraphic.size.height + 2 + albumGraphic.size.height + 18 + positionGraphic.size.height + 56 + barHeight + 12 + timesHeight
+        // Upright, with the on-screen buttons that go under the bar, it has the middle of the
+        // part under the fold.
+        var y = upright.map { $0.lowerPane.midY - (blockHeight + 122) / 2 } ?? artCenter.y - blockHeight / 2
+        title.show(titleGraphic, at: CGPoint(x: lineLeft(titleGraphic.size.width), y: y))
+        y += titleGraphic.size.height + 6
+        artist.show(artistGraphic, at: CGPoint(x: lineLeft(artistGraphic.size.width), y: y))
+        y += artistGraphic.size.height + 2
+        album.show(albumGraphic, at: CGPoint(x: lineLeft(albumGraphic.size.width), y: y))
+        y += albumGraphic.size.height + 18
+        position.isHidden = snapshot.trackPositionText.isEmpty
+        shuffle.isHidden = !snapshot.showsShuffleGlyph
+        let positionWidth = snapshot.trackPositionText.isEmpty ? 0 : positionGraphic.size.width
+        if snapshot.showsShuffleGlyph {
+            let graphic = SymbolRenderer.render("shuffle", pointSize: 24, weight: .semibold, color: RGBA(white: 1, alpha: 0.5), scale: scale)
+            let between: CGFloat = snapshot.trackPositionText.isEmpty ? 0 : 16
+            let x = lineLeft(positionWidth + between + graphic.size.width)
+            position.show(positionGraphic, at: CGPoint(x: x, y: y))
+            shuffle.show(graphic, at: CGPoint(x: x + positionWidth + between, y: y + (positionGraphic.size.height - graphic.size.height) / 2))
+        } else {
+            position.show(positionGraphic, at: CGPoint(x: lineLeft(positionWidth), y: y))
+        }
+        y += positionGraphic.size.height + 56
+
+        // Progress: a thin capsule with the times under its ends and the play state between.
+        let duration = max(0, snapshot.durationSeconds.isFinite ? snapshot.durationSeconds : 0)
+        let elapsedSeconds = min(max(0, snapshot.elapsedSeconds.isFinite ? snapshot.elapsedSeconds : 0), duration > 0 ? duration : .infinity)
+        let progress = duration > 0 ? CGFloat(elapsedSeconds / duration) : 0
+        // Held for scrubbing, the bar swells (taller, a little wider, its fill bright white)
+        // and the times come out with its ends, brighter and a touch larger.
+        let rest = CGRect(x: columnLeft, y: y, width: columnWidth, height: barHeight)
+        let grownBy = CGSize(width: 22, height: 6)
+        barFrame = barHeld ? rest.insetBy(dx: -grownBy.width, dy: -grownBy.height) : rest
+        track.setFrame(barFrame, barAnimation)
+        track.set("cornerRadius", to: barFrame.height / 2, unchanged: track.cornerRadius == barFrame.height / 2, animation: barAnimation)
+        // The fill spans the whole bar (and is taller than it ever gets: the bar's rounded clip
+        // gives it its shape), so it grows and shrinks with the bar in one animation; how much
+        // has played is a squeeze from its left end, which the progress ticks change without
+        // cutting that animation short.
+        fill.setFrame(CGRect(x: 0, y: 0, width: barFrame.width, height: 60), barAnimation)
+        fill.setTransform(CATransform3DMakeScale(max(0.0001, min(1, progress)), 1, 1), nil)
+        let fillAlpha: CGFloat = barHeld ? 1 : 0.8
+        fill.set("backgroundColor", to: CGColor(gray: 1, alpha: fillAlpha), unchanged: fill.backgroundColor?.alpha == fillAlpha, animation: barAnimation)
+        y += barHeight + 12
+        let timeColor = RGBA(white: 1, alpha: 1)
+        let elapsedGraphic = TextRenderer.render(TextSpec(text: formatfirstRowPlaybackTime(elapsedSeconds), fontName: ModernTheme.mediumFontName, size: 26, color: timeColor), scale: scale)
+        elapsed.show(elapsedGraphic, at: CGPoint(x: columnLeft, y: y))
+        let remainingGraphic = TextRenderer.render(TextSpec(text: formatfirstRowRemainingTime(duration: duration, elapsed: elapsedSeconds), fontName: ModernTheme.mediumFontName, size: 26, color: timeColor), scale: scale)
+        remaining.show(remainingGraphic, at: CGPoint(x: columnLeft + columnWidth - remainingGraphic.size.width, y: y))
+        let timeScale: CGFloat = barHeld ? 1.08 : 1
+        let drop = barHeld ? grownBy.height + 2 : 0
+        let out = barHeld ? grownBy.width : 0
+        elapsed.setTransform(Self.scale(timeScale, about: .zero, then: CGPoint(x: -out, y: drop)), barAnimation)
+        remaining.setTransform(Self.scale(timeScale, about: CGPoint(x: remainingGraphic.size.width, y: 0), then: CGPoint(x: out, y: drop)), barAnimation)
+        for label in [elapsed, remaining] {
+            label.setOpacity(barHeld ? 1 : 0.6, barAnimation)
+        }
+        if let state = snapshot.leadingGlyphState {
+            glyph.layer.isHidden = false
+            glyph.update(state, pointSize: 26, shadows: [], scale: scale)
+            glyph.layer.frame = CGRect(x: columnLeft + (columnWidth - glyph.size.width) / 2, y: y + (elapsedGraphic.size.height - glyph.size.height) / 2, width: glyph.size.width, height: glyph.size.height)
+        } else {
+            glyph.layer.isHidden = true
+        }
+
+        typealias Place = NowPlayingSideLayout.Place
+        guard let upright else {
+            coverPlace = Place(anchor: artCenter, scale: 1, center: artCenter)
+            details.setTransform(CATransform3DIdentity, nil)
+            barPlace = barFrame
+            detailsScale = 1
+            detailsSlide = 0
+            return
+        }
+        // Standing upright. Tucked, the artwork is small at one side of the part above the fold
+        // (the side it has lying down) and the details are beside it, the on-screen buttons
+        // under their bar.
+        let upper = upright.upperPane
+        let large = min(side, upper.height * 0.8, width * 0.6)
+        let small = min(330, upper.height * 0.5)
+        let margin: CGFloat = 64
+        coverPlace = Place.between(
+            Place(anchor: artCenter, scale: large / side, center: artCenter),
+            Place(anchor: artCenter, scale: small / side, center: CGPoint(x: mirrored ? width - margin - small / 2 : margin + small / 2, y: upper.midY)),
+            tuck,
+        )
+        let room = width - margin - small - 40 - 40
+        let barMiddle = CGPoint(x: rest.midX, y: rest.midY)
+        // On their way there they go round, not across: off one edge and in from another.
+        let (detailsPlace, slide) = NowPlayingSideLayout.detailsPlace(
+            home: Place(anchor: barMiddle, scale: 1, center: barMiddle),
+            tucked: Place(anchor: barMiddle, scale: min(0.7, room / columnWidth), center: CGPoint(x: mirrored ? 40 + room / 2 : width - 40 - room / 2, y: upper.midY + 17)),
+            span: (columnLeft - grownBy.width) ... (columnLeft + columnWidth + grownBy.width),
+            width: width,
+            tuck: tuck,
+        )
+        details.setTransform(detailsPlace.transform, tuckAnimation)
+        barPlace = detailsPlace.map(barFrame)
+        detailsScale = detailsPlace.scale
+        detailsSlide = slide
+    }
+}
+
+/// The movie transport in the modern look: a dark fade along the bottom, a thin progress
+/// capsule with a knob, the times under its ends and the play state above it.
+@MainActor
+final class ModernMovieControlsLayer {
+    let layer = SceneLayer()
+    private let scrim = SceneGradientLayer()
+    private let track = SceneLayer()
+    private let fill = SceneLayer()
+    private let knob = SceneLayer()
+    private let glyph = PlaybackGlyphLayer()
+    private let elapsed = SceneLayer()
+    private let remaining = SceneLayer()
+    /// Where the progress bar is, in canvas points.
+    private(set) var barFrame: CGRect = .zero
+
+    /// The bar and the span the playhead travels, for pointing at it.
+    var seekTrack: (frame: CGRect, travel: ClosedRange<CGFloat>)? {
+        barFrame.width > 0 ? (barFrame, barFrame.minX ... barFrame.maxX) : nil
+    }
+
+    /// How far up from the bottom the dark fade under the bar reaches, in canvas points.
+    static let fadeHeight: CGFloat = 360
+
+    init() {
+        scrim.colors = [CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0.7)]
+        scrim.startPoint = CGPoint(x: 0.5, y: 0)
+        scrim.endPoint = CGPoint(x: 0.5, y: 1)
+        track.backgroundColor = CGColor(gray: 1, alpha: 0.3)
+        track.masksToBounds = true
+        fill.backgroundColor = CGColor(gray: 1, alpha: 0.95)
+        track.addSublayer(fill)
+        knob.backgroundColor = CGColor(gray: 1, alpha: 1)
+        knob.shadowColor = CGColor(gray: 0, alpha: 1)
+        knob.shadowOpacity = 0.4
+        knob.shadowRadius = 6
+        for sublayer in [scrim, track, knob, glyph.layer, elapsed, remaining] {
+            layer.addSublayer(sublayer)
+        }
+        layer.isHidden = true
+    }
+
+    /// `overPicture`: the bar lies over the movie, which is darkened under it (not when the bar
+    /// has black, or a part of the screen to itself, under it).
+    /// `fullWidth`: how wide the screen is, when `size` is narrower than it (a video's panel
+    /// has the rest). The darkening under the bar keeps to the whole width, so that the picture
+    /// behind the panel is darkened with the rest and no bright strip is left there.
+    func update(glyphState: MoviePlaybackGlyphState, currentTime seconds: Double, duration totalSeconds: Double, isLoading: Bool, loadingProgress: Double, size: CGSize, scale: CGFloat, overPicture: Bool = true, fullWidth: CGFloat? = nil) {
+        let margin = max(90, size.width * 0.065)
+        let barHeight: CGFloat = 10
+        let barY = size.height - 132
+        scrim.frame = CGRect(x: 0, y: size.height - Self.fadeHeight, width: max(size.width, fullWidth ?? 0), height: Self.fadeHeight)
+        scrim.isHidden = !overPicture
+        barFrame = CGRect(x: margin, y: barY, width: size.width - margin * 2, height: barHeight)
+        track.frame = barFrame
+        track.cornerRadius = barHeight / 2
+        let hasDuration = totalSeconds.isFinite && totalSeconds > 0.001
+        let progress = isLoading ? max(0, min(1, loadingProgress)) : (hasDuration ? max(0, min(1, seconds / totalSeconds)) : 0)
+        fill.frame = CGRect(x: 0, y: 0, width: barFrame.width * CGFloat(progress), height: barHeight)
+        let knobSide: CGFloat = 24
+        knob.isHidden = isLoading
+        knob.frame = CGRect(x: barFrame.minX + barFrame.width * CGFloat(progress) - knobSide / 2, y: barFrame.midY - knobSide / 2, width: knobSide, height: knobSide)
+        knob.cornerRadius = knobSide / 2
+
+        let timeColor = RGBA(white: 1, alpha: 0.85)
+        let timeY = barFrame.maxY + 16
+        let elapsedGraphic = TextRenderer.render(TextSpec(text: isLoading ? "" : formatfirstRowPlaybackTime(seconds), fontName: ModernTheme.mediumFontName, size: 28, color: timeColor), scale: scale)
+        elapsed.show(elapsedGraphic, at: CGPoint(x: barFrame.minX, y: timeY))
+        let remainingText = isLoading || !hasDuration ? "" : formatfirstRowRemainingTime(duration: totalSeconds, elapsed: seconds)
+        let remainingGraphic = TextRenderer.render(TextSpec(text: remainingText, fontName: ModernTheme.mediumFontName, size: 28, color: timeColor), scale: scale)
+        remaining.show(remainingGraphic, at: CGPoint(x: barFrame.maxX - remainingGraphic.size.width, y: timeY))
+
+        glyph.update(glyphState, pointSize: 34, shadows: [TextShadow(color: RGBA(white: 0, alpha: 0.5), radius: 4)], scale: scale, showsPlayGlyph: true)
+        glyph.layer.frame = CGRect(x: barFrame.minX, y: barFrame.minY - 30 - glyph.size.height, width: glyph.size.width, height: glyph.size.height)
+    }
+}
+
+/// The movie's subtitles, audio and speed, in one panel: in the modern look it grows out of one
+/// options button above the right end of the progress bar, as on iPhone; in the classic look,
+/// which has no button, ↓ scales it open. Each row of the panel has its name on the left and its
+/// value, with arrows to change it, on the right.
+@MainActor
+final class MovieOptionsLayer {
+    let layer = SceneLayer()
+    private let buttons = SceneLayer()
+    private let buttonHighlight = SceneLayer()
+    private var buttonIcons: [MenuView.MovieOptionRow.Kind: SceneLayer] = [:]
+    private var buttonsKey = ""
+    private let panel = SceneLayer()
+    private let classicFocus = SelectionBoxLayer()
+    /// A row: its name and its value, on a tile that in the modern look turns white and grows
+    /// a little under the one picked out, as the menus' rows do, with the lettering for that
+    /// drawn a second time, dark.
+    @MainActor
+    private final class Row {
+        let tile = ModernKeyTile()
+        let title = SceneLayer()
+        let value = SceneLayer()
+        let focusedTitle = SceneLayer()
+        let focusedValue = SceneLayer()
+
+        init() {
+            tile.restingLettering.addSublayer(title)
+            tile.restingLettering.addSublayer(value)
+            tile.focusedLettering.addSublayer(focusedTitle)
+            tile.focusedLettering.addSublayer(focusedValue)
+        }
+    }
+
+    private var rows: [Row] = []
+    private var lastFocus: Int?
+    /// What the panel last showed, kept while it goes back into its buttons.
+    private var shownState: MenuView.MovieOptionsState?
+    private var wasOpen = false
+    /// The panel and its rows in canvas points, for touches and clicks (only while it's open).
+    private(set) var panelFrame: CGRect?
+    private(set) var rowFrames: [CGRect] = []
+    /// Each row's value, "‹" to "›", in canvas points.
+    private(set) var valueFrames: [CGRect] = []
+    /// The buttons above the bar, in canvas points, while they show.
+    private(set) var buttonFrames: [(kind: MenuView.MovieOptionRow.Kind, frame: CGRect)] = []
+
+    static let buttonSlot = CGSize(width: 84, height: 72)
+
+    init() {
+        layer.addSublayer(buttons)
+        buttons.addSublayer(buttonHighlight)
+        buttons.opacity = 0
+        layer.addSublayer(panel)
+        panel.addSublayer(classicFocus.layer)
+        panel.opacity = 0
+        panel.isHidden = true
+    }
+
+    /// The one button's symbol, for all the options at once.
+    static let optionsSymbol = "ellipsis"
+
+    static func symbol(for kind: MenuView.MovieOptionRow.Kind) -> String {
+        switch kind {
+        case .subtitles: "captions.bubble"
+        case .audio: "waveform"
+        case .chapters: "list.bullet"
+        case .quality: "4k.tv"
+        case .speed: "gauge.with.dots.needle.67percent"
+        case .info: "info.circle"
+        case .comments: "text.bubble"
+        }
+    }
+
+    /// `anchor` is the progress bar (canvas points) while the controls show, nil while they don't.
+    /// The system's Liquid Glass for the buttons and panel, where there is some (modern look).
+    private var nativeGlass: AnyObject? {
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), ModernTheme.isActive {
+                return NativeControls.shared?.options
+            }
+        #endif
+        return nil
+    }
+
+    /// `canvasScale` is window points per canvas point (for the native glass).
+    func update(menu: MenuView, anchor: CGRect?, controlsOpacity: Double, size: CGSize, scale: CGFloat, canvasScale: CGFloat, pass: RenderPass) {
+        layer.frame = CGRect(origin: .zero, size: size)
+        let isModern = ModernTheme.isActive
+        let usesNativeGlass = nativeGlass != nil
+        let state = menu.isMoviePlaybackVisible ? menu.movieOptions : nil
+        if let state { shownState = state }
+        let isOpen = state != nil && menu.movieOptionsReveal > 0.5
+        // (With the movie gone and the panel back in its button, there is nothing to show
+        // until the next movie's own.)
+        if !menu.isMoviePlaybackVisible, !wasOpen { shownState = nil }
+
+        // One button for everything the movie offers (it opens the panel on its first row),
+        // picked out while the panel's open. The classic look has none: ↓ opens the panel.
+        let kinds = menu.movieOptionKinds.first.map { [$0] } ?? []
+        let slot = Self.buttonSlot
+        // (It makes way for a video's panel, which comes out over where it is.)
+        let panelIsOut = menu.youtubePanel != nil && menu.youtubePanelReveal > 0.5
+        let showsButtons = isModern && anchor != nil && menu.isMoviePlaybackVisible && !kinds.isEmpty && !panelIsOut
+        var clusterFrame = CGRect.zero
+        if let anchor {
+            let width = slot.width * CGFloat(max(1, kinds.count)) + 12
+            clusterFrame = CGRect(x: anchor.maxX - width, y: anchor.minY - 26 - slot.height, width: width, height: slot.height)
+        }
+        buttonFrames = []
+        if showsButtons {
+            buttons.place(clusterFrame)
+            buttons.cornerRadius = slot.height / 2
+            buttons.backgroundColor = isModern ? CGColor(gray: 0.2, alpha: 0.62) : CGColor(gray: 0, alpha: 0.62)
+            buttons.borderWidth = isModern ? 0 : 1.5
+            buttons.borderColor = CGColor(gray: 1, alpha: 0.3)
+            let key = "\(kinds)|\(isModern)|\(scale)"
+            if key != buttonsKey {
+                buttonsKey = key
+                for (_, icon) in buttonIcons { icon.removeFromSuperlayer() }
+                buttonIcons = [:]
+                for (index, kind) in kinds.enumerated() {
+                    let icon = SceneLayer()
+                    let graphic = SymbolRenderer.render(Self.optionsSymbol, pointSize: 30, weight: .semibold, color: .white, scale: scale)
+                    let center = CGPoint(x: 6 + slot.width * (CGFloat(index) + 0.5), y: slot.height / 2)
+                    icon.show(graphic, at: CGPoint(x: (center.x - graphic.size.width / 2).rounded(), y: (center.y - graphic.size.height / 2).rounded()))
+                    buttons.addSublayer(icon)
+                    buttonIcons[kind] = icon
+                }
+            }
+            for (index, kind) in kinds.enumerated() {
+                let local = CGRect(x: 6 + slot.width * CGFloat(index), y: 0, width: slot.width, height: slot.height)
+                buttonFrames.append((kind, local.offsetBy(dx: clusterFrame.minX, dy: clusterFrame.minY)))
+            }
+            // The button wears a soft circle while the panel's open.
+            if isOpen, let index = kinds.indices.first {
+                let side = slot.height - 14
+                let frame = CGRect(x: 6 + slot.width * (CGFloat(index) + 0.5) - side / 2, y: 7, width: side, height: side)
+                let appearing = buttonHighlight.opacity < 0.01
+                buttonHighlight.setFrame(frame, appearing ? nil : .smooth(duration: 0.22))
+                buttonHighlight.cornerRadius = side / 2
+                buttonHighlight.backgroundColor = CGColor(gray: 1, alpha: 0.26)
+                buttonHighlight.setOpacity(1, .smooth(duration: 0.2))
+            } else {
+                buttonHighlight.setOpacity(0, .smooth(duration: 0.2))
+            }
+        }
+        buttons.setOpacity(showsButtons && !usesNativeGlass ? controlsOpacity : 0, pass.animation)
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
+                // The system's glass instead, with the system's symbol, in window points.
+                let windowFrame = CGRect(x: clusterFrame.minX * canvasScale, y: clusterFrame.minY * canvasScale, width: clusterFrame.width * canvasScale, height: clusterFrame.height * canvasScale)
+                glass.updateCluster(
+                    frame: showsButtons && controlsOpacity > 0.5 ? windowFrame : nil,
+                    symbols: kinds.map { _ in Self.optionsSymbol },
+                    slotWidth: slot.width * canvasScale,
+                    focused: isOpen && !kinds.isEmpty ? 0 : nil,
+                    iconSize: 30 * canvasScale,
+                    animation: pass.animation ?? .smooth(duration: 0.3),
+                )
+            }
+        #endif
+
+        // The panel, grown out of the buttons, or gone back into them.
+        guard let content = shownState, !content.rows.isEmpty else {
+            panel.isHidden = true
+            panelFrame = nil
+            rowFrames = []
+            valueFrames = []
+            return
+        }
+        // With the system's glass, the panel's rows are hosted inside it; without, the panel
+        // draws its own background here.
+        #if os(iOS) || os(macOS) || os(tvOS)
+            if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
+                let host = glass.panelLayerHost
+                if panel.superlayer !== host {
+                    panel.removeAllAnimations()
+                    host.addSublayer(panel)
+                }
+            } else if panel.superlayer !== layer {
+                // Out of the glass, which was what showed and hid it (the look has been
+                // changed): it starts here put away, where left as the glass had it it stood
+                // open over the menus and over the next movie.
+                panel.removeAllAnimations()
+                layer.addSublayer(panel)
+                panel.setOpacity(0, nil)
+                panel.isHidden = true
+                wasOpen = false
+            }
+        #endif
+        let opening = isOpen && !wasOpen
+        let closing = !isOpen && wasOpen
+        if opening { panel.isHidden = false }
+        let width: CGFloat = 760
+        let rowHeight: CGFloat = 72
+        let inset: CGFloat = 16
+        let height = CGFloat(content.rows.count) * rowHeight + inset * 2
+        // Above the right end of the bar, where the button is (or would be).
+        let buttonPlace = anchor.map { CGRect(x: $0.maxX - slot.width - 12, y: $0.minY - 26 - slot.height, width: slot.width + 12, height: slot.height) }
+        let reference = showsButtons ? clusterFrame : (buttonPlace ?? CGRect(x: size.width - 110 - 260, y: size.height - 240, width: 260, height: slot.height))
+        let frame = CGRect(x: max(40, reference.maxX - width), y: reference.minY - 18 - height, width: width, height: height)
+        // Grows from (and shrinks back to) the middle of the button; with no button, scales open
+        // about its own middle.
+        let origin = showsButtons
+            ? CGPoint(x: reference.midX - frame.minX, y: reference.midY - frame.minY)
+            : CGPoint(x: frame.width / 2, y: frame.height / 2)
+        let collapsedScale: CGFloat = showsButtons ? 0.2 : 0.86
+        let move: Animation? = opening || closing ? (pass.animation ?? (opening ? .smooth(duration: 0.36) : .smoothInOut(duration: 0.3))) : nil
+        if usesNativeGlass {
+            #if os(iOS) || os(macOS) || os(tvOS)
+                if #available(macOS 26.0, iOS 26.0, tvOS 26.0, *), let glass = nativeGlass as? NativeOptionsGlass {
+                    // Drawn at canvas size inside the glass, which is in window points.
+                    panel.backgroundColor = CGColor(gray: 0, alpha: 0)
+                    panel.cornerRadius = 0
+                    panel.borderWidth = 0
+                    panel.isHidden = false
+                    panel.setOpacity(1, nil)
+                    panel.bounds = CGRect(origin: .zero, size: frame.size)
+                    panel.position = .zero
+                    panel.setTransform(CATransform3DMakeScale(canvasScale, canvasScale, 1), nil)
+                    let windowFrame = CGRect(x: frame.minX * canvasScale, y: frame.minY * canvasScale, width: frame.width * canvasScale, height: frame.height * canvasScale)
+                    let pivot = CGPoint(x: origin.x * canvasScale, y: origin.y * canvasScale)
+                    var collapsed = CATransform3DMakeTranslation(pivot.x, pivot.y, 0)
+                    collapsed = CATransform3DScale(collapsed, collapsedScale, collapsedScale, 1)
+                    collapsed = CATransform3DTranslate(collapsed, -pivot.x, -pivot.y, 0)
+                    // (Once it's on its way back into its button it's left to get there: what
+                    // it goes back into can change meanwhile, as when a video's panel comes out
+                    // and the button makes way, and it jumped to the new place part way.)
+                    if isOpen || closing {
+                        glass.updatePanel(frame: windowFrame, open: isOpen, collapsed: collapsed, animation: move)
+                    }
+                }
+            #endif
+        } else {
+            panel.place(frame)
+            panel.backgroundColor = CGColor(gray: isModern ? 0.08 : 0, alpha: isModern ? 0.84 : 0.88)
+            panel.cornerRadius = isModern ? 34 : 14
+            panel.borderWidth = isModern ? 0 : 1.5
+            panel.borderColor = CGColor(gray: 1, alpha: 0.22)
+            var collapsed = CATransform3DMakeTranslation(origin.x, origin.y, 0)
+            collapsed = CATransform3DScale(collapsed, collapsedScale, collapsedScale, 1)
+            collapsed = CATransform3DTranslate(collapsed, -origin.x, -origin.y, 0)
+            if opening, (panel.presentation()?.opacity ?? panel.opacity) < 0.02 {
+                // Starts from the button, or a little smaller (part way back, it turns round
+                // where it is instead).
+                panel.setTransform(collapsed, nil)
+                panel.setOpacity(0, nil)
+            }
+            // (On its way back into its button it's left to get there: see above.)
+            if isOpen || closing {
+                panel.setTransform(isOpen ? CATransform3DIdentity : collapsed, move)
+                panel.setOpacity(isOpen ? 1 : 0, move)
+            }
+        }
+        wasOpen = isOpen
+        if isOpen {
+            panelFrame = frame
+            rowFrames = content.rows.indices.map { CGRect(x: frame.minX + inset, y: frame.minY + inset + CGFloat($0) * rowHeight, width: width - inset * 2, height: rowHeight) }
+        } else {
+            panelFrame = nil
+            rowFrames = []
+        }
+
+        let focus = min(content.focusedRow, content.rows.count - 1)
+        let moved = lastFocus != nil && lastFocus != focus
+        lastFocus = focus
+        let focusFrame = CGRect(x: inset, y: inset + CGFloat(focus) * rowHeight + 4, width: width - inset * 2, height: rowHeight - 8)
+        // Fingers in charge with none on a row: no row shows as picked out, as in the menus.
+        let showsFocus = !menu.touchHidesSelection
+        classicFocus.layer.isHidden = isModern || !showsFocus
+        if !isModern {
+            // The glow texture reaches past the row as the menus' does, scaled to this row's height.
+            let spill = focusFrame.height / 75
+            classicFocus.update(frame: focusFrame.insetBy(dx: -40 * spill, dy: -29 * spill), selectionBoxHeight: focusFrame.height, animation: opening || !moved ? nil : .easeInOut(duration: 0.2))
+        }
+
+        var values: [CGRect] = []
+        while rows.count < content.rows.count {
+            let row = Row()
+            panel.addSublayer(row.tile.layer)
+            rows.append(row)
+        }
+        let titleFont = isModern ? ModernTheme.mediumFontName : firstRowBoldFontName
+        let valueFont = isModern ? ModernTheme.regularFontName : firstRowRegularFontName
+        for (index, layers) in rows.enumerated() {
+            guard content.rows.indices.contains(index) else {
+                layers.tile.layer.isHidden = true
+                continue
+            }
+            let row = content.rows[index]
+            let focused = index == focus && isModern && showsFocus
+            // The row's tile: nothing to see at rest (or in the classic look, which has its
+            // own bar); under the modern look's focus it turns white, with the menus' shadow,
+            // and grows a little as the focus arrives, easing. Not as the panel opens.
+            let tileFrame = CGRect(x: inset, y: inset + CGFloat(index) * rowHeight + 4, width: width - inset * 2, height: rowHeight - 8)
+            layers.tile.update(
+                frame: tileFrame, cornerRadius: tileFrame.height / 2, fill: nil, focusFill: ModernTheme.focusFill.cgColor,
+                focused: focused, animated: isOpen && !opening, restingShadow: false, lettering: nil,
+            )
+            let value = row.values.indices.contains(row.selected) ? row.values[row.selected] : ""
+            let canGoBack = row.selected > 0
+            let canGoOn = row.selected + 1 < row.values.count || row.opensMore
+            let text = (canGoBack ? "‹  " : "   ") + value + (canGoOn ? "  ›" : "   ")
+            /// Draws the row's lettering (dark for the white tile) and says where its value is, in the tile.
+            func letter(_ titleLayer: SceneLayer, _ valueLayer: SceneLayer, dark: Bool) -> CGRect {
+                let primary = dark ? ModernTheme.focusedText : RGBA(white: 1, alpha: 0.94)
+                let secondary = dark ? ModernTheme.focusedSecondaryText : RGBA(white: 1, alpha: 0.6)
+                let titleGraphic = TextRenderer.render(TextSpec(text: row.title, fontName: titleFont, size: 32, color: primary), scale: scale)
+                titleLayer.show(titleGraphic, at: CGPoint(x: 30, y: (tileFrame.height - titleGraphic.size.height) / 2))
+                let valueGraphic = TextRenderer.render(TextSpec(text: text, fontName: valueFont, size: 30, color: secondary, maxWidth: width * 0.6, minimumScaleFactor: 0.7), scale: scale)
+                let valueOrigin = CGPoint(x: tileFrame.width - 26 - valueGraphic.size.width, y: (tileFrame.height - valueGraphic.size.height) / 2)
+                valueLayer.show(valueGraphic, at: valueOrigin)
+                return CGRect(origin: valueOrigin, size: valueGraphic.size)
+            }
+            let valueFrame = letter(layers.title, layers.value, dark: false)
+            if focused { _ = letter(layers.focusedTitle, layers.focusedValue, dark: true) }
+            values.append(valueFrame.offsetBy(dx: tileFrame.minX + frame.minX, dy: tileFrame.minY + frame.minY))
+        }
+        valueFrames = isOpen ? values : []
+    }
+
+    /// The button at a canvas point (with a little room around each).
+    func button(at point: CGPoint) -> MenuView.MovieOptionRow.Kind? {
+        buttonFrames.first { $0.frame.insetBy(dx: -4, dy: -12).contains(point) }?.kind
+    }
+}

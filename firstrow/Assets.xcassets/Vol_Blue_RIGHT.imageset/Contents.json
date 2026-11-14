@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "Vol_Blue_RIGHT.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

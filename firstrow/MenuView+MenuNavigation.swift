@@ -1,93 +1,42 @@
-import SwiftUI
+import Foundation
+#if os(macOS)
+    import AppKit
+#elseif canImport(UIKit)
+    import UIKit
+#else
+    import FirstRowPortable
+#endif
 
 extension MenuView {
     enum ThirdMenuMode {
         case none
         case moviesFolder
         case moviesITunesTop
-        case tvEpisodesITunesTop
-        case videoPodcastSeries
-        case videoPodcastEpisodes
+        case tvITunesTopEpisodes
         case musicITunesTopSongs
         case musicITunesTopMusicVideos
-        case audioPodcastSeries
-        case audioPodcastEpisodes
         case musicCategories
         case musicSongs
-        case musicNowPlaying
         case photosDateAlbums
-        case errorPage
-        case movieResumePrompt
+        case podcastsEpisodes
+        case mediaFolders
+        case screenSaverSettings
+        case spotify
+        case jellyfin
+        /// A media server other than Jellyfin's kind, or a shared folder (see `MediaServers.swift`).
+        case server
+        case youtube
     }
-
 }
 
 extension MenuView {
-    func enterErrorPage(header: String, subcaption: String) {
-        guard !isEnteringSubmenu, !isReturningToRoot else { return }
-
-        let returnMode = isInThirdMenu ? thirdMenuMode : .none
-        let returnHeader = headerText
-
-        let snapshot = currentMenuTransitionSnapshot()
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
-            errorPageHeaderText = header
-            errorPageSubcaptionText = subcaption
-            menuTransitionSnapshot = snapshot
-            menuTransitionDirection = .forward
-            menuTransitionProgress = 0
-            musicNowPlayingReturnThirdMenuMode = returnMode
-            musicNowPlayingReturnHeaderText = returnHeader
-            isInThirdMenu = true
-            thirdMenuMode = .errorPage
-        }
-
-        withAnimation(.easeInOut(duration: menuSlideDuration)) {
-            menuTransitionProgress = 1
-        }
-
-        Task { @MainActor in
-            try? await firstRowSleep(menuSlideDuration)
-            guard !Task.isCancelled else { return }
-            self.menuTransitionSnapshot = nil
-        }
-    }
-
-    func exitErrorPage() {
-        guard thirdMenuMode == .errorPage else { return }
-
-        let returnMode = musicNowPlayingReturnThirdMenuMode
-        let returnHeader = musicNowPlayingReturnHeaderText
-
-        transitionMenuForFolderSwap(direction: .backward) {
-            if returnMode == .none {
-                isInThirdMenu = false
-                thirdMenuMode = .none
-            } else {
-                thirdMenuMode = returnMode
-            }
-            headerText = returnHeader
-        }
-    }
-
-    func exitMovieResumePromptPage() {
-        guard thirdMenuMode == .movieResumePrompt else { return }
-
-        transitionMenuForFolderSwap(direction: .backward) {
-            dismissMovieResumePrompt()
-            restoreMovieResumePromptReturnContext()
-        }
-    }
-
     func returnToRootMenuViaBlackFade() {
         guard isInSubmenu || isEnteringSubmenu else { return }
         transitionMenuForFolderSwap(
             useOverlayFade: true,
-            revealWhen: { !isInSubmenu && activeRootItemID == nil },
+            revealWhen: { !self.isInSubmenu && self.activeRootItemID == nil },
         ) {
-            returnToRootMenu(playExitSound: false)
+            self.returnToRootMenu(playExitSound: false)
         }
     }
 
@@ -95,21 +44,28 @@ extension MenuView {
         switch activeRootItemID {
         case "movies":
             refreshMoviePreviewForCurrentContext()
-            refreshPodcastsForCurrentContext()
             refreshITunesTopPreviewForCurrentContext(.movies)
             refreshITunesTopCarouselForCurrentContext(.movies)
+        case "tv_shows":
+            refreshMoviePreviewForCurrentContext()
             refreshITunesTopPreviewForCurrentContext(.tvEpisodes)
             refreshITunesTopCarouselForCurrentContext(.tvEpisodes)
-            refreshITunesTopPreviewForCurrentContext(.musicVideos)
-            refreshITunesTopCarouselForCurrentContext(.musicVideos)
         case "music":
-            refreshPodcastsForCurrentContext()
             refreshMusicPreviewForCurrentContext()
+            refreshMusicRowCoverForCurrentContext()
             refreshMusicTopLevelCarouselForCurrentContext()
             refreshITunesTopPreviewForCurrentContext(.songs)
             refreshITunesTopCarouselForCurrentContext(.songs)
+            refreshITunesTopPreviewForCurrentContext(.musicVideos)
+            refreshITunesTopCarouselForCurrentContext(.musicVideos)
+        case "podcasts":
+            refreshPodcastsForCurrentContext()
         case "photos":
             refreshPhotosForCurrentContext()
+        case "sources":
+            refreshJellyfinPreviewForCurrentContext()
+        case "youtube":
+            refreshYouTubePreviewForCurrentContext()
         default:
             break
         }
@@ -117,109 +73,165 @@ extension MenuView {
 
     func exitThirdMenuToSecondLevel() {
         let isExitingMusicThirdMenu = switch thirdMenuMode {
-        case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos:
+        case .musicSongs, .musicCategories, .musicITunesTopSongs, .musicITunesTopMusicVideos, .spotify:
             true
-        case .moviesFolder, .moviesITunesTop, .tvEpisodesITunesTop, .videoPodcastSeries, .videoPodcastEpisodes, .audioPodcastSeries, .audioPodcastEpisodes, .photosDateAlbums, .musicNowPlaying, .errorPage, .movieResumePrompt, .none:
+        case .moviesFolder, .moviesITunesTop, .tvITunesTopEpisodes, .photosDateAlbums, .podcastsEpisodes, .mediaFolders, .screenSaverSettings, .jellyfin, .server, .youtube, .none:
             false
         }
-        transitionMenuForFolderSwap(direction: .backward) {
-            if isExitingMusicThirdMenu {
-                isMusicSongsShuffleMode = false
-                isMusicSongsCategoryScoped = false
-                activeMusicCategoryKind = nil
-                activeMusicCategoryMenuTitle = ""
-                lastSelectedMusicCategoryIndex = 0
-                activeMusicLibraryMediaType = .songs
-                musicSongsShowsShuffleAction = false
-                musicCategoryThirdMenuItems = []
-            }
+        if isExitingMusicThirdMenu {
+            isMusicSongsShuffleMode = false
+            isMusicSongsCategoryScoped = false
+            musicArtistsReturn = nil
+            activeMusicCategoryKind = nil
+            activeMusicCategoryMenuTitle = ""
+            lastSelectedMusicCategoryIndex = 0
+            activeMusicLibraryMediaType = .songs
+            musicSongsShowsShuffleAction = false
+            musicCategoryThirdMenuItems = []
             headerText = rootMenuTitle(for: activeRootItemID)
-            isInThirdMenu = false
-            thirdMenuMode = .none
+        } else {
+            headerText = rootMenuTitle(for: activeRootItemID)
+        }
+        withAnimation(.easeInOut(duration: 0.2)) {
             thirdMenuOpacity = 0
             submenuOpacity = 1
+        }
+        Task {
+            try? await firstRowSleep(0.2)
+            guard !Task.isCancelled else { return }
+            isInThirdMenu = false
+            thirdMenuMode = .none
+            syncPodcastSubmenuSelectionForActiveSeries()
             refreshDetailPreviewForCurrentContext()
         }
     }
 
     func exitMoviesThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
-        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade, direction: .backward) {
-            stopMoviesFolderGapPlayer()
-            isInThirdMenu = false
-            thirdMenuMode = .none
-            thirdMenuOpacity = 0
-            submenuOpacity = 1
-            headerText = rootMenuTitle(for: activeRootItemID)
-            resetThirdMenuDirectoryState()
-            moviesFolderSelectionIndexByDirectoryPath = [:]
-            resetITunesTopCarouselAndPreviewState(for: [.movies, .tvEpisodes])
-            _ = incrementRequestID(&moviePlaybackLoadingRequestID)
-            isMoviePlaybackLoading = false
-            refreshDetailPreviewForCurrentContext()
+        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
+            self.isInThirdMenu = false
+            self.thirdMenuMode = .none
+            self.thirdMenuOpacity = 0
+            self.submenuOpacity = 1
+            self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
+            self.resetThirdMenuDirectoryState()
+            self.moviesFolderSelectionIndexByDirectoryPath = [:]
+            self.resetITunesTopCarouselAndPreviewState(for: [.movies, .tvEpisodes])
+            self.refreshDetailPreviewForCurrentContext()
+        }
+    }
+
+    func exitPodcastsThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
+        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
+            self.isInThirdMenu = false
+            self.thirdMenuMode = .none
+            self.thirdMenuOpacity = 0
+            self.submenuOpacity = 1
+            self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
+            self.syncPodcastSubmenuSelectionForActiveSeries()
+            self.refreshDetailPreviewForCurrentContext()
         }
     }
 
     func exitPhotosThirdMenuToSecondLevelWithSwap(useOverlayFade: Bool = false) {
-        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade, direction: .backward) {
-            isInThirdMenu = false
-            thirdMenuMode = .none
-            thirdMenuOpacity = 0
-            submenuOpacity = 1
-            headerText = rootMenuTitle(for: activeRootItemID)
-            refreshDetailPreviewForCurrentContext()
+        transitionMenuForFolderSwap(useOverlayFade: useOverlayFade) {
+            self.isInThirdMenu = false
+            self.thirdMenuMode = .none
+            self.thirdMenuOpacity = 0
+            self.submenuOpacity = 1
+            self.headerText = self.rootMenuTitle(for: self.activeRootItemID)
+            self.refreshDetailPreviewForCurrentContext()
         }
     }
 
     func navigateUpInThirdMenuOrExit() {
-        guard menuTransitionSnapshot == nil else { return }
+        if thirdMenuMode == .musicSongs, spotifySongsReturnPages != nil {
+            playSound(named: "Exit")
+            returnFromSpotifySongs()
+            return
+        }
+        if thirdMenuMode == .musicSongs, jellyfin.songsReturnPages != nil {
+            playSound(named: "Exit")
+            returnFromJellyfinSongs()
+            return
+        }
+        if thirdMenuMode == .musicSongs, servers.songsReturnPages != nil {
+            playSound(named: "Exit")
+            returnFromServerSongs()
+            return
+        }
         if thirdMenuMode == .musicSongs, isMusicSongsCategoryScoped {
             playSound(named: "Exit")
-            transitionMenuForFolderSwap(direction: .backward) {
-                thirdMenuMode = .musicCategories
-                isMusicSongsCategoryScoped = false
-                isLoadingMusicSongs = false
-                musicSongsLoadError = nil
-                headerText = activeMusicCategoryMenuTitle.isEmpty
-                    ? rootMenuTitle(for: activeRootItemID)
-                    : activeMusicCategoryMenuTitle
-                selectedThirdIndex = min(
-                    lastSelectedMusicCategoryIndex,
-                    max(0, musicCategoryThirdMenuItems.count - 1),
+            transitionMenuForFolderSwap {
+                self.thirdMenuMode = .musicCategories
+                self.isMusicSongsCategoryScoped = false
+                self.isLoadingMusicSongs = false
+                self.musicSongsLoadError = nil
+                self.headerText = self.activeMusicCategoryMenuTitle.isEmpty
+                    ? self.rootMenuTitle(for: self.activeRootItemID)
+                    : self.activeMusicCategoryMenuTitle
+                self.selectedThirdIndex = min(
+                    self.lastSelectedMusicCategoryIndex,
+                    max(0, self.musicCategoryThirdMenuItems.count - 1),
                 )
-                refreshDetailPreviewForCurrentContext()
-                submenuOpacity = 0
-                thirdMenuOpacity = 1
+                self.refreshDetailPreviewForCurrentContext()
+                self.submenuOpacity = 0
+                self.thirdMenuOpacity = 1
             }
+            return
+        }
+
+        // (From an artist's albums, back is the artists.)
+        if thirdMenuMode == .musicCategories, musicArtistsReturn != nil {
+            playSound(named: "Exit")
+            _ = returnToMusicArtistsFromAlbums()
             return
         }
 
         switch thirdMenuMode {
         case .musicITunesTopSongs, .musicITunesTopMusicVideos, .musicSongs, .musicCategories:
             playSound(named: "Exit")
-            exitMusicThirdMenuToSecondLevelWithSwap()
-        case .musicNowPlaying:
+            exitMusicThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
+        case .moviesITunesTop, .tvITunesTopEpisodes:
             playSound(named: "Exit")
-            exitMusicNowPlayingPage()
-        case .movieResumePrompt:
+            exitMoviesThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
+        case .podcastsEpisodes:
             playSound(named: "Exit")
-            exitMovieResumePromptPage()
-        case .moviesITunesTop, .tvEpisodesITunesTop:
-            playSound(named: "Exit")
-            exitMoviesThirdMenuToSecondLevelWithSwap()
-        case .videoPodcastEpisodes:
-            playSound(named: "Exit")
-            exitPodcastEpisodesMenuToSeriesMenu(kind: .video)
-        case .audioPodcastEpisodes:
-            playSound(named: "Exit")
-            exitPodcastEpisodesMenuToSeriesMenu(kind: .audio)
-        case .videoPodcastSeries, .audioPodcastSeries:
-            playSound(named: "Exit")
-            exitPodcastSeriesMenuToSecondLevelWithSwap()
+            exitPodcastsThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
         case .photosDateAlbums:
             playSound(named: "Exit")
             exitPhotosThirdMenuToSecondLevelWithSwap(useOverlayFade: true)
+        case .mediaFolders:
+            playSound(named: "Exit")
+            navigateUpInMediaFolders()
+        case .screenSaverSettings:
+            playSound(named: "Exit")
+            exitScreenSaverSettings()
+        case .spotify:
+            playSound(named: "Exit")
+            navigateUpInSpotifyMenu()
+        case .jellyfin:
+            playSound(named: "Exit")
+            navigateUpInJellyfinMenu()
+        case .server:
+            playSound(named: "Exit")
+            navigateUpInServerMenu()
+        case .youtube:
+            playSound(named: "Exit")
+            navigateUpInYouTubeMenu()
         case .moviesFolder:
+            if isShowingContinueWatching {
+                playSound(named: "Exit")
+                exitMoviesThirdMenuToSecondLevelWithSwap()
+                return
+            }
+            if tvShowListing != nil {
+                playSound(named: "Exit")
+                navigateUpInTVShowListing()
+                return
+            }
             guard let currentURL = thirdMenuCurrentURL else {
+                // The top of Movies Folder.
+                playSound(named: "Exit")
                 exitMoviesThirdMenuToSecondLevelWithSwap()
                 return
             }
@@ -229,21 +241,17 @@ extension MenuView {
             if let standardizedRoot, standardizedCurrent != standardizedRoot {
                 let parentURL = standardizedCurrent.deletingLastPathComponent()
                 rememberCurrentMoviesFolderSelectionIndex()
-                transitionMenuForFolderSwap {
-                    loadThirdMenuDirectory(parentURL, resetSelection: true)
+                // (The folder is read away from the main thread: its list comes in once it
+                // has been, not with the list just left still in it.)
+                transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
+                    self.loadThirdMenuDirectory(parentURL, resetSelection: true)
                 }
-            } else if !movieLibraryRootURLs.isEmpty {
-                rememberCurrentMoviesFolderSelectionIndex()
-                #if os(macOS)
-                    transitionMenuForFolderSwap {
-                        loadMoviesRootSelectorEntries(resetSelection: false)
-                    }
-                #else
-                    exitMoviesThirdMenuToSecondLevelWithSwap()
-                #endif
             } else {
+                // A folder that was opened from the top of Movies Folder: back to the top.
                 rememberCurrentMoviesFolderSelectionIndex()
-                exitMoviesThirdMenuToSecondLevelWithSwap()
+                transitionMenuForFolderSwap(revealWhen: { !self.isLoadingMoviesFolderEntries }) {
+                    self.loadMoviesTopLevel(resetSelection: false)
+                }
             }
         default:
             playSound(named: "Exit")
@@ -253,7 +261,6 @@ extension MenuView {
 
     func transitionMenuForFolderSwap(
         useOverlayFade: Bool = false,
-        direction: MenuTransitionDirection = .forward,
         revealWhen: @escaping () -> Bool = { true },
         maxRevealWait: TimeInterval = 10.0,
         _ update: @escaping () -> Void,
@@ -261,44 +268,11 @@ extension MenuView {
         guard !isMenuFolderSwapTransitioning else { return }
         guard !isFullscreenSceneTransitioning else { return }
         guard !isMovieTransitioning else { return }
-        isMenuFolderSwapTransitioning = true
-        if !useOverlayFade {
-            menuTransitionDirection = direction
-            menuTransitionSnapshot = currentMenuTransitionSnapshot()
-            menuTransitionProgress = menuTransitionSnapshot == nil ? 1 : 0
-            var instant = Transaction()
-            instant.animation = nil
-            withTransaction(instant) {
-                update()
-            }
-            let revealDeadline = Date().addingTimeInterval(max(0, maxRevealWait))
-            Task { @MainActor in
-                await Task.yield()
-                try? await firstRowSleep(0.02)
-                guard !Task.isCancelled else { return }
-                while isMenuFolderSwapTransitioning {
-                    let canRevealNow = revealWhen() || Date() >= revealDeadline
-                    guard canRevealNow else {
-                        try? await firstRowSleep(0.05)
-                        continue
-                    }
-                    guard menuTransitionSnapshot != nil else {
-                        menuTransitionProgress = 1
-                        isMenuFolderSwapTransitioning = false
-                        return
-                    }
-                    withAnimation(.easeInOut(duration: menuSlideDuration)) {
-                        menuTransitionProgress = 1
-                    }
-                    try? await firstRowSleep(menuSlideDuration)
-                    guard !Task.isCancelled else { return }
-                    menuTransitionSnapshot = nil
-                    isMenuFolderSwapTransitioning = false
-                    return
-                }
-            }
+        if ModernTheme.isActive {
+            swapModernMenu(revealWhen: revealWhen, maxRevealWait: maxRevealWait, update)
             return
         }
+        isMenuFolderSwapTransitioning = true
         if useOverlayFade {
             menuSceneOpacity = 1
             withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
@@ -331,11 +305,13 @@ extension MenuView {
             let revealDeadline = Date().addingTimeInterval(max(0, maxRevealWait))
             try? await firstRowSleep(menuFolderSwapHoldDuration)
             guard !Task.isCancelled else { return }
-            while isMenuFolderSwapTransitioning {
+            @MainActor func revealWhenReady() async {
+                guard isMenuFolderSwapTransitioning else { return }
                 let canRevealNow = revealWhen() || Date() >= revealDeadline
                 guard canRevealNow else {
                     try? await firstRowSleep(0.05)
-                    continue
+                    await revealWhenReady()
+                    return
                 }
                 if useOverlayFade {
                     withAnimation(.easeInOut(duration: menuFolderSwapFadeDuration)) {
@@ -347,10 +323,66 @@ extension MenuView {
                     }
                 }
                 try? await firstRowSleep(menuFolderSwapFadeDuration)
-                guard !Task.isCancelled else { return }
                 isMenuFolderSwapTransitioning = false
-                return
             }
+            await revealWhenReady()
+        }
+    }
+}
+
+/// The modern look changes menus without going through black: the title and list fade out,
+/// change, and ease back in from the side the move went (from the right going deeper, from the
+/// left coming back), while the card and background stay.
+extension MenuView {
+    /// Roughly how deep the menus are, to tell going in from coming back.
+    var modernMenuDepth: Int {
+        var depth = (isInSubmenu ? 1 : 0) + (isInThirdMenu ? 1 : 0)
+        depth += max(0, spotifyMenuPages.count - 1) + max(0, mediaFoldersPages.count - 1) + max(0, jellyfin.pages.count - 1)
+        depth += max(0, youtube.pages.count - 1)
+        if isMusicSongsCategoryScoped { depth += 1 }
+        if musicArtistsReturn != nil { depth += 1 }
+        if let current = thirdMenuCurrentURL, let root = thirdMenuRootURL {
+            // (A folder of movies is one deeper than the top of Movies Folder it was opened from.)
+            depth += 1 + max(0, current.standardizedFileURL.pathComponents.count - root.standardizedFileURL.pathComponents.count)
+        }
+        if spotifySongsReturnPages != nil { depth += 1 }
+        // (A season's episodes are one deeper than the show's seasons.)
+        if let listing = tvShowListing, listing.hasSeasons, listing.season != nil { depth += 1 }
+        return depth
+    }
+
+    func swapModernMenu(revealWhen: @escaping () -> Bool, maxRevealWait: TimeInterval, _ update: @escaping () -> Void) {
+        isMenuFolderSwapTransitioning = true
+        let depthBefore = modernMenuDepth
+        let leave = Animation.smoothInOut(duration: 0.16)
+        withAnimation(leave) {
+            modernSwapOpacity = 0
+        }
+        Task { @MainActor in
+            try? await firstRowSleep(leave.duration + 0.02)
+            guard !Task.isCancelled, isMenuFolderSwapTransitioning else { return }
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                update()
+            }
+            guard isMenuFolderSwapTransitioning else { return }
+            let goesDeeper = modernMenuDepth >= depthBefore
+            withTransaction(instant) {
+                modernSwapOffset = goesDeeper ? ModernTheme.listSlideDistance : -ModernTheme.listSlideDistance
+            }
+            let deadline = Date().addingTimeInterval(max(0, maxRevealWait))
+            while isMenuFolderSwapTransitioning, !revealWhen(), Date() < deadline {
+                try? await firstRowSleep(0.05)
+            }
+            guard isMenuFolderSwapTransitioning else { return }
+            let arrive = Animation.smooth(duration: 0.36)
+            withAnimation(arrive) {
+                modernSwapOpacity = 1
+                modernSwapOffset = 0
+            }
+            try? await firstRowSleep(arrive.duration)
+            isMenuFolderSwapTransitioning = false
         }
     }
 }

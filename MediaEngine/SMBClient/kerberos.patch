@@ -1,0 +1,94 @@
+--- a/Sources/SMBClient/Session.swift
++++ b/Sources/SMBClient/Session.swift
+@@ -8,6 +8,8 @@
+   private var isAnonymous = false
+   private var signingRequired = false
+   private var signingKey: Data?
++  /// What the server offered for signing in, in its answer to Negotiate.
++  private var offer = Data()
+ 
+   public private(set) var maxTransactSize: UInt32 = 0
+   public private(set) var maxReadSize: UInt32 = 0
+@@ -80,6 +82,7 @@
+     let response = try await send(request)
+ 
+     signingRequired = response.securityMode.contains(.signingRequired)
++    offer = response.securityBuffer
+ 
+     maxTransactSize = response.maxTransactSize
+     maxReadSize = response.maxReadSize
+@@ -147,7 +150,55 @@
+     }
+   }
+ 
++  /// Whether the server takes Kerberos carried inside the sign-in (a Mac does), and the
++  /// system here can do it.
++  public var offersKerberos: Bool {
++    #if canImport(GSS)
++    return KerberosSignIn.isOffered(in: offer)
++    #else
++    return false
++    #endif
++  }
++
++  #if canImport(GSS)
++  /// Signs in with Kerberos through the system (see Auth/Kerberos.swift): its tokens go to
++  /// the server and the server's come back to it, until both are done.
+   @discardableResult
++  public func sessionSetupWithKerberos(username: String, password: String) async throws -> SessionSetup.Response {
++    let kerberos = try KerberosSignIn(username: username, password: password)
++    var setupSessionId: UInt64 = 0
++    var token = try kerberos.next(after: nil)
++    while let sending = token {
++      let request = SessionSetup.Request(
++        messageId: messageId.next(),
++        sessionId: setupSessionId,
++        securityMode: [.signingEnabled],
++        capabilities: [],
++        previousSessionId: 0,
++        securityBuffer: sending
++      )
++      let response = try await send(request)
++      setupSessionId = response.header.sessionId
++      // (The server's last token, with its yes, is the system's proof of who the server is.)
++      token = response.buffer.isEmpty ? nil : try kerberos.next(after: response.buffer)
++      if NTStatus(response.header.status) != .moreProcessingRequired {
++        guard kerberos.isComplete else {
++          throw KerberosSignIn.Failure(what: "The sign-in ended before it was complete.")
++        }
++        // (The session's key is the first sixteen bytes of Kerberos's, as the protocol has it.)
++        var key = try kerberos.sessionKey().prefix(16)
++        if key.count < 16 { key += Data(count: 16 - key.count) }
++        sessionId = setupSessionId
++        isAnonymous = false
++        signingKey = Data(key)
++        return response
++      }
++    }
++    throw KerberosSignIn.Failure(what: "The sign-in ended before the server said yes.")
++  }
++  #endif
++
++  @discardableResult
+   public func logoff() async throws -> Logoff.Response {
+     let request = Logoff.Request(
+       messageId: messageId.next(),
+--- a/Sources/SMBClient/SMBClient.swift
++++ b/Sources/SMBClient/SMBClient.swift
+@@ -35,6 +35,16 @@
+     workstation: String? = nil
+   ) async throws -> SessionSetup.Response {
+     try await session.negotiate()
++    #if canImport(GSS)
++    // A Mac is signed in to with Kerberos first: it takes this library's other way (NTLM)
++    // only from accounts that have Windows File Sharing turned on. If Kerberos doesn't get
++    // in, the other way is still tried, and what it says is what is reported.
++    if session.offersKerberos, let username, !username.isEmpty, let password, !password.isEmpty {
++      if let response = try? await session.sessionSetupWithKerberos(username: username, password: password) {
++        return response
++      }
++    }
++    #endif
+     return try await session.sessionSetup(
+       username: username,
+       password: password,
