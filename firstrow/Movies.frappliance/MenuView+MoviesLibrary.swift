@@ -202,8 +202,9 @@ extension MenuView {
     }
 
     /// The top of Movies Folder: what is in those folders, with what was brought in by
-    /// Movies > Import among it, a file as a movie and a folder as a folder. Movies first,
-    /// then folders, each by name. Read from the disk, so not for the main thread.
+    /// Movies > Import or Settings > Media Folders, a file as a movie and a folder as a
+    /// folder. The folders brought in come first, then the movies, then the folders those
+    /// folders hold, each by name. Read from the disk, so not for the main thread.
     nonisolated func scanMoviesTopLevelEntries(rootCandidates: [URL], rules: MoviesFolderScanner.Rules) -> [MoviesFolderEntry] {
         var movies: [MoviesFolderEntry] = []
         var folders: [MoviesFolderEntry] = []
@@ -238,7 +239,13 @@ extension MenuView {
         let byName: (MoviesFolderEntry, MoviesFolderEntry) -> Bool = {
             $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
         }
-        return movies.sorted(by: byName) + folders.sorted(by: byName)
+        // A folder that was asked for comes first, where it is seen to have come in. (By
+        // name among the rest it could be far down a long list, after every movie; and one
+        // that sits inside the Movies folder was only the row it had there already, so that
+        // bringing it in looked to have done nothing.)
+        let broughtIn = folders.filter(\.isImported).sorted(by: byName)
+        let held = folders.filter { !$0.isImported }.sorted(by: byName)
+        return broughtIn + movies.sorted(by: byName) + held
     }
 
     /// The first few movies there are to show a picture of for Movies Folder: those at its
@@ -911,6 +918,9 @@ extension MenuView {
         /// Brought in with Movies > Import (or added in Settings > Media Folders): it is at
         /// the top of Movies Folder because it was asked for, and can be taken out again.
         var isImported = false
+
+        /// A folder that was brought in: these come first at the top of Movies Folder.
+        var isFolderBroughtIn: Bool { isImported && isDirectory }
     }
 
     struct MovieGapPreviewDescriptor: Equatable {

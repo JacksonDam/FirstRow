@@ -255,12 +255,15 @@ extension MenuView {
             if thirdMenuItems.isEmpty {
                 return []
             }
-            return thirdMenuItems.map {
-                plainMenuListItem(
-                    id: $0.id,
-                    title: $0.title,
-                    leadsToMenu: $0.isDirectory,
-                    trailingText: isShowingContinueWatching ? continueWatchingRemainingText[$0.id].flatMap { $0.isEmpty ? nil : $0 } : nil,
+            return thirdMenuItems.enumerated().map { index, entry in
+                // (The folders brought in, first in the list, stand apart from what follows.)
+                let endsFoldersBroughtIn = index > 0 && thirdMenuItems[index - 1].isFolderBroughtIn && !entry.isFolderBroughtIn
+                return plainMenuListItem(
+                    id: entry.id,
+                    title: entry.title,
+                    leadsToMenu: entry.isDirectory,
+                    trailingText: isShowingContinueWatching ? continueWatchingRemainingText[entry.id].flatMap { $0.isEmpty ? nil : $0 } : nil,
+                    showsTopDivider: endsFoldersBroughtIn,
                 )
             }
         case .moviesITunesTop:
