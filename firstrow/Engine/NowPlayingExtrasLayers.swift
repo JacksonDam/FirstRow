@@ -176,6 +176,13 @@ final class HintBarLayer {
         guard shown != isShown else { return }
         isShown = shown
         guard shown else {
+            // (Still introducing itself, it goes from where that has got to.)
+            if layer.animation(forKey: "introduce") != nil {
+                let now = layer.presentation()?.opacity ?? layer.opacity
+                layer.removeAnimation(forKey: "introduce")
+                bar.removeAnimation(forKey: "introduce")
+                layer.opacity = now
+            }
             layer.setOpacity(0, .smoothInOut(duration: 0.3))
             return
         }
