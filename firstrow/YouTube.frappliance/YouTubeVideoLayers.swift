@@ -530,12 +530,14 @@ final class YouTubePanelLayer {
         let showing = rowFrames.indices.filter { rowFrames[$0].height > min(40, pitches[$0] / 2) }
         shownRows = showing.first.flatMap { first in showing.last.map { first ... $0 } }
         let isFree = content.freeScroll != nil
-        // The rows slide as the row picked out changes; under a finger they go with it.
+        // The rows slide as the row picked out changes; under a finger they go with it, and
+        // under the wheel as it asks (a notch at a time, eased).
         let slides = !isFree && lastFocus != nil && (lastFocus != focus || lastScrolled != scrolled || lastWasFree) && !wasHidden && !kindChanged
         lastScrolled = scrolled
         lastWasFree = isFree
         let slide: Animation = isModern ? .smooth(duration: 0.34) : .easeInOut(duration: 0.22)
-        list.setFrame(CGRect(x: 0, y: -offset, width: width, height: max(contentHeight, 1)), slides ? slide : (isFree || offset == lastOffset || kindChanged ? nil : pass.animation))
+        let underFinger = isFree && menu.isYouTubePanelUnderFinger
+        list.setFrame(CGRect(x: 0, y: -offset, width: width, height: max(contentHeight, 1)), slides ? slide : (underFinger || offset == lastOffset || kindChanged ? nil : pass.animation))
         lastFocus = focus
         lastOffset = offset
         lastKind = content.kind

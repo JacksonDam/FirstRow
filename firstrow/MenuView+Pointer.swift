@@ -340,6 +340,8 @@ extension MenuView {
                 movieOptions = options
                 playSound(named: "SelectionChange")
             }
+            // Over a video's panel too: its comments, its replies, what it says about itself.
+            pointAtYouTubePanelRow(at: point)
             if movieOptions == nil { scheduleMovieControlsAutoHide() }
             return
         }
@@ -565,11 +567,24 @@ extension MenuView {
         pointer.lastWheelDate = now
         if isMoviePlaybackVisible {
             if youtubePanel != nil, youtubePanelHit(at: point)?.isOnPanel == true {
-                // Over a video's panel the wheel goes through its rows, one a notch (and
-                // through a row longer than the panel a step at a time).
-                pointer.wheelAccumulator += precise ? -dy / 40 : -dy
-                let steps = wholeSteps(&pointer.wheelAccumulator)
-                for _ in 0 ..< abs(steps) { moveYouTubePanel(by: steps > 0 ? 1 : -1, playsSound: false) }
+                // Over a video's panel the wheel moves its rows under the pointer, as it does
+                // a list's, and the row that comes under the pointer is picked out.
+                if let rows = pointer.hitTester?.youtubePanelScroll {
+                    let step = precise ? dy * rows.canvasPerPoint : dy * 110
+                    let scroll = min(max(0, rows.offset - step), rows.limit)
+                    if precise {
+                        setYouTubePanelFreeScroll(scroll)
+                    } else {
+                        withAnimation(.smooth(duration: 0.2)) { setYouTubePanelFreeScroll(scroll) }
+                    }
+                    // (Once the rows have been drawn where they now are.)
+                    DispatchQueue.main.async { [weak self] in
+                        MainActor.assumeIsolatedIfPossible {
+                            guard let self, let location = self.pointer.location else { return }
+                            self.pointAtYouTubePanelRow(at: location)
+                        }
+                    }
+                }
                 return
             }
             // Ten seconds a notch.
@@ -600,6 +615,13 @@ extension MenuView {
                 selectRowFromPointer(level: level, index: clamped)
             }
         }
+    }
+
+    /// Picks out the row of a video's panel that is under the pointer, where it is (the rows
+    /// stay put), as the row under the pointer is picked out in a list.
+    private func pointAtYouTubePanelRow(at point: CGPoint) {
+        guard !isYouTubePanelUnderFinger, let hit = youtubePanelHit(at: point), hit.isOnPanel, let index = hit.index else { return }
+        showYouTubePanelRow(index, playsSound: true)
     }
 
     /// Whole steps taken out of an accumulated amount, towards zero.
