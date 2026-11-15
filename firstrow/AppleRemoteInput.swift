@@ -11,9 +11,10 @@
         /// Posted events still on their way, with where they came from.
         private nonisolated(unsafe) static var pending: [(key: UInt16, down: Bool, source: MenuInputSource, time: TimeInterval)] = []
 
-        /// Where a key event came from: a remote's (posted here), or the keyboard.
+        /// Where a key event came from: a remote's (posted here), or the keyboard. (Told by
+        /// the posted events still on their way, not by the event's window: one posted with
+        /// no window comes back with the key window's.)
         static func source(of event: NSEvent) -> MenuInputSource {
-            guard event.windowNumber == 0 else { return .keyboard }
             let down = event.type == .keyDown
             let now = ProcessInfo.processInfo.systemUptime
             lock.lock()
