@@ -32,13 +32,19 @@
     /// the player, with nothing over it: a picture already as large as its place, a movie in
     /// HDR (the frames come here in eight bits), and one whose subtitles the player draws
     /// itself, in its own layer, where this would cover them.
+    ///
+    /// The layer is never hidden. A hidden layer drops the frames it is given and keeps the
+    /// last one it showed, to show again when it is next brought out: the end of the movie
+    /// before, at the start of the next. Whenever there is to be nothing over the player's
+    /// picture the layer is changed for a new one instead, which has nothing in it.
     @available(macOS 13.0, *)
     @MainActor
     final class MovieUpscaler: NSObject {
         /// The picture scaled up. It goes in the layer showing the movie, over its picture.
         var layer: CALayer { metal }
 
-        private let metal: CAMetalLayer
+        private var metal: CAMetalLayer
+        private let device: MTLDevice
         private let renderer: UpscaleRenderer
         private weak var player: AVPlayer?
         private weak var item: AVPlayerItem?
@@ -55,19 +61,28 @@
         private var playerDrawsSubtitles = false
         private var framesUntilSubtitleCheck = 0
         private var shownColorSpace: CGColorSpace?
-        /// Frames to pass before the next is asked for, while a movie is being left to the
-        /// player (it is looked at again every so often: a video can change its size).
-        private var framesToPass = 0
+        /// When the next frame is to be looked at, while a movie is being left to the player
+        /// (it is looked at again every second: a video can change its size, and its place).
+        private var looksAgainAt: CFTimeInterval = 0
         /// The size the last frame was sent to be drawn at.
         private var askedPixels = CGSize.zero
+        /// A frame has been asked for since the layer in use was made: it may have one in it.
+        private var layerMayHavePicture = false
 
         /// Nil on a Mac with no graphics processor to ask.
         init?(device: MTLDevice? = MTLCreateSystemDefaultDevice()) {
-            let metal = CAMetalLayer()
-            guard let device, let renderer = UpscaleRenderer(device: device, layer: metal) else { return nil }
+            guard let device else { return nil }
+            let metal = Self.makeLayer(device: device)
+            guard let renderer = UpscaleRenderer(device: device, layer: metal) else { return nil }
             self.metal = metal
+            self.device = device
             self.renderer = renderer
             super.init()
+        }
+
+        /// A layer for the scaled-up picture, out of sight and with nothing in it.
+        private static func makeLayer(device: MTLDevice) -> CAMetalLayer {
+            let metal = CAMetalLayer()
             metal.device = device
             metal.pixelFormat = .bgra8Unorm
             // (What the layer shows is copied into, not drawn into.)
@@ -76,8 +91,30 @@
             metal.contentsGravity = .resize
             metal.maximumDrawableCount = 3
             metal.allowsNextDrawableTimeout = true
-            metal.isHidden = true
             metal.actions = ["position": NSNull(), "bounds": NSNull(), "contents": NSNull(), "hidden": NSNull(), "opacity": NSNull()]
+            return metal
+        }
+
+        /// Takes the scaled-up picture off the player's: a layer that may have been given a
+        /// frame is changed for a new one, which has nothing in it (see above). `ifSent` is
+        /// for asking again and again while a movie is left to the player: then only a layer
+        /// that is known to have been given one.
+        private func clearPicture(ifSent: Bool = false) {
+            guard ifSent ? renderer.state.hasSent : layerMayHavePicture else { return }
+            layerMayHavePicture = false
+            let old = metal
+            let new = Self.makeLayer(device: device)
+            new.frame = old.frame
+            new.drawableSize = old.drawableSize
+            metal = new
+            shownColorSpace = nil
+            renderer.draw(into: new)
+            if let host = old.superlayer {
+                withoutLayerActions {
+                    host.insertSublayer(new, above: old)
+                    old.removeFromSuperlayer()
+                }
+            }
         }
 
         /// `player` is the system's player showing the movie in the layer `layer` has been
@@ -103,7 +140,7 @@
             guard let item else { return }
             self.item = item
             framesUntilSubtitleCheck = 0
-            framesToPass = 0
+            looksAgainAt = 0
             askedPixels = .zero
             Task { [weak self, weak item] in
                 guard let item, let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else { return }
@@ -133,8 +170,8 @@
             item = nil
             ownSubtitles = nil
             playerDrawsSubtitles = false
+            clearPicture()
             renderer.follow(nil)
-            metal.isHidden = true
             if stopping { stop() }
         }
 
@@ -184,7 +221,7 @@
             if player.currentItem !== item { follow(player.currentItem) }
             askForFrames()
             guard let item, let output, let box = pictureBox?(), box.width > 1, box.height > 1 else {
-                metal.isHidden = true
+                clearPicture()
                 return
             }
             if metal.frame != box { metal.frame = box }
@@ -200,22 +237,26 @@
                 playerDrawsSubtitles = ownSubtitles.map { item.currentMediaSelection.selectedMediaOption(in: $0) != nil } ?? false
             }
             var state = renderer.state
-            if framesToPass > 0 {
-                framesToPass -= 1
-            } else if state.wantsAnother || pixels != askedPixels || output.hasNewPixelBuffer(forItemTime: output.itemTime(forHostTime: time)) {
+            // The player's own picture is to show, with nothing over it: what the layer was
+            // given before goes.
+            if playerDrawsSubtitles {
+                clearPicture()
+                return
+            }
+            if state.isLeftAlone { clearPicture(ifSent: true) }
+            if time >= looksAgainAt, state.wantsAnother || pixels != askedPixels || output.hasNewPixelBuffer(forItemTime: output.itemTime(forHostTime: time)) {
                 // (Only when there is something to draw: a new frame, or the old one at a new size.)
                 askedPixels = pixels
+                layerMayHavePicture = true
+                // (The last frame wasn't for scaling up: no need to look at every one.)
+                if state.isLeftAlone { looksAgainAt = time + 1 }
                 renderer.draw(forHostTime: time, pixels: pixels)
                 state = renderer.state
             }
-            // (A frame has come and wasn't for scaling up: no need to take every one.)
-            if !state.hasPicture, state.colorSpace != nil, framesToPass == 0 { framesToPass = 30 }
             if let space = state.colorSpace, space !== shownColorSpace {
                 shownColorSpace = space
                 metal.colorspace = space
             }
-            let shows = state.hasPicture && !playerDrawsSubtitles
-            if metal.isHidden == shows { metal.isHidden = !shows }
         }
     }
 
@@ -223,12 +264,26 @@
     @available(macOS 13.0, *)
     private final class UpscaleRenderer: @unchecked Sendable {
         struct State {
-            /// A scaled-up frame of the movie being followed is in the layer.
-            var hasPicture = false
+            /// The layer in use has been sent a frame.
+            var hasSent = false
+            /// The last frame looked at wasn't for scaling up: the movie is the player's to show.
+            var isLeftAlone = false
             /// The colours the frames are in.
             var colorSpace: CGColorSpace?
             /// The last frame couldn't be drawn as things stood, and is to be asked for again.
             var wantsAnother = false
+        }
+
+        /// How a frame fared.
+        private enum Outcome {
+            /// No new frame, and nothing to draw again.
+            case nothing
+            /// Not for scaling up.
+            case leftAlone(CGColorSpace?)
+            /// Sent to the layer.
+            case sent(CGColorSpace?)
+            /// Couldn't be drawn as things stood.
+            case missed
         }
 
         /// A picture this near its place's size is left as it is.
@@ -236,11 +291,11 @@
 
         private let device: MTLDevice
         private let commands: MTLCommandQueue
-        private let layer: CAMetalLayer
         private let cache: CVMetalTextureCache
         private let queue = DispatchQueue(label: "firstrow.movie-upscaler", qos: .userInteractive)
         private let lock = NSLock()
         // Under the lock.
+        private var layer: CAMetalLayer
         private var output: AVPlayerItemVideoOutput?
         private var shared = State()
         private var isBusy = false
@@ -252,7 +307,6 @@
         private var scaled: MTLTexture?
         private var lastFrame: CVPixelBuffer?
         private var lastPixels = CGSize.zero
-        private var missed = false
 
         init?(device: MTLDevice, layer: CAMetalLayer) {
             var cache: CVMetalTextureCache?
@@ -268,6 +322,14 @@
             lock.lock()
             defer { lock.unlock() }
             return shared
+        }
+
+        /// The layer the frames are drawn into from now on: a new one, with nothing in it.
+        func draw(into layer: CAMetalLayer) {
+            lock.lock()
+            self.layer = layer
+            shared.hasSent = false
+            lock.unlock()
         }
 
         /// The frames to take from now on (nil: none).
@@ -288,26 +350,39 @@
         func draw(forHostTime time: CFTimeInterval, pixels: CGSize) {
             lock.lock()
             let output = output
+            let layer = layer
             let free = !isBusy
             if free, output != nil { isBusy = true }
             lock.unlock()
             guard free, let output else { return }
             queue.async {
-                self.missed = false
-                let result = self.draw(output, forHostTime: time, pixels: pixels)
+                let outcome = self.draw(output, into: layer, forHostTime: time, pixels: pixels)
                 self.lock.lock()
                 self.isBusy = false
                 // (Not for a movie that has been let go of meanwhile.)
                 if self.output === output {
-                    if let result { self.shared = result }
-                    self.shared.wantsAnother = self.missed
+                    switch outcome {
+                    case .nothing:
+                        break
+                    case let .leftAlone(space):
+                        self.shared.isLeftAlone = true
+                        self.shared.colorSpace = space
+                        self.shared.wantsAnother = false
+                    case let .sent(space):
+                        // (Into the layer it was drawn for, if that is still the one in use.)
+                        if self.layer === layer { self.shared.hasSent = true }
+                        self.shared.isLeftAlone = false
+                        self.shared.colorSpace = space
+                        self.shared.wantsAnother = false
+                    case .missed:
+                        self.shared.wantsAnother = true
+                    }
                 }
                 self.lock.unlock()
             }
         }
 
-        /// Nil when there was nothing new to do.
-        private func draw(_ output: AVPlayerItemVideoOutput, forHostTime time: CFTimeInterval, pixels: CGSize) -> State? {
+        private func draw(_ output: AVPlayerItemVideoOutput, into layer: CAMetalLayer, forHostTime time: CFTimeInterval, pixels: CGSize) -> Outcome {
             let itemTime = output.itemTime(forHostTime: time)
             var frame: CVPixelBuffer?
             if output.hasNewPixelBuffer(forItemTime: itemTime) {
@@ -319,21 +394,20 @@
                 // The picture's place has changed size: the frame it has is drawn again for it.
                 frame = lastFrame
             }
-            guard let frame else { return nil }
+            guard let frame else { return .nothing }
             lastPixels = pixels
-            var result = State()
-            result.colorSpace = CVImageBufferGetColorSpace(frame)?.takeUnretainedValue()
+            let space = CVImageBufferGetColorSpace(frame)?.takeUnretainedValue()
             // HDR is the player's to show: these frames are eight bits of it.
             if let transfer = CVBufferCopyAttachment(frame, kCVImageBufferTransferFunctionKey, nil) as? String,
                transfer == (kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String) || transfer == (kCVImageBufferTransferFunction_ITU_R_2100_HLG as String)
             {
-                return result
+                return .leftAlone(space)
             }
             let width = CVPixelBufferGetWidth(frame)
             let height = CVPixelBufferGetHeight(frame)
             let wide = Int(pixels.width)
             let high = Int(pixels.height)
-            guard width > 1, height > 1, min(Double(wide) / Double(width), Double(high) / Double(height)) >= Self.leastScale else { return result }
+            guard width > 1, height > 1, min(Double(wide) / Double(width), Double(high) / Double(height)) >= Self.leastScale else { return .leftAlone(space) }
             let shape = [width, height, wide, high]
             if scaler == nil || scalerShape != shape {
                 let descriptor = MTLFXSpatialScalerDescriptor()
@@ -359,26 +433,27 @@
             guard let scaler, let scaled,
                   CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, cache, frame, nil, .bgra8Unorm, width, height, 0, &held) == kCVReturnSuccess,
                   let held, let picture = CVMetalTextureGetTexture(held),
-                  let drawable = layer.nextDrawable() else { return result }
+                  let drawable = layer.nextDrawable() else { return .leftAlone(space) }
             // (The layer is given its size on the main thread: a frame made for the size
             // before waits for the next.)
             guard drawable.texture.width == wide, drawable.texture.height == high, let buffer = commands.makeCommandBuffer() else {
                 lastPixels = .zero
-                missed = true
-                return nil
+                return .missed
             }
             scaler.colorTexture = picture
             scaler.outputTexture = scaled
             scaler.encode(commandBuffer: buffer)
-            guard let copy = buffer.makeBlitCommandEncoder() else { return nil }
+            guard let copy = buffer.makeBlitCommandEncoder() else {
+                lastPixels = .zero
+                return .missed
+            }
             copy.copy(from: scaled, to: drawable.texture)
             copy.endEncoding()
             buffer.present(drawable)
             // (The frame's texture is kept until it has been drawn from.)
             buffer.addCompletedHandler { _ in _ = held }
             buffer.commit()
-            result.hasPicture = true
-            return result
+            return .sent(space)
         }
     }
 #endif
