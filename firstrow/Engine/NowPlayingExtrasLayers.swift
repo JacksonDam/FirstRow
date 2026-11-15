@@ -741,13 +741,14 @@ final class NowPlayingLyricsLayer {
         let pad: CGFloat = isModern ? 28 : 0
         clip.frame = area.insetBy(dx: -pad, dy: 0)
         fade.frame = CGRect(origin: .zero, size: clip.frame.size)
+        // The foot of the screen is the on-screen buttons': the words fade out above them
+        // (above the one in the corner, or the whole row where that is along the bottom, as
+        // it is under a heading and in the classic look).
+        var strip: CGFloat = 0
+        if let buttons = TouchControlsLayer.nowPlayingButtons(menu: menu)?.scaled(by: 1 / max(canvasScale, 0.0001)) {
+            strip = heading != nil || !isModern ? max(buttons.cornerStrip, buttons.play + buttons.bottomMargin + 12) : buttons.cornerStrip
+        }
         if isModern {
-            // The foot of the screen is the on-screen buttons': the words fade out above them
-            // (above the one in the corner, or the whole row where that is along the bottom).
-            var strip: CGFloat = 0
-            if let buttons = TouchControlsLayer.nowPlayingButtons(menu: menu)?.scaled(by: 1 / max(canvasScale, 0.0001)) {
-                strip = heading != nil ? max(buttons.cornerStrip, buttons.play + buttons.bottomMargin + 12) : buttons.cornerStrip
-            }
             updateModern(lyrics, menu: menu, shown: shown, appearing: appearing, area: area, pad: pad, strip: strip, size: size, scale: scale, underHeading: heading != nil)
             return
         }
@@ -755,8 +756,10 @@ final class NowPlayingLyricsLayer {
             for line in lines { line.layer.removeFromSuperlayer() }
             lines = []
             builtKey = ""
-            fade.locations = [0, 0.14, 0.84, 1]
         }
+        // (With no buttons on the screen the words fade over its last sixth, as ever.)
+        let depth = max(1, area.height)
+        fade.locations = [0, 0.14, NSNumber(value: Double(max(0.5, 1 - (strip + depth * 0.16) / depth))), NSNumber(value: Double(max(0.6, 1 - strip / depth)))]
 
         // Every line drawn once per song (and size), each its own layer.
         let key = "\(menu.nowPlayingLyricsSongID ?? "")|\(lyrics.lines.count)|\(area.width)|\(scale)|\(isModern)"
