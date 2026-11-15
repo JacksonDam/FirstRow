@@ -50,6 +50,7 @@ There are two looks. **Classic** is the original, down to the pixel. **Modern** 
 - **Podcasts** you've downloaded in Apple Podcasts (macOS).
 - **iTunes Top Charts** for movies, TV episodes, songs and music videos, with playable previews.
 - **A screen saver** of floating photos, after anything from a minute to an hour of inactivity.
+- **MetalFX video upscaling** on a Mac with Apple silicon (macOS 13 and later), turned on in Settings: a movie or video smaller than the screen is scaled up to it by MetalFX rather than stretched, for a sharper picture. It works on what the system's own player shows (MP4, MOV and M4V files, YouTube and other streams, and the MKV and other files whose video the system can decode); HDR movies, and the kinds of video First Row decodes itself (DVDs among them), play as they always have.
 - **A short intro movie** in each look's style, with its own score. It plays every time First Row opens, unless you turn off Settings > Intro Movie. Any key, click or tap skips it. It plays in 4K on a Mac with Apple silicon, and in 1080p everywhere else.
 - **An upright layout on iPhone Duo.** Opened out and held upright, First Row arranges itself around the fold: the carousel or preview card, the movie or the album cover sits above it, and the menu or the playback controls below. Turn it sideways and it glides back to the usual layout.
 - **Media keys, Control Center and headphone buttons** on macOS, iOS and tvOS, with whatever's playing shown in the system's Now Playing.

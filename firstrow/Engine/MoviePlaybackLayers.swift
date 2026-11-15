@@ -54,6 +54,11 @@ final class MoviePlaybackLayers {
         /// Bent at the fold: the picture again, dimly, under it (see `MovieReflection`).
         private let reflection = MovieReflection()
     #endif
+    #if os(macOS)
+        /// What scales a movie's picture up with MetalFX (a `MovieUpscaler`), made for the
+        /// first movie that wants it.
+        private var upscaler: AnyObject?
+    #endif
     #if os(iOS)
         /// A movie goes on playing in the system's picture in picture when First Row is left
         /// while it plays, and comes back to its place here when First Row is opened again.
@@ -123,6 +128,9 @@ final class MoviePlaybackLayers {
         let isBent = canvas.upright?.isBent == true
         let pictureBox = canvas.upright.map { $0.isBent ? canvas.window($0.moviePicture) : bounds } ?? bounds
         placePicture(pictureBox, shape: pictureShape)
+        #if os(macOS)
+            scaleUp(showsPlayer ? systemPlayer : nil, engine: engine, pixelsPerPoint: scale)
+        #endif
         // Subtitles that are pictures (a disc's, a broadcast's) go where they were made to go
         // on the movie's picture.
         subtitlePictures.update(showsPlayer ? menu.movieCaptions : [], picture: Self.fitted(pictureShape, in: pictureBox))
@@ -386,6 +394,41 @@ final class MoviePlaybackLayers {
                 return false
             }
             engineFrameClock.run()
+        }
+    #endif
+
+    #if os(macOS)
+        /// Has the movie's picture scaled up by MetalFX where that is turned on (see
+        /// `MovieUpscaler`): over the picture the system's player shows, in whichever layer
+        /// that is in. Not a kind of video the engine decodes itself, which has no frames to
+        /// be had while it plays, nor one the engine says is in HDR.
+        private func scaleUp(_ systemPlayer: AVPlayer?, engine: EngineMoviePlayer?, pixelsPerPoint: CGFloat) {
+            guard #available(macOS 13.0, *) else { return }
+            var player = systemPlayer
+            var host: CALayer? = systemPlayer == nil ? nil : playerLayer
+            if player == nil, let engine, engine.pictureKind == "sdr", let enginePlayer = engine.systemPlayer, let enginePicture {
+                player = enginePlayer
+                host = enginePicture
+            }
+            guard MovieUpscaling.isOn, let player, let host, let scaler = (upscaler as? MovieUpscaler) ?? MovieUpscaler() else {
+                (upscaler as? MovieUpscaler)?.update(player: nil, pixelsPerPoint: pixelsPerPoint, pictureBox: nil)
+                return
+            }
+            upscaler = scaler
+            if scaler.layer.superlayer !== host {
+                withoutLayerActions { host.addSublayer(scaler.layer) }
+            }
+            if host === playerLayer {
+                scaler.update(player: player, pixelsPerPoint: pixelsPerPoint) { [weak playerLayer] in
+                    playerLayer?.videoRect ?? .zero
+                }
+            } else {
+                // (The engine's layer doesn't say where in itself the picture is.)
+                scaler.update(player: player, pixelsPerPoint: pixelsPerPoint) { [weak engine, weak host] in
+                    guard let shape = engine?.pictureSize, shape.width > 0, shape.height > 0, let host else { return .zero }
+                    return Self.fitted(shape, in: CGRect(origin: .zero, size: host.bounds.size))
+                }
+            }
         }
     #endif
 

@@ -180,6 +180,7 @@
 		C39525D2D9B144FC073D22A4 /* German.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B0A6A3F856F274CDA36A61 /* German.swift */; };
 		D0E1A2B3C4D5E6F7A8B9C004 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = D0E1A2B3C4D5E6F7A8B9C001 /* InfoPlist.strings */; };
 		F11D747A5030F423284BF44A /* LyricsLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 896A11ED8521A2510BE965DE /* LyricsLookup.swift */; };
+		B26465E6F3CE2D084945B5A3 /* MovieUpscaler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 764FAF6B30F9271F4C004892 /* MovieUpscaler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -376,6 +377,7 @@
 		D0E1A2B3C4D5E6F7A8B9C002 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		D0E1A2B3C4D5E6F7A8B9C003 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		896A11ED8521A2510BE965DE /* LyricsLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsLookup.swift; sourceTree = "<group>"; };
+		764FAF6B30F9271F4C004892 /* MovieUpscaler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieUpscaler.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -733,6 +735,7 @@
 				23DE04BBBBB68BB54DCB30D6 /* CoverCarouselLayer.swift */,
 				B5FD4A1D9F2FA9ED06D30B1E /* LayerKit.swift */,
 				A117B00373B8E9679D6537B3 /* StyledCaptions.swift */,
+				764FAF6B30F9271F4C004892 /* MovieUpscaler.swift */,
 			);
 			path = Engine;
 			sourceTree = "<group>";
@@ -964,6 +967,7 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				B26465E6F3CE2D084945B5A3 /* MovieUpscaler.swift in Sources */,
 				F11D747A5030F423284BF44A /* LyricsLookup.swift in Sources */,
 				C39525D2D9B144FC073D22A4 /* German.swift in Sources */,
 				4ABB88D59DBE81E3373AA38F /* Localization.swift in Sources */,

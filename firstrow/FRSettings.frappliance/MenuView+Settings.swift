@@ -6,6 +6,7 @@ extension MenuView {
     static let settingsScreenSaverItemID = "settings_screensaver"
     static let settingsSoundEffectsItemID = "settings_soundeffects"
     static let settingsIntroMovieItemID = "settings_intromovie"
+    static let settingsUpscalingItemID = "settings_upscaling"
     static let settingsYouTubeItemID = "settings_youtube"
     static let settingsClearYouTubeHistoryItemID = "settings_clear_youtube_history"
     private static let screenSaverPreviewItemID = "screensaver_preview"
@@ -18,6 +19,7 @@ extension MenuView {
         case Self.settingsScreenSaverItemID: AppSettings.screenSaverDelayTitle(AppSettings.screenSaverDelay)
         case Self.settingsThemeItemID: AppSettings.theme.title
         case Self.settingsIntroMovieItemID: AppSettings.playsIntroMovieAtLaunch ? L("On") : L("Off")
+        case Self.settingsUpscalingItemID: AppSettings.upscalesVideo ? L("On") : L("Off")
         case Self.settingsYouTubeItemID: AppSettings.showsYouTube ? L("On") : L("Off")
         default: nil
         }
@@ -38,6 +40,11 @@ extension MenuView {
         case Self.settingsIntroMovieItemID:
             // The look's intro movie at every launch (it always plays after the first-launch screens).
             AppSettings.playsIntroMovieAtLaunch.toggle()
+            objectWillChange.send()
+            playSound(named: "Selection")
+        case Self.settingsUpscalingItemID:
+            // Movies' pictures scaled up by MetalFX (see `MovieUpscaler`): from the next one played.
+            AppSettings.upscalesVideo.toggle()
             objectWillChange.send()
             playSound(named: "Selection")
         case Self.settingsYouTubeItemID:

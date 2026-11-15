@@ -183,6 +183,8 @@ final class RunLoopFlushObserver {
         }
 
         private weak var view: NSView?
+        /// The scene's view, for anything else that follows its screen frame by frame.
+        var sceneView: NSView? { view }
         /// The display link (a `CADisplayLink`, which the Mac has from macOS 14).
         private var link: AnyObject?
         /// When the last animation with an end finishes, on `CACurrentMediaTime()`'s clock.

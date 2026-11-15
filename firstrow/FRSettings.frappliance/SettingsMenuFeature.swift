@@ -33,6 +33,12 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
             .init(id: "settings_intromovie", title: L("Intro Movie"), trailingText: L("On")),
             .init(id: "settings_youtube", title: L("YouTube"), trailingText: L("Off")),
         ]
+        #if os(macOS)
+            // Above YouTube, on the Macs that can do it.
+            if MovieUpscaling.isAvailable, let index = submenuItems.firstIndex(where: { $0.id == "settings_youtube" }) {
+                submenuItems.insert(.init(id: "settings_upscaling", title: L("MetalFX Video Upscaling"), trailingText: L("Off")), at: index)
+            }
+        #endif
         #if os(macOS) || FIRSTROW_PORTABLE
             submenuItems.append(.init(id: "settings_media_folders", title: L("Media Folders"), trailingText: "..."))
         #endif

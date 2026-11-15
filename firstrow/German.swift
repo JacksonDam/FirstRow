@@ -96,6 +96,7 @@ enum German {
         "Sound Effects": "Toneffekte",
         "Theme": "Design",
         "Intro Movie": "Intro-Film",
+        "MetalFX Video Upscaling": "MetalFX-Video-Upscaling",
         "Media Folders": "Medienordner",
         "Clear YouTube History": "YouTube-Verlauf löschen",
         "There is no YouTube history to clear.": "Es gibt keinen YouTube-Verlauf, der gelöscht werden könnte.",
