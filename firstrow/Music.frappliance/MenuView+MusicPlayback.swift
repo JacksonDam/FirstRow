@@ -2709,11 +2709,8 @@ extension MenuView {
         }
         switch key {
         case .delete, .escape:
-            // The lyrics or the list go first.
-            if isNowPlayingLyricsVisible {
-                toggleNowPlayingLyrics()
-                return
-            }
+            // The list goes first. (The lyrics stay as they are: Back leaves Now Playing with
+            // them switched on, and they are out again when it is come back to.)
             if isNowPlayingQueueVisible {
                 hideNowPlayingQueue()
                 playSound(named: "Exit")

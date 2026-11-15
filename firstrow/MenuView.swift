@@ -488,6 +488,9 @@ final class MenuView: ObservableObject {
     @Published var nowPlayingQueueHoverIndex: Int?
     /// The current song's lyrics, over the right side, when it has some and they're asked for.
     @Published var isNowPlayingLyricsVisible = false
+    /// Lyrics are switched on: they show for each song that has some, through the songs that
+    /// have none, and are still switched on when Now Playing is left and come back to.
+    var wantsNowPlayingLyrics = false
     @Published var nowPlayingLyrics: MusicLyrics?
     /// Standing upright, the list and the words come and go a frame at a time (see
     /// `NowPlayingGlide`): the move under way, and the clock that steps it.

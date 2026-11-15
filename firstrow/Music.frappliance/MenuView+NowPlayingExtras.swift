@@ -241,7 +241,7 @@ extension MenuView {
             hideNowPlayingQueue()
             playSound(named: "Exit")
         } else {
-            if isNowPlayingLyricsVisible { toggleNowPlayingLyrics() }
+            // (Over the lyrics, if they are out: they are there again when it goes.)
             showNowPlayingQueue(focusingActiveSong: true)
         }
     }
@@ -317,12 +317,9 @@ extension MenuView {
             startNowPlayingGlide(.list, from: nowPlayingQueueReveal, to: open ? 1 : 0, duration: duration + 0.08)
             return
         }
-        // (Taking over from the words, upright, the rest stays tucked up as it is.)
+        // (Over the words, which fade as it comes and are there again when it goes. Upright the
+        // rest is tucked up already, for them.)
         withAnimation(.smooth(duration: duration)) {
-            if open {
-                isNowPlayingLyricsVisible = false
-                nowPlayingWordsGlide = nil
-            }
             isNowPlayingQueueVisible = open
             nowPlayingQueueReveal = open ? 1 : 0
             if !open { nowPlayingQueueHoverIndex = nil }
@@ -489,30 +486,50 @@ extension MenuView {
             }
             withAnimation(.smooth(duration: 0.3)) {
                 self.nowPlayingLyrics = lyrics
-                if lyrics == nil { self.dropNowPlayingLyrics() }
+            }
+            // With lyrics switched on they come out for a song that has some, as they stayed
+            // out from the last one; for a song with none the rest has the screen back.
+            if lyrics == nil {
+                self.dropNowPlayingLyrics()
+            } else if self.wantsNowPlayingLyrics {
+                self.setNowPlayingLyricsShown(true, closingList: false)
             }
         }
     }
 
-    /// The words go because the song playing now has none.
+    /// The words go because the song playing now has none. (They stay switched on.)
     private func dropNowPlayingLyrics() {
-        guard isNowPlayingLyricsVisible else { return }
-        isNowPlayingLyricsVisible = false
-        // (Standing upright the song's details come back down a frame at a time.)
-        if glidesNowPlayingExtras, !isNowPlayingQueueVisible, nowPlayingQueueReveal <= 0 {
-            startNowPlayingGlide(.words, from: nowPlayingWordsGlide ?? 1, to: 0, duration: 0.44)
-            scheduleNowPlayingTouchControlsHide()
-        }
+        setNowPlayingLyricsShown(false, closingList: false)
     }
 
+    /// Switches the song's lyrics on or off (the lyrics' button, L, a remote's Select).
     func toggleNowPlayingLyrics() {
         guard hasNowPlayingLyrics || isNowPlayingLyricsVisible else { return }
-        playSound(named: isNowPlayingLyricsVisible ? "Exit" : "Selection")
+        if isNowPlayingLyricsVisible, isNowPlayingQueueVisible || nowPlayingQueueReveal > 0 {
+            // Asked for with the list out over them: the list goes, and there they are.
+            playSound(named: "Selection")
+            hideNowPlayingQueue()
+            return
+        }
+        let showing = !isNowPlayingLyricsVisible
+        playSound(named: showing ? "Selection" : "Exit")
+        wantsNowPlayingLyrics = showing
+        setNowPlayingLyricsShown(showing, closingList: true)
+    }
+
+    /// Brings the words out or puts them away, the rest of Now Playing making room for them or
+    /// taking it back.
+    private func setNowPlayingLyricsShown(_ showing: Bool, closingList: Bool) {
+        guard showing != isNowPlayingLyricsVisible else { return }
+        // (Not in Now Playing, or still on the way into it: it arrives as it is to be.)
+        guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey, !isFullscreenSceneTransitioning else {
+            isNowPlayingLyricsVisible = showing
+            return
+        }
         if nowPlayingGlide?.subject == .list { landNowPlayingGlide() }
         if glidesNowPlayingExtras, !isNowPlayingQueueVisible, nowPlayingQueueReveal <= 0 {
             // Standing upright, a frame at a time: the song's details leave the part under the
             // fold before the words come in there, and come back once they've gone.
-            let showing = !isNowPlayingLyricsVisible
             let from = nowPlayingWordsGlide ?? (showing ? 0 : 1)
             let target: CGFloat = showing ? 1 : 0
             isNowPlayingLyricsVisible = showing
@@ -524,17 +541,20 @@ extension MenuView {
         }
         holdNowPlayingGlide()
         // (The modern look sets the song out again in the left half: off at once, and settling.)
-        let pace: Animation = ModernTheme.isActive ? .brisk(duration: 0.44) : (isNowPlayingLyricsVisible ? .smoothInOut(duration: 0.34) : .smooth(duration: 0.42))
+        let pace: Animation = ModernTheme.isActive ? .brisk(duration: 0.44) : (showing ? .smooth(duration: 0.42) : .smoothInOut(duration: 0.34))
         withAnimation(pace) {
-            isNowPlayingQueueVisible = false
-            nowPlayingQueueReveal = 0
+            if closingList {
+                isNowPlayingQueueVisible = false
+                nowPlayingQueueReveal = 0
+            }
             nowPlayingWordsGlide = nil
-            isNowPlayingLyricsVisible.toggle()
+            isNowPlayingLyricsVisible = showing
         }
         updateMusicNowPlayingFlipTimerState()
     }
 
-    /// Now Playing went away: its extras go with it.
+    /// Now Playing is being come to: its extras start afresh, but for the lyrics, which are out
+    /// again if they were left switched on and the song has some.
     func resetNowPlayingExtras() {
         nowPlayingSession += 1
         nowPlayingGlide = nil
@@ -543,7 +563,7 @@ extension MenuView {
         isNowPlayingQueueVisible = false
         nowPlayingQueueReveal = 0
         nowPlayingQueueHoverIndex = nil
-        isNowPlayingLyricsVisible = false
+        isNowPlayingLyricsVisible = wantsNowPlayingLyrics && hasNowPlayingLyrics
         nowPlayingTouchControlsHideTask?.cancel()
         nowPlayingTouchControlsHideTask = nil
         areNowPlayingTouchControlsHidden = false
