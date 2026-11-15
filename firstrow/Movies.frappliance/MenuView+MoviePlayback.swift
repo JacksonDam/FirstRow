@@ -546,6 +546,12 @@ extension MenuView {
     func handleMovieSpacebarPressed() {
         guard let player = moviePlayer else { return }
         showMovieControlsInstantly()
+        if isRecoveringMovieStream {
+            // (A video that is being fetched again plays, or doesn't, when it is back.)
+            playsWhenMovieMovesEnd.toggle()
+            movieControlsGlyphState = playsWhenMovieMovesEnd ? .play : .pause
+            return
+        }
         let isCurrentlyPlaying = player.rate > 0.01
         if isCurrentlyPlaying {
             player.pause()
@@ -655,7 +661,77 @@ extension MenuView {
         let unclampedTime = moviePlaybackCurrentSeconds + (Double(movieScrubDirection) * velocity * delta)
         let targetSeconds = max(0, min(maxTime > 0 ? maxTime : unclampedTime, unclampedTime))
         moviePlaybackCurrentSeconds = max(0, targetSeconds)
-        player.seek(toSeconds: moviePlaybackCurrentSeconds, exactly: true)
+        moveMovie(toSeconds: moviePlaybackCurrentSeconds, exactly: true)
+    }
+
+    // MARK: - One move at a time
+
+    /// Whether the movie is still on its way to a place it was asked to go to.
+    var isMovieMoving: Bool {
+        movieMoveBegan != nil || movieMoveWaiting != nil || isRecoveringMovieStream
+    }
+
+    /// Sends the movie to another place, one move at a time: a place asked for while the
+    /// player is still on its way to the last is gone to when it gets there, and of those
+    /// only the newest. A streamed movie is moved twice a second at most, too, and a YouTube
+    /// video once. A player told to drop each move for the next (a bar dragged, a key held,
+    /// the bar clicked here and there) asks for pieces of a streamed movie each time and
+    /// lets go of them, many times a second; YouTube refuses one that does, and the video
+    /// then couldn't be played. (A move that goes unanswered is given up on after a few
+    /// seconds, for the next.)
+    func moveMovie(toSeconds seconds: Double, exactly: Bool) {
+        // (A video being fetched again starts from wherever the bar says when it is back.)
+        guard let player = moviePlayer, !isRecoveringMovieStream else { return }
+        let now = CACurrentMediaTime()
+        let isStreamed = !(currentMoviePlaybackURL?.isFileURL ?? true)
+        let wait = isStreamed ? movieLastMove + (youtubeSession == nil ? 0.5 : 1) - now : 0
+        if let began = movieMoveBegan, now - began < 4 {
+            movieMoveWaiting = (seconds, exactly)
+            return
+        }
+        if wait > 0 {
+            movieMoveWaiting = (seconds, exactly)
+            guard movieMoveTimer == nil else { return }
+            movieMoveTimer = Task { @MainActor in
+                try? await firstRowSleep(wait)
+                guard !Task.isCancelled else { return }
+                self.movieMoveTimer = nil
+                guard self.movieMoveBegan == nil, let next = self.movieMoveWaiting else { return }
+                self.moveMovie(toSeconds: next.seconds, exactly: next.exactly)
+            }
+            return
+        }
+        movieMoveWaiting = nil
+        movieMoveBegan = now
+        movieLastMove = now
+        movieMoveCount &+= 1
+        let count = movieMoveCount
+        player.seek(toSeconds: seconds, exactly: exactly) { [weak self, weak player] _ in
+            guard let self, self.movieMoveCount == count else { return }
+            self.movieMoveBegan = nil
+            guard let player, self.moviePlayer === player else {
+                self.forgetMovieMoves()
+                return
+            }
+            if let next = self.movieMoveWaiting {
+                self.moveMovie(toSeconds: next.seconds, exactly: next.exactly)
+            } else if self.playsWhenMovieMovesEnd {
+                self.playsWhenMovieMovesEnd = false
+                player.play()
+                if self.movieSpeed != 1 { player.setSpeed(self.movieSpeed) }
+            }
+        }
+    }
+
+    /// Lets go of what `moveMovie` was keeping: the movie has gone, or has been started again.
+    func forgetMovieMoves() {
+        movieMoveCount &+= 1
+        movieMoveBegan = nil
+        movieMoveWaiting = nil
+        movieMoveTimer?.cancel()
+        movieMoveTimer = nil
+        playsWhenMovieMovesEnd = false
+        isRecoveringMovieStream = false
     }
 
     func stopMovieScrubbing(revertToPause: Bool, scheduleAutoHide: Bool) {
@@ -780,11 +856,14 @@ extension MenuView {
         }
         moviePlaybackFailureObserver = player.observeFailure { [weak player] in
             guard let player, self.observedMoviePlayer === player else { return }
+            // (A YouTube video that has broken off is asked for afresh before it is given up on.)
+            if self.recoverYouTubeStream() { return }
             self.movieCouldNotBePlayed()
         }
         movieTimeObserverToken = player.observeTime(every: 1.0 / 30.0) { [weak player] currentSeconds in
             guard let player else { return }
-            if self.movieScrubDirection == 0 {
+            // (Not while it is on its way to a place it was asked to go to: the bar shows that place.)
+            if self.movieScrubDirection == 0, !self.isMovieMoving {
                 self.moviePlaybackCurrentSeconds = currentSeconds
             }
             // Once it's playing its tracks are known (some players only list them then): a
@@ -982,6 +1061,7 @@ extension MenuView {
     }
 
     func clearMoviePlaybackControlState() {
+        forgetMovieMoves()
         cancelMovieControlsAutoHide()
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         removeMoviePlaybackObservation()

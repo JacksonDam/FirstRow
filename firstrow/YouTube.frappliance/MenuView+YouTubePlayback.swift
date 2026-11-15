@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import QuartzCore
 #if os(macOS)
     import AppKit
 #elseif canImport(UIKit)
@@ -26,6 +27,10 @@ struct YouTubePlaybackSession {
     var audioTracks: [YouTubeAudioTrack] = []
     var audioTrackID: String?
     var hasStarted = false
+    /// How often the video has broken off and been asked for afresh, and when it last was
+    /// (see `recoverYouTubeStream`).
+    var recoveries = 0
+    var lastRecovery: CFTimeInterval = 0
     /// The caption track that's on (an index into the video's tracks) and its lines.
     var captionTrack: Int?
     var cues: [YouTubeCaptionCue] = []
@@ -445,49 +450,106 @@ extension MenuView {
         }
     }
 
+    /// A video that broke off as it played is started again from where the bar is, before
+    /// it is given up on. YouTube's servers refuse a player that has asked for too many
+    /// pieces of a video too quickly (one moved about in it again and again) for a few
+    /// seconds, and then answer for the same streams as before: so it waits first, longer
+    /// each time, the player left alone and the pinwheel turning meanwhile. From the third
+    /// time the video is asked of YouTube afresh as well, in case what it handed out has
+    /// run out (it is good for some hours). Five times at most while a video keeps breaking
+    /// off by itself (one that is still being moved about in is not given up on); never
+    /// for one that hadn't loaded. Returns whether it is being tried.
+    func recoverYouTubeStream() -> Bool {
+        guard var session = youtubeSession, !session.playback.isLive, let player = movieSystemPlayer, moviePlaybackDurationSeconds > 0 else { return false }
+        let now = CACurrentMediaTime()
+        if now - session.lastRecovery > 60 { session.recoveries = 0 }
+        if movieLastMove > session.lastRecovery { session.recoveries = min(session.recoveries, 2) }
+        guard session.recoveries < 5 else { return false }
+        session.recoveries += 1
+        session.lastRecovery = now
+        youtubeSession = session
+        let videoID = session.video.id
+        let attempt = session.recoveries
+        var plays = playsWhenMovieMovesEnd
+        if case .pause = movieControlsGlyphState {} else { plays = true }
+        forgetMovieMoves()
+        // (Until it is back, moves only move the bar, and playing or pausing is kept for then.)
+        isRecoveringMovieStream = true
+        playsWhenMovieMovesEnd = plays
+        removeMoviePlaybackObservation()
+        showsMovieBufferingPinwheel = true
+        youtubeStreamReloadTask?.cancel()
+        youtubeStreamReloadTask = Task { @MainActor in
+            try? await firstRowSleep([1, 2, 4, 8, 12][min(attempt, 5) - 1])
+            guard !Task.isCancelled, var current = self.youtubeSession, current.video.id == videoID, self.moviePlayer === player else { return }
+            if attempt >= 3, let playback = try? await YouTubeClient.shared.playback(of: videoID) {
+                guard !Task.isCancelled, self.youtubeSession?.video.id == videoID, self.moviePlayer === player else { return }
+                // (Its streams are looked up again from what was just handed out.)
+                current.playback = playback
+                current.variants = []
+                current.manifestText = nil
+                self.youtubeSession = current
+            }
+            let began = await self.reloadYouTubeStream(startingAgain: true)
+            guard !Task.isCancelled, self.youtubeSession?.video.id == videoID, self.moviePlayer === player, !began else { return }
+            self.forgetMovieMoves()
+            self.showsMovieBufferingPinwheel = false
+            self.movieCouldNotBePlayed()
+        }
+        return true
+    }
+
     /// Has the player stop and play on from where it was at the size of picture, and with
     /// the sound, now asked for. (Left to change size as it went, it would first play out
-    /// what it had already fetched at the old one.)
-    private func reloadYouTubeStream() async {
-        guard var session = youtubeSession, let player = movieSystemPlayer, !session.playback.isLive else { return }
+    /// what it had already fetched at the old one.) `startingAgain` is for a video that broke
+    /// off: it starts again from where the bar is, with the streams it has now, whichever
+    /// they are. Returns whether the video was started again.
+    @discardableResult
+    private func reloadYouTubeStream(startingAgain startsAgain: Bool = false) async -> Bool {
+        guard var session = youtubeSession, let player = movieSystemPlayer, !session.playback.isLive else { return false }
+        if session.manifestText == nil || session.variants.isEmpty {
+            // (Asked for before the video's sizes had been looked up, or after it broke off.)
+            let videoID = session.video.id
+            guard let manifest = try? await YouTubeClient.shared.manifest(of: session.playback.manifestURL),
+                  var current = youtubeSession, current.video.id == videoID, moviePlayer === player, !Task.isCancelled else { return false }
+            current.variants = manifest.variants
+            current.manifestText = manifest.text
+            current.audioTracks = YouTubeClient.audioTracks(inPlaylist: manifest.text)
+            youtubeSession = current
+            session = current
+        }
         #if FIRSTROW_PORTABLE
             let limit = YouTubeStore.shared.maximumHeight ?? Self.youtubeHeightSuitingTheScreen
             guard let chosen = Self.youtubeVariant(in: session.variants, maximumHeight: limit),
-                  let url = AVPlayer.pairedStreamsURL(video: chosen.url, audio: session.audioTrackID.flatMap { chosen.audioURLs[$0] } ?? chosen.audioURL), url != session.url
-            else { return }
+                  let url = AVPlayer.pairedStreamsURL(video: chosen.url, audio: session.audioTrackID.flatMap { chosen.audioURLs[$0] } ?? chosen.audioURL),
+                  startsAgain || url != session.url
+            else { return false }
             let item = AVPlayerItem(url: url)
         #else
-            if session.manifestText == nil {
-                // (Asked for before the video's sizes had been looked up.)
-                let videoID = session.video.id
-                guard let manifest = try? await YouTubeClient.shared.manifest(of: session.playback.manifestURL),
-                      var current = youtubeSession, current.video.id == videoID, moviePlayer === player, !Task.isCancelled else { return }
-                current.variants = manifest.variants
-                current.manifestText = manifest.text
-                current.audioTracks = YouTubeClient.audioTracks(inPlaylist: manifest.text)
-                youtubeSession = current
-                session = current
-            }
             guard let text = session.manifestText,
                   let address = Self.youtubeAddress(
                       forHeight: YouTubeStore.shared.maximumHeight, videoID: session.video.id, manifestText: text, variants: session.variants,
                       audio: session.audioTracks.count > 1 ? (session.audioTrackID ?? session.audioTracks[0].id) : nil,
                   )
-            else { return }
+            else { return false }
             let url = address.url
-            guard url != session.url else { return }
+            guard startsAgain || url != session.url else { return false }
             session.startHeight = address.startHeight
             youtubeSizeWatch = YouTubeSizeWatch()
             let item = YouTubePlaylistLoader.shared.playerItem(for: url) ?? AVPlayerItem(url: url)
         #endif
-        let time = player.currentTime()
-        let wasPlaying = player.rate > 0.01
+        // (A video that broke off: from the place the bar shows, which the player may never
+        // have reached, playing if that is what is wanted of it.)
+        let time = startsAgain ? CMTime(seconds: moviePlaybackCurrentSeconds, preferredTimescale: 600) : player.currentTime()
+        let wasPlaying = startsAgain ? playsWhenMovieMovesEnd : player.rate > 0.01
         session.url = url
         youtubeSession = session
         currentMoviePlaybackURL = url.standardizedFileURL
         // The player isn't asked where it is until it's back where it was (for a moment it
         // says the start): the bar stays put while the picture comes back.
         removeMoviePlaybackObservation()
+        forgetMovieMoves()
+        if startsAgain { showsMovieBufferingPinwheel = true }
         player.replaceCurrentItem(with: item)
         player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             Task { @MainActor in
@@ -506,6 +568,7 @@ extension MenuView {
             player.play()
             if movieSpeed != 1 { player.setSpeed(movieSpeed) }
         }
+        return true
     }
 }
 

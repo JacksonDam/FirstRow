@@ -745,7 +745,9 @@ extension MenuView {
         guard let player = moviePlayer, !isMovieTransitioning else { return }
         let duration = moviePlaybackDurationSeconds
         guard duration.isFinite, duration > 0 else { return }
-        let wasPlaying = player.rate > 0.01
+        // (Or about to play on, from where the bar was last let go.)
+        let wasPlaying = player.rate > 0.01 || playsWhenMovieMovesEnd
+        playsWhenMovieMovesEnd = false
         pointer.drag = .movie(wasPlaying: wasPlaying)
         pointer.cursorHideTask?.cancel()
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
@@ -809,7 +811,13 @@ extension MenuView {
             movieScrubDirection = 0
             if wasPlaying {
                 movieControlsGlyphState = .play
-                moviePlayer?.play()
+                // (Once it is where the bar was let go: played sooner, it would play a moment
+                // of wherever it was still on its way to.)
+                if isMovieMoving {
+                    playsWhenMovieMovesEnd = true
+                } else {
+                    moviePlayer?.play()
+                }
             }
             scheduleMovieControlsAutoHide()
         case let .music(wasPlaying):
@@ -836,23 +844,23 @@ extension MenuView {
     }
 
     private func seekMovie(toFraction fraction: Double, exact: Bool) {
-        guard let player = moviePlayer else { return }
+        guard moviePlayer != nil else { return }
         let duration = moviePlaybackDurationSeconds
         guard duration.isFinite, duration > 0 else { return }
         let seconds = max(0, min(duration, fraction * duration))
         moviePlaybackCurrentSeconds = seconds
-        player.seek(toSeconds: seconds, exactly: exact)
+        moveMovie(toSeconds: seconds, exactly: exact)
     }
 
     func skipMovie(bySeconds delta: Double) {
-        guard let player = moviePlayer, !isMovieTransitioning else { return }
+        guard moviePlayer != nil, !isMovieTransitioning else { return }
         let duration = moviePlaybackDurationSeconds
         guard duration.isFinite, duration > 0 else { return }
         stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
         showMovieControlsInstantly()
         let seconds = max(0, min(duration - 0.5, moviePlaybackCurrentSeconds + delta))
         moviePlaybackCurrentSeconds = seconds
-        player.seek(toSeconds: seconds, exactly: true)
+        moveMovie(toSeconds: seconds, exactly: true)
         scheduleMovieControlsAutoHide()
     }
 

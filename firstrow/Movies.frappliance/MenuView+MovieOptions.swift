@@ -287,7 +287,7 @@ extension MenuView {
                 let seconds = state.chapterStarts[row.selected]
                 stopMovieScrubbing(revertToPause: false, scheduleAutoHide: false)
                 moviePlaybackCurrentSeconds = seconds
-                player.seek(toSeconds: seconds, exactly: true)
+                moveMovie(toSeconds: seconds, exactly: true)
             }
         }
     }

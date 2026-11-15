@@ -219,10 +219,10 @@
         }
 
         func systemSeek(to seconds: Double) -> Bool {
-            if isMoviePlaybackVisible, let player = moviePlayer {
+            if isMoviePlaybackVisible, moviePlayer != nil {
                 let target = max(0, min(seconds, max(0, moviePlaybackDurationSeconds - 0.5)))
                 moviePlaybackCurrentSeconds = target
-                player.seek(toSeconds: target, exactly: true)
+                moveMovie(toSeconds: target, exactly: true)
                 return true
             }
             guard hasActiveMusicPlaybackSession() else { return false }

@@ -404,6 +404,21 @@ final class MenuView: ObservableObject {
     @Published var movieLastScrubInputDate: Date?
     @Published var movieLastScrubTickDate: Date?
     @Published var movieScrubTimer: Timer?
+    /// When the player was last sent to another place in the movie and hasn't said it is
+    /// there yet, and the newest place asked for meanwhile (see `moveMovie`).
+    var movieMoveBegan: CFTimeInterval?
+    var movieMoveWaiting: (seconds: Double, exactly: Bool)?
+    var movieMoveCount = 0
+    /// When the player was last sent somewhere, and the wait before a streamed movie is sent
+    /// on to the place that is waiting.
+    var movieLastMove: CFTimeInterval = 0
+    var movieMoveTimer: Task<Void, Never>?
+    /// A streamed video that broke off is being fetched again (see `recoverYouTubeStream`):
+    /// the player is left alone until it is back.
+    var isRecoveringMovieStream = false
+    /// The movie plays on once it is where it was last asked to go (the bar of one that was
+    /// playing has been let go of).
+    var playsWhenMovieMovesEnd = false
     /// The subtitles, audio and speed panel, while it's open.
     @Published var movieOptions: MovieOptionsState?
     /// How far that panel has come out of its buttons above the bar (0 in, 1 out).
