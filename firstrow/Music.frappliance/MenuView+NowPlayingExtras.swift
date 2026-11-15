@@ -459,7 +459,8 @@ extension MenuView {
         return nowPlayingLyricsSongID == activeMusicPlaybackSongID && !lyrics.lines.isEmpty
     }
 
-    /// Looks the current song's lyrics up, once per song.
+    /// Looks the current song's lyrics up, once per song: what the song brings itself and,
+    /// when it brings none, what LRCLIB has for it (see `LyricsLookup.swift`).
     func refreshNowPlayingLyrics() {
         guard let id = activeMusicPlaybackSongID, !isPodcastAudioNowPlaying else {
             nowPlayingLyrics = nil
@@ -475,8 +476,17 @@ extension MenuView {
             return
         }
         Task { @MainActor in
-            let lyrics = await self.loadMusicLyrics(for: song)
+            var lyrics = await self.loadMusicLyrics(for: song)
             guard self.nowPlayingLyricsSongID == id else { return }
+            if lyrics == nil {
+                // (Asked only while this is still the song in Now Playing.)
+                lyrics = await self.lookedUpLyrics(for: song) { [weak self] in
+                    guard let self else { return false }
+                    return self.nowPlayingLyricsSongID == id && self.activeMusicPlaybackSongID == id &&
+                        self.activeFullscreenScene?.key == self.musicNowPlayingFullscreenKey
+                }
+                guard self.nowPlayingLyricsSongID == id else { return }
+            }
             withAnimation(.smooth(duration: 0.3)) {
                 self.nowPlayingLyrics = lyrics
                 if lyrics == nil { self.dropNowPlayingLyrics() }

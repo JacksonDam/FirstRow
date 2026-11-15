@@ -78,3 +78,94 @@ final class firstRowTests: XCTestCase {
         XCTAssertEqual(gap, 56, accuracy: 0.0001)
     }
 }
+
+/// Telling a song's lyrics from another song's, among what LRCLIB sends back.
+final class LyricsLookupTests: XCTestCase {
+    private func record(_ title: String, _ artist: String, _ duration: Double, synced: Bool = true, plain: Bool = true, instrumental: Bool = false) -> LyricsLookupRecord {
+        LyricsLookupRecord(
+            trackName: title, artistName: artist, albumName: "An Album", duration: duration, instrumental: instrumental,
+            plainLyrics: instrumental || !plain ? nil : "One line\nAnother line",
+            syncedLyrics: instrumental || !synced ? nil : "[00:01.00] One line\n[00:04.50] Another line",
+        )
+    }
+
+    private func query(_ title: String, _ artist: String, _ duration: Double) -> LyricsLookupQuery {
+        LyricsLookupQuery(title: title, artist: artist, album: "An Album", duration: duration)
+    }
+
+    func testTitlesLoseTheirAsides() {
+        XCTAssertEqual(LyricsMatching.cleanedTitle("Get Lucky (feat. Pharrell Williams & Nile Rodgers)"), "Get Lucky")
+        XCTAssertEqual(LyricsMatching.cleanedTitle("Here Comes the Sun - Remastered 2009"), "Here Comes the Sun")
+        XCTAssertEqual(LyricsMatching.cleanedTitle("A Song [Live at the Hall] (2011 Remaster)"), "A Song")
+        XCTAssertEqual(LyricsMatching.cleanedTitle("A Song feat. Someone Else"), "A Song")
+        XCTAssertEqual(LyricsMatching.cleanedTitle("A Song (Mono Version)"), "A Song")
+    }
+
+    func testTitlesKeepWhatIsTheirs() {
+        XCTAssertEqual(LyricsMatching.cleanedTitle("Live and Let Die"), "Live and Let Die")
+        XCTAssertEqual(LyricsMatching.cleanedTitle("A Song (Acoustic)"), "A Song (Acoustic)")
+        XCTAssertEqual(LyricsMatching.cleanedTitle("A Song (Somebody's Remix)"), "A Song (Somebody's Remix)")
+        XCTAssertEqual(LyricsMatching.cleanedTitle("Up - And Down"), "Up - And Down")
+        XCTAssertEqual(LyricsMatching.cleanedTitle("(Live)"), "(Live)")
+        XCTAssertEqual(LyricsMatching.cleanedTitle("Liverpool Lullaby"), "Liverpool Lullaby")
+    }
+
+    func testFoldingIgnoresCaseAccentsAndPunctuation() {
+        XCTAssertEqual(LyricsMatching.folded("Señorita!"), "senorita")
+        XCTAssertEqual(LyricsMatching.folded("Don't  Stop -- Believin’"), "dont stop believin")
+        XCTAssertEqual(LyricsMatching.folded("Rock & Roll"), "rock and roll")
+    }
+
+    func testArtistsWrittenDifferentlyAreTheSame() {
+        func same(_ first: String, _ second: String) -> Bool {
+            !LyricsMatching.artistForms(first).isDisjoint(with: LyricsMatching.artistForms(second))
+        }
+        XCTAssertTrue(same("Simon & Garfunkel", "Simon and Garfunkel"))
+        XCTAssertTrue(same("Shawn Mendes & Camila Cabello", "Shawn Mendes, Camila Cabello"))
+        XCTAssertTrue(same("Beyoncé", "BEYONCE"))
+        XCTAssertTrue(same("Daft Punk feat. Pharrell Williams", "Daft Punk"))
+        XCTAssertTrue(same("Mars, Bruno", "Bruno Mars"))
+        XCTAssertFalse(same("The Beatles", "The Rolling Stones"))
+        XCTAssertFalse(same("Queen", "Queens of the Stone Age"))
+    }
+
+    func testSameSongNeedsTitleArtistAndLength() {
+        let asked = query("A Song (Remastered)", "Beyoncé", 200)
+        XCTAssertTrue(LyricsMatching.isSameSong(record("A Song", "Beyonce", 202), as: asked))
+        XCTAssertTrue(LyricsMatching.isSameSong(record("a song - Live", "BEYONCÉ feat. Someone", 197), as: asked))
+        XCTAssertFalse(LyricsMatching.isSameSong(record("A Song", "Beyonce", 204), as: asked))
+        XCTAssertFalse(LyricsMatching.isSameSong(record("A Song", "Somebody Else", 200), as: asked))
+        XCTAssertFalse(LyricsMatching.isSameSong(record("A Song Again", "Beyonce", 200), as: asked))
+        // A song whose length isn't known can't be told from another recording of it.
+        XCTAssertFalse(LyricsMatching.isSameSong(record("A Song", "Beyonce", 200), as: query("A Song", "Beyoncé", 0)))
+    }
+
+    func testTimedLyricsComeBeforePlainThenTheNearestLength() {
+        let asked = query("A Song", "A Band", 200)
+        let best = LyricsMatching.best(of: [
+            record("A Song", "Another Band", 200),
+            record("A Song", "A Band", 200, synced: false),
+            record("A Song", "A Band", 203),
+            record("A Song", "A Band", 201),
+            record("A Song", "A Band", 200, instrumental: true),
+        ], for: asked)
+        XCTAssertEqual(best?.record.duration, 201)
+        XCTAssertEqual(best?.lyrics.isSynced, true)
+        let plain = LyricsMatching.best(of: [record("A Song", "A Band", 202, synced: false), record("A Song", "A Band", 199, synced: false)], for: asked)
+        XCTAssertEqual(plain?.record.duration, 199)
+        XCTAssertEqual(plain?.lyrics.isSynced, false)
+        XCTAssertNil(LyricsMatching.best(of: [record("A Song", "Another Band", 200), record("A Song", "A Band", 200, instrumental: true)], for: asked))
+    }
+
+    func testLyricsOfARecord() {
+        XCTAssertEqual(LyricsMatching.lyrics(from: record("A Song", "A Band", 200))?.lines.map(\.time), [1, 4.5])
+        XCTAssertEqual(LyricsMatching.lyrics(from: record("A Song", "A Band", 200, synced: false))?.lines.map(\.text), ["One line", "Another line"])
+        XCTAssertNil(LyricsMatching.lyrics(from: record("A Song", "A Band", 200, instrumental: true)))
+        XCTAssertNil(LyricsMatching.lyrics(from: record("A Song", "A Band", 200, synced: false, plain: false)))
+    }
+
+    func testASongIsKeptUnderOneNameHoweverItIsWritten() {
+        XCTAssertEqual(LyricsMatching.key(for: query("A Song (Remastered)", "Beyoncé", 200.4)), LyricsMatching.key(for: query("a song", "BEYONCE", 200)))
+        XCTAssertNotEqual(LyricsMatching.key(for: query("A Song", "Beyoncé", 200)), LyricsMatching.key(for: query("A Song", "Beyoncé", 230)))
+    }
+}
