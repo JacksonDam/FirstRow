@@ -56,9 +56,10 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         return CATransform3DTranslate(transform, -center.x, -center.y, 0)
     }
 
-    /// Where the progress bar is in canvas points, or nil while songs change over.
+    /// Where the progress bar is in canvas points, or nil while songs change over and while
+    /// there is no bar to be seen (under the heading the words have on an upright screen).
     var progressBar: CGRect? {
-        isSwitchingSong ? nil : barPlace
+        isSwitchingSong || !incoming.showsBar ? nil : barPlace
     }
 
     /// Where the progress bar sits in canvas points, songs changing over or not (the new song's).
@@ -206,6 +207,10 @@ final class ModernNowPlayingPanelLayer {
     private(set) var detailsScale: CGFloat = 1
     private(set) var detailsSlide: CGFloat = 0
     private(set) var buttonsDrop: CGFloat = 0
+    /// Whether the bar is there to be seen (and taken hold of): it isn't in the heading the
+    /// words have over them on an upright screen, where `barPlace` only says where the
+    /// on-screen buttons go.
+    private(set) var showsBar = true
     private let artworkShadow = SceneLayer()
     private let artwork = SceneLayer()
     private let title = SceneLayer()
@@ -379,6 +384,7 @@ final class ModernNowPlayingPanelLayer {
             if let tuckAnimation { details.dip(duration: tuckAnimation.duration) }
         }
         buttonsDrop = 0
+        showsBar = true
         guard let upright else {
             detailsSlide = 0
             title.setTransform(CATransform3DIdentity, tuckAnimation)
@@ -504,6 +510,7 @@ final class ModernNowPlayingPanelLayer {
         )
         details.setTransform(detailsPlace.transform, tuckAnimation)
         let bar = detailsPlace.map(barFrame)
+        showsBar = headed < 0.5
         guard headed > 0 else {
             barPlace = bar
             detailsScale = detailsPlace.scale
