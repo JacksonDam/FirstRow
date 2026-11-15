@@ -3,6 +3,7 @@
 #elseif canImport(UIKit)
     import UIKit
 #else
+    import CoreText
     import FirstRowPortable
 #endif
 
@@ -19,6 +20,9 @@ enum FirstRowMain {
         #elseif canImport(UIKit)
             UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(IOSAppDelegate.self))
         #else
+            // (Characters the look's own font lacks are drawn first with a font made for the
+            // language First Row is in.)
+            FontRegistry.preferredFallbackNames = AppLanguage.current.fallbackFontNames
             PortableApplication.run { PortableAppHost() }
         #endif
     }

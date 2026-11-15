@@ -133,6 +133,8 @@ public enum FontRegistry {
     nonisolated(unsafe) private static var facesByName: [String: FontFace] = [:]
     nonisolated(unsafe) private static var scanned: [FontEntry]?
     nonisolated(unsafe) private static var fallbackChain: [FontFace]?
+    /// The bold face of each fallback face's family, once looked for (nil inside: it has none).
+    nonisolated(unsafe) private static var boldFaces: [ObjectIdentifier: FontFace?] = [:]
 
     /// Extra folders to search first, such as one the user drops a font into.
     nonisolated(unsafe) public static var extraDirectories: [URL] = []
@@ -166,9 +168,23 @@ public enum FontRegistry {
 
     static let fallbackNames = [
         "Lucida Grande", "Lucida Sans Unicode", "DejaVu Sans", "Noto Sans", "Segoe UI", "Arial Unicode MS", "Arial",
-        "Noto Sans CJK JP", "Noto Sans CJK SC", "Microsoft YaHei", "Yu Gothic", "Meiryo", "Malgun Gothic", "Noto Sans Arabic",
+        "Noto Sans CJK JP", "Noto Sans CJK SC", "Microsoft YaHei", "Yu Gothic", "Meiryo", "Malgun Gothic",
+        "Noto Sans CJK TC", "Noto Sans CJK KR", "Microsoft JhengHei", "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "IPAexGothic",
+        "IPAGothic", "VL Gothic", "NanumGothic", "Droid Sans Fallback", "MS Gothic", "SimSun", "Noto Sans Arabic",
         "Noto Sans Hebrew", "Noto Sans Thai", "Segoe UI Symbol", "Noto Sans Symbols", "Noto Sans Symbols2", "DejaVu Sans Mono",
     ]
+
+    /// Faces to try before the rest of `fallbackNames` for characters the requested font
+    /// lacks: the ones made for the language First Row is in. Chinese, Japanese and Korean
+    /// share characters that each writes its own way, and the first face that has a character
+    /// is the one that draws it. Set before any lettering is drawn.
+    nonisolated(unsafe) public static var preferredFallbackNames: [String] = [] {
+        didSet {
+            lock.lock()
+            fallbackChain = nil
+            lock.unlock()
+        }
+    }
 
     static func directories() -> [URL] {
         var dirs = extraDirectories
@@ -386,6 +402,22 @@ public enum FontRegistry {
         return (face, key.contains("bold") && !face.isBold)
     }
 
+    /// The bold face of `face`'s family, where the machine has one: for the characters bold
+    /// lettering takes from another font, which would otherwise stand thin among it.
+    static func bold(of face: FontFace) -> FontFace? {
+        if face.isBold { return face }
+        lock.lock()
+        defer { lock.unlock() }
+        let key = ObjectIdentifier(face)
+        if let known = boldFaces[key] { return known }
+        let found = allFaces().first { entry in
+            let style = entry.style.lowercased()
+            return entry.family == face.family && entry.isBold && !style.contains("italic") && !style.contains("oblique")
+        }?.face
+        boldFaces[key] = found
+        return found
+    }
+
     /// Faces to try, in order, for characters the requested font lacks.
     static func fallbacks() -> [FontFace] {
         lock.lock()
@@ -393,7 +425,10 @@ public enum FontRegistry {
         if let fallbackChain { return fallbackChain }
         let faces = allFaces()
         var chain: [FontFace] = []
-        for name in fallbackNames {
+        // (The plain Western faces first, as ever: the preferred ones go before the first of
+        // the others that has Chinese, Japanese or Korean in it.)
+        let split = fallbackNames.firstIndex(of: "Noto Sans CJK JP") ?? fallbackNames.count
+        for name in fallbackNames[..<split] + preferredFallbackNames + fallbackNames[split...] {
             if let face = exact(name, in: faces)?.face, !chain.contains(where: { $0 === face }) {
                 chain.append(face)
             }
@@ -449,8 +484,8 @@ public final class CTFont: @unchecked Sendable, Hashable {
     }
 
     /// Another face (for characters this one lacks) at the same size, with its own line metrics.
-    func withFace(_ other: FontFace) -> CTFont {
-        CTFont(face: other, size: size, name: name, syntheticBold: syntheticBold && !other.isBold)
+    func withFace(_ other: FontFace, bold: Bool) -> CTFont {
+        CTFont(face: other, size: size, name: name, syntheticBold: bold && !other.isBold)
     }
 
     func advance(_ scalar: UInt32) -> CGFloat {
@@ -623,7 +658,12 @@ enum Shaper {
             let isControl = scalar < 0x20 || (0x200B ... 0x200F).contains(scalar) || scalar == 0xFEFF
             var font = base
             if !isControl, !base.face.hasGlyph(scalar), let fallback = fallbacks.first(where: { $0.hasGlyph(scalar) }) {
-                font = base.withFace(fallback)
+                // (Bold lettering keeps its weight in what another font lends it: that
+                // font's own bold where it has one with the character, thickened where not.)
+                let isBold = base.syntheticBold || base.face.isBold
+                var face = fallback
+                if isBold, let bold = FontRegistry.bold(of: fallback), bold.hasGlyph(scalar) { face = bold }
+                font = base.withFace(face, bold: isBold)
             }
             if let (previousScalar, previousFont) = previous, previousFont.face === font.face {
                 x += font.kerning(previousScalar, scalar)
@@ -766,6 +806,17 @@ public func CTTypesetterCreateWithAttributedString(_ string: CFAttributedString)
     CTTypesetter(string)
 }
 
+/// Marks of Chinese, Japanese and Korean writing that a line doesn't begin with (full stops,
+/// commas, closing brackets and quotation marks, small kana and the long-vowel mark) or end
+/// with (opening brackets and quotation marks).
+private let neverStartsLine: Set<UInt32> = [
+    0x3001, 0x3002, 0xFF0C, 0xFF0E, 0xFF1A, 0xFF1B, 0xFF01, 0xFF1F, 0x30FB, 0x2026, 0x2025, 0x3009, 0x300B, 0x300D, 0x300F, 0x3011,
+    0x3015, 0x3017, 0x3019, 0xFF09, 0xFF3D, 0xFF5D, 0x201D, 0x2019, 0x30FC, 0x3005, 0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x3063,
+    0x3083, 0x3085, 0x3087, 0x308E, 0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30C3, 0x30E3, 0x30E5, 0x30E7, 0x30EE, 0x29, 0x5D, 0x21,
+    0x3F, 0x2C, 0x2E, 0x3A, 0x3B,
+]
+private let neverEndsLine: Set<UInt32> = [0x3008, 0x300A, 0x300C, 0x300E, 0x3010, 0x3014, 0x3016, 0x3018, 0xFF08, 0xFF3B, 0xFF5B, 0x201C, 0x2018, 0x28, 0x5B]
+
 /// How many UTF-16 units from `start` fit in `width`, breaking after spaces or hyphens where
 /// possible. Trailing spaces stay on the line, as Core Text keeps them.
 public func CTTypesetterSuggestLineBreak(_ typesetter: CTTypesetter, _ start: CFIndex, _ width: Double) -> CFIndex {
@@ -789,8 +840,12 @@ public func CTTypesetterSuggestLineBreak(_ typesetter: CTTypesetter, _ start: CF
         if glyph.isWhitespace || glyph.scalar == 0x2D || glyph.scalar == 0x2010 || glyph.scalar == 0x2013 || glyph.scalar == 0x2014 || glyph.scalar == 0x2F {
             lastBreak = glyph.utf16Index + glyph.utf16Length
         } else if glyph.scalar >= 0x2E80 {
-            // Ideographs break anywhere.
-            lastBreak = glyph.utf16Index + glyph.utf16Length
+            // Ideographs break anywhere: but not so as to leave an opening mark at a line's
+            // end, or begin the next line with a closing one or a full stop.
+            let next = index + 1 < glyphs.count ? glyphs[index + 1].scalar : 0
+            if !neverEndsLine.contains(glyph.scalar), !neverStartsLine.contains(next) {
+                lastBreak = glyph.utf16Index + glyph.utf16Length
+            }
         }
     }
     return typesetter.utf16.count - start
