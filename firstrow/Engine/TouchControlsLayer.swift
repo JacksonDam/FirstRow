@@ -58,7 +58,7 @@ final class TouchControlsLayer {
             (.playPause, true, "pause.fill", 26, 64),
             (.previous, true, "backward.fill", 20, 52),
             (.next, true, "forward.fill", 20, 52),
-            (.lyrics, true, "quote.bubble", 19, 46),
+            (.lyrics, false, "quote.bubble", 19, 46),
         ]
     #endif
 
@@ -149,14 +149,20 @@ final class TouchControlsLayer {
     /// How far along that bar is from where it rests (sliding off the screen, or in), which its
     /// buttons follow whole.
     private var nowPlayingSlide: CGFloat = 0
+    /// How far down off the bottom of the screen those buttons are, 0 to 1, where they come up
+    /// from under it rather than in from the side (see `ModernNowPlayingPanelLayer`).
+    private var nowPlayingDrop: CGFloat = 0
     /// Where Now Playing's buttons start down from, when they're under its progress bar.
     private var transportTop: CGFloat?
 
-    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil, nowPlayingScale detailsScale: CGFloat? = nil, nowPlayingSlide slide: CGFloat? = nil, movieOptionsPanel: CGRect? = nil, videoPanelBack: CGPoint? = nil) {
+    func update(menu: MenuView, pass: RenderPass, bounds: CGRect, scale: CGFloat, nowPlayingBar bar: CGRect? = nil, nowPlayingScale detailsScale: CGFloat? = nil, nowPlayingSlide slide: CGFloat? = nil, nowPlayingDrop drop: CGFloat? = nil, movieOptionsPanel: CGRect? = nil, videoPanelBack: CGPoint? = nil) {
         if let bar { nowPlayingBar = bar }
         if let detailsScale { nowPlayingScale = detailsScale }
         if let slide { nowPlayingSlide = slide }
+        if let drop { nowPlayingDrop = drop }
         var wanted: [Wanted] = []
+        // The middle of Now Playing's row of buttons, across the screen.
+        var transportMiddle = bounds.width / 2
         // Shown for the pointer and fingers; a key or remote puts them straight away.
         let enabled = menu.showsOnScreenControls && menu.showsPointingHints && menu.onboardingStep == nil
         let putAwayForKeys = wasEnabled && !enabled
@@ -252,41 +258,45 @@ final class TouchControlsLayer {
                             // along the bottom under it, and stop short of the words. (Standing
                             // upright the words are under the fold, and the buttons stay with
                             // the bar above it.)
-                            let besideWords = menu.isNowPlayingLyricsVisible && canvas.upright == nil
+                            // (In the modern look the song is set out again in the left
+                            // half, as large as before: the buttons stay under its bar.)
+                            let besideWords = menu.isNowPlayingLyricsVisible && canvas.upright == nil && !isModern
                             let centerY = besideWords ? bottom : min(bar.midY + gap + play / 2, bottom)
-                            // The whole row on the screen: Previous on the left, the words'
-                            // button furthest right.
+                            // The whole row on the screen: Previous on the left, Next on the right.
                             let leftReach = menu.canSwitchMusicNowPlayingTrack ? play / 2 + 36 + side : play / 2
-                            var rightReach = menu.canSwitchMusicNowPlayingTrack ? play / 2 + 36 + side : play / 2
-                            if menu.hasNowPlayingLyrics { rightReach += 40 + 46 }
+                            let rightReach = menu.canSwitchMusicNowPlayingTrack ? play / 2 + 36 + side : play / 2
                             var rightLimit = size.width - insets.right - 16
                             if besideWords { rightLimit = min(rightLimit, bar.maxX + 24) }
                             transportTop = centerY - play / 2
                             // Kept on the screen where the bar rests; with it all the way
                             // while it slides off or in.
                             let resting = max(min(bar.midX - nowPlayingSlide, rightLimit - rightReach), insets.left + 16 + leftReach)
-                            return (resting + nowPlayingSlide, centerY)
+                            let fall = nowPlayingDrop * (size.height - (centerY - play / 2) + 12)
+                            return (resting + nowPlayingSlide, centerY + fall)
                         }
                     }
                     return (size.width / 2 + aside.dx * canvas.scale, bottom)
                 }()
+                transportMiddle = middle
                 wanted = [
                     back,
                     Wanted(control: .playPause, frame: CGRect(x: middle - play / 2, y: centerY - play / 2, width: play, height: play), symbol: menu.isMusicPlaybackRunningOrStarting() ? "pause.fill" : "play.fill", pointSize: 26, inScene: true),
                 ]
-                var rightEdge = middle + play / 2
                 // Only for something with songs either side (not a single preview).
                 if menu.canSwitchMusicNowPlayingTrack {
                     wanted += [
                         Wanted(control: .previous, frame: CGRect(x: middle - play / 2 - 36 - side, y: centerY - side / 2, width: side, height: side), symbol: "backward.fill", pointSize: 20, inScene: true),
                         Wanted(control: .next, frame: CGRect(x: middle + play / 2 + 36, y: centerY - side / 2, width: side, height: side), symbol: "forward.fill", pointSize: 20, inScene: true),
                     ]
-                    rightEdge += 36 + side
                 }
-                // The words, when the song has some.
-                if menu.hasNowPlayingLyrics {
+                // The words, when the song has some: a button of its own in the bottom right
+                // corner of the screen, as far in as Back is at the top left. It is there
+                // while the other buttons are (it fades away with them, and back), and makes
+                // way for the list, which comes out over that corner.
+                if menu.hasNowPlayingLyrics, !menu.areNowPlayingTouchControlsHidden, menu.nowPlayingQueueReveal <= 0.001 {
                     let small: CGFloat = 46
-                    wanted.append(Wanted(control: .lyrics, frame: CGRect(x: rightEdge + 40, y: centerY - small / 2, width: small, height: small), symbol: menu.isNowPlayingLyricsVisible ? "quote.bubble.fill" : "quote.bubble", pointSize: 19, inScene: true))
+                    let corner = CGRect(x: size.width - max(insets.right + 16, 38) - small, y: size.height - max(insets.bottom + 10, 32) - small, width: small, height: small)
+                    wanted.append(Wanted(control: .lyrics, frame: corner, symbol: menu.isNowPlayingLyricsVisible ? "quote.bubble.fill" : "quote.bubble", pointSize: 19))
                 }
             } else if menu.activeFullscreenScene?.key == menu.photoSlideshowFullscreenKey {
                 // Only for a few seconds after a tap, click or move: the pictures have the screen.
@@ -342,7 +352,7 @@ final class TouchControlsLayer {
         transportGroup.setTransform(transportHidden ? CATransform3DMakeTranslation(0, drop, 0) : CATransform3DIdentity, slide)
         transportGroup.setOpacity(transportHidden ? 0 : 1, slide)
         transportHint.update(
-            frame: CGRect(x: size.width / 2 - 40, y: size.height - max(insets.bottom, 8) - 16, width: 80, height: 5),
+            frame: CGRect(x: transportMiddle - 40, y: size.height - max(insets.bottom, 8) - 16, width: 80, height: 5),
             shown: enabled && isIdle && menu.nowPlayingQueueReveal <= 0.001 && !menu.isFullscreenSceneTransitioning && menu.showsPointingHints,
             drift: CGSize(width: 0, height: -9),
             session: menu.nowPlayingSession,
@@ -640,7 +650,7 @@ final class TouchControlsLayer {
 
         /// Averages each pixel with `radius` on either side along a line of `count` pixels
         /// `stride` bytes apart (all four channels), treating what lies beyond as clear.
-        private nonisolated static func boxBlur(_ start: UnsafeMutablePointer<UInt8>, count: Int, stride: Int, radius: Int) {
+        nonisolated static func boxBlur(_ start: UnsafeMutablePointer<UInt8>, count: Int, stride: Int, radius: Int) {
             let window = Int32(2 * radius + 1)
             let values = UnsafeMutablePointer<Int32>.allocate(capacity: count)
             defer { values.deallocate() }
@@ -663,6 +673,23 @@ final class TouchControlsLayer {
         }
 
     #endif
+
+    /// Now Playing's play, previous and next buttons, for setting the song out clear of them:
+    /// how tall they are with the room kept under them, in the screen's points, and whether
+    /// they hang from the progress bar (on a phone or an iPad) or are along the bottom of the
+    /// screen. Nil where there are none.
+    /// `backReach` is how far in from the left Back reaches, with a little room beside it.
+    static func nowPlayingButtons(menu: MenuView) -> (height: CGFloat, hangFromBar: Bool, backReach: CGFloat)? {
+        guard menu.showsOnScreenControls else { return nil }
+        let insets = safeAreaInsets
+        let height = 64 + max(insets.bottom, 10) + 16
+        let backReach = max(insets.left + 16, 38) + 46 + 12
+        #if os(iOS)
+            return (height, true, backReach)
+        #else
+            return (height, false, backReach)
+        #endif
+    }
 
     private static var safeAreaInsets: (left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat) {
         #if os(iOS)

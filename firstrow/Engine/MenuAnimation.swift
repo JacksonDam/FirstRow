@@ -29,6 +29,9 @@ struct Animation: Equatable {
         case smooth
         /// Quadratic ease-in-out, for things that leave and arrive in one move.
         case smoothInOut
+        /// Cubic ease-out: off at once and most of the way there in a third of the time, as
+        /// Now Playing moves aside for its lyrics.
+        case brisk
     }
 
     var curve: Curve
@@ -42,6 +45,7 @@ struct Animation: Equatable {
     static func linear(duration: Double) -> Animation { Animation(curve: .linear, duration: duration) }
     static func smooth(duration: Double) -> Animation { Animation(curve: .smooth, duration: duration) }
     static func smoothInOut(duration: Double) -> Animation { Animation(curve: .smoothInOut, duration: duration) }
+    static func brisk(duration: Double) -> Animation { Animation(curve: .brisk, duration: duration) }
     static let easeInOut = Animation(curve: .easeInOut, duration: 0.35)
     static let `default` = Animation.easeInOut
 
@@ -65,6 +69,7 @@ struct Animation: Equatable {
         case .linear: CAMediaTimingFunction(name: .linear)
         case .smooth: CAMediaTimingFunction(controlPoints: 0.25, 0.46, 0.45, 0.94)
         case .smoothInOut: CAMediaTimingFunction(controlPoints: 0.455, 0.03, 0.515, 0.955)
+        case .brisk: CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
         }
     }
 }
@@ -391,6 +396,19 @@ extension CALayer {
 
     func setHiddenIfTransparent() {
         isHidden = opacity <= 0.0001 && animation(forKey: "opacity") == nil
+    }
+
+    /// Fades the layer out and in again over `duration`, whatever else its opacity is doing:
+    /// gone a fifth of the way through and coming back from half way, for something that
+    /// crosses other things on its way to a new place.
+    func dip(duration: Double) {
+        guard duration > 0 else { return }
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [opacity, Float(0), Float(0), opacity]
+        fade.keyTimes = [0, 0.18, 0.5, 1]
+        fade.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .linear), CAMediaTimingFunction(name: .easeOut)]
+        fade.duration = duration
+        addAtFullRate(fade, forKey: "dip")
     }
 }
 

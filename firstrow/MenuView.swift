@@ -87,6 +87,8 @@ final class MenuView: ObservableObject {
             }
             if (oldValue == nil) != (stance == nil) {
                 nowPlayingStanceDidChange()
+            } else if oldValue?.isBent != stance?.isBent {
+                nowPlayingBendDidChange()
             }
         }
     }

@@ -226,9 +226,12 @@ extension MenuSceneRenderer: PointerHitTesting {
         // Standing upright the list is under the fold: so is the strip that brings it out, and
         // the part of the screen where a sideways drag moves it.
         let top = scene.fullscreenCanvas.upright.map { $0.foldTop * scale } ?? 0
+        // (The bottom right corner is the lyrics button's, when the song has lyrics: the
+        // strip stops short of it.)
+        let corner: CGFloat = menu.hasNowPlayingLyrics && menu.showsOnScreenControls ? 110 : 0
         return NowPlayingQueueGeometry(
             panel: window(queue.panelFrame),
-            edgeZone: CGRect(x: size.width - edgeWidth, y: top, width: edgeWidth, height: size.height - top),
+            edgeZone: CGRect(x: size.width - edgeWidth, y: top, width: edgeWidth, height: max(0, size.height - top - corner)),
             dragZone: CGRect(x: 0, y: top, width: size.width, height: size.height - top),
             viewport: window(queue.viewport),
             listTop: queue.listTop * scale,

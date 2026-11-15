@@ -109,6 +109,12 @@ final class FullscreenSceneLayer {
         (content as? NowPlayingSceneLayer)?.detailsSlide ?? (content as? ModernNowPlayingSceneLayer)?.detailsSlide ?? 0
     }
 
+    /// How far down off the bottom of the screen the buttons that go with the bar are, 0 to 1
+    /// (the modern look standing upright, as the words take the screen or give it back).
+    var nowPlayingButtonsDrop: CGFloat {
+        (content as? ModernNowPlayingSceneLayer)?.buttonsDrop ?? 0
+    }
+
     /// How large the song's details show against their full size (smaller with the list or the
     /// words out): the buttons under the bar keep that much closer to it.
     var nowPlayingDetailsScale: CGFloat {
@@ -159,6 +165,7 @@ final class FullscreenSceneLayer {
                 content.update(menu: menu, scene: scene, pass: pass, size: pane.size, scale: canvas.pixelScale(backingScale: scale))
             } else {
                 canvas.apply(to: content.layer)
+                content.canvasScale = canvas.scale
                 content.update(menu: menu, scene: scene, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale))
             }
         }
@@ -168,7 +175,7 @@ final class FullscreenSceneLayer {
             canvas.apply(to: queue.layer)
             queue.update(menu: menu, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale))
             canvas.apply(to: lyrics.layer)
-            lyrics.update(menu: menu, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale))
+            lyrics.update(menu: menu, pass: pass, size: canvas.size, scale: canvas.pixelScale(backingScale: scale), canvasScale: canvas.scale)
         } else {
             lyrics.layer.isHidden = true
         }
@@ -195,6 +202,8 @@ class FullscreenContent {
     /// Laid out for a screen of its own that a fold mustn't cross: standing upright it gets the
     /// part above the fold.
     var keepsAboveTheFold: Bool { false }
+    /// How many of the screen's points one of the canvas's is, when it has the whole screen.
+    var canvasScale: CGFloat = 1
     func update(menu _: MenuView, scene _: FullscreenScenePresentation, pass _: RenderPass, size _: CGSize, scale _: CGFloat) {}
     func tearDown() {}
 }

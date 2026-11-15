@@ -14,6 +14,8 @@ import QuartzCore
 final class ModernNowPlayingSceneLayer: FullscreenContent {
     private let backdrop = SceneLayer()
     private let shade = SceneGradientLayer()
+    /// Darkens the backdrop while the song's words are out, so they read over a bright cover's.
+    private let dim = SceneLayer()
     private let incoming = ModernNowPlayingPanelLayer()
     private let outgoing = ModernNowPlayingPanelLayer()
     private var backdropSource: NSImage?
@@ -27,7 +29,9 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         shade.colors = [CGColor(gray: 0, alpha: 0.15), CGColor(gray: 0, alpha: 0.55)]
         shade.startPoint = CGPoint(x: 0.5, y: 0)
         shade.endPoint = CGPoint(x: 0.5, y: 1)
-        for sublayer in [backdrop, shade, stage] {
+        dim.backgroundColor = CGColor(gray: 0, alpha: 1)
+        dim.opacity = 0
+        for sublayer in [backdrop, shade, dim, stage] {
             layer.addSublayer(sublayer)
         }
         stage.addSublayer(outgoing.layer)
@@ -68,6 +72,10 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
     /// while the list or the words come out: see `NowPlayingSideLayout.detailsPlace`).
     var detailsSlide: CGFloat { incoming.detailsSlide }
 
+    /// How far down off the bottom of the screen the on-screen buttons are, 0 to 1 (standing
+    /// upright, on their way to or from the bottom of the screen under the words).
+    var buttonsDrop: CGFloat { incoming.buttonsDrop }
+
     private func showBackdrop(_ blurred: CGImage?) {
         withoutLayerActions {
             if backdrop.contents != nil {
@@ -86,9 +94,22 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         let bounds = CGRect(origin: .zero, size: size)
         backdrop.frame = bounds
         shade.frame = bounds
+        dim.frame = bounds
+        // (Standing upright the words come a frame at a time, and the dimming with them.)
+        let wordsOut = menu.hasNowPlayingLyrics ? menu.nowPlayingWordsGlide ?? (menu.isNowPlayingLyricsVisible ? 1 : 0) : 0
+        dim.setOpacity(0.45 * Double(min(max(wordsOut, 0), 1)), pass.animation)
         self.size = size
         stage.place(bounds)
-        shift = NowPlayingSideLayout.shift(menu: menu, size: size)
+        // With the words beside it the panel sets itself out in the left half; for the list it
+        // moves aside whole.
+        let wordsBeside = NowPlayingSideLayout.wordsTakeHalf(menu: menu)
+        shift = wordsBeside ? (0, 1) : NowPlayingSideLayout.shift(menu: menu, size: size)
+        // Standing upright and flat, the words have the screen under a small heading.
+        let heading = NowPlayingSideLayout.heading(menu: menu, canvasScale: canvasScale)
+        // The on-screen buttons the song is set out clear of, in canvas points.
+        let buttons = TouchControlsLayer.nowPlayingButtons(menu: menu).map {
+            (height: $0.height / max(canvasScale, 0.0001), hangFromBar: $0.hangFromBar, backReach: $0.backReach / max(canvasScale, 0.0001))
+        }
         let depth = MenuSceneRenderer.scale(menu.fullscreenSceneScale, about: CGPoint(x: size.width / 2, y: size.height / 2))
         stage.setTransform(CATransform3DConcat(NowPlayingSideLayout.transform(shift, size: size), depth), pass.animation)
         let snapshot = menu.currentMusicNowPlayingSnapshot
@@ -151,7 +172,7 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         let barHeld = menu.isMusicProgressBarHeld
         let barAnimation: Animation? = barHeld != lastBarHeld ? (barHeld ? .smooth(duration: 0.28) : .smoothInOut(duration: 0.32)) : nil
         lastBarHeld = barHeld
-        incoming.update(snapshot, mirrored: mirrored, barHeld: barHeld, barAnimation: barAnimation, size: size, scale: scale, upright: menu.upright, tuck: tuck, tuckAnimation: tuckAnimation)
+        incoming.update(snapshot, mirrored: mirrored, barHeld: barHeld, barAnimation: barAnimation, size: size, scale: scale, upright: menu.upright, tuck: tuck, tuckAnimation: tuckAnimation, wordsBeside: wordsBeside, heading: heading, buttons: buttons)
         let inShift = hasTransition ? 90 * direction * (1 - incomingProgress) : 0
         incoming.layer.setTransform(CATransform3DMakeTranslation(inShift, 0, 0), arrive)
         incoming.layer.setOpacity(hasTransition ? Double(incomingProgress) : 1, arrive)
@@ -159,7 +180,7 @@ final class ModernNowPlayingSceneLayer: FullscreenContent {
         if let previous = menu.musicSongTransitionSnapshot {
             outgoing.layer.isHidden = false
             outgoing.layer.place(bounds)
-            outgoing.update(previous, mirrored: mirrored, size: size, scale: scale, upright: menu.upright, tuck: tuck, tuckAnimation: outgoingReturns ? nil : tuckAnimation)
+            outgoing.update(previous, mirrored: mirrored, size: size, scale: scale, upright: menu.upright, tuck: tuck, tuckAnimation: outgoingReturns ? nil : tuckAnimation, wordsBeside: wordsBeside, heading: heading, buttons: buttons)
             outgoing.layer.setTransform(CATransform3DMakeTranslation(-90 * direction * outgoingProgress, 0, 0), leave)
             outgoing.layer.setOpacity(Double(1 - outgoingProgress), leave)
         } else {
@@ -184,10 +205,16 @@ final class ModernNowPlayingPanelLayer {
     private(set) var barPlace: CGRect = .zero
     private(set) var detailsScale: CGFloat = 1
     private(set) var detailsSlide: CGFloat = 0
+    private(set) var buttonsDrop: CGFloat = 0
     private let artworkShadow = SceneLayer()
     private let artwork = SceneLayer()
     private let title = SceneLayer()
     private let artist = SceneLayer()
+    /// The details but for the song's name and artist: left out of the small heading the song
+    /// has while its words have the screen.
+    private let others = SceneLayer()
+    private var wasWordsBeside = false
+    private var wasInHeading = false
     private let album = SceneLayer()
     private let position = SceneLayer()
     private let shuffle = SceneLayer()
@@ -215,8 +242,11 @@ final class ModernNowPlayingPanelLayer {
         for sublayer in [artworkShadow, artwork] {
             cover.addSublayer(sublayer)
         }
-        for sublayer in [title, artist, album, position, shuffle, track, elapsed, remaining, glyph.layer] {
+        for sublayer in [title, artist, others] {
             details.addSublayer(sublayer)
+        }
+        for sublayer in [album, position, shuffle, track, elapsed, remaining, glyph.layer] {
+            others.addSublayer(sublayer)
         }
     }
 
@@ -230,10 +260,16 @@ final class ModernNowPlayingPanelLayer {
 
     /// `upright`: standing upright, the artwork goes above the fold and the details, centred,
     /// under it; `tuck` (0 to 1) brings the details up beside the artwork, both smaller, moving
-    /// with `tuckAnimation`.
-    func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, mirrored: Bool = false, barHeld: Bool = false, barAnimation: Animation? = nil, size: CGSize, scale: CGFloat, upright: UprightStance? = nil, tuck: CGFloat = 0, tuckAnimation: Animation? = nil) {
+    /// with `tuckAnimation`. `wordsBeside`: lying down with the words in the right half, the
+    /// artwork goes over the details in the left half (moving with `tuckAnimation` too), clear
+    /// of the on-screen `buttons` (how tall they are with the room under them, and whether
+    /// they hang from the bar). `heading`: standing upright with the words over the whole
+    /// screen, where the artwork goes, small, at the top; the song's name and artist go beside
+    /// it and the rest of the details are left out.
+    func update(_ snapshot: MenuView.MusicNowPlayingSnapshot, mirrored: Bool = false, barHeld: Bool = false, barAnimation: Animation? = nil, size: CGSize, scale: CGFloat, upright: UprightStance? = nil, tuck: CGFloat = 0, tuckAnimation: Animation? = nil, wordsBeside: Bool = false, heading: CGRect? = nil, buttons: (height: CGFloat, hangFromBar: Bool, backReach: CGFloat)? = nil) {
         cover.place(CGRect(origin: .zero, size: size))
         details.place(CGRect(origin: .zero, size: size))
+        others.place(CGRect(origin: .zero, size: size))
         let width = size.width
         let height = size.height
         // The artwork and the details beside it are centred together on the screen.
@@ -273,6 +309,7 @@ final class ModernNowPlayingPanelLayer {
         // Upright, with the on-screen buttons that go under the bar, it has the middle of the
         // part under the fold.
         var y = upright.map { $0.lowerPane.midY - (blockHeight + 122) / 2 } ?? artCenter.y - blockHeight / 2
+        let blockTop = y
         title.show(titleGraphic, at: CGPoint(x: lineLeft(titleGraphic.size.width), y: y))
         y += titleGraphic.size.height + 6
         artist.show(artistGraphic, at: CGPoint(x: lineLeft(artistGraphic.size.width), y: y))
@@ -335,12 +372,65 @@ final class ModernNowPlayingPanelLayer {
         }
 
         typealias Place = NowPlayingSideLayout.Place
+        // Set out again for the words lying down (or back) the details cross the artwork on
+        // their way: they fade out as they set off and in again where they end up.
+        if wordsBeside != wasWordsBeside {
+            wasWordsBeside = wordsBeside
+            if let tuckAnimation { details.dip(duration: tuckAnimation.duration) }
+        }
+        // In the small heading the song's name and artist are lined up on their left, beside
+        // the artwork, and the rest is left out. (That changes over half way through, while
+        // the details are off the screen on their way round.)
+        let inHeading = upright != nil && heading != nil && tuck >= 0.5
+        // (Moved out of the heading in one go, as when the list takes over from the words,
+        // they cross the artwork too.)
+        if inHeading != wasInHeading {
+            wasInHeading = inHeading
+            if let tuckAnimation { details.dip(duration: tuckAnimation.duration) }
+        }
+        title.setTransform(CATransform3DMakeTranslation(inHeading ? columnLeft - lineLeft(titleGraphic.size.width) : 0, 0, 0), tuckAnimation)
+        artist.setTransform(CATransform3DMakeTranslation(inHeading ? columnLeft - lineLeft(artistGraphic.size.width) : 0, 0, 0), tuckAnimation)
+        others.setOpacity(inHeading ? 0 : 1, tuckAnimation)
+        buttonsDrop = 0
         guard let upright else {
-            coverPlace = Place(anchor: artCenter, scale: 1, center: artCenter)
-            details.setTransform(CATransform3DIdentity, nil)
-            barPlace = barFrame
-            detailsScale = 1
             detailsSlide = 0
+            guard wordsBeside else {
+                coverPlace = Place(anchor: artCenter, scale: 1, center: artCenter)
+                details.setTransform(CATransform3DIdentity, tuckAnimation)
+                barPlace = barFrame
+                detailsScale = 1
+                return
+            }
+            // The words have the right half: the artwork, a little smaller, is in the middle of
+            // the left half near the top, and the details (as they are, lined up on their
+            // left) under it in the middle of that half too. Under them are the on-screen
+            // buttons, hanging from the bar or along the bottom of the screen: on a small
+            // screen, where those are large against everything else, the artwork is smaller
+            // still to leave them room, and then the details.
+            let half = width / 2
+            let top = max(64, (height * 0.065).rounded())
+            let between = (height * 0.045).rounded()
+            var fits = min(0.85, half * 0.86 / columnWidth)
+            let barToFoot = barHeight / 2 + 12 + timesHeight
+            func under(_ fits: CGFloat) -> CGFloat {
+                guard let buttons else { return top }
+                return buttons.hangFromBar ? max(0, 76 - barToFoot) * fits + buttons.height : buttons.height + 30
+            }
+            // (Back is at the top left: the artwork keeps to the right of it.)
+            var small = min(height * 0.5, width * 0.33, half - 2 * (buttons?.backReach ?? 0))
+            let room = height - top - between - under(fits)
+            if small + blockHeight * fits > room {
+                small = max(height * 0.3, room - blockHeight * fits)
+                if small + blockHeight * fits > room {
+                    fits = max(0.5, (room - small) / blockHeight)
+                }
+            }
+            coverPlace = Place(anchor: artCenter, scale: small / side, center: CGPoint(x: half / 2, y: top + small / 2))
+            let blockMiddle = CGPoint(x: columnLeft + columnWidth / 2, y: blockTop)
+            let place = Place(anchor: blockMiddle, scale: fits, center: CGPoint(x: half / 2, y: top + small + between))
+            details.setTransform(place.transform, tuckAnimation)
+            barPlace = place.map(barFrame)
+            detailsScale = fits
             return
         }
         // Standing upright. Tucked, the artwork is small at one side of the part above the fold
@@ -348,27 +438,53 @@ final class ModernNowPlayingPanelLayer {
         // under their bar.
         let upper = upright.upperPane
         let large = min(side, upper.height * 0.8, width * 0.6)
-        let small = min(330, upper.height * 0.5)
+        var small = min(330, upper.height * 0.5)
         let margin: CGFloat = 64
-        coverPlace = Place.between(
-            Place(anchor: artCenter, scale: large / side, center: artCenter),
-            Place(anchor: artCenter, scale: small / side, center: CGPoint(x: mirrored ? width - margin - small / 2 : margin + small / 2, y: upper.midY)),
-            tuck,
-        )
+        var smallCenter = CGPoint(x: mirrored ? width - margin - small / 2 : margin + small / 2, y: upper.midY)
         let room = width - margin - small - 40 - 40
         let barMiddle = CGPoint(x: rest.midX, y: rest.midY)
+        var tucked = Place(anchor: barMiddle, scale: min(0.7, room / columnWidth), center: CGPoint(x: mirrored ? 40 + room / 2 : width - 40 - room / 2, y: upper.midY + 17))
+        var span = (columnLeft - grownBy.width) ... (columnLeft + columnWidth + grownBy.width)
+        if let heading {
+            // With the words over the whole screen: the artwork small at the top, and the
+            // song's name and artist beside it, smaller, level with its middle.
+            small = heading.width
+            smallCenter = CGPoint(x: heading.midX, y: heading.midY)
+            let textScale: CGFloat = 0.62
+            let textHeight = (titleGraphic.size.height + 6 + artistGraphic.size.height) * textScale
+            tucked = Place(anchor: CGPoint(x: columnLeft, y: blockTop), scale: textScale, center: CGPoint(x: heading.maxX + 26, y: (heading.midY - textHeight / 2).rounded()))
+            if inHeading {
+                span = columnLeft ... (columnLeft + max(titleGraphic.size.width, artistGraphic.size.width))
+            }
+        }
+        coverPlace = Place.between(
+            Place(anchor: artCenter, scale: large / side, center: artCenter),
+            Place(anchor: artCenter, scale: small / side, center: smallCenter),
+            tuck,
+        )
         // On their way there they go round, not across: off one edge and in from another.
         let (detailsPlace, slide) = NowPlayingSideLayout.detailsPlace(
             home: Place(anchor: barMiddle, scale: 1, center: barMiddle),
-            tucked: Place(anchor: barMiddle, scale: min(0.7, room / columnWidth), center: CGPoint(x: mirrored ? 40 + room / 2 : width - 40 - room / 2, y: upper.midY + 17)),
-            span: (columnLeft - grownBy.width) ... (columnLeft + columnWidth + grownBy.width),
+            tucked: tucked,
+            span: span,
             width: width,
             tuck: tuck,
+            fromRight: heading != nil,
         )
         details.setTransform(detailsPlace.transform, tuckAnimation)
-        barPlace = detailsPlace.map(barFrame)
-        detailsScale = detailsPlace.scale
-        detailsSlide = slide
+        if inHeading {
+            // No bar in the heading: the buttons that hang from it are along the bottom of
+            // the screen instead, in the middle, and come up from under it as the heading
+            // comes in (in from the side they would cross the button in the corner).
+            barPlace = CGRect(x: (width - barFrame.width) / 2, y: height + 200, width: barFrame.width, height: barFrame.height)
+            detailsScale = 1
+            detailsSlide = 0
+            buttonsDrop = pow(1 - min(max((tuck - 0.5) / 0.5, 0), 1), 1.5)
+        } else {
+            barPlace = detailsPlace.map(barFrame)
+            detailsScale = detailsPlace.scale
+            detailsSlide = slide
+        }
     }
 }
 

@@ -33,10 +33,44 @@ enum NowPlayingSideLayout {
         return CGRect(x: size.width - width - 40, y: 70, width: width, height: size.height - 140)
     }
 
-    static func lyricsFrame(_ size: CGSize, upright: UprightStance? = nil) -> CGRect {
+    /// In the modern look, lying down, the words have the right half of the screen and the
+    /// song is set out again in the left half (its cover over its details), at nearly its full
+    /// size, rather than shrunk aside.
+    static func wordsTakeHalf(menu: MenuView) -> Bool {
+        ModernTheme.isActive && menu.upright == nil && menu.isNowPlayingLyricsVisible && menu.nowPlayingQueueReveal <= 0
+    }
+
+    /// In the modern look, standing upright and opened out flat, the words have the whole
+    /// screen under a small heading: the cover, small, beside Back at the top, with the song's
+    /// name and artist beside it. Where that cover goes in canvas points, while the words are
+    /// out or on their way (nil otherwise: bent at the fold, the words keep to the part under
+    /// it, and the list always does).
+    static func heading(menu: MenuView, canvasScale: CGFloat) -> CGRect? {
+        guard ModernTheme.isActive, let upright = menu.upright, !upright.isBent, menu.nowPlayingQueueReveal <= 0,
+              menu.isNowPlayingLyricsVisible || menu.nowPlayingWordsGlide != nil
+        else { return nil }
+        let scale = max(canvasScale, 0.0001)
+        let side: CGFloat = 116
+        // Level with Back (46 points across, 38 in from the left and 10 under the top inset),
+        // and clear of it.
+        let middle = max(upright.topInset + 33 / scale, 55 / scale)
+        return CGRect(x: (100 / scale).rounded(), y: (middle - side / 2).rounded(), width: side, height: side)
+    }
+
+    static func lyricsFrame(_ size: CGSize, upright: UprightStance? = nil, heading: CGRect? = nil) -> CGRect {
+        if let heading {
+            // Under the heading, lined up with its cover, to the bottom of the screen.
+            let top = heading.maxY + 16
+            return CGRect(x: heading.minX, y: top, width: size.width - heading.minX - 80, height: max(1, size.height - top))
+        }
         if let pane = upright?.lowerPane {
             // Standing upright the words have the part under the fold to themselves.
             return CGRect(x: 70, y: pane.minY, width: size.width - 140, height: pane.height)
+        }
+        if ModernTheme.isActive {
+            // The right half, from a little past the middle, top to bottom.
+            let left = (size.width * 0.535).rounded()
+            return CGRect(x: left, y: 0, width: size.width - left - max(90, (size.width * 0.07).rounded()), height: size.height)
         }
         let width = (size.width * 0.44).rounded()
         // On iPhone and iPad the buttons along the bottom keep the words above them.
@@ -57,6 +91,9 @@ enum NowPlayingSideLayout {
     static func shift(menu: MenuView, size: CGSize) -> (dx: CGFloat, scale: CGFloat) {
         // Standing upright nothing moves aside: see `tuck`.
         guard menu.upright == nil else { return (0, 1) }
+        // (The modern look sets the song out again in the left half itself; what goes with it,
+        // the buttons along the bottom, has the middle of that half.)
+        if wordsTakeHalf(menu: menu) { return (-size.width / 4, 1) }
         let reserve = reserve(menu: menu, size: size)
         guard reserve.width > 0, reserve.amount > 0 else { return (0, 1) }
         let scale = min(1, max(0.5, (size.width - reserve.width - 50) / (size.width * 0.86)))
@@ -97,7 +134,9 @@ enum NowPlayingSideLayout {
     /// room the cover has made by then. `home` and `tucked` are where they rest at either end,
     /// and `span` how far they reach across, in their own points. `slide` is how far along
     /// they are from their resting place, for the on-screen buttons that go with them.
-    static func detailsPlace(home: Place, tucked: Place, span: ClosedRange<CGFloat>, width: CGFloat, tuck: CGFloat) -> (place: Place, slide: CGFloat) {
+    /// (`fromRight` has them come in from the right whichever side they end up on: into a
+    /// heading with the cover on its left.)
+    static func detailsPlace(home: Place, tucked: Place, span: ClosedRange<CGFloat>, width: CGFloat, tuck: CGFloat, fromRight: Bool = false) -> (place: Place, slide: CGFloat) {
         let tuck = min(max(tuck, 0), 1)
         let rest = tuck < 0.5 ? home : tucked
         let left = rest.center.x + (span.lowerBound - rest.anchor.x) * rest.scale
@@ -107,7 +146,7 @@ enum NowPlayingSideLayout {
             // Gently at first, then away faster than the list comes in.
             slide = -(right + 60) * pow(tuck / 0.5, 1.5)
         } else {
-            let away = (left + right) / 2 > width / 2 ? width - left + 60 : -(right + 60)
+            let away = fromRight || (left + right) / 2 > width / 2 ? width - left + 60 : -(right + 60)
             slide = away * pow(1 - (tuck - 0.5) / 0.5, 1.5)
         }
         return (Place(anchor: rest.anchor, scale: rest.scale, center: CGPoint(x: rest.center.x + slide, y: rest.center.y)), slide)
@@ -601,6 +640,27 @@ final class NowPlayingLyricsLayer {
     private var builtKey = ""
     private var lastLine: Int?
 
+    /// One line of the words in the modern look, a layer of its own: its lettering, and softer
+    /// (out of focus) copies of it for when it is further from the line being sung.
+    private final class Line {
+        let layer = SceneLayer()
+        let sharp = SceneLayer()
+        var soft: [SceneLayer?] = [nil, nil, nil]
+        /// Each softer copy: not asked for (0), being made (1), there (2).
+        var softState = [0, 0, 0]
+        var graphic: RenderedGraphic?
+        var top: CGFloat = 0
+        var height: CGFloat = 0
+        /// How it shows now: how soft (0 is sharp) and how strongly, and whether it has a place yet.
+        var softness = -1
+        var strength: Double = -1
+        var isPlaced = false
+    }
+
+    private var lines: [Line] = []
+    private var isLaidOut = false
+    private var wasShown = false
+
     init() {
         layer.addSublayer(clip)
         clip.masksToBounds = true
@@ -614,23 +674,47 @@ final class NowPlayingLyricsLayer {
         layer.isHidden = true
     }
 
-    func update(menu: MenuView, pass: RenderPass, size: CGSize, scale: CGFloat) {
+    func update(menu: MenuView, pass: RenderPass, size: CGSize, scale: CGFloat, canvasScale: CGFloat = 1) {
         layer.frame = CGRect(origin: .zero, size: size)
         // Standing upright they come in once the song's details have left the part under the
-        // fold, and are gone before those come back.
+        // fold, and are gone before those come back. (With the whole screen under a heading
+        // they wait a little longer, for the cover to be most of the way up to it.)
         let glide = menu.upright == nil ? nil : menu.nowPlayingWordsGlide
         let shown = (menu.isNowPlayingLyricsVisible || glide != nil) && menu.hasNowPlayingLyrics
         if shown { layer.isHidden = false }
-        let opacity = glide.map { min(max(($0 - 0.5) / 0.5, 0), 1) } ?? 1
-        layer.setOpacity(shown ? Double(opacity) : 0, pass.animation)
+        let heading = NowPlayingSideLayout.heading(menu: menu, canvasScale: canvasScale)
+        let opacity = glide.map { heading == nil ? min(max(($0 - 0.5) / 0.5, 0), 1) : min(max(($0 - 0.62) / 0.38, 0), 1) } ?? 1
+        let isModern = ModernTheme.isActive
+        if isModern {
+            // Lying down each line comes and goes for itself (see `updateModern`); the words
+            // as a whole are only faded standing upright, a frame at a time, or away.
+            let lyingDown = menu.upright == nil
+            if shown, lyingDown {
+                layer.setOpacity(1, nil)
+            } else {
+                layer.setOpacity(shown ? Double(opacity) : 0, shown ? pass.animation : (lyingDown ? .easeOut(duration: 0.14) : pass.animation))
+            }
+        } else {
+            layer.setOpacity(shown ? Double(opacity) : 0, pass.animation)
+        }
         guard shown || !layer.isHidden, let lyrics = menu.nowPlayingLyrics else {
             if !shown, pass.animation == nil { layer.isHidden = true }
+            wasShown = false
             return
         }
-        let area = NowPlayingSideLayout.lyricsFrame(size, upright: menu.upright)
+        let area = NowPlayingSideLayout.lyricsFrame(size, upright: menu.upright, heading: heading)
         clip.frame = area
         fade.frame = CGRect(origin: .zero, size: area.size)
-        let isModern = ModernTheme.isActive
+        if isModern {
+            updateModern(lyrics, menu: menu, shown: shown, area: area, size: size, scale: scale, underHeading: heading != nil)
+            return
+        }
+        if !lines.isEmpty {
+            for line in lines { line.layer.removeFromSuperlayer() }
+            lines = []
+            builtKey = ""
+            fade.locations = [0, 0.14, 0.84, 1]
+        }
 
         // Every line drawn once per song (and size), each its own layer.
         let key = "\(menu.nowPlayingLyricsSongID ?? "")|\(lyrics.lines.count)|\(area.width)|\(scale)|\(isModern)"
@@ -694,4 +778,232 @@ final class NowPlayingLyricsLayer {
             lastLine = -1
         }
     }
+
+    // MARK: - The modern look
+
+    /// The words in the modern look: large lines down the right half (or, standing upright,
+    /// under the fold), the one being sung bright and sharp near the top, the ones to come
+    /// under it fainter and softer the further off they are, and the one just sung fading out
+    /// above. As the song moves on each line goes up to its new place, the lower ones setting
+    /// off a moment after the ones above them.
+    private func updateModern(_ lyrics: MusicLyrics, menu: MenuView, shown: Bool, area: CGRect, size: CGSize, scale: CGFloat, underHeading: Bool) {
+        if !lineLayers.isEmpty {
+            for line in lineLayers { line.removeFromSuperlayer() }
+            lineLayers = []
+            lineTops = []
+        }
+        let fontSize = min(84, max(44, (size.height * 0.051).rounded()))
+        let between = (fontSize * 0.8).rounded()
+        // The line being sung starts this far down; what is above it fades out toward the top
+        // edge, and what is far below it toward the bottom.
+        let anchor = (size.height * 0.123).rounded()
+        let height = max(1, area.height)
+        // (Under a heading the line just sung shows whole between it and the one being sung.)
+        let rise = underHeading ? 40 : size.height * 0.085
+        fade.locations = [0, NSNumber(value: Double(min(0.4, rise / height))), NSNumber(value: Double(max(0.5, 1 - size.height * 0.2 / height))), NSNumber(value: Double(max(0.6, 1 - size.height * 0.02 / height)))]
+
+        let key = "\(menu.nowPlayingLyricsSongID ?? "")|\(lyrics.lines.count)|\(area.width)|\(scale)|\(fontSize)|modern"
+        if key != builtKey {
+            builtKey = key
+            lastLine = nil
+            isLaidOut = false
+            for line in lines { line.layer.removeFromSuperlayer() }
+            lines = []
+            var y: CGFloat = 0
+            for entry in lyrics.lines {
+                let line = Line()
+                let text = entry.text.trimmingCharacters(in: .whitespaces)
+                line.top = y
+                if text.isEmpty {
+                    // A break between verses.
+                    y += (between * 0.8).rounded()
+                } else {
+                    let graphic = TextRenderer.render(TextSpec(
+                        text: text,
+                        fontName: ModernTheme.boldFontName,
+                        size: fontSize,
+                        color: .white,
+                        wrapWidth: area.width,
+                        lineSpacing: (fontSize * 0.08).rounded(),
+                    ), scale: scale)
+                    line.graphic = graphic
+                    line.height = graphic.size.height
+                    line.sharp.show(graphic, at: .zero)
+                    line.layer.addSublayer(line.sharp)
+                    y += graphic.size.height + between
+                }
+                line.layer.isHidden = true
+                clip.addSublayer(line.layer)
+                lines.append(line)
+            }
+            contentHeight = y
+        }
+        guard !lines.isEmpty else { return }
+
+        let elapsed = menu.musicNowPlayingElapsedSeconds
+        let synced = lyrics.isSynced
+        let current = synced ? lyrics.currentLineIndex(at: elapsed + 0.2) : nil
+        // The line that has the place near the top: the one being sung, or before the first of
+        // them, the first.
+        let lead = current ?? 0
+        let appearing = shown && !wasShown
+        wasShown = shown
+        let jumped = lastLine.map { abs($0 - (current ?? -1)) > 2 } ?? false
+        let changed = isLaidOut && synced && lastLine != (current ?? -1)
+        lastLine = current ?? -1
+        let move: Animation? = changed ? .smooth(duration: 0.5) : nil
+        let look: Animation? = changed ? .smooth(duration: 0.36) : nil
+        var scrolled: CGFloat = 0
+        if !synced {
+            // Without times, the words move up through the song at its pace.
+            let duration = max(1, menu.musicNowPlayingDurationSeconds)
+            let progress = CGFloat(min(1, max(0, elapsed / duration)))
+            scrolled = max(0, contentHeight - area.height * 0.5) * progress
+        }
+        let leadTop = synced ? lines[min(lead, lines.count - 1)].top : scrolled
+        var order = 0
+        for (index, line) in lines.enumerated() {
+            let y = anchor + line.top - leadTop
+            // Only what is on the screen, or just off it, is kept up.
+            let near = y > -line.height - size.height * 0.3 && y < area.height + size.height * 0.3
+            guard near, line.graphic != nil else {
+                if !line.layer.isHidden {
+                    line.layer.isHidden = true
+                    line.isPlaced = false
+                }
+                continue
+            }
+            let distance = index - (current ?? -1)
+            let softness: Int
+            let strength: Double
+            if !synced {
+                softness = 0
+                strength = 0.8
+            } else if distance == 0 {
+                softness = 0
+                strength = 1
+            } else if distance > 0 {
+                softness = min(3, distance)
+                strength = distance == 1 ? 0.27 : (distance == 2 ? 0.23 : 0.2)
+            } else {
+                softness = 2
+                strength = distance == -1 ? 0.16 : 0
+            }
+            let fresh = line.layer.isHidden || !line.isPlaced
+            line.layer.isHidden = false
+            line.isPlaced = true
+            let place = CGPoint(x: 0, y: y)
+            if fresh {
+                // (Just come near enough to be kept up: put where it belongs, not moved there.)
+                line.layer.setPosition(place, nil)
+            } else if !synced {
+                line.layer.setPosition(place, isLaidOut ? .linear(duration: 0.5) : nil)
+            } else {
+                // The lower a line is under the one now being sung, the later it sets off.
+                let wait = changed && !jumped ? min(0.3, 0.045 * Double(max(0, index - lead))) : 0
+                line.layer.setPosition(place, move.map { wait > 0 ? $0.delay(wait) : $0 })
+            }
+            show(line, softness: softness, strength: strength, fontSize: fontSize, scale: scale, animation: fresh ? nil : look)
+            if appearing, menu.upright == nil {
+                // Coming up beside the song, the lines come in one after another from the top,
+                // once the song has begun to make way for them.
+                line.layer.opacity = 0
+                line.layer.setOpacity(1, Animation.smooth(duration: 0.36).delay(0.12 + 0.035 * Double(order)))
+                order += 1
+            } else if fresh {
+                line.layer.setOpacity(1, nil)
+            }
+        }
+        isLaidOut = true
+    }
+
+    /// Shows a line as soft and as strong as it is to be: its sharp lettering, or the softer
+    /// copy for that softness once that has been made (until then the sharp one stands in).
+    private func show(_ line: Line, softness: Int, strength: Double, fontSize: CGFloat, scale: CGFloat, animation: Animation?) {
+        var copy = softness - 1
+        #if FIRSTROW_PORTABLE
+            copy = -1
+        #else
+            if copy >= 0, line.softState[copy] != 2 {
+                makeSoftCopy(of: line, copy, fontSize: fontSize, scale: scale)
+                copy = -1
+            }
+        #endif
+        guard softness != line.softness || strength != line.strength || animation == nil else { return }
+        line.softness = softness
+        line.strength = strength
+        line.sharp.setOpacity(copy < 0 ? strength : 0, animation)
+        for (index, soft) in line.soft.enumerated() {
+            soft?.setOpacity(index == copy ? strength : 0, animation)
+        }
+    }
+
+    #if !FIRSTROW_PORTABLE
+        /// How soft each copy is, against the size of the lettering.
+        private nonisolated static let softening: [CGFloat] = [0.024, 0.05, 0.08]
+
+        /// Makes a line's softer copy on another thread, and brings it in when it is done.
+        private func makeSoftCopy(of line: Line, _ copy: Int, fontSize: CGFloat, scale: CGFloat) {
+            guard line.softState[copy] == 0, let graphic = line.graphic else { return }
+            line.softState[copy] = 1
+            let built = builtKey
+            let sigma = fontSize * Self.softening[copy]
+            LetteringInProgress.queue.async {
+                let made = Self.softened(graphic, sigma: sigma, scale: scale)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolatedIfPossible {
+                        guard self.builtKey == built, line.softState[copy] == 1, let made else { return }
+                        let soft = SceneLayer()
+                        withoutLayerActions {
+                            soft.contents = made.image
+                            soft.frame = made.frame
+                            soft.opacity = 0
+                            line.layer.addSublayer(soft)
+                        }
+                        line.soft[copy] = soft
+                        line.softState[copy] = 2
+                        // It takes over from whatever stood in for it, if it is still wanted.
+                        if line.softness == copy + 1 {
+                            let strength = line.strength
+                            line.sharp.setOpacity(0, .smooth(duration: 0.2))
+                            for (index, other) in line.soft.enumerated() {
+                                other?.setOpacity(index == copy ? strength : 0, .smooth(duration: 0.2))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /// The lettering out of focus by `sigma` points: drawn smaller (blurred, it needs no
+        /// more) with room around it for the blur to spread into, and where that sits against
+        /// the lettering's own origin.
+        private nonisolated static func softened(_ graphic: RenderedGraphic, sigma: CGFloat, scale: CGFloat) -> (image: CGImage, frame: CGRect)? {
+            guard let image = graphic.image else { return nil }
+            let box = graphic.imageFrame(at: .zero)
+            let density = min(scale, max(0.75, 2.4 / sigma))
+            let margin = (sigma * 3).rounded(.up)
+            let width = Int(((box.width + margin * 2) * density).rounded(.up))
+            let height = Int(((box.height + margin * 2) * density).rounded(.up))
+            guard width > 0, height > 0, let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: layerBitmapInfo,
+            ) else { return nil }
+            context.interpolationQuality = .medium
+            context.draw(image, in: CGRect(x: margin * density, y: margin * density, width: box.width * density, height: box.height * density))
+            guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+            // Three box blurs come close to a Gaussian one of this spread.
+            let radius = max(1, Int((sigma * density - 0.5).rounded()))
+            for _ in 0 ..< 3 {
+                for y in 0 ..< height {
+                    TouchControlsLayer.boxBlur(data + y * context.bytesPerRow, count: width, stride: 4, radius: radius)
+                }
+                for x in 0 ..< width {
+                    TouchControlsLayer.boxBlur(data + x * 4, count: height, stride: context.bytesPerRow, radius: radius)
+                }
+            }
+            guard let blurred = context.makeImage() else { return nil }
+            return (blurred, CGRect(x: box.minX - margin, y: box.minY - margin, width: CGFloat(width) / density, height: CGFloat(height) / density))
+        }
+    #endif
 }

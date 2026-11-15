@@ -491,6 +491,7 @@ extension MenuView {
         // (Standing upright the song's details come back down a frame at a time.)
         if glidesNowPlayingExtras, !isNowPlayingQueueVisible, nowPlayingQueueReveal <= 0 {
             startNowPlayingGlide(.words, from: nowPlayingWordsGlide ?? 1, to: 0, duration: 0.44)
+            scheduleNowPlayingTouchControlsHide()
         }
     }
 
@@ -507,10 +508,14 @@ extension MenuView {
             isNowPlayingLyricsVisible = showing
             startNowPlayingGlide(.words, from: from, to: target, duration: (showing ? 0.56 : 0.48) * Double(abs(target - from)))
             updateMusicNowPlayingFlipTimerState()
+            // (Whether the buttons stay goes by whether the words have the screen.)
+            scheduleNowPlayingTouchControlsHide()
             return
         }
         holdNowPlayingGlide()
-        withAnimation(isNowPlayingLyricsVisible ? .smoothInOut(duration: 0.34) : .smooth(duration: 0.42)) {
+        // (The modern look sets the song out again in the left half: off at once, and settling.)
+        let pace: Animation = ModernTheme.isActive ? .brisk(duration: 0.44) : (isNowPlayingLyricsVisible ? .smoothInOut(duration: 0.34) : .smooth(duration: 0.42))
+        withAnimation(pace) {
             isNowPlayingQueueVisible = false
             nowPlayingQueueReveal = 0
             nowPlayingWordsGlide = nil
@@ -548,10 +553,19 @@ extension MenuView {
         scheduleNowPlayingTouchControlsHide()
     }
 
+    /// Whether Now Playing's buttons go away after a while, as things stand. Standing upright
+    /// they have a part of the screen to themselves, under the fold or beside the cover, and
+    /// stay: except in the modern look opened out flat while the words have the whole screen,
+    /// where the buttons are over the words.
+    var nowPlayingButtonsGoAway: Bool {
+        guard let upright else { return true }
+        return ModernTheme.isActive && !upright.isBent && isNowPlayingLyricsVisible && nowPlayingQueueReveal <= 0
+    }
+
     func hideNowPlayingTouchControls() {
         nowPlayingTouchControlsHideTask?.cancel()
         nowPlayingTouchControlsHideTask = nil
-        guard !areNowPlayingTouchControlsHidden, upright == nil else { return }
+        guard !areNowPlayingTouchControlsHidden, nowPlayingButtonsGoAway else { return }
         withAnimation(.smoothInOut(duration: 0.5)) {
             areNowPlayingTouchControlsHidden = true
         }
@@ -560,6 +574,13 @@ extension MenuView {
     /// The screen stood up or lay back down with Now Playing on it. Upright the buttons have
     /// their own part of the screen, under the fold, and stay; lying down they go away again
     /// after a while.
+    /// The screen was bent at its fold or opened out flat, standing upright, with Now Playing
+    /// on it: the buttons stay or go away by how it is now.
+    func nowPlayingBendDidChange() {
+        guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
+        scheduleNowPlayingTouchControlsHide()
+    }
+
     func nowPlayingStanceDidChange() {
         landNowPlayingGlide()
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
@@ -572,14 +593,14 @@ extension MenuView {
     }
 
     /// Starts the wait before the buttons slide away, if they should: only with on-screen
-    /// buttons, in Now Playing, while it plays. Paused, standing upright, or with the list
-    /// out beside it, they stay.
+    /// buttons, in Now Playing, while it plays. Paused, standing upright (but see
+    /// `nowPlayingButtonsGoAway`), or with the list out beside it, they stay.
     func scheduleNowPlayingTouchControlsHide() {
         nowPlayingTouchControlsHideTask?.cancel()
         nowPlayingTouchControlsHideTask = nil
         guard showsOnScreenControls, activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
         guard nowPlayingQueueReveal <= 0 else { return }
-        guard isMusicPlaybackRunningOrStarting(), upright == nil else {
+        guard isMusicPlaybackRunningOrStarting(), nowPlayingButtonsGoAway else {
             if areNowPlayingTouchControlsHidden {
                 withAnimation(.smooth(duration: 0.4)) { areNowPlayingTouchControlsHidden = false }
             }
