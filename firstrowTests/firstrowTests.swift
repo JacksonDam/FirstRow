@@ -169,3 +169,47 @@ final class LyricsLookupTests: XCTestCase {
         XCTAssertNotEqual(LyricsMatching.key(for: query("A Song", "Beyoncé", 200)), LyricsMatching.key(for: query("A Song", "Beyoncé", 230)))
     }
 }
+
+final class AppLanguageTests: XCTestCase {
+    func testTagsNameTheLanguagesFirstRowHas() {
+        XCTAssertEqual(AppLanguage(tag: "de-AT"), .german)
+        XCTAssertEqual(AppLanguage(tag: "fr_CA.UTF-8"), .french)
+        XCTAssertEqual(AppLanguage(tag: "es-419"), .spanish)
+        XCTAssertEqual(AppLanguage(tag: "ja"), .japanese)
+        XCTAssertEqual(AppLanguage(tag: "ko_KR.UTF-8"), .korean)
+        XCTAssertEqual(AppLanguage(tag: "en-GB"), .english)
+        XCTAssertNil(AppLanguage(tag: "pt-BR"))
+        XCTAssertNil(AppLanguage(tag: "C"))
+        XCTAssertNil(AppLanguage(tag: ""))
+    }
+
+    func testChineseGoesByItsWritingThenByItsPlace() {
+        XCTAssertEqual(AppLanguage(tag: "zh-Hans"), .chineseSimplified)
+        XCTAssertEqual(AppLanguage(tag: "zh-Hant"), .chineseTraditional)
+        XCTAssertEqual(AppLanguage(tag: "zh-Hant-CN"), .chineseTraditional)
+        XCTAssertEqual(AppLanguage(tag: "zh-Hans-TW"), .chineseSimplified)
+        XCTAssertEqual(AppLanguage(tag: "zh_CN.UTF-8"), .chineseSimplified)
+        XCTAssertEqual(AppLanguage(tag: "zh_TW.UTF-8"), .chineseTraditional)
+        XCTAssertEqual(AppLanguage(tag: "zh-HK"), .chineseTraditional)
+        XCTAssertEqual(AppLanguage(tag: "zh-SG"), .chineseSimplified)
+        XCTAssertEqual(AppLanguage(tag: "zh"), .chineseSimplified)
+    }
+
+    func testEveryTableHasTheSameWords() {
+        let german = Set(German.words.keys)
+        for language in [AppLanguage.french, .spanish, .japanese, .korean, .chineseSimplified, .chineseTraditional] {
+            XCTAssertEqual(Set(language.words?.keys.map { $0 } ?? []), german, "\(language)")
+        }
+    }
+
+    func testEveryTableKeepsWhatIsFilledIn() {
+        func places(_ words: String) -> Int {
+            words.components(separatedBy: "%@").count - 1 + (1 ... 9).reduce(0) { $0 + words.components(separatedBy: "%\($1)$@").count - 1 }
+        }
+        for language in [AppLanguage.german, .french, .spanish, .japanese, .korean, .chineseSimplified, .chineseTraditional] {
+            for (english, theirs) in language.words ?? [:] {
+                XCTAssertEqual(places(theirs), places(english), "\(language): \(english)")
+            }
+        }
+    }
+}

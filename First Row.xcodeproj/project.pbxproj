@@ -181,6 +181,12 @@
 		D0E1A2B3C4D5E6F7A8B9C004 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = D0E1A2B3C4D5E6F7A8B9C001 /* InfoPlist.strings */; };
 		F11D747A5030F423284BF44A /* LyricsLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 896A11ED8521A2510BE965DE /* LyricsLookup.swift */; };
 		B26465E6F3CE2D084945B5A3 /* MovieUpscaler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 764FAF6B30F9271F4C004892 /* MovieUpscaler.swift */; };
+		4F4A2E73E788EA9724A58688 /* French.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D63738048FB1A0B2B4C551C /* French.swift */; };
+		C1D041143BAF745C5A2D1EA9 /* Spanish.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331EA974BE16916F14D5F0AA /* Spanish.swift */; };
+		5FA6F9FE7E4B4081A916D504 /* Japanese.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13EF6AADCC52C3C415001CC /* Japanese.swift */; };
+		C81AB7BA0E680273553AADA9 /* Korean.swift in Sources */ = {isa = PBXBuildFile; fileRef = A95E50FF780E22C36FDE4055 /* Korean.swift */; };
+		7D6C76B5EAB57E2FA1B548FC /* ChineseSimplified.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FFCAAA2BFBDEFAD4867DB91 /* ChineseSimplified.swift */; };
+		3B0CE9402392B06D6C34DB5C /* ChineseTraditional.swift in Sources */ = {isa = PBXBuildFile; fileRef = B09E7EF266BFD531D94E3BC0 /* ChineseTraditional.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -376,8 +382,20 @@
 		67B0A6A3F856F274CDA36A61 /* German.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = German.swift; sourceTree = "<group>"; };
 		D0E1A2B3C4D5E6F7A8B9C002 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		D0E1A2B3C4D5E6F7A8B9C003 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		D0E1A2B3C4D5E6F7A8B9C010 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		D0E1A2B3C4D5E6F7A8B9C011 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		D0E1A2B3C4D5E6F7A8B9C012 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		D0E1A2B3C4D5E6F7A8B9C013 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		D0E1A2B3C4D5E6F7A8B9C014 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		D0E1A2B3C4D5E6F7A8B9C015 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		896A11ED8521A2510BE965DE /* LyricsLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsLookup.swift; sourceTree = "<group>"; };
 		764FAF6B30F9271F4C004892 /* MovieUpscaler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovieUpscaler.swift; sourceTree = "<group>"; };
+		5D63738048FB1A0B2B4C551C /* French.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = French.swift; sourceTree = "<group>"; };
+		331EA974BE16916F14D5F0AA /* Spanish.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Spanish.swift; sourceTree = "<group>"; };
+		A13EF6AADCC52C3C415001CC /* Japanese.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Japanese.swift; sourceTree = "<group>"; };
+		A95E50FF780E22C36FDE4055 /* Korean.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Korean.swift; sourceTree = "<group>"; };
+		9FFCAAA2BFBDEFAD4867DB91 /* ChineseSimplified.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChineseSimplified.swift; sourceTree = "<group>"; };
+		B09E7EF266BFD531D94E3BC0 /* ChineseTraditional.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChineseTraditional.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -667,6 +685,12 @@
 				44824387D5560808DFFA3C50 /* Localization.swift */,
 				67B0A6A3F856F274CDA36A61 /* German.swift */,
 				D0E1A2B3C4D5E6F7A8B9C001 /* InfoPlist.strings */,
+				5D63738048FB1A0B2B4C551C /* French.swift */,
+				331EA974BE16916F14D5F0AA /* Spanish.swift */,
+				A13EF6AADCC52C3C415001CC /* Japanese.swift */,
+				A95E50FF780E22C36FDE4055 /* Korean.swift */,
+				9FFCAAA2BFBDEFAD4867DB91 /* ChineseSimplified.swift */,
+				B09E7EF266BFD531D94E3BC0 /* ChineseTraditional.swift */,
 			);
 			path = firstrow;
 			sourceTree = "<group>";
@@ -836,6 +860,12 @@
 				en,
 				Base,
 				de,
+				fr,
+				es,
+				ja,
+				ko,
+				"zh-Hans",
+				"zh-Hant",
 			);
 			mainGroup = 7AE49B382D1491FC0022CD0D;
 			minimizedProjectReferenceProxies = 1;
@@ -967,6 +997,12 @@
 				2BB4A9D1642D4264671518BD /* MenuView+Jellyfin.swift in Sources */,
 				5023AEFB9D1780CBEA27C491 /* JellyfinDiscovery.swift in Sources */,
 				FB898E19719035AF518C716A /* JellyfinClient.swift in Sources */,
+				3B0CE9402392B06D6C34DB5C /* ChineseTraditional.swift in Sources */,
+				7D6C76B5EAB57E2FA1B548FC /* ChineseSimplified.swift in Sources */,
+				C81AB7BA0E680273553AADA9 /* Korean.swift in Sources */,
+				5FA6F9FE7E4B4081A916D504 /* Japanese.swift in Sources */,
+				C1D041143BAF745C5A2D1EA9 /* Spanish.swift in Sources */,
+				4F4A2E73E788EA9724A58688 /* French.swift in Sources */,
 				B26465E6F3CE2D084945B5A3 /* MovieUpscaler.swift in Sources */,
 				F11D747A5030F423284BF44A /* LyricsLookup.swift in Sources */,
 				C39525D2D9B144FC073D22A4 /* German.swift in Sources */,
@@ -1114,6 +1150,12 @@
 			children = (
 				D0E1A2B3C4D5E6F7A8B9C002 /* en */,
 				D0E1A2B3C4D5E6F7A8B9C003 /* de */,
+				D0E1A2B3C4D5E6F7A8B9C010 /* fr */,
+				D0E1A2B3C4D5E6F7A8B9C011 /* es */,
+				D0E1A2B3C4D5E6F7A8B9C012 /* ja */,
+				D0E1A2B3C4D5E6F7A8B9C013 /* ko */,
+				D0E1A2B3C4D5E6F7A8B9C014 /* zh-Hans */,
+				D0E1A2B3C4D5E6F7A8B9C015 /* zh-Hant */,
 			);
 			name = InfoPlist.strings;
 			sourceTree = "<group>";

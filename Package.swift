@@ -49,7 +49,7 @@ let package = Package(
             path: "firstrow",
             exclude: [
                 "Assets.xcassets", "Preview Content", "Sounds", "Videos", "Videos4K", "ScreenSaverDefaultPhotos", "Fonts",
-                "en.lproj", "de.lproj",
+                "en.lproj", "de.lproj", "fr.lproj", "es.lproj", "ja.lproj", "ko.lproj", "zh-Hans.lproj", "zh-Hant.lproj",
             ],
             swiftSettings: portableSettings,
         ),

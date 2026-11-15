@@ -1205,8 +1205,7 @@ extension MenuView {
             let year = components.year ?? 0
             let month = monthFormatter.string(from: date)
             // ("Nov 14th, 2026", and in German "14. Nov. 2026".)
-            if AppLanguage.current == .german { return "\(day). \(month) \(year)" }
-            return "\(month) \(day)\(ordinalSuffix(for: day)), \(year)"
+            return AppLanguage.current.dayTitle(day: day, month: month, year: year, englishOrdinal: ordinalSuffix(for: day))
         }
         let thresholdDate = calendar.date(byAdding: .month, value: -12, to: Date()) ?? .distantPast
         var dateBuckets: [Date: [String]] = [:]

@@ -1235,7 +1235,7 @@ extension MenuView {
         guard let date else { return "--/--" }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = AppLanguage.current == .german ? "d.M." : "M/d"
+        formatter.dateFormat = AppLanguage.current.dayAndMonthFormat
         return formatter.string(from: date)
     }
 

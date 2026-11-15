@@ -1,0 +1,5 @@
+/* What the system says when First Row asks for something of the Mac, iPhone, iPad or Apple TV. */
+"NSAppleEventsUsageDescription" = "First Row 會控制「音樂」來播放 Apple Music。";
+"NSAppleMusicUsageDescription" = "First Row 會使用你的音樂資料庫來顯示和播放歌曲。";
+"NSLocalNetworkUsageDescription" = "First Row 會在你的網路上尋找媒體伺服器和共享資料夾，並播放其中的內容。";
+"NSPhotoLibraryUsageDescription" = "First Row 會使用你的照片圖庫來顯示照片和播放幻燈片秀。";
