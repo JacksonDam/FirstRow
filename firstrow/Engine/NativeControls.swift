@@ -120,8 +120,6 @@
     final class NativeGlassButton: NativeView {
         var onPress: (() -> Void)?
         private(set) var isShownState = false
-        /// Whether it has ever been on screen (one made ahead hasn't).
-        private var hasBeenShown = false
         private var generation = 0
         /// Whether it's dimmed, and how far, as last set.
         private var dimmedState: (Bool, CGFloat) = (false, 1)
@@ -189,8 +187,9 @@
                 glass.contentView?.frame = local
             #endif
             if symbol != symbolName || pointSize != symbolSize, let image = nativeSymbol(symbol, pointSize: pointSize) {
-                // (One made ahead with another symbol hasn't shown it: nothing to change from.)
-                let changes = !symbolName.isEmpty && hasBeenShown
+                // The symbol changes over on a button that is showing. One that is away (or was
+                // made ahead and never shown) comes back with its new symbol already on it.
+                let changes = !symbolName.isEmpty && isShownState
                 symbolName = symbol
                 symbolSize = pointSize
                 if changes {
@@ -210,7 +209,6 @@
             guard shown != wasShown || dimmed != dimmedState.0 || dimmedAlpha != dimmedState.1 else { return }
             dimmedState = (dimmed, dimmedAlpha)
             isShownState = shown
-            if shown { hasBeenShown = true }
             generation += 1
             let current = generation
             if shown { isHidden = false }
