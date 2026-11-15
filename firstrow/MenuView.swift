@@ -409,10 +409,12 @@ final class MenuView: ObservableObject {
     var movieMoveBegan: CFTimeInterval?
     var movieMoveWaiting: (seconds: Double, exactly: Bool)?
     var movieMoveCount = 0
-    /// When the player was last sent somewhere, and the wait before a streamed movie is sent
-    /// on to the place that is waiting.
+    /// When the player was last sent somewhere, when a move was last asked for, and the wait
+    /// before a streamed movie is sent on to the place that is waiting.
     var movieLastMove: CFTimeInterval = 0
+    var movieMoveAsked: CFTimeInterval = 0
     var movieMoveTimer: Task<Void, Never>?
+    var movieMoveTimerDue: CFTimeInterval = 0
     /// A streamed video that broke off is being fetched again (see `recoverYouTubeStream`):
     /// the player is left alone until it is back.
     var isRecoveringMovieStream = false

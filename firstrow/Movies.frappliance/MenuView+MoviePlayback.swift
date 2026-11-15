@@ -666,9 +666,12 @@ extension MenuView {
 
     // MARK: - One move at a time
 
-    /// Whether the movie is still on its way to a place it was asked to go to.
+    /// Whether the movie is still on its way to a place it was asked to go to. (Not for
+    /// ever, should a player never say that it got there.)
     var isMovieMoving: Bool {
-        movieMoveBegan != nil || movieMoveWaiting != nil || isRecoveringMovieStream
+        if isRecoveringMovieStream { return true }
+        guard movieMoveBegan != nil || movieMoveWaiting != nil else { return false }
+        return CACurrentMediaTime() - movieMoveAsked < 6
     }
 
     /// Sends the movie to another place, one move at a time: a place asked for while the
@@ -683,22 +686,17 @@ extension MenuView {
         // (A video being fetched again starts from wherever the bar says when it is back.)
         guard let player = moviePlayer, !isRecoveringMovieStream else { return }
         let now = CACurrentMediaTime()
+        movieMoveAsked = now
         let isStreamed = !(currentMoviePlaybackURL?.isFileURL ?? true)
         let wait = isStreamed ? movieLastMove + (youtubeSession == nil ? 0.5 : 1) - now : 0
         if let began = movieMoveBegan, now - began < 4 {
             movieMoveWaiting = (seconds, exactly)
+            sendWaitingMove(after: began + 4.05 - now)
             return
         }
         if wait > 0 {
             movieMoveWaiting = (seconds, exactly)
-            guard movieMoveTimer == nil else { return }
-            movieMoveTimer = Task { @MainActor in
-                try? await firstRowSleep(wait)
-                guard !Task.isCancelled else { return }
-                self.movieMoveTimer = nil
-                guard self.movieMoveBegan == nil, let next = self.movieMoveWaiting else { return }
-                self.moveMovie(toSeconds: next.seconds, exactly: next.exactly)
-            }
+            sendWaitingMove(after: wait)
             return
         }
         movieMoveWaiting = nil
@@ -720,6 +718,31 @@ extension MenuView {
                 player.play()
                 if self.movieSpeed != 1 { player.setSpeed(self.movieSpeed) }
             }
+        }
+    }
+
+    /// Sends the movie on to the place that is waiting, after a wait: the gap a streamed
+    /// movie's moves keep, or the time a move is given before it is given up on. (A move
+    /// still under way then, and in time, sends it on itself when it is done.)
+    private func sendWaitingMove(after wait: Double) {
+        // (One wait at a time, the one that is over soonest.)
+        let due = CACurrentMediaTime() + wait
+        if movieMoveTimer != nil, movieMoveTimerDue <= due + 0.01 { return }
+        movieMoveTimer?.cancel()
+        movieMoveTimerDue = due
+        movieMoveTimer = Task { @MainActor in
+            try? await firstRowSleep(wait)
+            guard !Task.isCancelled else { return }
+            self.movieMoveTimer = nil
+            guard let next = self.movieMoveWaiting else { return }
+            if let began = self.movieMoveBegan {
+                let left = began + 4.05 - CACurrentMediaTime()
+                guard left <= 0 else {
+                    self.sendWaitingMove(after: left)
+                    return
+                }
+            }
+            self.moveMovie(toSeconds: next.seconds, exactly: next.exactly)
         }
     }
 
