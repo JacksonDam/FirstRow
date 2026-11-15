@@ -717,7 +717,7 @@ final class MenuRowLayer: MenuRowLayering {
         let titleMeasuredWidth = menu.measuredMenuRowTitleWidth(item.title)
         let effectiveTitleWidth = max(1, titleAvailableWidth - (spec.showsPlaybackSpeaker ? 28 : 0))
         let scrollsTitle = isActive &&
-            item.title.trimmingCharacters(in: .whitespacesAndNewlines).count > 30 &&
+            Self.lengthInLetters(item.title.trimmingCharacters(in: .whitespacesAndNewlines)) > 30 &&
             titleMeasuredWidth > effectiveTitleWidth + 1
         if scrollsTitle {
             title.isHidden = true
@@ -787,6 +787,18 @@ final class MenuRowLayer: MenuRowLayering {
             blueDot.show(dot, at: CGPoint(x: centerX - 6, y: (rowHeight - diameter) * 0.5))
         } else {
             blueDot.isHidden = true
+        }
+    }
+
+    /// How long a title is, for the rule that a short one never scrolls: in letters, with the
+    /// wide ones of Chinese, Japanese and Korean (each about two letters across) counted twice.
+    static func lengthInLetters(_ title: String) -> Int {
+        title.unicodeScalars.reduce(0) { length, scalar in
+            let value = scalar.value
+            let isWide = (0x1100 ... 0x115F).contains(value) || (0x2E80 ... 0xA4CF).contains(value) || (0xAC00 ... 0xD7A3).contains(value) ||
+                (0xF900 ... 0xFAFF).contains(value) || (0xFE30 ... 0xFE4F).contains(value) || (0xFF00 ... 0xFF60).contains(value) ||
+                (0xFFE0 ... 0xFFE6).contains(value) || (0x20000 ... 0x3FFFD).contains(value)
+            return length + (isWide ? 2 : 1)
         }
     }
 
