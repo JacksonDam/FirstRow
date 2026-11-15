@@ -2410,15 +2410,17 @@ extension MenuView {
     }
 
     /// Whether Now Playing turns round every so often as things stand. Lying down: not with
-    /// the list or the words beside it. Standing upright it's the other way about in the
-    /// classic look: the cover is above the fold and the details under it, with no sides to
-    /// change, until the list or the words are out and the two are side by side above the
-    /// fold. The modern look doesn't turn round standing upright at all (the wait starts
-    /// afresh when it lies down again).
+    /// the list or the words beside it. Standing upright it's the other way about: the cover
+    /// is above the fold and the details under it, with no sides to change, until the list
+    /// or the words are out and the two are side by side above the fold. Not the modern
+    /// look's words on a screen opened out flat, though: there the song is a small heading
+    /// over them (see `NowPlayingSideLayout.heading`), which doesn't turn round. (The wait
+    /// starts afresh whenever it may turn again.)
     var allowsNowPlayingFlip: Bool {
-        guard upright != nil else { return !isNowPlayingQueueVisible && !isNowPlayingLyricsVisible }
-        if ModernTheme.isActive { return false }
-        return nowPlayingGlide == nil && (isNowPlayingLyricsVisible || (isNowPlayingQueueVisible && nowPlayingQueueReveal >= 1))
+        guard let upright else { return !isNowPlayingQueueVisible && !isNowPlayingLyricsVisible }
+        guard nowPlayingGlide == nil else { return false }
+        if isNowPlayingQueueVisible, nowPlayingQueueReveal >= 1 { return true }
+        return isNowPlayingLyricsVisible && !(ModernTheme.isActive && !upright.isBent)
     }
 
     func performMusicNowPlayingFlip() {

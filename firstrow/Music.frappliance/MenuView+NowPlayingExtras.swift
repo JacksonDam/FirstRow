@@ -609,6 +609,9 @@ extension MenuView {
     func nowPlayingBendDidChange() {
         guard activeFullscreenScene?.key == musicNowPlayingFullscreenKey else { return }
         scheduleNowPlayingTouchControlsHide()
+        // Turning round every so often goes by whether it is bent, too (the modern look's
+        // words have the song as a heading on a flat screen, beside its cover on a bent one).
+        updateMusicNowPlayingFlipTimerState()
     }
 
     func nowPlayingStanceDidChange() {
