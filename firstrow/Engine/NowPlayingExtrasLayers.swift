@@ -18,8 +18,15 @@ enum NowPlayingSideLayout {
     /// The side panel's width plus its margins, in canvas points (0 with nothing beside it),
     /// and how far out it is.
     static func reserve(menu: MenuView, size: CGSize) -> (width: CGFloat, amount: CGFloat) {
-        if menu.nowPlayingQueueReveal > 0 { return (queueWidth(size) + 70, menu.nowPlayingQueueReveal) }
-        if menu.isNowPlayingLyricsVisible { return (lyricsFrame(size).width + 90, 1) }
+        let reveal = min(max(menu.nowPlayingQueueReveal, 0), 1)
+        let list = queueWidth(size) + 70
+        if menu.isNowPlayingLyricsVisible {
+            // Aside for the words already: as the list comes out over them, what stays goes
+            // from the room the words need to the room the list needs, a step for each of its.
+            let words = lyricsFrame(size).width + 90
+            return (words + (list - words) * reveal, 1)
+        }
+        if reveal > 0 { return (list, reveal) }
         return (0, 0)
     }
 
@@ -35,18 +42,31 @@ enum NowPlayingSideLayout {
 
     /// In the modern look, lying down, the words have the right half of the screen and the
     /// song is set out again in the left half (its cover over its details), at nearly its full
-    /// size, rather than shrunk aside.
+    /// size, rather than shrunk aside. It stays there while the list is out: that comes over
+    /// the words, which fade as it does, and they are there again when it goes.
     static func wordsTakeHalf(menu: MenuView) -> Bool {
-        ModernTheme.isActive && menu.upright == nil && menu.isNowPlayingLyricsVisible && menu.nowPlayingQueueReveal <= 0
+        ModernTheme.isActive && menu.upright == nil && menu.isNowPlayingLyricsVisible
+    }
+
+    /// How much the words show against the list: all of them with the list away, and none by
+    /// the time it is half way out over them (what stays is on the move by then).
+    static func wordsStrength(menu: MenuView) -> CGFloat {
+        1 - min(max(menu.nowPlayingQueueReveal * 2, 0), 1)
+    }
+
+    /// How much of the heading (see `heading`) there is: all of it with the list away; as the
+    /// list comes out under the fold the song goes back to its usual tucked arrangement.
+    static func headingAmount(menu: MenuView) -> CGFloat {
+        1 - min(max(menu.nowPlayingQueueReveal, 0), 1)
     }
 
     /// In the modern look, standing upright and opened out flat, the words have the whole
     /// screen under a small heading: the cover, small, beside Back at the top, with the song's
     /// name and artist beside it. Where that cover goes in canvas points, while the words are
     /// out or on their way (nil otherwise: bent at the fold, the words keep to the part under
-    /// it, and the list always does).
+    /// it).
     static func heading(menu: MenuView, canvasScale: CGFloat) -> CGRect? {
-        guard ModernTheme.isActive, let upright = menu.upright, !upright.isBent, menu.nowPlayingQueueReveal <= 0,
+        guard ModernTheme.isActive, let upright = menu.upright, !upright.isBent,
               menu.isNowPlayingLyricsVisible || menu.nowPlayingWordsGlide != nil
         else { return nil }
         let scale = max(canvasScale, 0.0001)
@@ -655,11 +675,15 @@ final class NowPlayingLyricsLayer {
         var softness = -1
         var strength: Double = -1
         var isPlaced = false
+        /// On its way off the screen until then (it is put away once it has gone).
+        var awayAt: CFTimeInterval = 0
     }
 
     private var lines: [Line] = []
     private var isLaidOut = false
     private var wasShown = false
+    /// When the lines' last move to new places is over.
+    private var movesSettleAt: CFTimeInterval = 0
 
     init() {
         layer.addSublayer(clip)
@@ -680,33 +704,51 @@ final class NowPlayingLyricsLayer {
         // fold, and are gone before those come back. (With the whole screen under a heading
         // they wait a little longer, for the cover to be most of the way up to it.)
         let glide = menu.upright == nil ? nil : menu.nowPlayingWordsGlide
-        let shown = (menu.isNowPlayingLyricsVisible || glide != nil) && menu.hasNowPlayingLyrics
+        let isModern = ModernTheme.isActive
+        let lyingDown = menu.upright == nil
+        // (The classic look's songs change over by one zooming away and the next zooming in,
+        // through where the words are: they are away for that, and come back after it.)
+        let isChangingSong = !isModern && menu.musicSongTransitionSnapshot != nil
+        let shown = (menu.isNowPlayingLyricsVisible || glide != nil) && menu.hasNowPlayingLyrics && !isChangingSong
         if shown { layer.isHidden = false }
         let heading = NowPlayingSideLayout.heading(menu: menu, canvasScale: canvasScale)
-        let opacity = glide.map { heading == nil ? min(max(($0 - 0.5) / 0.5, 0), 1) : min(max(($0 - 0.62) / 0.38, 0), 1) } ?? 1
-        let isModern = ModernTheme.isActive
-        if isModern {
-            // Lying down each line comes and goes for itself (see `updateModern`); the words
-            // as a whole are only faded standing upright, a frame at a time, or away.
-            let lyingDown = menu.upright == nil
-            if shown, lyingDown {
-                layer.setOpacity(1, nil)
-            } else {
-                layer.setOpacity(shown ? Double(opacity) : 0, shown ? pass.animation : (lyingDown ? .easeOut(duration: 0.14) : pass.animation))
-            }
+        let glided = glide.map { heading == nil ? min(max(($0 - 0.5) / 0.5, 0), 1) : min(max(($0 - 0.62) / 0.38, 0), 1) } ?? 1
+        // (The list comes out over them: they fade as it does, and come back as it goes.)
+        let opacity = Double(glided * NowPlayingSideLayout.wordsStrength(menu: menu))
+        let appearing = shown && !wasShown
+        if !shown {
+            // Away quickly where nothing else says how: a song changing, the modern look's
+            // words lying down (which the rest then moves over).
+            layer.setOpacity(0, isModern ? (lyingDown ? .easeOut(duration: 0.14) : pass.animation) : (pass.animation ?? .easeOut(duration: 0.15)))
+        } else if isModern, lyingDown {
+            // Lying down each line comes for itself (see `updateModern`).
+            layer.setOpacity(opacity, appearing ? nil : pass.animation)
         } else {
-            layer.setOpacity(shown ? Double(opacity) : 0, pass.animation)
+            // (Back for a new song they fade in, rather than being there at once.)
+            layer.setOpacity(opacity, appearing && glide == nil ? pass.animation ?? .smooth(duration: 0.3) : pass.animation)
         }
-        guard shown || !layer.isHidden, let lyrics = menu.nowPlayingLyrics else {
-            if !shown, pass.animation == nil { layer.isHidden = true }
+        guard shown, let lyrics = menu.nowPlayingLyrics else {
+            // (Hidden once they have faded. What they said stays as it was until then: the
+            // next song's words are not put in their place while they go.)
+            if layer.opacity == 0, layer.animation(forKey: "opacity") == nil { layer.isHidden = true }
             wasShown = false
             return
         }
+        wasShown = true
         let area = NowPlayingSideLayout.lyricsFrame(size, upright: menu.upright, heading: heading)
-        clip.frame = area
-        fade.frame = CGRect(origin: .zero, size: area.size)
+        // (In the modern look the lines further off are out of focus, and spread a little past
+        // their lettering: the clip leaves them room at the sides.)
+        let pad: CGFloat = isModern ? 28 : 0
+        clip.frame = area.insetBy(dx: -pad, dy: 0)
+        fade.frame = CGRect(origin: .zero, size: clip.frame.size)
         if isModern {
-            updateModern(lyrics, menu: menu, shown: shown, area: area, size: size, scale: scale, underHeading: heading != nil)
+            // The foot of the screen is the on-screen buttons': the words fade out above them
+            // (above the one in the corner, or the whole row where that is along the bottom).
+            var strip: CGFloat = 0
+            if let buttons = TouchControlsLayer.nowPlayingButtons(menu: menu)?.scaled(by: 1 / max(canvasScale, 0.0001)) {
+                strip = heading != nil ? max(buttons.cornerStrip, buttons.play + buttons.bottomMargin + 12) : buttons.cornerStrip
+            }
+            updateModern(lyrics, menu: menu, shown: shown, appearing: appearing, area: area, pad: pad, strip: strip, size: size, scale: scale, underHeading: heading != nil)
             return
         }
         if !lines.isEmpty {
@@ -756,9 +798,11 @@ final class NowPlayingLyricsLayer {
         let anchor = area.height * 0.34
         if lyrics.isSynced {
             let current = lyrics.currentLineIndex(at: elapsed + 0.2)
-            if current != lastLine || pass.animation == nil {
-                let changed = lastLine != nil && current != lastLine
-                lastLine = current
+            // (-1 before the first line is sung: the move to it from there is a move too.)
+            let now = current ?? -1
+            if now != lastLine || pass.animation == nil {
+                let changed = lastLine != nil && now != lastLine
+                lastLine = now
                 let move: Animation? = changed ? .smooth(duration: 0.55) : nil
                 let top = current.flatMap { lineTops.indices.contains($0) ? lineTops[$0] : nil } ?? -anchor * 0.5
                 column.setPosition(CGPoint(x: 0, y: anchor - top), move)
@@ -786,7 +830,7 @@ final class NowPlayingLyricsLayer {
     /// under it fainter and softer the further off they are, and the one just sung fading out
     /// above. As the song moves on each line goes up to its new place, the lower ones setting
     /// off a moment after the ones above them.
-    private func updateModern(_ lyrics: MusicLyrics, menu: MenuView, shown: Bool, area: CGRect, size: CGSize, scale: CGFloat, underHeading: Bool) {
+    private func updateModern(_ lyrics: MusicLyrics, menu: MenuView, shown: Bool, appearing: Bool, area: CGRect, pad: CGFloat, strip: CGFloat, size: CGSize, scale: CGFloat, underHeading: Bool) {
         if !lineLayers.isEmpty {
             for line in lineLayers { line.removeFromSuperlayer() }
             lineLayers = []
@@ -800,7 +844,8 @@ final class NowPlayingLyricsLayer {
         let height = max(1, area.height)
         // (Under a heading the line just sung shows whole between it and the one being sung.)
         let rise = underHeading ? 40 : size.height * 0.085
-        fade.locations = [0, NSNumber(value: Double(min(0.4, rise / height))), NSNumber(value: Double(max(0.5, 1 - size.height * 0.2 / height))), NSNumber(value: Double(max(0.6, 1 - size.height * 0.02 / height)))]
+        let foot = max(size.height * 0.02, strip)
+        fade.locations = [0, NSNumber(value: Double(min(0.4, rise / height))), NSNumber(value: Double(max(0.5, 1 - (foot + size.height * 0.18) / height))), NSNumber(value: Double(max(0.6, 1 - foot / height)))]
 
         let key = "\(menu.nowPlayingLyricsSongID ?? "")|\(lyrics.lines.count)|\(area.width)|\(scale)|\(fontSize)|modern"
         if key != builtKey {
@@ -846,8 +891,6 @@ final class NowPlayingLyricsLayer {
         // The line that has the place near the top: the one being sung, or before the first of
         // them, the first.
         let lead = current ?? 0
-        let appearing = shown && !wasShown
-        wasShown = shown
         let jumped = lastLine.map { abs($0 - (current ?? -1)) > 2 } ?? false
         let changed = isLaidOut && synced && lastLine != (current ?? -1)
         lastLine = current ?? -1
@@ -861,15 +904,52 @@ final class NowPlayingLyricsLayer {
             scrolled = max(0, contentHeight - area.height * 0.5) * progress
         }
         let leadTop = synced ? lines[min(lead, lines.count - 1)].top : scrolled
+        // One line on, the lower lines set off a moment after the ones above them. Further
+        // than that, while the song is being wound through, or with the last move still under
+        // way, they all go together: a line made to wait its turn again and again would be
+        // left behind by the others, out of step with them and over them.
+        let now = CACurrentMediaTime()
+        let together = jumped || menu.musicScrubDirection != 0 || now < movesSettleAt
+        if changed { movesSettleAt = now + 0.5 }
+        let glide: Animation? = synced ? move : (isLaidOut ? .linear(duration: 0.5) : nil)
+        // How far each line that is up is from where it is going. One that comes up while they
+        // are on their way starts as far from its own place, and one that goes off the screen
+        // goes there with them: the lines keep their spacing however far the song jumps.
+        var offsets = [CGFloat?](repeating: nil, count: glide == nil ? 0 : lines.count)
+        if glide != nil {
+            for (index, line) in lines.enumerated() where line.isPlaced && !line.layer.isHidden {
+                offsets[index] = (line.layer.presentation()?.position.y ?? line.layer.position.y) - (anchor + line.top - leadTop)
+            }
+            // (Each of the others goes by the nearest one that is up: above it, or failing
+            // that below.)
+            var nearest: CGFloat?
+            for index in offsets.indices {
+                if let offset = offsets[index] { nearest = offset } else { offsets[index] = nearest }
+            }
+            nearest = nil
+            for index in offsets.indices.reversed() {
+                if let offset = offsets[index] { nearest = offset } else { offsets[index] = nearest }
+            }
+        }
         var order = 0
         for (index, line) in lines.enumerated() {
             let y = anchor + line.top - leadTop
+            let place = CGPoint(x: pad, y: y)
+            let wait = synced && changed && !together ? min(0.3, 0.045 * Double(max(0, index - lead))) : 0
+            let lineGlide = glide.map { wait > 0 ? $0.delay(wait) : $0 }
             // Only what is on the screen, or just off it, is kept up.
             let near = y > -line.height - size.height * 0.3 && y < area.height + size.height * 0.3
             guard near, line.graphic != nil else {
-                if !line.layer.isHidden {
+                guard !line.layer.isHidden else { continue }
+                if line.isPlaced, line.awayAt == 0, let lineGlide {
+                    line.awayAt = now + wait + lineGlide.duration
+                }
+                if now < line.awayAt {
+                    line.layer.setPosition(place, lineGlide)
+                } else {
                     line.layer.isHidden = true
                     line.isPlaced = false
+                    line.awayAt = 0
                 }
                 continue
             }
@@ -892,17 +972,14 @@ final class NowPlayingLyricsLayer {
             let fresh = line.layer.isHidden || !line.isPlaced
             line.layer.isHidden = false
             line.isPlaced = true
-            let place = CGPoint(x: 0, y: y)
+            line.awayAt = 0
             if fresh {
-                // (Just come near enough to be kept up: put where it belongs, not moved there.)
-                line.layer.setPosition(place, nil)
-            } else if !synced {
-                line.layer.setPosition(place, isLaidOut ? .linear(duration: 0.5) : nil)
-            } else {
-                // The lower a line is under the one now being sung, the later it sets off.
-                let wait = changed && !jumped ? min(0.3, 0.045 * Double(max(0, index - lead))) : 0
-                line.layer.setPosition(place, move.map { wait > 0 ? $0.delay(wait) : $0 })
+                // (Just come near enough to be kept up: put as far from where it belongs as
+                // the others are, to go there with them.)
+                let offset = lineGlide == nil ? 0 : offsets[index] ?? 0
+                line.layer.setPosition(CGPoint(x: pad, y: y + offset), nil)
             }
+            line.layer.setPosition(place, lineGlide)
             show(line, softness: softness, strength: strength, fontSize: fontSize, scale: scale, animation: fresh ? nil : look)
             if appearing, menu.upright == nil {
                 // Coming up beside the song, the lines come in one after another from the top,

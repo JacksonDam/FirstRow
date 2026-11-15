@@ -177,7 +177,13 @@ final class TouchControlsLayer {
         let insets = Self.safeAreaInsets
         let isNowPlaying = menu.activeFullscreenScene?.key == menu.musicNowPlayingFullscreenKey
         transportTop = nil
-        let backFrame = CGRect(x: max(insets.left + 16, 38), y: max(insets.top + 10, 32), width: 46, height: 46)
+        let backFrame = Self.backFrame(insets: insets)
+        // The lyrics' button, in a bottom corner of the screen (see `cornerIsLeft`).
+        let cornerIsLeft = Self.cornerIsLeft(insets: insets)
+        let cornerFrame = CGRect(
+            x: cornerIsLeft ? max(insets.left + 16, 38) : size.width - max(insets.right + 16, 38) - 46,
+            y: size.height - max(insets.bottom + 10, 32) - 46, width: 46, height: 46,
+        )
         let back = Wanted(control: .back, frame: backFrame, symbol: "chevron.left", pointSize: 19)
         if let step = menu.onboardingStep {
             // The first-launch screens after the first have Back, whatever the input.
@@ -270,7 +276,11 @@ final class TouchControlsLayer {
                             transportTop = centerY - play / 2
                             // Kept on the screen where the bar rests; with it all the way
                             // while it slides off or in.
-                            let resting = max(min(bar.midX - nowPlayingSlide, rightLimit - rightReach), insets.left + 16 + leftReach)
+                            // (Along the bottom with the lyrics' button in the bottom left
+                            // corner, the row keeps to the right of it.)
+                            let sharesTheBottom = cornerIsLeft && menu.hasNowPlayingLyrics && centerY + play / 2 > cornerFrame.minY - 8
+                            let leftLimit = sharesTheBottom ? cornerFrame.maxX + 12 : insets.left + 16
+                            let resting = max(min(bar.midX - nowPlayingSlide, rightLimit - rightReach), leftLimit + leftReach)
                             let fall = nowPlayingDrop * (size.height - (centerY - play / 2) + 12)
                             return (resting + nowPlayingSlide, centerY + fall)
                         }
@@ -290,13 +300,11 @@ final class TouchControlsLayer {
                     ]
                 }
                 // The words, when the song has some: a button of its own in the bottom right
-                // corner of the screen, as far in as Back is at the top left. It is there
-                // while the other buttons are (it fades away with them, and back), and makes
-                // way for the list, which comes out over that corner.
+                // corner of the screen, as far in as Back is at the top left (or the bottom
+                // left one, where a camera has the right). It is there while the other buttons
+                // are (it fades away with them, and back), and makes way for the list.
                 if menu.hasNowPlayingLyrics, !menu.areNowPlayingTouchControlsHidden, menu.nowPlayingQueueReveal <= 0.001 {
-                    let small: CGFloat = 46
-                    let corner = CGRect(x: size.width - max(insets.right + 16, 38) - small, y: size.height - max(insets.bottom + 10, 32) - small, width: small, height: small)
-                    wanted.append(Wanted(control: .lyrics, frame: corner, symbol: menu.isNowPlayingLyricsVisible ? "quote.bubble.fill" : "quote.bubble", pointSize: 19))
+                    wanted.append(Wanted(control: .lyrics, frame: cornerFrame, symbol: menu.isNowPlayingLyricsVisible ? "quote.bubble.fill" : "quote.bubble", pointSize: 19))
                 }
             } else if menu.activeFullscreenScene?.key == menu.photoSlideshowFullscreenKey {
                 // Only for a few seconds after a tap, click or move: the pictures have the screen.
@@ -674,21 +682,65 @@ final class TouchControlsLayer {
 
     #endif
 
-    /// Now Playing's play, previous and next buttons, for setting the song out clear of them:
-    /// how tall they are with the room kept under them, in the screen's points, and whether
-    /// they hang from the progress bar (on a phone or an iPad) or are along the bottom of the
-    /// screen. Nil where there are none.
-    /// `backReach` is how far in from the left Back reaches, with a little room beside it.
-    static func nowPlayingButtons(menu: MenuView) -> (height: CGFloat, hangFromBar: Bool, backReach: CGFloat)? {
+    /// What Now Playing's on-screen buttons take up, for setting the song and its lyrics out
+    /// clear of them: in the screen's points, or scaled into the canvas's.
+    struct NowPlayingButtonsRoom {
+        /// The play button's height, and the room kept under it.
+        var play: CGFloat
+        var bottomMargin: CGFloat
+        /// They hang from the progress bar (on a phone or an iPad) rather than sitting along
+        /// the bottom of the screen.
+        var hangFromBar: Bool
+        /// Back, at the top left.
+        var back: CGRect
+        /// How far in from the left the screen is clear (of a camera at its edge, say).
+        var safeLeft: CGFloat
+        /// How far the row of buttons reaches either side of its middle, and the furthest left
+        /// its left end goes.
+        var rowReach: CGFloat
+        var rowLeftLimit: CGFloat
+        /// How much of the bottom of the screen the button in a corner (the lyrics') has to
+        /// itself, and whether that is the bottom left corner: it is where the bottom right
+        /// one is taken up by a camera.
+        var cornerStrip: CGFloat
+        var cornerIsLeft: Bool
+
+        func scaled(by factor: CGFloat) -> NowPlayingButtonsRoom {
+            NowPlayingButtonsRoom(
+                play: play * factor, bottomMargin: bottomMargin * factor, hangFromBar: hangFromBar,
+                back: CGRect(x: back.minX * factor, y: back.minY * factor, width: back.width * factor, height: back.height * factor),
+                safeLeft: safeLeft * factor, rowReach: rowReach * factor, rowLeftLimit: rowLeftLimit * factor,
+                cornerStrip: cornerStrip * factor, cornerIsLeft: cornerIsLeft,
+            )
+        }
+    }
+
+    /// Now Playing's buttons as they are laid out here (`update` places them by the same
+    /// figures). Nil where there are none.
+    static func nowPlayingButtons(menu: MenuView) -> NowPlayingButtonsRoom? {
         guard menu.showsOnScreenControls else { return nil }
         let insets = safeAreaInsets
-        let height = 64 + max(insets.bottom, 10) + 16
-        let backReach = max(insets.left + 16, 38) + 46 + 12
         #if os(iOS)
-            return (height, true, backReach)
+            let hangs = true
         #else
-            return (height, false, backReach)
+            let hangs = false
         #endif
+        return NowPlayingButtonsRoom(
+            play: 64, bottomMargin: max(insets.bottom, 10) + 16, hangFromBar: hangs,
+            back: backFrame(insets: insets), safeLeft: insets.left,
+            rowReach: menu.canSwitchMusicNowPlayingTrack ? 32 + 36 + 52 : 32, rowLeftLimit: insets.left + 16,
+            cornerStrip: max(insets.bottom + 10, 32) + 46 + 12, cornerIsLeft: cornerIsLeft(insets: insets),
+        )
+    }
+
+    private static func backFrame(insets: (left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat)) -> CGRect {
+        CGRect(x: max(insets.left + 16, 38), y: max(insets.top + 10, 32), width: 46, height: 46)
+    }
+
+    /// The button in a bottom corner goes in the right one, unless that side of the screen is
+    /// set in further than the left (a camera in that corner): then in the left one.
+    private static func cornerIsLeft(insets: (left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat)) -> Bool {
+        insets.right > insets.left + 20
     }
 
     private static var safeAreaInsets: (left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat) {
