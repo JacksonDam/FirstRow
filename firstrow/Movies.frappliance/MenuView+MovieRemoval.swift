@@ -51,7 +51,7 @@ struct MovieRemoval: Equatable {
         case .imported: L("Remove “%@” from First Row?", title)
         case .ownCopy, .ownFile: L("Delete “%@”?", title)
         case .watchedVideo: L("Remove “%@” from History?", title)
-        case .watchHistory: L("Clear YouTube Watch History?")
+        case .watchHistory: L("Clear YouTube History?")
         }
     }
 
@@ -60,7 +60,7 @@ struct MovieRemoval: Equatable {
         switch kind {
         case .ownCopy: L("It will be removed from First Row.")
         case .continueWatching, .watchedVideo: nil
-        case .watchHistory: L("The videos watched here will be forgotten.")
+        case .watchHistory: L("Your YouTube history in First Row will be cleared.")
         case let .imported(isFolder): isFolder ? L("The folder and what is in it stay where they are.") : L("The file stays where it is.")
         case .ownFile:
             #if os(Windows)

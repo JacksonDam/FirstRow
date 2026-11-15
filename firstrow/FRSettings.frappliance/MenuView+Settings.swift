@@ -50,7 +50,7 @@ extension MenuView {
                 playSound(named: "Selection")
                 presentFullscreenScene(key: featureErrorFullscreenKey, payload: [
                     "header": L("Nothing Watched Yet"),
-                    "subcaption": L("There is no YouTube watch history to clear."),
+                    "subcaption": L("There is no YouTube history to clear."),
                 ])
             } else {
                 askAboutRemoving(MovieRemoval(url: YouTubeStore.historyAddress, title: "", kind: .watchHistory))
