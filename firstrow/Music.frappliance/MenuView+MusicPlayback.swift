@@ -2410,11 +2410,14 @@ extension MenuView {
     }
 
     /// Whether Now Playing turns round every so often as things stand. Lying down: not with
-    /// the list or the words beside it. Standing upright it's the other way about: the cover is
-    /// above the fold and the details under it, with no sides to change, until the list or the
-    /// words are out and the two are side by side above the fold.
+    /// the list or the words beside it. Standing upright it's the other way about in the
+    /// classic look: the cover is above the fold and the details under it, with no sides to
+    /// change, until the list or the words are out and the two are side by side above the
+    /// fold. The modern look doesn't turn round standing upright at all (the wait starts
+    /// afresh when it lies down again).
     var allowsNowPlayingFlip: Bool {
         guard upright != nil else { return !isNowPlayingQueueVisible && !isNowPlayingLyricsVisible }
+        if ModernTheme.isActive { return false }
         return nowPlayingGlide == nil && (isNowPlayingLyricsVisible || (isNowPlayingQueueVisible && nowPlayingQueueReveal >= 1))
     }
 
