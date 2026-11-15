@@ -76,10 +76,11 @@
             // Broken into lines at the width, and at the line ends the subtitle has of its own.
             let typesetter = CTTypesetterCreateWithAttributedString(text)
             let length = CFAttributedStringGetLength(text)
+            let units = Array((CFAttributedStringGetString(text) as String).utf16)
             var lines: [(line: CTLine, width: CGFloat)] = []
             var start = 0
             while start < length {
-                let count = CTTypesetterSuggestLineBreak(typesetter, start, Double(max(1, wrapWidth)))
+                let count = FontMetrics.keepingKoreanWordsWhole(CTTypesetterSuggestLineBreak(typesetter, start, Double(max(1, wrapWidth))), from: start, in: units)
                 guard count > 0 else { break }
                 let line = CTTypesetterCreateLine(typesetter, CFRange(location: start, length: count))
                 let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)) - CGFloat(CTLineGetTrailingWhitespaceWidth(line))

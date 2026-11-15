@@ -312,6 +312,22 @@ enum FontMetrics {
         return width
     }
 
+    /// Korean is read a word at a time, and its lines end between words: a line that would
+    /// end part way through a word with Hangul in it (`count` units from `start`) ends after
+    /// the last space before that instead. A word with the line to itself is broken as it was.
+    static func keepingKoreanWordsWhole(_ count: Int, from start: Int, in units: [UInt16]) -> Int {
+        let end = start + count
+        guard count > 1, end < units.count else { return count }
+        func isSpace(_ unit: UInt16) -> Bool { unit == 0x20 || unit == 0x0A || unit == 0x09 || unit == 0x3000 || unit == 0x2028 }
+        func isHangul(_ unit: UInt16) -> Bool { (0xAC00 ... 0xD7A3).contains(unit) || (0x1100 ... 0x11FF).contains(unit) || (0x3130 ... 0x318F).contains(unit) }
+        let before = units[end - 1]
+        let after = units[end]
+        guard !isSpace(before), !isSpace(after), isHangul(before) || isHangul(after) else { return count }
+        var index = end - 1
+        while index > start, !isSpace(units[index - 1]) { index -= 1 }
+        return index > start ? index - start : count
+    }
+
     static func attributed(_ text: String, font: CTFont, color: RGBA) -> CFAttributedString {
         let attributes: [CFString: Any] = [
             kCTFontAttributeName: font,
@@ -487,10 +503,11 @@ enum TextRenderer {
             let attributed = FontMetrics.attributed(spec.text, font: font, color: spec.color)
             let typesetter = CTTypesetterCreateWithAttributedString(attributed)
             let length = CFAttributedStringGetLength(attributed)
+            let units = Array(spec.text.utf16)
             var lines: [Line] = []
             var start = 0
             while start < length {
-                let count = CTTypesetterSuggestLineBreak(typesetter, start, Double(max(1, wrapWidth)))
+                let count = FontMetrics.keepingKoreanWordsWhole(CTTypesetterSuggestLineBreak(typesetter, start, Double(max(1, wrapWidth))), from: start, in: units)
                 guard count > 0 else { break }
                 let line = CTTypesetterCreateLine(typesetter, CFRange(location: start, length: count))
                 let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)) - CGFloat(CTLineGetTrailingWhitespaceWidth(line))
