@@ -10,6 +10,8 @@ import QuartzCore
 /// Keys First Row reacts to.
 public enum PortableKey: Sendable {
     case up, down, left, right, enter, escape, delete, space, tab
+    /// The letter L (Now Playing's lyrics).
+    case l
     case other(UInt32)
 }
 
@@ -635,6 +637,7 @@ public enum PortableApplication {
         case SDL_Keycode(SDLK_BACKSPACE), SDL_Keycode(SDLK_DELETE): .delete
         case SDL_Keycode(SDLK_SPACE): .space
         case SDL_Keycode(SDLK_TAB): .tab
+        case SDL_Keycode(SDLK_L): .l
         // Media keys and remotes that send keys (a Siri Remote through a helper, say).
         case SDL_Keycode(SDLK_MEDIA_PLAY_PAUSE): .space
         case SDL_Keycode(SDLK_SELECT): .enter

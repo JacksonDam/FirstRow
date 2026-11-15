@@ -61,6 +61,8 @@
             }
             // (Tab with Alt, Control or the system's key held is for switching windows.)
             if key.isTab, shortcut || modifiers.contains(.alt) { return }
+            // (L with one of them held is somebody's shortcut, not Now Playing's lyrics.)
+            if case .l = key, shortcut || modifiers.contains(.alt) { return }
             guard let code = key.keyCode else { return }
             controller.handleKeyDown(code, isRepeat: isRepeat)
         }
@@ -116,6 +118,7 @@
             case .delete: .delete
             case .space: .space
             case .tab: .tab
+            case .l: .l
             case .other: nil
             }
         }
@@ -137,7 +140,8 @@
     }
 
     /// Game controllers as arrow, select, back and play keys: the D-pad or left stick moves,
-    /// A selects, B or Menu goes back and X plays or pauses, as on the Mac.
+    /// A selects, B or Menu goes back, X plays or pauses and Y shows a song's lyrics, as on
+    /// the Mac.
     final class GameControllerInput {
         nonisolated(unsafe) static weak var current: GameControllerInput?
 
@@ -146,6 +150,7 @@
         var onEnter: () -> Void
         var onBackspace: () -> Void
         var onSpace: () -> Void
+        var onLyrics: () -> Void
         private var heldDirections: [KeyCode: Int] = [:]
 
         init(
@@ -154,12 +159,14 @@
             onEnter: @escaping () -> Void,
             onBackspace: @escaping () -> Void,
             onSpace: @escaping () -> Void,
+            onLyrics: @escaping () -> Void,
         ) {
             self.onArrowKeyDown = onArrowKeyDown
             self.onArrowKeyUp = onArrowKeyUp
             self.onEnter = onEnter
             self.onBackspace = onBackspace
             self.onSpace = onSpace
+            self.onLyrics = onLyrics
         }
 
         func startMonitoringControllersIfNeeded() {
@@ -191,6 +198,7 @@
             case .south: onEnter()
             case .east, .back, .start: onBackspace()
             case .west: onSpace()
+            case .north: onLyrics()
             default: break
             }
         }

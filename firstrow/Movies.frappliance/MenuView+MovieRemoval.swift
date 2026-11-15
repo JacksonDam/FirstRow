@@ -127,6 +127,23 @@ extension MenuView {
     /// is held instead.
     func confirmPressBegan() -> Bool {
         if isConfirmPressDown { return true }
+        // In Now Playing the infrared remote's middle button, its Play/Pause, shows the song's
+        // words when it is held; let go sooner it plays or pauses, as a press of it does.
+        if isMusicNowPlayingShowing, lastInputSource == .appleRemote, !isNowPlayingQueueVisible, hasNowPlayingLyrics || isNowPlayingLyricsVisible {
+            isConfirmPressDown = true
+            confirmHoldFired = false
+            confirmHold?.cancel()
+            let hold = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolatedIfPossible {
+                    guard let self, self.isConfirmPressDown, self.isMusicNowPlayingShowing else { return }
+                    self.confirmHoldFired = true
+                    self.toggleNowPlayingLyrics()
+                }
+            }
+            confirmHold = hold
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.confirmHoldDelay, execute: hold)
+            return true
+        }
         guard let removal = movieRemoval(forThirdMenuRow: selectedThirdIndex) else { return false }
         isConfirmPressDown = true
         confirmHoldFired = false

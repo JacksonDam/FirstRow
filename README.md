@@ -65,15 +65,15 @@ On the Mac, iPhone, iPad and Apple TV, the kinds of movie file beyond MP4, MOV a
 | | |
 |---|---|
 | **Keyboard** | Arrow keys move, `Return` chooses, `Esc` or `Delete` goes back, `Space` plays and pauses. `Cmd+Esc` quits on a Mac, `Ctrl+Esc` or `Ctrl+Q` elsewhere. |
-| **Mouse or trackpad** (macOS, Linux, Windows) | Point at a row and click it. Scroll long lists, use the on-screen Back button, and click or drag the progress bar to seek. In Now Playing, move to the right edge for the song list. |
-| **Touch** (iPhone, iPad) | Tap a row to open it. Drag a list to scroll it, or hold and slide to move through it. Swipe in from the left or tap Back to go back. In Now Playing, swipe in from the right for the song list. |
-| **Siri Remote** (Apple TV, or paired with a Mac) | Swipe or click the clickpad to move, click the centre to choose, Back goes back, Play/Pause plays and pauses. On a Mac, the TV button opens Now Playing's song list and the volume buttons set the Mac's volume. On Apple TV, where that button belongs to the system, hold the clickpad's centre in Now Playing for the song list. |
-| **Apple Remote** (Macs with an infrared receiver) | `+` and `-` move in menus and set the volume during playback. `⏮` and `⏭` move left and right, or change song in Now Playing (hold them to scrub). The centre button chooses and plays, `Menu` goes back. |
-| **Game controller** | D-pad or left stick moves, `A` chooses, `B` or `Menu` goes back, `X` plays and pauses. |
+| **Mouse or trackpad** (macOS, Linux, Windows) | Point at a row and click it. Scroll long lists, use the on-screen Back button, and click or drag the progress bar to seek. In Now Playing, move to the right edge for the song list, and click the button in the bottom right corner for the lyrics. |
+| **Touch** (iPhone, iPad) | Tap a row to open it. Drag a list to scroll it, or hold and slide to move through it. Swipe in from the left or tap Back to go back. In Now Playing, swipe in from the right for the song list, and tap the button in the bottom right corner for the lyrics. |
+| **Siri Remote** (Apple TV, or paired with a Mac) | Swipe or click the clickpad to move, click the centre to choose (in Now Playing, for the lyrics), Back goes back, Play/Pause plays and pauses. On a Mac, the TV button opens Now Playing's song list and the volume buttons set the Mac's volume. On Apple TV, where that button belongs to the system, hold the clickpad's centre in Now Playing for the song list. |
+| **Apple Remote** (Macs with an infrared receiver) | `+` and `-` move in menus and set the volume during playback. `⏮` and `⏭` move left and right, or change song in Now Playing (hold them to scrub). The centre button chooses and plays, `Menu` goes back. In Now Playing, hold the centre button for the lyrics. |
+| **Game controller** | D-pad or left stick moves, `A` chooses, `B` or `Menu` goes back, `X` plays and pauses, `Y` shows the lyrics in Now Playing. |
 
 All of them work at once, with nothing to turn on. First Row follows whatever you used last: touch or the mouse brings up on-screen buttons like Back and the playback controls, and a key, a remote or a game controller puts them away again.
 
-In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, `Return` shows the lyrics, and `Tab` brings out the song list: `Up` and `Down` then move through it, `Return` plays the song picked out, and `Tab` or `Esc` puts it away. In a movie, tap `Left` or `Right` to skip 10 seconds or hold them to scrub, and press `Down` for subtitles, audio and speed.
+In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, `L` or `Return` shows the lyrics, and `Tab` brings out the song list: `Up` and `Down` then move through it, `Return` plays the song picked out, and `Tab` or `Esc` puts it away. In a movie, tap `Left` or `Right` to skip 10 seconds or hold them to scrub, and press `Down` for subtitles, audio and speed.
 
 ## Building
 

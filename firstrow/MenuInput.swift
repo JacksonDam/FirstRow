@@ -21,6 +21,9 @@ enum KeyCode: UInt16 {
     case escape = 53
     case delete = 51
     case tab = 48
+    /// The letter L (Now Playing's lyrics): not a key's own number, since which key has the
+    /// letter is the keyboard layout's affair. Whatever takes keys in makes it of the letter.
+    case l = 0xF04C
 }
 
 /// Where the last input came from. Hints for pointing and touching (the faint bars) stay

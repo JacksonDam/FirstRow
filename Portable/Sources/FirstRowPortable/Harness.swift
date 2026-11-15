@@ -88,7 +88,7 @@ public enum Harness {
 
     private static let keys: [String: PortableKey] = [
         "down": .down, "up": .up, "left": .left, "right": .right, "enter": .enter, "return": .enter,
-        "delete": .delete, "escape": .escape, "space": .space, "tab": .tab,
+        "delete": .delete, "escape": .escape, "space": .space, "tab": .tab, "l": .l,
     ]
 
     private static func perform(_ line: String) {

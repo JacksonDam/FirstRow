@@ -49,7 +49,7 @@ import Foundation
         override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
             var handled = false
             for press in presses {
-                guard let key = mapPressTypeToKeyCode(press.type) else { continue }
+                guard let key = keyCode(for: press) else { continue }
                 onKeyDown?(key)
                 handled = true
             }
@@ -61,7 +61,7 @@ import Foundation
         override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
             var handled = false
             for press in presses {
-                guard let key = mapPressTypeToKeyCode(press.type) else { continue }
+                guard let key = keyCode(for: press) else { continue }
                 onKeyUp?(key)
                 handled = true
             }
@@ -73,13 +73,22 @@ import Foundation
         override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
             var handled = false
             for press in presses {
-                guard let key = mapPressTypeToKeyCode(press.type) else { continue }
+                guard let key = keyCode(for: press) else { continue }
                 onKeyUp?(key)
                 handled = true
             }
             if !handled {
                 super.pressesCancelled(presses, with: event)
             }
+        }
+
+        /// A remote's button, or a keyboard's L (Now Playing's lyrics).
+        private func keyCode(for press: UIPress) -> KeyCode? {
+            if let key = mapPressTypeToKeyCode(press.type) { return key }
+            guard let typed = press.key, typed.modifierFlags.intersection([.command, .control, .alternate]).isEmpty,
+                  typed.charactersIgnoringModifiers.lowercased() == "l"
+            else { return nil }
+            return .l
         }
 
         private func mapPressTypeToKeyCode(_ pressType: UIPress.PressType) -> KeyCode? {
@@ -147,6 +156,8 @@ import Foundation
             var onEnter: () -> Void
             var onBackspace: () -> Void
             var onSpace: () -> Void
+            /// Y: Now Playing's lyrics.
+            var onLyrics: () -> Void
 
             private var controllerObservers: [NSObjectProtocol] = []
             private var controllersByID: [ObjectIdentifier: GCController] = [:]
@@ -159,12 +170,14 @@ import Foundation
                 onEnter: @escaping () -> Void,
                 onBackspace: @escaping () -> Void,
                 onSpace: @escaping () -> Void,
+                onLyrics: @escaping () -> Void,
             ) {
                 self.onArrowKeyDown = onArrowKeyDown
                 self.onArrowKeyUp = onArrowKeyUp
                 self.onEnter = onEnter
                 self.onBackspace = onBackspace
                 self.onSpace = onSpace
+                self.onLyrics = onLyrics
                 super.init()
             }
 
@@ -253,6 +266,12 @@ import Foundation
                             self?.onSpace()
                         }
                     }
+                    gamepad.buttonY.pressedChangedHandler = { [weak self] _, _, isPressed in
+                        guard isPressed else { return }
+                        self?.dispatchOnMain {
+                            self?.onLyrics()
+                        }
+                    }
                     gamepad.buttonMenu.pressedChangedHandler = { [weak self] _, _, isPressed in
                         guard isPressed else { return }
                         self?.dispatchOnMain {
@@ -301,6 +320,7 @@ import Foundation
                     gamepad.buttonA.pressedChangedHandler = nil
                     gamepad.buttonB.pressedChangedHandler = nil
                     gamepad.buttonX.pressedChangedHandler = nil
+                    gamepad.buttonY.pressedChangedHandler = nil
                     gamepad.buttonMenu.pressedChangedHandler = nil
                 }
                 if let gamepad = controller.microGamepad {
@@ -466,6 +486,8 @@ import Foundation
             var onEnter: () -> Void
             var onBackspace: () -> Void
             var onSpace: () -> Void
+            /// Y: Now Playing's lyrics.
+            var onLyrics: () -> Void
 
             private var controllerObservers: [NSObjectProtocol] = []
             private var controllersByID: [ObjectIdentifier: GCController] = [:]
@@ -478,12 +500,14 @@ import Foundation
                 onEnter: @escaping () -> Void,
                 onBackspace: @escaping () -> Void,
                 onSpace: @escaping () -> Void,
+                onLyrics: @escaping () -> Void,
             ) {
                 self.onArrowKeyDown = onArrowKeyDown
                 self.onArrowKeyUp = onArrowKeyUp
                 self.onEnter = onEnter
                 self.onBackspace = onBackspace
                 self.onSpace = onSpace
+                self.onLyrics = onLyrics
                 super.init()
             }
 
@@ -572,6 +596,12 @@ import Foundation
                             self?.onSpace()
                         }
                     }
+                    gamepad.buttonY.pressedChangedHandler = { [weak self] _, _, isPressed in
+                        guard isPressed else { return }
+                        self?.dispatchOnMain {
+                            self?.onLyrics()
+                        }
+                    }
                     gamepad.buttonMenu.pressedChangedHandler = { [weak self] _, _, isPressed in
                         guard isPressed else { return }
                         self?.dispatchOnMain {
@@ -610,6 +640,7 @@ import Foundation
                     gamepad.buttonA.pressedChangedHandler = nil
                     gamepad.buttonB.pressedChangedHandler = nil
                     gamepad.buttonX.pressedChangedHandler = nil
+                    gamepad.buttonY.pressedChangedHandler = nil
                     gamepad.buttonMenu.pressedChangedHandler = nil
                 }
                 if let gamepad = controller.microGamepad {

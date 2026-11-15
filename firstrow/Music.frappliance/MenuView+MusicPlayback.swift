@@ -2720,8 +2720,13 @@ extension MenuView {
             clearMusicSongSwitchTransitionState()
             dismissFullscreenScene(preserveMusicPlayback: true)
             playSound(named: "Exit")
-        case .enter where hasNowPlayingLyrics || isNowPlayingLyricsVisible:
-            // Select shows the song's words, when it has some; Play/Pause still pauses.
+        case .l:
+            // The song's words, when it has some.
+            if !isRepeat { toggleNowPlayingLyrics() }
+        case .enter where (hasNowPlayingLyrics || isNowPlayingLyricsVisible) && lastInputSource != .appleRemote:
+            // Select shows the song's words, when it has some; Play/Pause still pauses. (The
+            // infrared remote's middle button is its Play/Pause as well: a press of it plays
+            // or pauses, and holding it shows the words. See `confirmPressBegan`.)
             toggleNowPlayingLyrics()
         case .space, .enter:
             handleMusicSpacebarPressed()

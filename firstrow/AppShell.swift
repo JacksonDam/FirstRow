@@ -416,6 +416,11 @@ final class FirstRowAppController {
                 menu?.noteInputSource(.keyboard)
                 menu?.handleKeyDown(.space)
             },
+            onLyrics: { [weak self, weak menu] in
+                if self?.takesIntroPress() == true { return }
+                menu?.noteInputSource(.keyboard)
+                menu?.handleKeyDown(.l)
+            },
         )
         controllers.startMonitoringControllersIfNeeded()
         gameControllers = controllers
@@ -544,11 +549,20 @@ final class FirstRowAppController {
                 menu.handleTypedText(characters)
                 return
             }
-            menu?.handleKeyDown(key, isRepeat: event.isARepeat, modifiers: modifiers, willBeLetGo: true)
+            menu?.handleKeyDown(Self.letterKey(key, event), isRepeat: event.isARepeat, modifiers: modifiers, willBeLetGo: true)
+        }
+
+        /// A letter the menus take as a key of its own (L, for Now Playing's lyrics), by the
+        /// letter typed rather than the key's place on the keyboard.
+        private static func letterKey(_ key: KeyCode, _ event: NSEvent) -> KeyCode {
+            guard key == .none, event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+                  event.charactersIgnoringModifiers?.lowercased() == "l"
+            else { return key }
+            return .l
         }
 
         func handleKeyUp(_ event: NSEvent) {
-            let key = KeyCode(rawValue: event.keyCode) ?? .none
+            let key = Self.letterKey(KeyCode(rawValue: event.keyCode) ?? .none, event)
             if isPlayingIntro { return }
             _ = SyntheticKeyEvents.source(of: event)
             if key == .delete { handleLaunchBackPressEnded() }
