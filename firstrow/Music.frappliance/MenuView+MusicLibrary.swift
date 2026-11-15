@@ -363,6 +363,97 @@ import Foundation
     }
 #endif
 
+#if os(macOS) && canImport(iTunesLibrary)
+    /// One Music library kept open on a thread of its own for as long as First Row runs.
+    /// The system's library service opens everything it keeps (songs, films, podcasts,
+    /// books) before it answers for a library, and shuts it all again once no library is
+    /// left open; opening it again could take it seconds, all of them waited out by the
+    /// thread asking. That was the main thread, for the menus' lists, and everything on
+    /// screen stood still meanwhile (at launch, the opening movie's picture with it). With
+    /// this one open, a library opened on the main thread is answered at once.
+    final class MusicLibraryKeeper: @unchecked Sendable {
+        static let shared = MusicLibraryKeeper()
+
+        private let queue = DispatchQueue(label: "First Row music library keeper", qos: .userInitiated)
+        private let lock = NSLock()
+        private var library: ITLibrary?
+        private var isOpening = false
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        private var cameToFront: NSObjectProtocol?
+
+        /// Opens it, unless it is open, and waits for that.
+        func keepOpen() async {
+            guard !FirstRowHarness.isActive else { return }
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                lock.lock()
+                guard library == nil else {
+                    lock.unlock()
+                    continuation.resume()
+                    return
+                }
+                waiting.append(continuation)
+                let opens = !isOpening
+                isOpening = true
+                lock.unlock()
+                if opens { open() }
+            }
+        }
+
+        /// Opens it, unless it is open, without waiting.
+        func openIfNeeded() {
+            guard !FirstRowHarness.isActive else { return }
+            lock.lock()
+            let opens = library == nil && !isOpening
+            if opens { isOpening = true }
+            lock.unlock()
+            if opens { open() }
+        }
+
+        /// Opens another and keeps that instead, the one before only let go of once it is
+        /// in: the service may have been started again since (it keeps nothing of the one
+        /// open before then).
+        private func openAgain() {
+            lock.lock()
+            let opens = !isOpening
+            if opens { isOpening = true }
+            lock.unlock()
+            if opens { open() }
+        }
+
+        /// Called with `isOpening` set.
+        private func open() {
+            queue.async {
+                let opened = try? ITLibrary(apiVersion: "1.0")
+                self.lock.lock()
+                if let opened { self.library = opened }
+                self.isOpening = false
+                let resumed = self.waiting
+                self.waiting = []
+                let watches = self.cameToFront == nil && opened != nil
+                self.lock.unlock()
+                resumed.forEach { $0.resume() }
+                if watches { self.watchForComingToFront() }
+            }
+        }
+
+        private func watchForComingToFront() {
+            let observer = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: nil,
+            ) { [weak self] _ in
+                self?.openAgain()
+            }
+            lock.lock()
+            if cameToFront == nil {
+                cameToFront = observer
+                lock.unlock()
+            } else {
+                lock.unlock()
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+    }
+#endif
+
 extension MenuView {
     var startupMusicLibraryPreloadTimeout: Double {
         12
@@ -465,8 +556,12 @@ extension MenuView {
             }
             Task(priority: .userInitiated) {
                 #if os(macOS)
+                    // The library opened on another thread first (see `MusicLibraryKeeper`),
+                    // for the main thread's own read not to wait on the library service.
+                    async let keptOpen: Void = MusicLibraryKeeper.shared.keepOpen()
                     // Prefetch unplayable tracks first so the library scan doesn't wait on Music.app.
                     await UnavailableAppleMusicTrackCache.shared.prefetch(timeout: 6)
+                    await keptOpen
                 #endif
                 do {
                     let snapshot = try await self.loadStartupMusicLibrarySnapshot()
@@ -2872,10 +2967,14 @@ extension MenuView {
 
         /// ITLibrary uses XPC to talk to amplibraryd — both init and all property
         /// access must happen on the main thread or the connection is invalidated.
+        /// (Opened at once while `MusicLibraryKeeper` has one open.)
         func withITLibrary<T>(_ work: (ITLibrary) throws -> T) throws -> T {
             if FirstRowHarness.isActive {
                 throw NSError(domain: "firstRowHarness", code: 1, userInfo: [NSLocalizedDescriptionKey: "Libraries are off in the harness"])
             }
+            #if os(macOS)
+                MusicLibraryKeeper.shared.openIfNeeded()
+            #endif
             let lib = try ITLibrary(apiVersion: "1.0")
             return try work(lib)
         }
