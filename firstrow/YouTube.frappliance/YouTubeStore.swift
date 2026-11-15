@@ -64,6 +64,26 @@ final class YouTubeStore {
         write()
     }
 
+    /// Takes one video out of the history.
+    func removeFromHistory(_ videoID: String) {
+        guard history.contains(where: { $0.id == videoID }) else { return }
+        history.removeAll { $0.id == videoID }
+        write()
+    }
+
+    /// YouTube's addresses for the history and for a video: what a question about taking
+    /// them out of the history here is asked of.
+    static let historyAddress = URL(string: "https://www.youtube.com/feed/history") ?? URL(fileURLWithPath: "/")
+
+    static func address(ofVideo id: String) -> URL {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "www.youtube.com"
+        components.path = "/watch"
+        components.queryItems = [URLQueryItem(name: "v", value: id)]
+        return components.url ?? historyAddress
+    }
+
     private func write() {
         guard let url = Self.fileURL else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

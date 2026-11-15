@@ -198,6 +198,21 @@ extension MenuView {
         }
     }
 
+    /// The same screen for a question about something that isn't a movie's file (a video
+    /// watched on YouTube, all of them), with a picture already in hand behind it, or none.
+    func presentRemovalQuestion(picture: NSImage?) {
+        movieResumePromptTargetURL = nil
+        movieResumePromptResumeSeconds = 0
+        movieResumePromptSelectedIndex = 0
+        movieResumePromptHideUnselected = false
+        movieResumePromptSolidBlackSelected = false
+        isMovieResumePromptConfirming = false
+        _ = incrementRequestID(&movieResumePromptBackdropRequestID)
+        movieResumePromptBackdropImage = picture
+        movieResumePromptOpacity = 0
+        isMovieResumePromptVisible = true
+    }
+
     func dismissMovieResumePrompt() {
         isMovieResumePromptVisible = false
         movieRemoval = nil

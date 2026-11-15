@@ -7,6 +7,7 @@ extension MenuView {
     static let settingsSoundEffectsItemID = "settings_soundeffects"
     static let settingsIntroMovieItemID = "settings_intromovie"
     static let settingsYouTubeItemID = "settings_youtube"
+    static let settingsClearYouTubeHistoryItemID = "settings_clear_youtube_history"
     private static let screenSaverPreviewItemID = "screensaver_preview"
     private static let screenSaverChoicePrefix = "screensaver_after_"
 
@@ -42,6 +43,18 @@ extension MenuView {
         case Self.settingsYouTubeItemID:
             setShowsYouTube(!AppSettings.showsYouTube)
             playSound(named: "Selection")
+        case Self.settingsClearYouTubeHistoryItemID:
+            // Asked about first, as taking one video out of History is. (With nothing in it,
+            // that is said instead.)
+            if YouTubeStore.shared.history.isEmpty {
+                playSound(named: "Selection")
+                presentFullscreenScene(key: featureErrorFullscreenKey, payload: [
+                    "header": L("Nothing Watched Yet"),
+                    "subcaption": L("There is no YouTube watch history to clear."),
+                ])
+            } else {
+                askAboutRemoving(MovieRemoval(url: YouTubeStore.historyAddress, title: "", kind: .watchHistory))
+            }
         default:
             return false
         }

@@ -20,6 +20,9 @@ import Foundation
 // A folder, or a file, that was brought in with Movies > Import and stands at the top of
 // Movies Folder is asked about in the same way, and is only taken out of First Row: it stays
 // where it is, with everything in it.
+//
+// A video in YouTube's History is asked about in the same way too, and what goes is First
+// Row's note that it was watched here; Settings asks so about clearing the whole of it.
 
 /// A movie that the question screen is asking about.
 struct MovieRemoval: Equatable {
@@ -32,6 +35,10 @@ struct MovieRemoval: Equatable {
         case continueWatching
         /// A folder or a file brought in with Import: it is no longer shown, and stays where it is.
         case imported(isFolder: Bool)
+        /// A video in YouTube's History: it is no longer listed there.
+        case watchedVideo(id: String)
+        /// The whole of YouTube's History.
+        case watchHistory
     }
 
     var url: URL
@@ -43,6 +50,8 @@ struct MovieRemoval: Equatable {
         case .continueWatching: L("Remove “%@” from Continue Watching?", title)
         case .imported: L("Remove “%@” from First Row?", title)
         case .ownCopy, .ownFile: L("Delete “%@”?", title)
+        case .watchedVideo: L("Remove “%@” from History?", title)
+        case .watchHistory: L("Clear YouTube Watch History?")
         }
     }
 
@@ -50,7 +59,8 @@ struct MovieRemoval: Equatable {
     var note: String? {
         switch kind {
         case .ownCopy: L("It will be removed from First Row.")
-        case .continueWatching: nil
+        case .continueWatching, .watchedVideo: nil
+        case .watchHistory: L("The videos watched here will be forgotten.")
         case let .imported(isFolder): isFolder ? L("The folder and what is in it stay where they are.") : L("The file stays where it is.")
         case .ownFile:
             #if os(Windows)
@@ -64,8 +74,9 @@ struct MovieRemoval: Equatable {
     /// The two answers, in their order on the screen.
     var answers: [String] {
         switch kind {
-        case .continueWatching, .imported: [L("Remove"), L("Cancel")]
+        case .continueWatching, .imported, .watchedVideo: [L("Remove"), L("Cancel")]
         case .ownCopy, .ownFile: [L("Delete"), L("Cancel")]
+        case .watchHistory: [L("Clear"), L("Cancel")]
         }
     }
 
@@ -74,7 +85,7 @@ struct MovieRemoval: Equatable {
         switch kind {
         case .imported:
             (L("“%@” couldn't be removed.", title), L("First Row has lost track of it. It can be taken out in Settings, under Media Folders."))
-        case .continueWatching, .ownCopy, .ownFile:
+        case .continueWatching, .ownCopy, .ownFile, .watchedVideo, .watchHistory:
             (L("“%@” couldn't be deleted.", title), L("First Row isn't allowed to change it where it is."))
         }
     }
@@ -91,6 +102,10 @@ extension MenuView {
     /// The movie in a row of the list that is showing, if it is one that can be taken out
     /// (or the folder, if it is one that was brought in).
     func movieRemoval(forThirdMenuRow index: Int) -> MovieRemoval? {
+        // A video in YouTube's History.
+        if let video = youtubeHistoryVideo(inThirdMenuRow: index) {
+            return MovieRemoval(url: YouTubeStore.address(ofVideo: video.id), title: video.title, kind: .watchedVideo(id: video.id))
+        }
         guard activeRootItemID == "movies" || tvShowListing != nil, isInThirdMenu, thirdMenuMode == .moviesFolder,
               activeFullscreenScene == nil, !isMovieTransitioning, !isMenuFolderSwapTransitioning, !isMovieResumePromptVisible,
               !isMoviePlaybackVisible, !isLoadingMoviesFolderEntries, thirdMenuItems.indices.contains(index)
@@ -204,7 +219,15 @@ extension MenuView {
                 }.value
                 guard !Task.isCancelled else { return }
             }
-            presentMovieResumePrompt(for: removal.url, pictureFrom: picture)
+            switch removal.kind {
+            case let .watchedVideo(id):
+                // (Behind the question about a video, its picture.)
+                presentRemovalQuestion(picture: youtube.previewVideoID == id ? youtube.previewImage ?? youtube.rowPictures[id] : youtube.rowPictures[id])
+            case .watchHistory:
+                presentRemovalQuestion(picture: nil)
+            case .continueWatching, .ownCopy, .ownFile, .imported:
+                presentMovieResumePrompt(for: removal.url, pictureFrom: picture)
+            }
             movieRemoval = removal
             // (Cancel is the answer picked out: deleting takes a deliberate move.)
             movieResumePromptSelectedIndex = 1
@@ -235,21 +258,30 @@ extension MenuView {
             if movieResumePromptSelectedIndex == 0 {
                 playSound(named: "Selection")
                 let removed = remove(removal)
-                leaveMovieRemoval(showing: removed ? nil : removal)
+                leaveMovieRemoval(removal, showing: removed ? nil : removal)
             } else {
                 playSound(named: "Exit")
-                leaveMovieRemoval(showing: nil)
+                leaveMovieRemoval(removal, showing: nil)
             }
         case .delete, .escape:
             playSound(named: "Exit")
-            leaveMovieRemoval(showing: nil)
+            leaveMovieRemoval(removal, showing: nil)
         default:
             break
         }
     }
 
     /// Back to the list, brought up to date. If the movie couldn't be deleted, that is said.
-    private func leaveMovieRemoval(showing failed: MovieRemoval?) {
+    private func leaveMovieRemoval(_ removal: MovieRemoval, showing failed: MovieRemoval?) {
+        switch removal.kind {
+        case .watchedVideo, .watchHistory:
+            // (YouTube's History, not a list of movies, is what is brought up to date.)
+            youtubeHistoryDidChange()
+            dismissMovieResumePromptToMenu()
+            return
+        case .continueWatching, .ownCopy, .ownFile, .imported:
+            break
+        }
         noteMoviesTopLevelChanged()
         if isShowingContinueWatching {
             refreshContinueWatchingIfShown()
@@ -281,6 +313,12 @@ extension MenuView {
         let file = removal.url.standardizedFileURL
         var removed = true
         switch removal.kind {
+        case let .watchedVideo(id):
+            YouTubeStore.shared.removeFromHistory(id)
+            return true
+        case .watchHistory:
+            YouTubeStore.shared.clearHistory()
+            return true
         case .continueWatching:
             break
         case .ownCopy:

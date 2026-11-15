@@ -36,5 +36,6 @@ struct SettingsMenuFeature: MenuFeatureConfiguration {
         #if os(macOS) || FIRSTROW_PORTABLE
             submenuItems.append(.init(id: "settings_media_folders", title: L("Media Folders"), trailingText: "..."))
         #endif
+        submenuItems.append(.init(id: "settings_clear_youtube_history", title: L("Clear YouTube Watch History")))
     }
 }

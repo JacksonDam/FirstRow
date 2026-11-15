@@ -373,6 +373,32 @@ extension MenuView {
         return Int(id.dropFirst(Self.youtubePlaylistRowPrefix.count))
     }
 
+    /// The video in a row of History, while History is the list showing: one that can be
+    /// taken out of it (see `MenuView+MovieRemoval.swift`).
+    func youtubeHistoryVideo(inThirdMenuRow index: Int) -> YouTubeVideo? {
+        guard thirdMenuMode == .youtube, isInThirdMenu, activeFullscreenScene == nil, !isMovieTransitioning, !isMenuFolderSwapTransitioning,
+              !isMovieResumePromptVisible, !isMoviePlaybackVisible, !youtube.isStartingPlayback,
+              let state = currentYouTubePage, case .history = state.page
+        else { return nil }
+        let rows = youtubeMenuListItems()
+        guard rows.indices.contains(index), let video = youtubeVideoIndex(forRowID: rows[index].id), state.videos.indices.contains(video) else { return nil }
+        return state.videos[video]
+    }
+
+    /// Videos were taken out of the history: History, if it is the list showing, lists what
+    /// is left, and the menu's carousel forgets the pictures it had of it.
+    func youtubeHistoryDidChange() {
+        for key in youtube.carouselPictures.keys where key.hasPrefix("history:") { youtube.carouselPictures[key] = nil }
+        if youtube.carouselShownKey?.hasPrefix("history:") == true { youtube.carouselShownKey = nil }
+        guard thirdMenuMode == .youtube, let index = youtube.pages.indices.last, case .history = youtube.pages[index].page else { return }
+        youtube.pages[index].videos = YouTubeStore.shared.history
+        let count = youtubeMenuListItems().count
+        if selectedThirdIndex >= count { selectedThirdIndex = max(0, count - 1) }
+        youtube.previewVideoID = nil
+        refreshDetailPreviewForCurrentContext()
+        youtubeListAppeared()
+    }
+
     /// The playlist under the selection on the current page.
     var selectedYouTubePlaylist: YouTubePlaylist? {
         guard thirdMenuMode == .youtube, let state = currentYouTubePage else { return nil }
