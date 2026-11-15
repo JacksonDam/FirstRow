@@ -534,6 +534,8 @@
 
         init(in container: NativeView) {
             #if os(macOS)
+                // (Its layer is wanted from the start: the first move in is made on it.)
+                glass.wantsLayer = true
                 glass.style = .regular
                 glass.alphaValue = 0
                 glass.isHidden = true
