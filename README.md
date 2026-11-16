@@ -38,47 +38,47 @@ There are two looks. **Classic** is the original, down to the pixel. **Modern** 
 
 ## What's in it
 
-- **Movies** from your Movies folder, external drives and network shares (anything in a `Movies` folder at the top of a volume), all together in Movies Folder, plus what you bring in with Movies > Import or Settings > Media Folders: a movie shows there as a movie, and a folder as a folder at the head of the list. Hold the button that chooses on a movie to delete it, or on something you brought in to take it out of First Row again. Besides MP4, MOV and M4V it plays MKV, AVI, WMV, FLV, WebM, MPEG, transport streams and most other kinds of movie file, DVDs and Blu-rays kept as a folder or a disc image among them, with the subtitles and audio tracks inside them, subtitle files kept beside them, and their chapters. Movies remember where you stopped, even after quitting, and show up in Continue Watching. Press `Down` while one plays for subtitles, audio track, chapter and speed.
-- **TV Shows** found among those movies: a file named the way episodes are (`Show Name S01E02`, `Show.Name.1x02.Title`) or kept the way they are (`Show Name/Season 1/02 Title`) is listed under TV Shows instead of in Movies Folder. Sort them by show, each show leading to its seasons and episodes, or by date, with the newest episode first.
-- **DVD** at the top of the main menu while there's a DVD to play: a disc in a drive (a built-in one, a USB SuperDrive or any other), or a disc image that's open. A DVD that isn't protected against copying plays in First Row. One that is protected opens in the DVD player that comes with the Mac, or in a Windows PC's own DVD player app if it has one; on Linux it plays where the system is set up for such discs.
-- **Music** from your library and Apple Music, or folders and an iTunes library file you add in Settings (macOS), with a Now Playing screen that shows lyrics, lists the songs around the one playing and slowly flips the player round to protect the screen from burn-in. A song's lyrics are its own where it has them (an `.lrc` file beside it, the lyrics in its tags, or your library's or server's). For a song that brings none, First Row asks [LRCLIB](https://lrclib.net), a free lyrics database, by the song's title, artist, album and length while it plays in Now Playing, and keeps what it finds on the device. Artists are listed by their albums' artist, so a song made with someone else stays with its album, and an artist leads to their albums. Songs played from their files (the library's own, and those in folders) go from one into the next without a gap, so an album made to be heard in one piece is.
-- **Spotify** under Music: your Liked Songs, playlists, albums and artists, playing in the same Now Playing screen. You sign in once on Spotify's own page.
-- **Media servers** under Sources: Jellyfin, Emby, Plex, Kodi, and anything that speaks UPnP, such as Windows Media Center, Windows Media Player, most network drives and many TV recorders. First Row finds the ones on your network, or you add one by its address. You sign in to Jellyfin with Quick Connect or a password, to Emby with a password, and to Plex with a code. Videos and songs play in First Row's own players, and Jellyfin, Emby, Plex and Kodi are told where you stopped.
-- **Shared folders** under Sources: the folders another computer or a network drive shares, browsed and played from where they are, with a name and password where they want one. Only what the computer will open is listed: the folders and movies it shows but keeps to itself are left out. A Mac's are signed in to from another Mac, an iPhone or an iPad with an account's own name and password; from an Apple TV or a PC, the Mac's account needs Windows File Sharing turned on (in the Options of File Sharing, in its Sharing settings). On Linux shared folders are there when the system has Samba's client library (libsmbclient), which most desktops come with.
-- **Dropbox, Google Drive, OneDrive and iCloud Drive**: where their apps keep a folder on the computer, Movies > Import and Settings > Media Folders offer it by name (macOS, Windows, Linux), and a movie or song that is still with its service is fetched when you play it. On iPhone and iPad, Movies > Import opens the Files app's picker, which reaches them too: movies, folders or both can be picked there.
-- **Photos** from Apple Photos, an iPhoto library or folders you add in Settings, as slideshows with music and a Ken Burns effect.
-- **Podcasts** you've downloaded in Apple Podcasts (macOS).
-- **iTunes Top Charts** for movies, TV episodes, songs and music videos, with playable previews.
-- **A screen saver** of floating photos, after anything from a minute to an hour of inactivity.
-- **MetalFX video upscaling** on a Mac with Apple silicon (macOS 13 and later), turned on in Settings: a movie or video smaller than the screen is scaled up to it by MetalFX rather than stretched, for a sharper picture. It works on what the system's own player shows (MP4, MOV and M4V files, YouTube and other streams, and the MKV and other files whose video the system can decode); HDR movies, and the kinds of video First Row decodes itself (DVDs among them), play as they always have.
-- **A short intro movie** in each look's style, with its own score. It plays every time First Row opens, unless you turn off Settings > Intro Movie. Any key, click or tap skips it. It plays in 4K on a Mac with Apple silicon, and in 1080p everywhere else.
-- **An upright layout on iPhone Duo.** Opened out and held upright, First Row arranges itself around the fold: the carousel or preview card, the movie or the album cover sits above it, and the menu or the playback controls below. Turn it sideways and it glides back to the usual layout.
-- **Media keys, Control Center and headphone buttons** on macOS, iOS and tvOS, with whatever's playing shown in the system's Now Playing.
+- **Movies** from your Movies folder, external drives, network shares and folders you add with Movies > Import or Settings > Media Folders. Plays MP4, MOV, M4V, MKV, AVI, WMV, WebM, MPEG, transport streams and more, including DVD and Blu-ray folders and disc images, with their subtitles, audio tracks and chapters. Picks up where you left off, with a Continue Watching list. Hold select on an item to delete or remove it.
+- **TV Shows** sorted from episode file names (`Show Name S01E02`, `Show Name/Season 1/02 Title`), by show or by date.
+- **DVD** playback from a drive or a mounted disc image. Copy-protected discs open in the system's DVD player app (on Linux, they play if the system is set up for them).
+- **Music** from your library, Apple Music, and folders or an iTunes library file you add (macOS). Gapless playback for local files, and a Now Playing screen with the song list, lyrics and burn-in protection. Lyrics come from `.lrc` files, tags, your library or your media server, or from [LRCLIB](https://lrclib.net) when a song has none.
+- **Spotify**: your Liked Songs, playlists, albums and artists, after signing in on Spotify's page.
+- **Media servers** under Sources: Jellyfin, Emby, Plex, Kodi and UPnP servers such as Windows Media Player and most network drives, found automatically or added by address. Playback position is synced back to Jellyfin, Emby, Plex and Kodi.
+- **Shared folders** (SMB) under Sources, with an optional name and password. To reach a Mac from an Apple TV or a PC, turn on Windows File Sharing in the Mac's File Sharing options. Linux needs libsmbclient.
+- **Cloud folders** from Dropbox, Google Drive, OneDrive and iCloud Drive, added with Movies > Import (the Files picker on iPhone and iPad) or Settings > Media Folders. Files that aren't downloaded yet are fetched when played.
+- **Photos** from Apple Photos, iPhoto libraries or folders, as slideshows with music and a Ken Burns effect.
+- **Podcasts** downloaded in Apple Podcasts (macOS).
+- **iTunes Top Charts** for movies, TV episodes, songs and music videos, with previews.
+- **A screen saver** of floating photos.
+- **MetalFX video upscaling** on Apple silicon Macs (macOS 13 and later, off by default): sharper scaling for video smaller than the screen. It isn't used for HDR or for formats First Row decodes itself, such as DVDs.
+- **An intro movie** for each look, which you can skip or turn off in Settings.
+- **An upright layout on iPhone Duo**, with the picture above the fold and the menu or controls below.
+- **Media keys, Control Center and headphone controls** on macOS, iOS and tvOS.
 
 Movies and shows bought from the Apple TV app won't play because of their DRM.
 
-First Row comes in English, German, French, Spanish, Japanese, Korean and Chinese (Simplified and Traditional), and follows the language of the system it runs on (on Windows, the first of your preferred languages that it has; on Linux, the one named by `LANG`). On a Mac, iPhone or iPad its language can also be set by itself, under Language & Region in the system's settings. On Linux, Chinese, Japanese and Korean are drawn with the system's own fonts for them (Noto Sans CJK or the like), which a system set to one of those languages has.
+Supported system languages: English, German, French, Spanish, Japanese, Korean, Chinese (Simplified) and Chinese (Traditional). On Linux, Chinese, Japanese and Korean need a font such as Noto Sans CJK.
 
-On the Mac, iPhone, iPad and Apple TV, the kinds of movie file beyond MP4, MOV and M4V play on every system First Row runs on. HDR, Dolby Vision, Dolby Atmos, picture in picture for those kinds of file and shared folders need macOS 15, iOS 18 or tvOS 18.
+On Apple platforms, shared folders, and HDR, Dolby Vision, Dolby Atmos and picture in picture for formats other than MP4, MOV and M4V, need macOS 15, iOS 18 or tvOS 18.
 
 ## Controls
 
 | | |
 |---|---|
-| **Keyboard** | Arrow keys move, `Return` chooses, `Esc` or `Delete` goes back, `Space` plays and pauses. `Cmd+Esc` quits on a Mac, `Ctrl+Esc` or `Ctrl+Q` elsewhere. |
-| **Mouse or trackpad** (macOS, Linux, Windows) | Point at a row and click it. Scroll long lists, use the on-screen Back button, and click or drag the progress bar to seek. In Now Playing, move to the right edge for the song list, and click the button in the bottom right corner for the lyrics. |
-| **Touch** (iPhone, iPad) | Tap a row to open it. Drag a list to scroll it, or hold and slide to move through it. Swipe in from the left or tap Back to go back. In Now Playing, swipe in from the right for the song list, and tap the button in the bottom right corner for the lyrics. |
-| **Siri Remote** (Apple TV, or paired with a Mac) | Swipe or click the clickpad to move, click the centre to choose (in Now Playing, for the lyrics), Back goes back, Play/Pause plays and pauses. On a Mac, the TV button opens Now Playing's song list and the volume buttons set the Mac's volume. On Apple TV, where that button belongs to the system, hold the clickpad's centre in Now Playing for the song list. |
-| **Apple Remote** (Macs with an infrared receiver) | `+` and `-` move in menus and set the volume during playback. `⏮` and `⏭` move left and right, or change song in Now Playing (hold them to scrub). The centre button chooses and plays, `Menu` goes back. In Now Playing, hold the centre button for the lyrics. |
-| **Game controller** | D-pad or left stick moves, `A` chooses, `B` or `Menu` goes back, `X` plays and pauses, `Y` shows the lyrics in Now Playing. |
+| **Keyboard** | Arrow keys move, `Return` selects, `Esc` or `Delete` goes back, `Space` plays and pauses. Quit with `Cmd+Esc` on a Mac, or `Ctrl+Esc` or `Ctrl+Q` elsewhere. |
+| **Mouse or trackpad** (macOS, Linux, Windows) | Click a row, scroll lists, and click or drag the progress bar to seek. |
+| **Touch** (iPhone, iPad) | Tap a row, drag to scroll, and swipe in from the left to go back. |
+| **Siri Remote** | The clickpad moves and selects, Back goes back, Play/Pause plays and pauses. |
+| **Apple Remote** | `+` and `-` move and set the volume, `⏮` and `⏭` move or change song, the centre button selects, `Menu` goes back. |
+| **Game controller** | D-pad or left stick moves, `A` selects, `B` goes back, `X` plays and pauses. |
 
-All of them work at once, with nothing to turn on. First Row follows whatever you used last: touch or the mouse brings up on-screen buttons like Back and the playback controls, and a key, a remote or a game controller puts them away again.
+All of them work at the same time. On-screen buttons appear when you use touch or a mouse.
 
-In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, `L` or `Return` shows the lyrics, and `Tab` brings out the song list: `Up` and `Down` then move through it, `Return` plays the song picked out, and `Tab` or `Esc` puts it away. In a movie, tap `Left` or `Right` to skip 10 seconds or hold them to scrub, and press `Down` for subtitles, audio and speed.
+In Now Playing, `Up` and `Down` change song, `Left` and `Right` scrub, `L` or `Return` shows the lyrics and `Tab` shows the song list. The lyrics also open with the button in the bottom right corner, `Y` on a game controller, or the centre button on a Siri Remote (hold it on an Apple Remote). In a movie, `Left` and `Right` skip 10 seconds (hold to scrub), and `Down` opens subtitles, audio and speed.
 
 ## Building
 
-Open `First Row.xcodeproj` in Xcode and run the **First Row** scheme for macOS, iOS or tvOS. To have it play the further kinds of movie file, build the media engines first with `MediaEngine/build.sh` and `MediaEngine/Older/build.sh` (see [`MediaEngine/README.md`](MediaEngine/README.md)): the app's build picks it up from there. The Linux and Windows builds use the Swift package in `Package.swift` and need SDL 3 and mpv (see [`Portable/README.md`](Portable/README.md)).
+Open `First Row.xcodeproj` in Xcode and run the **First Row** scheme for macOS, iOS or tvOS. To play MKV, AVI and the other formats, first build the media engines with `MediaEngine/build.sh` and `MediaEngine/Older/build.sh` (see [`MediaEngine/README.md`](MediaEngine/README.md)). The Linux and Windows builds use the Swift package in `Package.swift` and need SDL 3 and mpv (see [`Portable/README.md`](Portable/README.md)).
 
 ## How it's put together
 
@@ -89,27 +89,27 @@ firstrow/
 ├── Engine/                             The Core Animation renderer: menus, carousels, previews, players
 ├── MenuConfiguration.swift             The list of top-level menus
 ├── Movies.frappliance/                 Movies, Continue Watching and iTunes Top Movies
-├── TV.frappliance/                     TV Shows: the episodes among the movie files, and iTunes Top TV Episodes
+├── TV.frappliance/                     TV Shows and iTunes Top TV Episodes
 ├── Music.frappliance/                  Music library, Spotify, Now Playing
 ├── Podcasts.frappliance/               Podcasts
 ├── Photos.frappliance/                 Photos and slideshows
 ├── FRSettings.frappliance/             Settings, media folders and the screen saver
 ├── FRSources.frappliance/              Sources and Jellyfin support
 ├── Assets.xcassets, Sounds/, Videos/   Images, interface sounds and the two intro movies
-├── Videos4K/                           The intro movies in 4K, which only the Mac app carries
+├── Videos4K/                           The Mac app's intro movies
 └── ScreenSaverDefaultPhotos/           Photos for the screen saver
 Portable/                               Stand-ins for Apple's frameworks on Linux and Windows
 ```
 
-Each `.frappliance` folder holds one top-level menu, and the idea is for each to become a separately loadable plugin.
+Each `.frappliance` folder is one top-level menu, and is meant to become a separately loadable plugin.
 
 ### Adding a language
 
-The words First Row shows are written in English where they are used, inside `L("...")`, and each other language is a table from those English words to its own: `firstrow/German.swift`, `French.swift`, `Japanese.swift` and the rest. For another language, add a case to `AppLanguage` in `firstrow/Localization.swift`, a table like `German.swift` beside it, and an `InfoPlist.strings` in a new `.lproj` folder for the system's permission prompts.
+Interface text is written in English inside `L("...")`, and each other language is a table from English to that language (`firstrow/German.swift`, `French.swift` and so on). To add one, add a case to `AppLanguage` in `firstrow/Localization.swift`, a table like `German.swift`, and an `InfoPlist.strings` in a new `.lproj` folder for the system's permission prompts.
 
 ### Adding a menu
 
-Say you want a **NewTube** item on the main menu.
+To add a **NewTube** item to the main menu:
 
 1. Make a `NewTube.frappliance` folder with a feature that describes the item and its submenu:
 
@@ -127,11 +127,9 @@ Say you want a **NewTube** item on the main menu.
 
 2. Add a `newtube` image set to `Assets.xcassets` for the main menu's carousel.
 
-3. Add `NewTubeMenuFeature()` to the catalog in `MenuConfiguration.swift`. Its place in that list is its place on the main menu.
+3. Add `NewTubeMenuFeature()` to the catalog in `MenuConfiguration.swift`. Its position in that list is its position on the main menu. The item now shows up, opens and closes with the right sounds, and lists its rows.
 
-   The item now shows up, opens and closes with the right sounds, and lists its rows.
-
-4. Make the rows do something in `triggerSubmenuAction()` in `MenuView+InputHandling.swift`:
+4. Handle the rows in `triggerSubmenuAction()` in `MenuView+InputHandling.swift`:
 
    ```swift
    if activeRootItemID == "newtube", item.id == "newtube_playlists" {
@@ -141,7 +139,7 @@ Say you want a **NewTube** item on the main menu.
    }
    ```
 
-For a third level of lists, add a case to `ThirdMenuMode` in `MenuView+MenuNavigation.swift`, fill in `thirdMenuItems` and set `thirdMenuMode` when the row is chosen; `enterMoviesFolderMenu()` is a good example. The picture beside the list comes from `gapContentItems(sceneSize:pass:memo:)` in `MenuView+GapContent.swift`, which can show the item's icon (the default), a preview, details or a carousel of covers.
+For a third level of lists, add a case to `ThirdMenuMode` in `MenuView+MenuNavigation.swift`, fill in `thirdMenuItems` and set `thirdMenuMode` when the row is chosen (see `enterMoviesFolderMenu()`). The picture beside the list comes from `gapContentItems(sceneSize:pass:memo:)` in `MenuView+GapContent.swift`, which can show the item's icon (the default), a preview, details or a carousel of covers.
 
 ## Thanks
 
@@ -153,8 +151,12 @@ If you'd like to support the project, you can [buy me a coffee](https://buymeaco
 
 ## What it's made with
 
-The other people's work that goes out with First Row, and the terms each part comes under, are listed in [`MediaEngine/README.md`](MediaEngine/README.md) for the Mac, iPhone, iPad and Apple TV apps and in [`Portable/Licenses/README.md`](Portable/Licenses/README.md) for Linux and Windows. The licences' own texts are inside each download.
+The open source work that ships with First Row, and its licences, are listed in [`MediaEngine/README.md`](MediaEngine/README.md) for the Mac, iPhone, iPad and Apple TV apps and in [`Portable/Licenses/README.md`](Portable/Licenses/README.md) for Linux and Windows. The full licence texts are included in each download.
 
 ## License
 
-[Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/)
+First Row is licensed under [Creative Commons Attribution 4.0](LICENSE.md). The open source components above keep their own licences.
+
+## Security
+
+To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
