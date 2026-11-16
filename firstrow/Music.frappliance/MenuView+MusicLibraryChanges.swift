@@ -220,7 +220,8 @@ extension MenuView {
         #elseif os(tvOS)
             await (try? fetchMusicKitPlaylists()) ?? []
         #else
-            (try? fetchMusicLibraryPlaylists()) ?? []
+            await waitForMusicLibraryKeptOpen()
+            return (try? fetchMusicLibraryPlaylists()) ?? []
         #endif
     }
 

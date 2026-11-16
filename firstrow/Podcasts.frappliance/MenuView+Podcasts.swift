@@ -367,6 +367,7 @@ extension MenuView {
             }
             Task(priority: .userInitiated) {
                 do {
+                    await self.waitForMusicLibraryKeptOpen()
                     let series = try self.loadDownloadedPodcastSeries()
                     await MainActor.run {
                         guard self.podcastsRequestID == requestID else { return }
@@ -426,6 +427,7 @@ extension MenuView {
             }
             Task(priority: .userInitiated) {
                 do {
+                    await self.waitForMusicLibraryKeptOpen()
                     let series = try self.loadDownloadedPodcastSeries()
                     await MainActor.run {
                         guard self.podcastsRequestID == requestID else { return }

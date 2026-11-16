@@ -455,6 +455,16 @@ import Foundation
 #endif
 
 extension MenuView {
+    /// Waits, on the Mac, for `MusicLibraryKeeper` to have its library open (opening it if
+    /// need be): one opened on the main thread after this is answered at once, where it
+    /// would otherwise have waited in line behind that one's opening, as long as it took.
+    /// Before every library opened on the main thread, from the first moment after launch.
+    func waitForMusicLibraryKeptOpen() async {
+        #if os(macOS) && canImport(iTunesLibrary)
+            await MusicLibraryKeeper.shared.keepOpen()
+        #endif
+    }
+
     var startupMusicLibraryPreloadTimeout: Double {
         12
     }
@@ -1299,6 +1309,7 @@ extension MenuView {
             return await loadJellyfinArtwork(for: song, cacheKey: cacheKey)
         }
         #if canImport(iTunesLibrary)
+            await waitForMusicLibraryKeptOpen()
             if let libraryArtworkData = await MainActor.run(body: {
                 self.loadMusicLibraryArtworkData(for: song)
             }) {
@@ -1786,6 +1797,7 @@ extension MenuView {
             }
             return artworks
         #elseif canImport(iTunesLibrary)
+            await waitForMusicLibraryKeptOpen()
             return try withITLibrary { library in
                 var seenAlbumKeys: Set<String> = []
                 var matchedIndex = 0
@@ -2273,6 +2285,7 @@ extension MenuView {
             }
             return nil
         #elseif canImport(iTunesLibrary)
+            await waitForMusicLibraryKeptOpen()
             return try withITLibrary { library in
                 let all = library.allMediaItems
                 guard !all.isEmpty else { return nil }
@@ -2587,6 +2600,7 @@ extension MenuView {
             itemIndices: [String: Int],
         ) {
             typealias LibrarySnapshot = (songs: [MusicLibrarySongEntry], itemIndices: [String: Int], library: ITLibrary?)
+            await waitForMusicLibraryKeptOpen()
             let libraryResult: Result<LibrarySnapshot, Error> = FirstRowHarness.isActive
                 ? .success(([], [:], nil))
                 : Result { try withITLibrary { library in
@@ -2756,6 +2770,7 @@ extension MenuView {
                 return []
             }
         #elseif canImport(iTunesLibrary)
+            await waitForMusicLibraryKeptOpen()
             return try withITLibrary { library in
                 var entries: [MusicLibrarySongEntry] = []
                 for item in library.allMediaItems {
@@ -3450,6 +3465,7 @@ extension MenuView {
                         #if os(tvOS)
                             categories = try await self.fetchMusicKitPlaylists()
                         #else
+                            await self.waitForMusicLibraryKeptOpen()
                             categories = try self.fetchMusicLibraryPlaylists()
                         #endif
                     } else {
