@@ -254,19 +254,20 @@ actor YouTubeClient {
 
     /// The apps First Row speaks as. YouTube answers each of its own apps differently: the
     /// web site's lists and comments are open to anyone, the headset app is given addresses a
-    /// player can open as they are, and the television app is given a playlist as a plain list.
+    /// player can open as they are, the television app is given a playlist as a plain list,
+    /// and the music site names the playlists its charts are kept in.
     private enum App {
         case web
         case headset
         case television
-        case charts
+        case music
 
         var name: String {
             switch self {
             case .web: "WEB"
             case .headset: "VISIONOS"
             case .television: "TVHTML5"
-            case .charts: "WEB_MUSIC_ANALYTICS"
+            case .music: "WEB_REMIX"
             }
         }
 
@@ -275,7 +276,7 @@ actor YouTubeClient {
             case .web: "1"
             case .headset: "101"
             case .television: "7"
-            case .charts: "31"
+            case .music: "67"
             }
         }
 
@@ -284,13 +285,13 @@ actor YouTubeClient {
             case .web: "2.20261106.00.00"
             case .headset: "1.04"
             case .television: "7.20261102.18.00"
-            case .charts: "2.0"
+            case .music: "1.20261117.06.00"
             }
         }
 
         var userAgent: String {
             switch self {
-            case .web, .charts:
+            case .web, .music:
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15"
             case .headset:
                 "com.google.visionos.youtube/1.04(RealityDevice17,1; U; CPU visionOS 26_6_0 like Mac OS X; GB)"
@@ -354,10 +355,10 @@ actor YouTubeClient {
             client["deviceModel"] = "RealityDevice17,1"
             client["osName"] = "visionOS"
             client["osVersion"] = "26.6.0.23O770"
-        case .television, .charts:
+        case .television, .music:
             break
         }
-        if let visitor, app != .charts { client["visitorData"] = visitor }
+        if let visitor, app != .music { client["visitorData"] = visitor }
         return [
             "client": client,
             "request": ["internalExperimentFlags": [Any](), "useSsl": true],
@@ -390,8 +391,8 @@ actor YouTubeClient {
         _ fields: [String: Any],
         language: String? = nil,
     ) async throws -> YouTubeJSON {
-        let host = app == .charts ? "charts.youtube.com" : "www.youtube.com"
-        guard let url = URL(string: "https://\(host)/youtubei/v1/\(endpoint)?prettyPrint=false\(app == .charts ? "&alt=json" : "")") else {
+        let host = app == .music ? "music.youtube.com" : "www.youtube.com"
+        guard let url = URL(string: "https://\(host)/youtubei/v1/\(endpoint)?prettyPrint=false") else {
             throw YouTubeError.unexpectedAnswer
         }
         var body = fields
@@ -403,15 +404,16 @@ actor YouTubeClient {
         request.setValue(app.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(app.number, forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(app.version, forHTTPHeaderField: "X-YouTube-Client-Version")
-        if let visitor, app != .charts { request.setValue(visitor, forHTTPHeaderField: "X-Goog-Visitor-Id") }
+        if let visitor, app != .music { request.setValue(visitor, forHTTPHeaderField: "X-Goog-Visitor-Id") }
         switch app {
         case .web:
             request.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
             request.setValue("https://www.youtube.com", forHTTPHeaderField: "Referer")
             request.setValue("SOCS=CAE=", forHTTPHeaderField: "Cookie")
-        case .charts:
-            request.setValue("https://charts.youtube.com", forHTTPHeaderField: "Origin")
-            request.setValue("https://charts.youtube.com", forHTTPHeaderField: "Referer")
+        case .music:
+            request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+            request.setValue("https://music.youtube.com", forHTTPHeaderField: "Referer")
+            request.setValue("SOCS=CAE=", forHTTPHeaderField: "Cookie")
         case .headset:
             request.setValue("2", forHTTPHeaderField: "X-Goog-Api-Format-Version")
         case .television:
@@ -524,9 +526,9 @@ actor YouTubeClient {
     func videos(in list: YouTubeList) async throws -> YouTubePage {
         switch list {
         case .music:
-            return try await chart("TRENDING_VIDEOS")
+            return try await trendingMusicVideos()
         case .trailers:
-            return try await chart("TRENDING_MOVIES")
+            return try await trendingTrailers()
         case .gaming:
             return try await browse(["browseId": "UCOpNcN46UbXVtpKMrmU4Abg", "params": "Egh0cmVuZGluZw%3D%3D"])
         case .news:
@@ -549,27 +551,48 @@ actor YouTubeClient {
         return page(in: answer["contents"], more: { .browse($0) })
     }
 
-    /// One of YouTube's charts: the music videos or the film trailers most watched this week.
-    private func chart(_ kind: String) async throws -> YouTubePage {
-        func fetch(country: String) async throws -> YouTubePage {
-            let answer = try await call("browse", as: .charts, [
-                "browseId": "FEmusic_analytics_charts_home",
-                "query": "perspective=CHART_DETAILS&chart_params_country_code=\(country)&chart_params_chart_type=\(kind)",
-            ])
-            let entries = answer["contents"]["sectionListRenderer"]["contents"][0]["musicAnalyticsSectionRenderer"]["content"]["videos"][0]["videoViews"].array
-            var page = YouTubePage()
-            for entry in entries {
-                guard let id = entry["id"].string, let title = entry["title"].string else { continue }
-                var video = YouTubeVideo(id: id, title: title, channel: entry["channelName"].string ?? entry["artists"][0]["name"].string ?? "")
-                video.channelID = entry["externalChannelId"].string
-                if let seconds = entry["videoDuration"].double, seconds > 0 { video.durationText = Self.durationText(seconds) }
-                page.videos.append(video)
+    /// The music videos trending in the country, as YouTube Music's charts list them. The
+    /// charts are kept as playlists, and the trending one is the only one YouTube makes by
+    /// itself (its address starts "OLAK5uy_"), whatever the language names them.
+    private func trendingMusicVideos() async throws -> YouTubePage {
+        func trendingPlaylist(country: String) async throws -> String? {
+            let answer = try await call("browse", as: .music, ["browseId": "FEmusic_charts", "formData": ["selectedValues": [country]]])
+            for (_, item) in answer["contents"].all(["musicTwoRowItemRenderer"]) {
+                if let id = item["navigationEndpoint"]["browseEndpoint"]["browseId"].string, id.hasPrefix("VLOLAK5uy_") {
+                    return String(id.dropFirst(2))
+                }
             }
-            return page
+            return nil
         }
         // (The charts are made for some countries only.)
-        if let page = try? await fetch(country: Self.country), !page.videos.isEmpty { return page }
-        return try await fetch(country: "US")
+        if let id = try? await trendingPlaylist(country: Self.country) { return try await playlistVideos(id) }
+        guard let id = try await trendingPlaylist(country: "US") else { throw YouTubeError.unexpectedAnswer }
+        return try await playlistVideos(id)
+    }
+
+    /// The trailers most watched this week. YouTube's own chart of them is no longer open to
+    /// other apps, so they're found by a search: videos under four minutes from the last week,
+    /// most watched first, two pages of them, keeping those whose titles call them a trailer
+    /// or a teaser (in English or one of First Row's other languages), each title once (the
+    /// same trailer is often put up by more than one channel).
+    private func trendingTrailers() async throws -> YouTubePage {
+        let answer = try await call("search", as: .web, ["query": "official trailer", "params": "CAMSBggDEAEYAQ%3D%3D"])
+        let first = page(in: answer["contents"], more: { .search($0) })
+        var videos = first.videos
+        if let next = first.continuation, let second = try? await more(next) {
+            videos += second.videos
+        }
+        var trailers = YouTubePage()
+        var titles = Set<String>()
+        trailers.videos = videos.filter { Self.isTrailer($0.title) && titles.insert($0.title.lowercased()).inserted }
+        return trailers
+    }
+
+    private static let trailerWords = ["trailer", "teaser", "tráiler", "bande-annonce", "bande annonce", "予告", "예고편", "预告", "預告"]
+
+    static func isTrailer(_ title: String) -> Bool {
+        let title = title.lowercased()
+        return trailerWords.contains { title.contains($0) }
     }
 
     func more(_ continuation: YouTubeContinuation) async throws -> YouTubePage {
